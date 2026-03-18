@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 import ProductSearch from './ProductSearch.vue'
 import ShoppingItem from './ShoppingItem.vue'
 import { supabase } from '../lib/supabase.js'
@@ -11,6 +12,10 @@ const props = defineProps<{
   familyMembers?: FamilyMember[]
 }>()
 
+const emit = defineEmits<{
+  membershipRevoked: []
+}>()
+
 const items = ref<ShoppingItemModel[]>([])
 const loadingItems = ref(true)
 const listError = ref('')
@@ -19,6 +24,10 @@ const draftQty = ref(1)
 const selectedProduct = ref<ProductSuggestion | null>(null)
 const isAdding = ref(false)
 const activeItemId = ref<string | null>(null)
+let membershipCheckTimer: number | null = null
+let itemsChannel: RealtimeChannel | null = null
+let itemsReconnectTimer: number | null = null
+let syncRecoveryTimer: number | null = null
 
 function getMemberName(userId: string): string {
   const member = props.familyMembers?.find((m) => m.user_id === userId)
@@ -42,9 +51,124 @@ function resetComposer() {
   selectedProduct.value = null
 }
 
+function handleMembershipRevoked() {
+  listError.value = 'You were removed from this family.'
+  items.value = []
+  emit('membershipRevoked')
+}
+
+async function ensureMembership(): Promise<boolean> {
+  const response = await supabase
+    .from('family_members')
+    .select('id')
+    .eq('family_id', props.family.id)
+    .eq('user_id', props.userId)
+    .maybeSingle()
+
+  if (response.error) {
+    listError.value = response.error.message
+    return false
+  }
+
+  if (!response.data) {
+    handleMembershipRevoked()
+    return false
+  }
+
+  return true
+}
+
+async function verifyMembershipSilently() {
+  if (!props.userId || !props.family?.id) return
+  await ensureMembership()
+}
+
+async function pullLatestItemsSilently() {
+  if (!props.family?.id) return
+
+  const response = await supabase
+    .from('items')
+    .select('id, family_id, name, brand, image, quantity, completed, created_by, created_at')
+    .eq('family_id', props.family.id)
+    .order('created_at', { ascending: false })
+
+  if (!response.error && response.data) {
+    items.value = response.data as ShoppingItemModel[]
+  }
+}
+
+function scheduleItemsReconnect() {
+  if (itemsReconnectTimer !== null) return
+
+  itemsReconnectTimer = window.setTimeout(() => {
+    itemsReconnectTimer = null
+    startItemsSubscription()
+    void pullLatestItemsSilently()
+  }, 1500)
+}
+
+async function stopItemsSubscription() {
+  if (!itemsChannel) return
+  await supabase.removeChannel(itemsChannel)
+  itemsChannel = null
+}
+
+function startItemsSubscription() {
+  void stopItemsSubscription()
+
+  itemsChannel = supabase
+    .channel(`items:${props.family.id}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'items',
+        filter: `family_id=eq.${props.family.id}`,
+      },
+      (payload) => {
+        if (payload.eventType === 'INSERT') {
+          const nextItem = payload.new as ShoppingItemModel
+          if (!items.value.some((i) => i.id === nextItem.id)) {
+            items.value = [nextItem, ...items.value]
+          }
+          return
+        }
+
+        if (payload.eventType === 'UPDATE') {
+          const nextItem = payload.new as ShoppingItemModel
+          items.value = items.value.map((item) => (item.id === nextItem.id ? nextItem : item))
+          return
+        }
+
+        if (payload.eventType === 'DELETE') {
+          const removedItem = payload.old as ShoppingItemModel
+          items.value = items.value.filter((item) => item.id !== removedItem.id)
+        }
+      },
+    )
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        listError.value = ''
+        void pullLatestItemsSilently()
+        return
+      }
+
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        scheduleItemsReconnect()
+      }
+    })
+}
+
 async function loadItems() {
   loadingItems.value = true
   listError.value = ''
+
+  const hasMembership = await ensureMembership()
+  if (!hasMembership) {
+    loadingItems.value = false
+    return
+  }
 
   const response = await supabase
     .from('items')
@@ -75,6 +199,9 @@ async function addItem() {
   listError.value = ''
 
   try {
+    const hasMembership = await ensureMembership()
+    if (!hasMembership) return
+
     // Insert directly from the client because Supabase is the only backend layer in this app.
     const response = await supabase
       .from('items')
@@ -95,7 +222,13 @@ async function addItem() {
       throw response.error ?? new Error('Unable to add item.')
     }
 
-    items.value = [response.data as ShoppingItemModel, ...items.value]
+    const createdItem = response.data as ShoppingItemModel
+    if (items.value.some((item) => item.id === createdItem.id)) {
+      items.value = items.value.map((item) => (item.id === createdItem.id ? createdItem : item))
+    } else {
+      items.value = [createdItem, ...items.value]
+    }
+
     resetComposer()
   } catch (error) {
     listError.value = error instanceof Error ? error.message : 'Unable to add item.'
@@ -107,6 +240,12 @@ async function addItem() {
 async function toggleItem(item: ShoppingItemModel) {
   activeItemId.value = item.id
   listError.value = ''
+
+  const hasMembership = await ensureMembership()
+  if (!hasMembership) {
+    activeItemId.value = null
+    return
+  }
 
   const response = await supabase
     .from('items')
@@ -130,6 +269,12 @@ async function deleteItem(itemId: string) {
   activeItemId.value = itemId
   listError.value = ''
 
+  const hasMembership = await ensureMembership()
+  if (!hasMembership) {
+    activeItemId.value = null
+    return
+  }
+
   const response = await supabase.from('items').delete().eq('id', itemId)
 
   if (response.error) {
@@ -145,10 +290,47 @@ async function deleteItem(itemId: string) {
 watch(
   () => props.family.id,
   () => {
+    startItemsSubscription()
     void loadItems()
   },
   { immediate: true },
 )
+
+onMounted(() => {
+  membershipCheckTimer = window.setInterval(() => {
+    void verifyMembershipSilently()
+  }, 5000)
+
+  // Heartbeat fallback for cases where a mobile websocket silently stalls.
+  syncRecoveryTimer = window.setInterval(() => {
+    if (document.visibilityState === 'visible') {
+      void pullLatestItemsSilently()
+    }
+  }, 20000)
+
+  document.addEventListener('visibilitychange', pullLatestItemsSilently)
+})
+
+onBeforeUnmount(() => {
+  void stopItemsSubscription()
+
+  if (itemsReconnectTimer !== null) {
+    window.clearTimeout(itemsReconnectTimer)
+    itemsReconnectTimer = null
+  }
+
+  if (membershipCheckTimer !== null) {
+    window.clearInterval(membershipCheckTimer)
+    membershipCheckTimer = null
+  }
+
+  if (syncRecoveryTimer !== null) {
+    window.clearInterval(syncRecoveryTimer)
+    syncRecoveryTimer = null
+  }
+
+  document.removeEventListener('visibilitychange', pullLatestItemsSilently)
+})
 </script>
 
 <template>

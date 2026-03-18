@@ -1,8 +1,48 @@
 <script setup lang="ts">
-import { SignIn, useUser } from '@clerk/vue'
+import { onBeforeUnmount, onMounted, watch } from 'vue'
+import { SignIn, useSession, useUser } from '@clerk/vue'
 import Dashboard from './pages/Dashboard.vue'
+import { setSupabaseAccessTokenGetter } from './lib/supabase.js'
+import { supabase } from './lib/supabase.js'
 
 const { isLoaded, isSignedIn } = useUser()
+const { session } = useSession()
+let realtimeAuthTimer: number | null = null
+
+async function refreshRealtimeAuth() {
+  const token = await session.value?.getToken()
+  supabase.realtime.setAuth(token ?? null)
+}
+
+watch(
+  session,
+  (nextSession) => {
+    // Always fetch a fresh Clerk token per request to avoid stale JWTs.
+    setSupabaseAccessTokenGetter(async () => nextSession?.getToken() ?? null)
+    void refreshRealtimeAuth()
+  },
+  { immediate: true },
+)
+
+onMounted(() => {
+  // Keep realtime websocket auth fresh on long-lived mobile sessions.
+  realtimeAuthTimer = window.setInterval(() => {
+    void refreshRealtimeAuth()
+  }, 55_000)
+
+  document.addEventListener('visibilitychange', refreshRealtimeAuth)
+})
+
+onBeforeUnmount(() => {
+  if (realtimeAuthTimer !== null) {
+    window.clearInterval(realtimeAuthTimer)
+    realtimeAuthTimer = null
+  }
+
+  document.removeEventListener('visibilitychange', refreshRealtimeAuth)
+  setSupabaseAccessTokenGetter(async () => null)
+  supabase.realtime.setAuth(null)
+})
 </script>
 
 <template>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { UserButton, useUser } from '@clerk/vue'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 import FamilySetup from '../components/FamilySetup.vue'
 import ShoppingList from '../components/ShoppingList.vue'
 import SettingsModal from '../components/SettingsModal.vue'
@@ -30,6 +31,22 @@ const showMembers = ref(false)
 const pendingKick = ref<FamilyMember | null>(null)
 const kickLoading = ref(false)
 const kickError = ref('')
+const membershipChannel = ref<RealtimeChannel | null>(null)
+const familyChannel = ref<RealtimeChannel | null>(null)
+let membershipReconnectTimer: number | null = null
+let familyReconnectTimer: number | null = null
+let familySyncTimer: number | null = null
+const suppressRemovedNoticeUntil = ref(0)
+const selfLeftFlowActive = ref(false)
+const loadFamilyRequestId = ref(0)
+
+function shouldSuppressRemovedNotice() {
+  return selfLeftFlowActive.value || Date.now() < suppressRemovedNoticeUntil.value
+}
+
+function suppressRemovedNotice(durationMs = 8000) {
+  suppressRemovedNoticeUntil.value = Date.now() + durationMs
+}
 
 function formatJoinDate(value: string) {
   return new Date(value).toLocaleDateString(undefined, {
@@ -101,6 +118,7 @@ async function confirmKick() {
     .delete()
     .eq('family_id', family.value.id)
     .eq('user_id', memberUserId)
+    .select('id')
 
   if (response.error) {
     kickError.value = response.error.message
@@ -108,13 +126,36 @@ async function confirmKick() {
     return
   }
 
-  familyMembers.value = familyMembers.value.filter((member) => member.user_id !== memberUserId)
+  if (!response.data?.length) {
+    kickError.value = 'This member could not be removed. Check your Supabase policies for family_members deletes.'
+    kickLoading.value = false
+    return
+  }
+
+  try {
+    familyMembers.value = await fetchFamilyMembers(family.value.id)
+  } catch (membersError) {
+    kickError.value = membersError instanceof Error ? membersError.message : 'Member was removed, but the list could not be refreshed.'
+    kickLoading.value = false
+    return
+  }
+
   pendingKick.value = null
   kickLoading.value = false
 }
 
 // Resolve the Clerk user into a family record before choosing between setup and list views.
 async function loadFamily(nextUserId: string) {
+  const requestId = ++loadFamilyRequestId.value
+
+  if (selfLeftFlowActive.value) {
+    loadingFamily.value = false
+    family.value = null
+    familyMembers.value = []
+    membershipRole.value = 'member'
+    return
+  }
+
   loadingFamily.value = true
   errorMessage.value = ''
 
@@ -123,6 +164,10 @@ async function loadFamily(nextUserId: string) {
     .select('id, family_id, user_id, role, joined_at')
     .eq('user_id', nextUserId)
     .maybeSingle()
+
+  if (requestId !== loadFamilyRequestId.value || selfLeftFlowActive.value) {
+    return
+  }
 
   if (membershipResponse.error) {
     errorMessage.value = membershipResponse.error.message
@@ -148,6 +193,10 @@ async function loadFamily(nextUserId: string) {
     .eq('id', membership.family_id)
     .maybeSingle()
 
+  if (requestId !== loadFamilyRequestId.value || selfLeftFlowActive.value) {
+    return
+  }
+
   if (familyResponse.error) {
     errorMessage.value = familyResponse.error.message
     family.value = null
@@ -160,10 +209,18 @@ async function loadFamily(nextUserId: string) {
   try {
     members = await fetchFamilyMembers(membership.family_id)
   } catch (membersError) {
+    if (requestId !== loadFamilyRequestId.value || selfLeftFlowActive.value) {
+      return
+    }
+
     errorMessage.value = membersError instanceof Error ? membersError.message : 'Unable to load members.'
     family.value = null
     familyMembers.value = []
     loadingFamily.value = false
+    return
+  }
+
+  if (requestId !== loadFamilyRequestId.value || selfLeftFlowActive.value) {
     return
   }
 
@@ -205,10 +262,170 @@ async function syncSelfProfile(selfUserId: string, familyId: string) {
   }
 }
 
+async function stopMembershipSubscription() {
+  if (!membershipChannel.value) return
+
+  await supabase.removeChannel(membershipChannel.value)
+  membershipChannel.value = null
+}
+
+async function stopFamilySubscription() {
+  if (!familyChannel.value) return
+
+  await supabase.removeChannel(familyChannel.value)
+  familyChannel.value = null
+}
+
+function scheduleMembershipReconnect(nextUserId: string) {
+  if (membershipReconnectTimer !== null) return
+
+  membershipReconnectTimer = window.setTimeout(() => {
+    membershipReconnectTimer = null
+    startMembershipSubscription(nextUserId)
+  }, 1500)
+}
+
+function scheduleFamilyReconnect(familyId: string) {
+  if (familyReconnectTimer !== null) return
+
+  familyReconnectTimer = window.setTimeout(() => {
+    familyReconnectTimer = null
+    startFamilySubscription(familyId)
+    void refreshFamilyStateSilently(familyId)
+  }, 1500)
+}
+
+async function refreshFamilyStateSilently(familyId: string) {
+  const familyResponse = await supabase
+    .from('families')
+    .select('id, name, invite_code, created_at')
+    .eq('id', familyId)
+    .maybeSingle()
+
+  if (!familyResponse.error) {
+    const nextFamily = familyResponse.data as Family | null
+    // During token refresh/reconnect windows, RLS can briefly return no row.
+    // Only hard-clear on explicit realtime DELETE events, not silent refresh.
+    if (nextFamily) {
+      family.value = nextFamily
+    }
+  }
+
+  try {
+    familyMembers.value = await fetchFamilyMembers(familyId)
+    const selfMembership = familyMembers.value.find((m) => m.user_id === userId.value)
+    if (!selfMembership) return
+    membershipRole.value = selfMembership.role || 'member'
+  } catch {
+    // Ignore transient refresh errors; realtime and next interval will retry.
+  }
+}
+
+function startFamilySubscription(familyId: string) {
+  if (selfLeftFlowActive.value) return
+
+  void stopFamilySubscription()
+
+  familyChannel.value = supabase
+    .channel(`family:${familyId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'family_members',
+        filter: `family_id=eq.${familyId}`,
+      },
+      async (payload) => {
+        // If this user's own membership row is deleted, clear immediately.
+        if (payload.eventType === 'DELETE') {
+          const removed = payload.old as FamilyMember
+          if (removed.user_id === userId.value) {
+            handleMembershipRevoked()
+            return
+          }
+        }
+
+        try {
+          familyMembers.value = await fetchFamilyMembers(familyId)
+
+          const selfMembership = familyMembers.value.find((m) => m.user_id === userId.value)
+          if (!selfMembership) return
+
+          membershipRole.value = selfMembership.role || 'member'
+        } catch (membersError) {
+          errorMessage.value = membersError instanceof Error ? membersError.message : 'Unable to refresh family members.'
+        }
+      },
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'families',
+        filter: `id=eq.${familyId}`,
+      },
+      (payload) => {
+        if (payload.eventType === 'DELETE') {
+          errorMessage.value = 'This family was deleted.'
+          handleFamilyCleared()
+          return
+        }
+
+        if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+          family.value = payload.new as Family
+        }
+      },
+    )
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        void refreshFamilyStateSilently(familyId)
+        return
+      }
+
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        scheduleFamilyReconnect(familyId)
+      }
+    })
+}
+
+function startMembershipSubscription(nextUserId: string) {
+  if (selfLeftFlowActive.value) return
+
+  void stopMembershipSubscription()
+
+  membershipChannel.value = supabase
+    .channel(`family-membership:${nextUserId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'family_members',
+        filter: `user_id=eq.${nextUserId}`,
+      },
+      () => {
+        if (!shouldSuppressRemovedNotice()) {
+          errorMessage.value = 'You were removed from this family.'
+        }
+        handleFamilyCleared()
+      },
+    )
+    .subscribe((status) => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        scheduleMembershipReconnect(nextUserId)
+      }
+    })
+}
+
 watch(
   () => user.value?.id,
   (nextUserId) => {
     if (!nextUserId) {
+      selfLeftFlowActive.value = false
+      void stopMembershipSubscription()
+      void stopFamilySubscription()
       loadingFamily.value = false
       family.value = null
       familyMembers.value = []
@@ -216,12 +433,55 @@ watch(
       return
     }
 
+    startMembershipSubscription(nextUserId)
     void loadFamily(nextUserId)
   },
   { immediate: true },
 )
 
+onBeforeUnmount(() => {
+  void stopMembershipSubscription()
+  void stopFamilySubscription()
+
+  if (membershipReconnectTimer !== null) {
+    window.clearTimeout(membershipReconnectTimer)
+    membershipReconnectTimer = null
+  }
+
+  if (familyReconnectTimer !== null) {
+    window.clearTimeout(familyReconnectTimer)
+    familyReconnectTimer = null
+  }
+
+  if (familySyncTimer !== null) {
+    window.clearInterval(familySyncTimer)
+    familySyncTimer = null
+  }
+})
+
+watch(
+  () => family.value?.id,
+  (nextFamilyId) => {
+    if (!nextFamilyId) {
+      void stopFamilySubscription()
+      return
+    }
+
+    startFamilySubscription(nextFamilyId)
+  },
+  { immediate: true },
+)
+
+onMounted(() => {
+  // Heartbeat fallback for stale realtime connections.
+  familySyncTimer = window.setInterval(() => {
+    if (document.visibilityState !== 'visible' || !family.value?.id) return
+    void refreshFamilyStateSilently(family.value.id)
+  }, 20000)
+})
+
 function handleFamilyReady(nextFamily: Family) {
+  selfLeftFlowActive.value = false
   family.value = nextFamily
   membershipRole.value = 'admin'
   errorMessage.value = ''
@@ -232,6 +492,27 @@ function handleFamilyCleared() {
   family.value = null
   familyMembers.value = []
   membershipRole.value = 'member'
+  loadingFamily.value = false
+  showMembers.value = false
+  showSettings.value = false
+  pendingKick.value = null
+}
+
+function handleMembershipRevoked() {
+  if (!shouldSuppressRemovedNotice()) {
+    errorMessage.value = 'You were removed from this family.'
+  }
+  handleFamilyCleared()
+}
+
+function handleSelfLeftFamily() {
+  selfLeftFlowActive.value = true
+  loadFamilyRequestId.value++
+  suppressRemovedNotice()
+  errorMessage.value = ''
+  void stopMembershipSubscription()
+  void stopFamilySubscription()
+  handleFamilyCleared()
 }
 </script>
 
@@ -288,6 +569,7 @@ function handleFamilyCleared() {
         :family="family"
         :user-id="userId"
         :family-members="familyMembers"
+        @membership-revoked="handleMembershipRevoked"
       />
 
       <FamilySetup v-else :user-id="userId" @family-ready="handleFamilyReady" />
@@ -299,7 +581,7 @@ function handleFamilyCleared() {
       :user-id="userId"
       :membership-role="membershipRole"
       @close="showSettings = false"
-      @family-left="handleFamilyCleared"
+      @family-left="handleSelfLeftFamily"
       @family-deleted="handleFamilyCleared"
       @family-updated="(f) => family = f"
     />

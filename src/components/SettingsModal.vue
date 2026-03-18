@@ -16,8 +16,6 @@ const emit = defineEmits<{
   familyUpdated: [family: Family]
 }>()
 
-const actionError = ref('')
-const actionLoading = ref(false)
 const isOpen = ref(false)
 
 onMounted(() => {
@@ -38,14 +36,18 @@ function onModalAfterLeave() {
 const renameVisible = ref(false)
 const nameInput = ref(props.family.name)
 const nameSaving = ref(false)
+const renameError = ref('')
 
 function startEditName() {
   if (props.membershipRole !== 'admin') return
   nameInput.value = props.family.name
+  renameError.value = ''
   renameVisible.value = true
 }
 
 function cancelRename() {
+  if (nameSaving.value) return
+  renameError.value = ''
   renameVisible.value = false
 }
 
@@ -56,7 +58,7 @@ async function saveName() {
     return
   }
   nameSaving.value = true
-  actionError.value = ''
+  renameError.value = ''
   try {
     const res = await supabase
       .from('families')
@@ -68,7 +70,7 @@ async function saveName() {
     emit('familyUpdated', res.data as Family)
     renameVisible.value = false
   } catch (e) {
-    actionError.value = e instanceof Error ? e.message : 'Unable to rename family.'
+    renameError.value = e instanceof Error ? e.message : 'Unable to rename family.'
   } finally {
     nameSaving.value = false
   }
@@ -78,27 +80,43 @@ async function saveName() {
 const confirmVisible = ref(false)
 const confirmTitle = ref('')
 const confirmMessage = ref('')
+const confirmLabel = ref('')
 const confirmDestructive = ref(false)
+const confirmLoading = ref(false)
+const confirmError = ref('')
 let confirmAction: (() => Promise<void>) | null = null
 
-function showConfirm(title: string, message: string, destructive: boolean, action: () => Promise<void>) {
+function showConfirm(title: string, message: string, label: string, destructive: boolean, action: () => Promise<void>) {
   confirmTitle.value = title
   confirmMessage.value = message
+  confirmLabel.value = label
   confirmDestructive.value = destructive
+  confirmLoading.value = false
+  confirmError.value = ''
   confirmAction = action
   confirmVisible.value = true
 }
 
 function cancelConfirm() {
+  if (confirmLoading.value) return
   confirmVisible.value = false
+  confirmError.value = ''
   confirmAction = null
 }
 
 async function executeConfirm() {
   if (!confirmAction) return
-  confirmVisible.value = false
-  await confirmAction()
-  confirmAction = null
+  confirmLoading.value = true
+  confirmError.value = ''
+  try {
+    await confirmAction()
+    confirmVisible.value = false
+    confirmAction = null
+  } catch (e) {
+    confirmError.value = e instanceof Error ? e.message : `Unable to ${confirmLabel.value.toLowerCase()}.`
+  } finally {
+    confirmLoading.value = false
+  }
 }
 
 function leaveFamily() {
@@ -106,23 +124,16 @@ function leaveFamily() {
   showConfirm(
     'Leave Family',
     'You can rejoin later with the invite code.',
-    false,
+    'Leave',
+    true,
     async () => {
-      actionLoading.value = true
-      actionError.value = ''
-      try {
-        const res = await supabase
-          .from('family_members')
-          .delete()
-          .eq('family_id', props.family.id)
-          .eq('user_id', props.userId)
-        if (res.error) throw res.error
-        emit('familyLeft')
-      } catch (e) {
-        actionError.value = e instanceof Error ? e.message : 'Unable to leave family.'
-      } finally {
-        actionLoading.value = false
-      }
+      const res = await supabase
+        .from('family_members')
+        .delete()
+        .eq('family_id', props.family.id)
+        .eq('user_id', props.userId)
+      if (res.error) throw res.error
+      emit('familyLeft')
     }
   )
 }
@@ -132,23 +143,16 @@ function deleteFamily() {
   showConfirm(
     'Delete Family',
     'This will delete the family and all items for everyone. This cannot be undone.',
+    'Delete',
     true,
     async () => {
-      actionLoading.value = true
-      actionError.value = ''
-      try {
-        const r1 = await supabase.from('items').delete().eq('family_id', props.family.id)
-        if (r1.error) throw r1.error
-        const r2 = await supabase.from('family_members').delete().eq('family_id', props.family.id)
-        if (r2.error) throw r2.error
-        const r3 = await supabase.from('families').delete().eq('id', props.family.id)
-        if (r3.error) throw r3.error
-        emit('familyDeleted')
-      } catch (e) {
-        actionError.value = e instanceof Error ? e.message : 'Unable to delete family.'
-      } finally {
-        actionLoading.value = false
-      }
+      const r1 = await supabase.from('items').delete().eq('family_id', props.family.id)
+      if (r1.error) throw r1.error
+      const r2 = await supabase.from('family_members').delete().eq('family_id', props.family.id)
+      if (r2.error) throw r2.error
+      const r3 = await supabase.from('families').delete().eq('id', props.family.id)
+      if (r3.error) throw r3.error
+      emit('familyDeleted')
     }
   )
 }
@@ -203,8 +207,8 @@ function copyInviteCode() {
             <div class="group">
               <button
                 type="button"
-                class="group-row group-row--action"
-                :disabled="actionLoading || membershipRole === 'admin'"
+                class="group-row group-row--action group-row--danger"
+                :disabled="membershipRole === 'admin'"
                 @click="leaveFamily"
               >
                 Leave Family
@@ -213,14 +217,12 @@ function copyInviteCode() {
                 v-if="membershipRole === 'admin'"
                 type="button"
                 class="group-row group-row--action group-row--danger"
-                :disabled="actionLoading"
                 @click="deleteFamily"
               >
                 Delete Family
               </button>
             </div>
             <p v-if="membershipRole === 'admin'" class="section-hint">Admins can't leave. Delete the family instead.</p>
-            <p v-if="actionError" class="section-error">{{ actionError }}</p>
           </section>
         </div>
       </div>
@@ -228,23 +230,23 @@ function copyInviteCode() {
 
     <!-- Confirm dialog -->
     <Transition name="confirm">
-      <div v-if="confirmVisible" class="confirm-overlay" @click.self="cancelConfirm">
-        <div class="confirm-dialog">
-          <div class="confirm-body">
-            <h3 class="confirm-title">{{ confirmTitle }}</h3>
-            <p class="confirm-message">{{ confirmMessage }}</p>
-          </div>
-          <div class="confirm-actions">
-            <button type="button" class="confirm-btn confirm-btn--cancel" @click="cancelConfirm">
+      <div v-if="confirmVisible" class="prompt-overlay" @click.self="cancelConfirm">
+        <div class="prompt-dialog">
+          <h4 class="prompt-title">{{ confirmTitle }}</h4>
+          <p class="prompt-message">{{ confirmMessage }}</p>
+          <p v-if="confirmError" class="prompt-error">{{ confirmError }}</p>
+          <div class="prompt-actions">
+            <button type="button" class="prompt-btn-secondary" :disabled="confirmLoading" @click="cancelConfirm">
               Cancel
             </button>
             <button
               type="button"
-              class="confirm-btn"
-              :class="{ 'confirm-btn--danger': confirmDestructive }"
+              class="prompt-btn-primary"
+              :class="{ 'prompt-btn-danger': confirmDestructive }"
+              :disabled="confirmLoading"
               @click="executeConfirm"
             >
-              {{ confirmTitle }}
+              {{ confirmLoading ? (confirmLabel === 'Leave' ? 'Leaving...' : confirmLabel === 'Delete' ? 'Deleting...' : `${confirmLabel}ing...`) : confirmLabel }}
             </button>
           </div>
         </div>
@@ -253,11 +255,11 @@ function copyInviteCode() {
 
     <!-- Rename modal -->
     <Transition name="confirm">
-      <div v-if="renameVisible" class="confirm-overlay" @click.self="cancelRename">
-        <div class="confirm-dialog">
-          <div class="confirm-body">
-            <h3 class="confirm-title">Rename Family</h3>
-            <form @submit.prevent="saveName">
+      <div v-if="renameVisible" class="prompt-overlay" @click.self="cancelRename">
+        <div class="prompt-dialog">
+          <h4 class="prompt-title">Rename Family</h4>
+          <p class="prompt-message">Choose a new name for everyone in this family.</p>
+          <form class="rename-form" @submit.prevent="saveName">
               <input
                 v-model="nameInput"
                 class="rename-input"
@@ -267,14 +269,14 @@ function copyInviteCode() {
                 :disabled="nameSaving"
               />
             </form>
-          </div>
-          <div class="confirm-actions">
-            <button type="button" class="confirm-btn confirm-btn--cancel rename-cancel" @click="cancelRename">
+          <p v-if="renameError" class="prompt-error">{{ renameError }}</p>
+          <div class="prompt-actions">
+            <button type="button" class="prompt-btn-secondary" :disabled="nameSaving" @click="cancelRename">
               Cancel
             </button>
             <button
               type="button"
-              class="confirm-btn"
+              class="prompt-btn-primary"
               :disabled="nameSaving || !nameInput.trim()"
               @click="saveName"
             >
@@ -352,12 +354,6 @@ function copyInviteCode() {
   color: #8e8e93;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-}
-
-.section-error {
-  padding: 8px 4px 0;
-  font-size: 0.8125rem;
-  color: #ff3b30;
 }
 
 .section-hint {
@@ -458,17 +454,20 @@ function copyInviteCode() {
   width: 100%;
   margin-top: 10px;
   padding: 10px 12px;
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
   border: 1.5px solid #d1d5db;
   border-radius: 10px;
   outline: none;
   font-family: inherit;
-  background: #f6f8f7;
-  text-align: center;
+  background: #f8fafc;
 }
 
 .rename-input:focus {
   border-color: #30e88c;
+}
+
+.rename-form {
+  margin-top: 10px;
 }
 
 /* --- Action rows --- */
@@ -539,92 +538,85 @@ function copyInviteCode() {
 }
 
 /* --- Confirm dialog --- */
-.confirm-overlay {
+.prompt-overlay {
   position: fixed;
   inset: 0;
   z-index: 200;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
-  background: rgba(0, 0, 0, 0.3);
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.35);
 }
 
-.confirm-dialog {
+.prompt-dialog {
   width: 100%;
-  max-width: 270px;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  max-width: 320px;
   border-radius: 14px;
-  overflow: hidden;
-  text-align: center;
+  background: #fff;
+  padding: 16px;
 }
 
-.confirm-body {
-  padding: 20px 16px 16px;
-}
-
-.confirm-title {
-  font-size: 1.0625rem;
-  font-weight: 600;
+.prompt-title {
+  font-size: 1rem;
+  font-weight: 700;
   color: #1c1c1e;
-  margin-bottom: 4px;
 }
 
-.confirm-message {
-  font-size: 0.8125rem;
+.prompt-message {
+  margin-top: 6px;
+  font-size: 0.875rem;
   color: #8e8e93;
   line-height: 1.4;
 }
 
-.confirm-actions {
-  display: flex;
-  border-top: 0.5px solid rgba(0, 0, 0, 0.1);
-}
-
-.confirm-btn {
-  flex: 1;
-  padding: 12px 8px;
-  font-size: 1.0625rem;
-  font-weight: 500;
-  color: #1a7a48;
-  text-align: center;
-}
-
-.confirm-btn + .confirm-btn {
-  border-left: 0.5px solid rgba(0, 0, 0, 0.1);
-}
-
-.confirm-btn--cancel {
-  font-weight: inherit;
-}
-
-.rename-cancel {
-  color: #8e8e93;
-  font-weight: inherit;
-}
-
-.confirm-btn--danger {
+.prompt-error {
+  margin-top: 8px;
+  font-size: 0.8125rem;
   color: #ff3b30;
-  font-weight: inherit;
 }
 
-.confirm-btn:active {
-  background: rgba(0, 0, 0, 0.04);
+.prompt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.prompt-btn-secondary,
+.prompt-btn-primary {
+  font-size: 0.875rem;
+}
+
+.prompt-btn-secondary {
+  color: #8e8e93;
+}
+
+.prompt-btn-primary {
+  font-weight: 600;
+  color: #1a7a48;
+}
+
+.prompt-btn-danger {
+  color: #ff3b30;
+}
+
+.prompt-btn-secondary:disabled,
+.prompt-btn-primary:disabled {
+  opacity: 0.5;
 }
 
 /* Confirm transitions */
 .confirm-enter-active,
 .confirm-leave-active {
-  transition: opacity 0.2s ease;
+  transition: opacity 0.18s ease;
 }
 
-.confirm-enter-active .confirm-dialog {
-  animation: confirmPop 0.25s cubic-bezier(0.32, 0.72, 0, 1) both;
+.confirm-enter-active .prompt-dialog {
+  animation: confirmPop 0.2s cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 
-.confirm-leave-active .confirm-dialog {
+.confirm-leave-active .prompt-dialog {
   animation: confirmPop 0.18s ease-in reverse both;
 }
 
