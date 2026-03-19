@@ -5,7 +5,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import FamilySetup from '../components/FamilySetup.vue'
 import ShoppingList from '../components/ShoppingList.vue'
 import SettingsModal from '../components/SettingsModal.vue'
-import { supabase } from '../lib/supabase.js'
+import { supabase } from '../lib/supabase'
 import type { Family, FamilyMember } from '../types'
 
 const { user } = useUser()
@@ -17,10 +17,14 @@ const loadingFamily = ref(true)
 const errorMessage = ref('')
 
 const userId = computed(() => user.value?.id ?? '')
-const pageTitle = computed(() => family.value?.name ?? 'Set Up Your Family')
+const hasActiveMembership = computed(() => {
+  if (!family.value) return false
+  return familyMembers.value.some((member) => member.user_id === userId.value)
+})
+const pageTitle = computed(() => (hasActiveMembership.value ? family.value?.name : null) ?? 'Set Up Your Family')
 const memberCount = computed(() => familyMembers.value.length)
 const memberCountLabel = computed(() => {
-  if (!family.value) return ''
+  if (!hasActiveMembership.value) return ''
   return `${memberCount.value} member${memberCount.value === 1 ? '' : 's'}`
 })
 const visibleMembers = computed(() => familyMembers.value.slice(0, 4))
@@ -38,10 +42,17 @@ let familyReconnectTimer: number | null = null
 let familySyncTimer: number | null = null
 const suppressRemovedNoticeUntil = ref(0)
 const selfLeftFlowActive = ref(false)
+const removedFlowActive = ref(false)
 const loadFamilyRequestId = ref(0)
 
+function sleep(ms: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms)
+  })
+}
+
 function shouldSuppressRemovedNotice() {
-  return selfLeftFlowActive.value || Date.now() < suppressRemovedNoticeUntil.value
+  return selfLeftFlowActive.value || removedFlowActive.value || Date.now() < suppressRemovedNoticeUntil.value
 }
 
 function suppressRemovedNotice(durationMs = 8000) {
@@ -148,7 +159,7 @@ async function confirmKick() {
 async function loadFamily(nextUserId: string) {
   const requestId = ++loadFamilyRequestId.value
 
-  if (selfLeftFlowActive.value) {
+  if (selfLeftFlowActive.value || removedFlowActive.value) {
     loadingFamily.value = false
     family.value = null
     familyMembers.value = []
@@ -314,15 +325,42 @@ async function refreshFamilyStateSilently(familyId: string) {
   try {
     familyMembers.value = await fetchFamilyMembers(familyId)
     const selfMembership = familyMembers.value.find((m) => m.user_id === userId.value)
-    if (!selfMembership) return
+    if (!selfMembership) {
+      const missingConfirmed = await confirmMembershipMissing(familyId)
+      if (missingConfirmed) {
+        handleMembershipRevoked()
+      }
+      return
+    }
     membershipRole.value = selfMembership.role || 'member'
   } catch {
     // Ignore transient refresh errors; realtime and next interval will retry.
   }
 }
 
+async function confirmMembershipMissing(familyId: string) {
+  // Double-check to avoid false positives during short auth/reconnect windows.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const membershipResponse = await supabase
+      .from('family_members')
+      .select('id')
+      .eq('family_id', familyId)
+      .eq('user_id', userId.value)
+      .maybeSingle()
+
+    if (membershipResponse.error) return false
+    if (membershipResponse.data) return false
+
+    if (attempt === 0) {
+      await sleep(400)
+    }
+  }
+
+  return true
+}
+
 function startFamilySubscription(familyId: string) {
-  if (selfLeftFlowActive.value) return
+  if (selfLeftFlowActive.value || removedFlowActive.value) return
 
   void stopFamilySubscription()
 
@@ -350,7 +388,13 @@ function startFamilySubscription(familyId: string) {
           familyMembers.value = await fetchFamilyMembers(familyId)
 
           const selfMembership = familyMembers.value.find((m) => m.user_id === userId.value)
-          if (!selfMembership) return
+          if (!selfMembership) {
+            const missingConfirmed = await confirmMembershipMissing(familyId)
+            if (missingConfirmed) {
+              handleMembershipRevoked()
+            }
+            return
+          }
 
           membershipRole.value = selfMembership.role || 'member'
         } catch (membersError) {
@@ -367,12 +411,6 @@ function startFamilySubscription(familyId: string) {
         filter: `id=eq.${familyId}`,
       },
       (payload) => {
-        if (payload.eventType === 'DELETE') {
-          errorMessage.value = 'This family was deleted.'
-          handleFamilyCleared()
-          return
-        }
-
         if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
           family.value = payload.new as Family
         }
@@ -391,7 +429,7 @@ function startFamilySubscription(familyId: string) {
 }
 
 function startMembershipSubscription(nextUserId: string) {
-  if (selfLeftFlowActive.value) return
+  if (selfLeftFlowActive.value || removedFlowActive.value) return
 
   void stopMembershipSubscription()
 
@@ -406,10 +444,7 @@ function startMembershipSubscription(nextUserId: string) {
         filter: `user_id=eq.${nextUserId}`,
       },
       () => {
-        if (!shouldSuppressRemovedNotice()) {
-          errorMessage.value = 'You were removed from this family.'
-        }
-        handleFamilyCleared()
+        handleMembershipRevoked()
       },
     )
     .subscribe((status) => {
@@ -424,6 +459,7 @@ watch(
   (nextUserId) => {
     if (!nextUserId) {
       selfLeftFlowActive.value = false
+      removedFlowActive.value = false
       void stopMembershipSubscription()
       void stopFamilySubscription()
       loadingFamily.value = false
@@ -482,6 +518,7 @@ onMounted(() => {
 
 function handleFamilyReady(nextFamily: Family) {
   selfLeftFlowActive.value = false
+  removedFlowActive.value = false
   family.value = nextFamily
   membershipRole.value = 'admin'
   errorMessage.value = ''
@@ -499,20 +536,35 @@ function handleFamilyCleared() {
 }
 
 function handleMembershipRevoked() {
+  removedFlowActive.value = true
+  loadFamilyRequestId.value++
   if (!shouldSuppressRemovedNotice()) {
     errorMessage.value = 'You were removed from this family.'
   }
+  void stopMembershipSubscription()
+  void stopFamilySubscription()
   handleFamilyCleared()
 }
 
 function handleSelfLeftFamily() {
   selfLeftFlowActive.value = true
+  removedFlowActive.value = false
   loadFamilyRequestId.value++
   suppressRemovedNotice()
   errorMessage.value = ''
   void stopMembershipSubscription()
   void stopFamilySubscription()
   handleFamilyCleared()
+}
+
+function handleTryAgain() {
+  if (removedFlowActive.value) {
+    errorMessage.value = ''
+    handleFamilyCleared()
+    return
+  }
+
+  void loadFamily(userId.value)
 }
 </script>
 
@@ -523,7 +575,7 @@ function handleSelfLeftFamily() {
         <div class="nav-title-row">
           <h1 class="nav-title">{{ pageTitle }}</h1>
           <button
-            v-if="family && memberCount > 0"
+            v-if="hasActiveMembership && memberCount > 0"
             type="button"
             class="member-stack-btn"
             aria-label="Open family members"
@@ -541,10 +593,10 @@ function handleSelfLeftFamily() {
             </div>
           </button>
         </div>
-        <p v-if="family" class="nav-subtitle">{{ memberCountLabel }}</p>
+        <p v-if="hasActiveMembership" class="nav-subtitle">{{ memberCountLabel }}</p>
       </div>
       <div class="nav-actions">
-        <button v-if="family" type="button" class="nav-icon-btn" @click="showSettings = true" aria-label="Settings">
+        <button v-if="hasActiveMembership" type="button" class="nav-icon-btn" @click="showSettings = true" aria-label="Settings">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
         <UserButton />
@@ -558,13 +610,13 @@ function handleSelfLeftFamily() {
 
       <div v-else-if="errorMessage" class="center-message">
         <p class="error-text">{{ errorMessage }}</p>
-        <button type="button" class="btn btn--primary btn--sm" @click="loadFamily(userId)">
+        <button type="button" class="btn btn--primary btn--sm" @click="handleTryAgain">
           Try again
         </button>
       </div>
 
       <ShoppingList
-        v-else-if="family"
+        v-else-if="hasActiveMembership && family"
         :key="family.id"
         :family="family"
         :user-id="userId"
@@ -576,7 +628,7 @@ function handleSelfLeftFamily() {
     </main>
 
     <SettingsModal
-      v-if="showSettings && family"
+      v-if="showSettings && hasActiveMembership && family"
       :family="family"
       :user-id="userId"
       :membership-role="membershipRole"
@@ -587,7 +639,7 @@ function handleSelfLeftFamily() {
     />
 
     <Transition name="members-pop">
-      <div v-if="showMembers && family" class="members-overlay" @click.self="showMembers = false">
+      <div v-if="showMembers && hasActiveMembership && family" class="members-overlay" @click.self="showMembers = false">
         <div class="members-sheet">
           <div class="members-header">
             <h3>Family Members</h3>

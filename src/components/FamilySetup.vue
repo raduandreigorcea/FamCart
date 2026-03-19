@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useUser } from '@clerk/vue'
-import { supabase } from '../lib/supabase.js'
+import { supabase } from '../lib/supabase'
 import type { Family } from '../types'
 
 const props = defineProps<{
@@ -34,6 +34,20 @@ function getProfileDefaults() {
   const imageUrl = user.value?.imageUrl || null
 
   return { displayName, imageUrl }
+}
+
+function createInviteCode() {
+  // Some Android WebViews do not implement crypto.randomUUID().
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID()
+  }
+
+  // RFC4122-ish fallback for environments without randomUUID support.
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.floor(Math.random() * 16)
+    const v = c === 'x' ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
 }
 
 async function insertMemberWithProfile(
@@ -79,7 +93,7 @@ async function createFamily() {
   errorMessage.value = ''
 
   try {
-    const nextInviteCode = crypto.randomUUID()
+    const nextInviteCode = createInviteCode()
 
     // Keep the create flow client-side and sequential since this project intentionally has no custom backend.
     const familyResponse = await supabase

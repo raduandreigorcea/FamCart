@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { supabase } from '../lib/supabase.js'
+import { supabase } from '../lib/supabase'
 import type { Family } from '../types'
 
 const props = defineProps<{

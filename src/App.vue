@@ -2,8 +2,8 @@
 import { onBeforeUnmount, onMounted, watch } from 'vue'
 import { SignIn, useSession, useUser } from '@clerk/vue'
 import Dashboard from './pages/Dashboard.vue'
-import { setSupabaseAccessTokenGetter } from './lib/supabase.js'
-import { supabase } from './lib/supabase.js'
+import { setSupabaseAccessTokenGetter } from './lib/supabase'
+import { supabase } from './lib/supabase'
 
 const { isLoaded, isSignedIn } = useUser()
 const { session } = useSession()

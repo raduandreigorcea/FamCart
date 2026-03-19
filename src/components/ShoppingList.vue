@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import ProductSearch from './ProductSearch.vue'
 import ShoppingItem from './ShoppingItem.vue'
-import { supabase } from '../lib/supabase.js'
+import { supabase } from '../lib/supabase'
 import type { Family, FamilyMember, ProductSuggestion, ShoppingItem as ShoppingItemModel } from '../types'
 
 const props = defineProps<{
