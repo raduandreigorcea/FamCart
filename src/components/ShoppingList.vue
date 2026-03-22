@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { RealtimeChannel } from '@supabase/supabase-js'
+import BarcodeScanner from './BarcodeScanner.vue'
 import ProductSearch from './ProductSearch.vue'
 import ShoppingItem from './ShoppingItem.vue'
+import { findStoredProductByBarcode, saveProductToCatalog } from '../lib/productCatalog'
+import { getProductEmoji } from '../lib/productEmoji'
 import { supabase } from '../lib/supabase'
 import type { Family, FamilyMember, ProductSuggestion, ShoppingItem as ShoppingItemModel } from '../types'
 
@@ -24,10 +27,15 @@ const draftQty = ref(1)
 const selectedProduct = ref<ProductSuggestion | null>(null)
 const isAdding = ref(false)
 const activeItemId = ref<string | null>(null)
+const showScanner = ref(false)
+const pendingBarcode = ref('')
+const composerHint = ref('Search your catalog, scan a barcode, or type a custom product.')
 let membershipCheckTimer: number | null = null
 let itemsChannel: RealtimeChannel | null = null
 let itemsReconnectTimer: number | null = null
 let syncRecoveryTimer: number | null = null
+
+const canAddItem = computed(() => draftName.value.trim().length > 0 && !isAdding.value)
 
 function getMemberName(userId: string): string {
   const member = props.familyMembers?.find((m) => m.user_id === userId)
@@ -49,6 +57,38 @@ function resetComposer() {
   draftName.value = ''
   draftQty.value = 1
   selectedProduct.value = null
+  pendingBarcode.value = ''
+  composerHint.value = 'Search your catalog, scan a barcode, or type a custom product.'
+}
+
+function clearPendingBarcode() {
+  pendingBarcode.value = ''
+  composerHint.value = draftName.value.trim()
+    ? 'You can add this as a custom product if it is not in the catalog.'
+    : 'Search your catalog, scan a barcode, or type a custom product.'
+}
+
+async function handleBarcodeScanned(barcode: string) {
+  showScanner.value = false
+  listError.value = ''
+  pendingBarcode.value = barcode
+
+  try {
+    const matchedProduct = await findStoredProductByBarcode(barcode)
+
+    if (matchedProduct) {
+      selectedProduct.value = matchedProduct
+      draftName.value = matchedProduct.product_name
+      composerHint.value = `Matched barcode ${barcode} from your catalog.`
+      return
+    }
+
+    selectedProduct.value = null
+    draftName.value = ''
+    composerHint.value = `Barcode ${barcode} is new. Name the product and add it to save it in your catalog.`
+  } catch (error) {
+    listError.value = error instanceof Error ? error.message : 'Unable to process barcode.'
+  }
 }
 
 function handleMembershipRevoked() {
@@ -229,6 +269,14 @@ async function addItem() {
       items.value = [createdItem, ...items.value]
     }
 
+    void saveProductToCatalog({
+      product_name: nextName,
+      brand: selectedProduct.value?.brand || '',
+      image_url: selectedProduct.value?.image_url || '',
+      barcode: selectedProduct.value?.barcode || pendingBarcode.value,
+      created_by: props.userId,
+    })
+
     resetComposer()
   } catch (error) {
     listError.value = error instanceof Error ? error.message : 'Unable to add item.'
@@ -400,35 +448,73 @@ onBeforeUnmount(() => {
 
     <!-- Bottom composer bar -->
     <div class="composer">
-      <ProductSearch v-model="draftName" :disabled="isAdding" @select-product="selectedProduct = $event" />
+      <div class="composer-card">
+        <div class="composer-header"></div>
 
-      <div v-if="selectedProduct" class="composer-preview">
-        <img
-          v-if="selectedProduct.image_url"
-          :src="selectedProduct.image_url"
-          :alt="selectedProduct.product_name"
-        />
-        <div>
-          <strong>{{ selectedProduct.product_name }}</strong>
-          <p class="meta">{{ selectedProduct.brand || 'Unknown brand' }}</p>
+        <div class="composer-input-row">
+          <ProductSearch
+            v-model="draftName"
+            :family-id="props.family.id"
+            :disabled="isAdding"
+            @select-product="selectedProduct = $event"
+          />
+          <button
+            type="button"
+            class="scan-icon-btn"
+            :disabled="isAdding"
+            title="Scan barcode"
+            aria-label="Scan barcode"
+            @click="showScanner = true"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+              <path d="M21 7V5a2 2 0 0 0-2-2h-2" />
+              <path d="M3 17v2a2 2 0 0 0 2 2h2" />
+              <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+              <path d="M8 7v10" />
+              <path d="M12 7v10" />
+              <path d="M16 7v10" />
+            </svg>
+          </button>
+        </div>
+
+        <div v-if="pendingBarcode" class="barcode-pill">
+          <span>Barcode: {{ pendingBarcode }}</span>
+          <button type="button" :disabled="isAdding" @click="clearPendingBarcode">Clear</button>
+        </div>
+
+        <div v-if="selectedProduct" class="composer-preview">
+          <img
+            v-if="selectedProduct.image_url"
+            :src="selectedProduct.image_url"
+            :alt="selectedProduct.product_name"
+          />
+          <div v-else class="composer-preview-emoji">
+            {{ getProductEmoji(selectedProduct.product_name, selectedProduct.brand) }}
+          </div>
+          <div>
+            <strong>{{ selectedProduct.product_name }}</strong>
+            <p class="meta">{{ selectedProduct.brand || 'Unknown brand' }}</p>
+          </div>
+        </div>
+
+        <div class="composer-actions">
+          <div class="qty-stepper">
+            <button type="button" class="qty-btn" :disabled="draftQty <= 1 || isAdding" @click="draftQty--">−</button>
+            <span class="qty-value">{{ draftQty }}</span>
+            <button type="button" class="qty-btn" :disabled="draftQty >= 99 || isAdding" @click="draftQty++">+</button>
+          </div>
+
+          <button type="button" class="btn btn--primary composer-add-btn" :disabled="!canAddItem" @click="addItem">
+            {{ isAdding ? 'Adding...' : 'Add Item' }}
+          </button>
         </div>
       </div>
-
-      <div class="qty-row">
-        <span class="qty-label">Quantity</span>
-        <div class="qty-stepper">
-          <button type="button" class="qty-btn" :disabled="draftQty <= 1 || isAdding" @click="draftQty--">−</button>
-          <span class="qty-value">{{ draftQty }}</span>
-          <button type="button" class="qty-btn" :disabled="draftQty >= 99 || isAdding" @click="draftQty++">+</button>
-        </div>
-      </div>
-
-      <button type="button" class="btn btn--primary btn--full" :disabled="isAdding" @click="addItem">
-        {{ isAdding ? 'Adding...' : 'Add Item' }}
-      </button>
 
       <p v-if="listError" class="section-error">{{ listError }}</p>
     </div>
+
+    <BarcodeScanner :open="showScanner" @close="showScanner = false" @scanned="handleBarcodeScanned" />
   </div>
 </template>
 
@@ -576,20 +662,6 @@ onBeforeUnmount(() => {
 .btn--primary:active { background: #22c974; }
 .btn:disabled { opacity: 0.45; pointer-events: none; }
 
-/* --- Quantity stepper --- */
-.qty-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 2px 4px;
-}
-
-.qty-label {
-  font-size: 0.9375rem;
-  color: #1c1c1e;
-  font-weight: 500;
-}
-
 .qty-stepper {
   display: flex;
   align-items: center;
@@ -652,6 +724,99 @@ onBeforeUnmount(() => {
   border-top: 0.5px solid rgba(0, 0, 0, 0.08);
 }
 
+.composer-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+}
+
+.composer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.composer-header p {
+  margin-top: 0;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+
+.composer-field-label {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.composer-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.composer-input-row :deep(.search) {
+  flex: 1;
+}
+
+.scan-icon-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.06);
+  color: #1a7a48;
+}
+
+.scan-icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.scan-icon-btn:active {
+  background: rgba(15, 23, 42, 0.1);
+}
+
+.scan-icon-btn:disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.barcode-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.05);
+  color: #334155;
+  font-size: 0.8125rem;
+}
+
+.barcode-pill button {
+  color: #1a7a48;
+  font-weight: 700;
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.composer-add-btn {
+  flex: 1;
+}
+
 .composer-preview {
   display: flex;
   align-items: center;
@@ -667,6 +832,17 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   object-fit: cover;
   background: #f2f2f7;
+}
+
+.composer-preview-emoji {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: #f2f2f7;
+  font-size: 1.25rem;
 }
 
 .composer-preview strong,

@@ -28,7 +28,10 @@ export interface ShoppingItem {
 }
 
 export interface ProductSuggestion {
+  id: number
   product_name: string
   brand: string
   image_url: string
+  usage_count: number
+  barcode: string
 }

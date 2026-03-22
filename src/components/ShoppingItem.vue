@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { getProductEmoji } from '../lib/productEmoji'
 import type { ShoppingItem } from '../types'
 
 defineProps<{
@@ -29,7 +30,7 @@ defineEmits<{
     <!-- Product image / placeholder -->
     <div class="row-img-wrap">
       <img v-if="item.image" :src="item.image" :alt="item.name" class="row-img" />
-      <div v-else class="row-img row-img--placeholder">🛍️</div>
+      <div v-else class="row-img row-img--placeholder">{{ getProductEmoji(item.name, item.brand || '') }}</div>
     </div>
 
     <!-- Main text -->

@@ -1,14 +1,20 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { getCachedProductSuggestions, searchStoredProducts } from '../lib/productCatalog'
+import { getProductEmoji } from '../lib/productEmoji'
 import type { ProductSuggestion } from '../types'
 
 const props = withDefaults(
   defineProps<{
     modelValue: string
     disabled?: boolean
+    inputId?: string
+    familyId?: string
   }>(),
   {
     disabled: false,
+    inputId: 'product-search-input',
+    familyId: undefined,
   },
 )
 
@@ -21,8 +27,12 @@ const suggestions = ref<ProductSuggestion[]>([])
 const isLoading = ref(false)
 const skipNextLookup = ref(false)
 
+const hasSearchTerm = computed(() => props.modelValue.trim().length >= 2)
+const showNoResults = computed(() => hasSearchTerm.value && !isLoading.value && suggestions.value.length === 0)
+
 let debounceTimer: ReturnType<typeof window.setTimeout> | null = null
 let activeRequest: AbortController | null = null
+let requestSequence = 0
 
 function clearSuggestions() {
   suggestions.value = []
@@ -42,38 +52,25 @@ function selectSuggestion(product: ProductSuggestion) {
 }
 
 async function fetchSuggestions(query: string) {
+  const currentRequest = ++requestSequence
   activeRequest?.abort()
   activeRequest = new AbortController()
   isLoading.value = true
 
   try {
-    const response = await fetch(
-      `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1`,
-      { signal: activeRequest.signal },
-    )
-
-    const payload = (await response.json()) as {
-      products?: Array<{
-        product_name?: string
-        brands?: string
-        image_url?: string
-      }>
+    const networkSuggestions = await searchStoredProducts(query, props.familyId, activeRequest.signal)
+    if (currentRequest === requestSequence) {
+      suggestions.value = networkSuggestions
     }
-
-    suggestions.value = (payload.products ?? [])
-      .filter((product) => product.product_name?.trim())
-      .slice(0, 6)
-      .map((product) => ({
-        product_name: product.product_name?.trim() ?? '',
-        brand: product.brands?.trim() ?? '',
-        image_url: product.image_url?.trim() ?? '',
-      }))
   } catch (error) {
-    if ((error as DOMException).name !== 'AbortError') {
+    const err = error as DOMException | Error
+    if (err.name !== 'AbortError') {
       suggestions.value = []
     }
   } finally {
-    isLoading.value = false
+    if (currentRequest === requestSequence) {
+      isLoading.value = false
+    }
   }
 }
 
@@ -94,15 +91,23 @@ watch(
     const trimmedValue = nextValue.trim()
 
     if (trimmedValue.length < 2) {
+      requestSequence += 1
       activeRequest?.abort()
       isLoading.value = false
       suggestions.value = []
       return
     }
 
+    const instantSuggestions = getCachedProductSuggestions(trimmedValue, props.familyId)
+    if (instantSuggestions.length > 0) {
+      suggestions.value = instantSuggestions
+    }
+
+    const debounceMs = instantSuggestions.length > 0 ? 110 : 60
+
     debounceTimer = window.setTimeout(() => {
       void fetchSuggestions(trimmedValue)
-    }, 250)
+    }, debounceMs)
   },
 )
 
@@ -119,10 +124,11 @@ onBeforeUnmount(() => {
   <div class="search">
     <div class="search-field">
       <input
+        :id="inputId"
         :value="modelValue"
         type="text"
         name="product-search"
-        placeholder="Search products..."
+        placeholder="Search your catalog or type a new product"
         autocomplete="off"
         autocorrect="off"
         autocapitalize="off"
@@ -140,9 +146,10 @@ onBeforeUnmount(() => {
     </div>
 
     <ul v-if="suggestions.length" class="suggestions">
-      <li v-for="product in suggestions" :key="`${product.product_name}-${product.brand}`">
+      <li v-for="product in suggestions" :key="product.id">
         <button type="button" class="suggestion" @click="selectSuggestion(product)">
           <img v-if="product.image_url" :src="product.image_url" :alt="product.product_name" />
+          <div v-else class="suggestion-emoji">{{ getProductEmoji(product.product_name, product.brand) }}</div>
           <div class="suggestion-text">
             <strong>{{ product.product_name }}</strong>
             <span>{{ product.brand || 'Unknown brand' }}</span>
@@ -150,6 +157,10 @@ onBeforeUnmount(() => {
         </button>
       </li>
     </ul>
+
+    <div v-else-if="showNoResults" class="no-results">
+      No results. You can add a custom item.
+    </div>
   </div>
 </template>
 
@@ -229,6 +240,18 @@ li + li .suggestion {
   background: #f2f2f7;
 }
 
+.suggestion-emoji {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #f2f2f7;
+  font-size: 1.1rem;
+}
+
 .suggestion-text {
   min-width: 0;
 }
@@ -246,5 +269,20 @@ li + li .suggestion {
   font-size: 0.75rem;
   color: #8e8e93;
   margin-top: 1px;
+}
+
+.no-results {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: 6px;
+  padding: 12px 14px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.12);
+  color: #8e8e93;
+  font-size: 0.8125rem;
+  z-index: 30;
 }
 </style>
