@@ -82,7 +82,7 @@ async function insertMemberWithProfile(
 }
 
 async function createFamily() {
-  const trimmedName = familyName.value.trim()
+  const trimmedName = familyName.value.trim().slice(0, 100)
 
   if (!trimmedName) {
     errorMessage.value = 'Enter a family name.'
@@ -187,6 +187,7 @@ async function joinFamily() {
           v-model="familyName"
           type="text"
           placeholder="The Smiths"
+          maxlength="100"
           :disabled="isSubmitting"
         />
         <input

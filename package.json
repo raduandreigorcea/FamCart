@@ -1,14 +1,22 @@
 {
-  "name": "clerk-vue",
+  "name": "famcart",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
-    "preview": "vite preview"
+    "build:web": "vite build",
+    "preview": "vite preview",
+    "cap:sync": "npx cap sync android",
+    "cap:open:android": "npx cap open android",
+    "mobile:build": "npm run build:web && npx cap sync android"
   },
   "dependencies": {
+    "@capacitor-mlkit/barcode-scanning": "^8.0.1",
+    "@capacitor/android": "^8.2.0",
+    "@capacitor/cli": "^8.2.0",
+    "@capacitor/core": "^8.2.0",
     "@clerk/vue": "^2.0.4",
     "@supabase/supabase-js": "^2.57.4",
     "vue": "^3.5.30"

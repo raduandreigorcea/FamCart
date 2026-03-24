@@ -52,7 +52,7 @@ function cancelRename() {
 }
 
 async function saveName() {
-  const trimmed = nameInput.value.trim()
+  const trimmed = nameInput.value.trim().slice(0, 40)
   if (!trimmed || trimmed === props.family.name) {
     renameVisible.value = false
     return

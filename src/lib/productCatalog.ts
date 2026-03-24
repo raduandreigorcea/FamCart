@@ -45,6 +45,26 @@ function escapePostgrestLike(value: string) {
   return value.replace(/[,*()]/g, '')
 }
 
+function truncate(value: string, maxLen: number) {
+  return value.length > maxLen ? value.slice(0, maxLen) : value
+}
+
+function sanitizeUrl(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  try {
+    const url = new URL(trimmed)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return ''
+  } catch {
+    return ''
+  }
+  return trimmed
+}
+
+function sanitizeBarcode(value: string) {
+  return value.trim().replace(/[^a-zA-Z0-9-]/g, '')
+}
+
 function buildCacheKey(query: string, familyId?: string) {
   return familyId ? `${familyId}::${query}` : query
 }
@@ -123,8 +143,8 @@ function isMissingBarcodeColumnError(message: string) {
 }
 
 function getProductCatalogSelectColumns(includeBarcode = barcodeColumnAvailable) {
-  const baseColumns = 'id, name, brand, image_url, usage_count, normalized_name, normalized_brand'
-  return includeBarcode ? `${baseColumns}, barcode` : baseColumns
+  const baseColumns = 'id,name,brand,image_url,usage_count,normalized_name,normalized_brand'
+  return includeBarcode ? `${baseColumns},barcode` : baseColumns
 }
 
 export function clearProductCatalogCache() {
@@ -180,7 +200,7 @@ async function searchFamilyItems(query: string, familyId: string, signal?: Abort
     return []
   }
 
-  const suggestions = ((response.data as ItemSearchRow[] | null) ?? [])
+  const hydratedSuggestions = ((response.data as ItemSearchRow[] | null) ?? [])
     .map((row) => ({
       id: stringToStableNumber(`${row.name}::${row.brand ?? ''}`),
       product_name: row.name,
@@ -191,11 +211,9 @@ async function searchFamilyItems(query: string, familyId: string, signal?: Abort
       created_by: row.created_by,
     }))
     .filter((suggestion) => normalizeText(`${suggestion.product_name} ${suggestion.brand}`).includes(normalizedQuery))
-    .sort(rankSuggestions)
+    .sort((a, b) => rankSuggestions(a, b))
 
-  const deduped = dedupeSuggestions(suggestions)
-
-  for (const suggestion of deduped) {
+  for (const suggestion of hydratedSuggestions) {
     void saveProductToCatalog({
       product_name: suggestion.product_name,
       brand: suggestion.brand,
@@ -204,7 +222,8 @@ async function searchFamilyItems(query: string, familyId: string, signal?: Abort
     })
   }
 
-  return deduped.map(({ created_by: _createdBy, ...suggestion }) => suggestion)
+  const suggestions = hydratedSuggestions.map(({ created_by: _createdBy, ...suggestion }) => suggestion)
+  return dedupeSuggestions(suggestions)
 }
 
 export async function searchStoredProducts(query: string, familyId?: string, signal?: AbortSignal): Promise<ProductSuggestion[]> {
@@ -266,7 +285,8 @@ export async function searchStoredProducts(query: string, familyId?: string, sig
       return []
     }
 
-    const suggestions = ((response.data as ProductCatalogRow[] | null) ?? [])
+    const rows = ((response.data as unknown as ProductCatalogRow[] | null) ?? [])
+    const suggestions = rows
       .map(toSuggestion)
       .filter((suggestion) => normalizeText(`${suggestion.product_name} ${suggestion.brand}`).includes(normalizedQuery))
       .sort(rankSuggestions)
@@ -303,9 +323,9 @@ export async function saveProductToCatalog(product: {
   barcode?: string
   created_by: string
 }) {
-  const normalizedName = normalizeText(product.product_name)
-  const normalizedBrand = normalizeText(product.brand ?? '')
-  const barcode = (product.barcode ?? '').trim()
+  const normalizedName = normalizeText(truncate(product.product_name, 200))
+  const normalizedBrand = normalizeText(truncate(product.brand ?? '', 100))
+  const barcode = sanitizeBarcode(product.barcode ?? '')
 
   if (!normalizedName) return
 
@@ -335,38 +355,46 @@ export async function saveProductToCatalog(product: {
     return
   }
 
-  const nextImage = product.image_url?.trim() ?? ''
-  const nextBrand = product.brand?.trim() ?? ''
+  const nextImage = sanitizeUrl(product.image_url ?? '')
+  const nextBrand = truncate((product.brand ?? '').trim(), 100)
 
-  if (existingResponse.data) {
-    const currentUsage = typeof existingResponse.data.usage_count === 'number' ? existingResponse.data.usage_count : 0
+  const existingData = existingResponse.data as unknown as {
+    id: number
+    usage_count: number | null
+    image_url: string | null
+    brand: string | null
+    barcode?: string | null
+  } | null
+
+  if (existingData) {
+    const currentUsage = typeof existingData.usage_count === 'number' ? existingData.usage_count : 0
     const updatePayload = {
-      brand: nextBrand || existingResponse.data.brand || '',
-      image_url: nextImage || existingResponse.data.image_url || '',
+      brand: nextBrand || existingData.brand || '',
+      image_url: nextImage || existingData.image_url || '',
       usage_count: currentUsage + 1,
       last_used_at: new Date().toISOString(),
     } as Record<string, string | number>
 
     if (barcodeColumnAvailable) {
-      updatePayload.barcode = barcode || ((existingResponse.data as { barcode?: string | null }).barcode ?? '')
+      updatePayload.barcode = barcode || (existingData.barcode ?? '')
     }
 
     const updateResponse = await supabase
       .from('product_catalog')
       .update(updatePayload)
-      .eq('id', existingResponse.data.id)
+      .eq('id', existingData.id)
 
     if (updateResponse.error && isMissingBarcodeColumnError(updateResponse.error.message)) {
       barcodeColumnAvailable = false
       await supabase
         .from('product_catalog')
         .update({
-          brand: nextBrand || existingResponse.data.brand || '',
-          image_url: nextImage || existingResponse.data.image_url || '',
+          brand: nextBrand || existingData.brand || '',
+          image_url: nextImage || existingData.image_url || '',
           usage_count: currentUsage + 1,
           last_used_at: new Date().toISOString(),
         })
-        .eq('id', existingResponse.data.id)
+        .eq('id', existingData.id)
     }
 
     clearProductCatalogCache()
@@ -374,7 +402,7 @@ export async function saveProductToCatalog(product: {
   }
 
   const insertPayload = {
-    name: product.product_name.trim(),
+    name: truncate(product.product_name.trim(), 200),
     brand: nextBrand,
     image_url: nextImage,
     normalized_name: normalizedName,
@@ -429,5 +457,5 @@ export async function findStoredProductByBarcode(barcode: string): Promise<Produ
   }
 
   if (!response.data) return null
-  return toSuggestion(response.data as ProductCatalogRow)
+  return toSuggestion(response.data as unknown as ProductCatalogRow)
 }

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { UserButton, useUser } from '@clerk/vue'
-import type { RealtimeChannel } from '@supabase/supabase-js'
 import FamilySetup from '../components/FamilySetup.vue'
 import ShoppingList from '../components/ShoppingList.vue'
 import SettingsModal from '../components/SettingsModal.vue'
@@ -35,8 +34,10 @@ const showMembers = ref(false)
 const pendingKick = ref<FamilyMember | null>(null)
 const kickLoading = ref(false)
 const kickError = ref('')
-const membershipChannel = ref<RealtimeChannel | null>(null)
-const familyChannel = ref<RealtimeChannel | null>(null)
+type SupabaseChannel = ReturnType<typeof supabase.channel>
+type RemoveChannelArg = Parameters<typeof supabase.removeChannel>[0]
+const membershipChannel = ref<SupabaseChannel | null>(null)
+const familyChannel = ref<SupabaseChannel | null>(null)
 let membershipReconnectTimer: number | null = null
 let familyReconnectTimer: number | null = null
 let familySyncTimer: number | null = null
@@ -276,14 +277,14 @@ async function syncSelfProfile(selfUserId: string, familyId: string) {
 async function stopMembershipSubscription() {
   if (!membershipChannel.value) return
 
-  await supabase.removeChannel(membershipChannel.value)
+  await supabase.removeChannel(membershipChannel.value as unknown as RemoveChannelArg)
   membershipChannel.value = null
 }
 
 async function stopFamilySubscription() {
   if (!familyChannel.value) return
 
-  await supabase.removeChannel(familyChannel.value)
+  await supabase.removeChannel(familyChannel.value as unknown as RemoveChannelArg)
   familyChannel.value = null
 }
 

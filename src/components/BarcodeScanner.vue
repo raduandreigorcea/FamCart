@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { Capacitor } from '@capacitor/core'
+import { BarcodeScanner as NativeBarcodeScanner } from '@capacitor-mlkit/barcode-scanning'
 
 type DetectedBarcode = { rawValue?: string }
 type DetectorInstance = {
@@ -20,6 +22,7 @@ const videoRef = ref<HTMLVideoElement | null>(null)
 const manualBarcode = ref('')
 const errorMessage = ref('')
 const isStarting = ref(false)
+const isNativePlatform = computed(() => Capacitor.isNativePlatform())
 const supportsCamera = computed(() => Boolean(navigator.mediaDevices?.getUserMedia))
 const supportsBarcodeDetection = computed(() => {
   const barcodeDetector = (window as Window & { BarcodeDetector?: DetectorConstructor }).BarcodeDetector
@@ -100,6 +103,11 @@ async function startScanner() {
   errorMessage.value = ''
   manualBarcode.value = ''
 
+  if (isNativePlatform.value) {
+    await startNativeScan()
+    return
+  }
+
   if (!supportsCamera.value) {
     errorMessage.value = 'Camera access is not available. Enter the barcode manually.'
     return
@@ -137,6 +145,38 @@ async function startScanner() {
   } catch {
     errorMessage.value = 'Unable to start the camera. Check camera permission or enter the barcode manually.'
     stopStream()
+  } finally {
+    isStarting.value = false
+  }
+}
+
+async function startNativeScan() {
+  isStarting.value = true
+
+  try {
+    const permissionStatus = await NativeBarcodeScanner.requestPermissions()
+    if (permissionStatus.camera !== 'granted' && permissionStatus.camera !== 'limited') {
+      errorMessage.value = 'Camera permission is required for barcode scanning.'
+      return
+    }
+
+    const supportResult = await NativeBarcodeScanner.isSupported()
+    if (!supportResult.supported) {
+      errorMessage.value = 'Barcode scanning is not supported on this device.'
+      return
+    }
+
+    const scanResult = await NativeBarcodeScanner.scan()
+    const barcode = normalizeBarcode(scanResult.barcodes[0]?.rawValue ?? '')
+
+    if (!barcode) {
+      errorMessage.value = 'No barcode detected. Try again or enter manually.'
+      return
+    }
+
+    emit('scanned', barcode)
+  } catch {
+    errorMessage.value = 'Unable to start native barcode scan. Enter the barcode manually.'
   } finally {
     isStarting.value = false
   }
@@ -183,7 +223,7 @@ onBeforeUnmount(() => {
             <strong>Scan barcode</strong>
             <p>Point the camera at the code or type it manually.</p>
           </div>
-          <button type="button" class="scanner-close" @click="closeScanner">Close</button>
+          <button type="button" class="scanner-close" @click="closeScanner">Done</button>
         </div>
 
         <div class="scanner-frame">

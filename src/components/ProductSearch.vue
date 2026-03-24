@@ -129,6 +129,7 @@ onBeforeUnmount(() => {
         type="text"
         name="product-search"
         placeholder="Search your catalog or type a new product"
+        maxlength="200"
         autocomplete="off"
         autocorrect="off"
         autocapitalize="off"
