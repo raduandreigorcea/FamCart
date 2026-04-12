@@ -308,7 +308,7 @@ function copyInviteCode() {
   -webkit-overflow-scrolling: touch;
   background: #f6f8f7;
   border-radius: 16px 16px 0 0;
-  padding: 0 16px calc(var(--safe-bottom) + 24px);
+  padding: 0 16px calc(var(--safe-bottom) + 12px);
 }
 
 .sheet-handle {
@@ -344,6 +344,10 @@ function copyInviteCode() {
 /* --- Sections --- */
 .settings-section {
   margin-bottom: 24px;
+}
+
+.settings-section:last-of-type {
+  margin-bottom: 0;
 }
 
 .section-label {
@@ -496,15 +500,15 @@ function copyInviteCode() {
 /* --- Transitions --- */
 .modal-enter-active,
 .modal-leave-active {
-  transition: opacity 0.3s ease;
+  transition: opacity 0.2s ease;
 }
 
 .modal-enter-active .sheet {
-  animation: sheetUp 0.45s cubic-bezier(0.32, 0.72, 0, 1) both;
+  animation: modalSheetUp 0.32s cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 
 .modal-leave-active .sheet {
-  animation: sheetDown 0.28s ease-in both;
+  animation: modalSheetUp 0.24s ease-in reverse both;
 }
 
 .modal-enter-from,
@@ -512,15 +516,13 @@ function copyInviteCode() {
   opacity: 0;
 }
 
-@keyframes sheetUp {
-  0%   { transform: translateY(100%) scale(0.96); opacity: 0; }
-  60%  { transform: translateY(-2%) scale(1.005); opacity: 1; }
-  100% { transform: translateY(0) scale(1); opacity: 1; }
-}
-
-@keyframes sheetDown {
-  0%   { transform: translateY(0) scale(1); opacity: 1; }
-  100% { transform: translateY(100%) scale(0.96); opacity: 0; }
+@keyframes modalSheetUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
 }
 
 /* Staggered section reveals */

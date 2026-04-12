@@ -26,9 +26,10 @@ const emit = defineEmits<{
 const suggestions = ref<ProductSuggestion[]>([])
 const isLoading = ref(false)
 const skipNextLookup = ref(false)
+const hasSelection = ref(false)
 
 const hasSearchTerm = computed(() => props.modelValue.trim().length >= 2)
-const showNoResults = computed(() => hasSearchTerm.value && !isLoading.value && suggestions.value.length === 0)
+const showNoResults = computed(() => hasSearchTerm.value && !isLoading.value && suggestions.value.length === 0 && !hasSelection.value)
 
 let debounceTimer: ReturnType<typeof window.setTimeout> | null = null
 let activeRequest: AbortController | null = null
@@ -40,12 +41,14 @@ function clearSuggestions() {
 
 function handleInput(event: Event) {
   const nextValue = (event.target as HTMLInputElement).value
+  hasSelection.value = false
   emit('update:modelValue', nextValue)
   emit('select-product', null)
 }
 
 function selectSuggestion(product: ProductSuggestion) {
   skipNextLookup.value = true
+  hasSelection.value = true
   clearSuggestions()
   emit('update:modelValue', product.product_name)
   emit('select-product', product)

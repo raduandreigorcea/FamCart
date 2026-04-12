@@ -10,11 +10,15 @@
     "preview": "vite preview",
     "cap:sync": "npx cap sync android",
     "cap:open:android": "npx cap open android",
-    "mobile:build": "npm run build:web && npx cap sync android"
+    "mobile:build": "npm run build:web && npx cap sync android",
+    "apk:debug": "powershell -ExecutionPolicy Bypass -File ./scripts/build-apk.ps1",
+    "apk:release": "powershell -ExecutionPolicy Bypass -File ./scripts/build-apk.ps1 -Release"
   },
   "dependencies": {
     "@capacitor-mlkit/barcode-scanning": "^8.0.1",
     "@capacitor/android": "^8.2.0",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/browser": "^8.0.3",
     "@capacitor/cli": "^8.2.0",
     "@capacitor/core": "^8.2.0",
     "@clerk/vue": "^2.0.4",

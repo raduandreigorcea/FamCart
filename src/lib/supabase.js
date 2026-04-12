@@ -14,7 +14,5 @@ export function setSupabaseAccessTokenGetter(getter) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  async accessToken() {
-    return await accessTokenGetter()
-  },
+  accessToken: async () => await accessTokenGetter(),
 })

@@ -2,11 +2,14 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import BarcodeScanner from './BarcodeScanner.vue'
+import NewProductModal from './NewProductModal.vue'
 import ProductSearch from './ProductSearch.vue'
 import ShoppingItem from './ShoppingItem.vue'
+import { enqueueItemMutation, flushOfflineItemMutations, isOfflineLikeError } from '../lib/offlineItemsQueue'
 import { findStoredProductByBarcode, saveProductToCatalog } from '../lib/productCatalog'
 import { getProductEmoji } from '../lib/productEmoji'
 import { supabase } from '../lib/supabase'
+import { addDebugLog, debugOverlayEnabled } from '../lib/debugOverlay'
 import type { Family, FamilyMember, ProductSuggestion, ShoppingItem as ShoppingItemModel } from '../types'
 
 const props = defineProps<{
@@ -26,14 +29,33 @@ const draftName = ref('')
 const draftQty = ref(1)
 const selectedProduct = ref<ProductSuggestion | null>(null)
 const isAdding = ref(false)
-const activeItemId = ref<string | null>(null)
+const pendingItemIds = ref(new Set<string>())
 const showScanner = ref(false)
+const showNewProductModal = ref(false)
 const pendingBarcode = ref('')
 const composerHint = ref('Search your catalog, scan a barcode, or type a custom product.')
-let membershipCheckTimer: number | null = null
 let itemsChannel: RealtimeChannel | null = null
 let itemsReconnectTimer: number | null = null
 let syncRecoveryTimer: number | null = null
+let lastItemsSyncAt = 0
+let syncInFlight: Promise<void> | null = null
+let itemsChannelSubscribed = false
+
+type ItemsBroadcastPayload =
+  | { type: 'upsert'; item: ShoppingItemModel }
+  | { type: 'delete'; itemId: string }
+  | { type: 'delete-many'; itemIds: string[] }
+
+type SupabaseLikeError = {
+  code?: string
+  message?: string
+  details?: string
+  hint?: string
+}
+
+const ITEMS_STALE_AFTER_MS = 20_000
+const VISIBILITY_SYNC_THRESHOLD_MS = 5_000
+const REALTIME_RESUME_EVENT = 'famcart:realtime-resume'
 
 const canAddItem = computed(() => draftName.value.trim().length > 0 && !isAdding.value)
 
@@ -53,19 +75,62 @@ const hasItems = computed(() => items.value.length > 0)
 const pendingItems = computed(() => items.value.filter((i) => !i.completed))
 const doneItems = computed(() => items.value.filter((i) => i.completed))
 
+function isItemPending(itemId: string): boolean {
+  return pendingItemIds.value.has(itemId)
+}
+
+function setItemPending(itemId: string, pending: boolean) {
+  const nextPendingItemIds = new Set(pendingItemIds.value)
+
+  if (pending) {
+    nextPendingItemIds.add(itemId)
+  } else {
+    nextPendingItemIds.delete(itemId)
+  }
+
+  pendingItemIds.value = nextPendingItemIds
+}
+
+function markItemsSynced() {
+  lastItemsSyncAt = Date.now()
+}
+
+function itemsSyncIsStale(thresholdMs = ITEMS_STALE_AFTER_MS): boolean {
+  return Date.now() - lastItemsSyncAt > thresholdMs
+}
+
+function formatSupabaseError(error: unknown, fallbackMessage: string): string {
+  if (error instanceof Error) {
+    addDebugLog('error', '[addItem error]', error.message)
+    return error.message
+  }
+
+  const supabaseError = error as SupabaseLikeError | null
+  const message = supabaseError?.message ?? ''
+  const details = supabaseError?.details ?? ''
+  const hint = supabaseError?.hint ?? ''
+  const code = (supabaseError as Record<string, unknown>)?.code ?? ''
+  addDebugLog('error', '[addItem error]', JSON.stringify({ code, message, details, hint }))
+
+  const combined = [message, details, hint].filter(Boolean).join(' ')
+
+  if (
+    combined.includes('normalized_brand')
+    || combined.includes('no unique or exclusion constraint matching the ON CONFLICT specification')
+  ) {
+    const rawDetail = [message, details, hint].filter(Boolean).join(' | ')
+    return `Schema update needed. Details: ${rawDetail}`
+  }
+
+  return message || fallbackMessage
+}
+
 function resetComposer() {
   draftName.value = ''
   draftQty.value = 1
   selectedProduct.value = null
   pendingBarcode.value = ''
   composerHint.value = 'Search your catalog, scan a barcode, or type a custom product.'
-}
-
-function clearPendingBarcode() {
-  pendingBarcode.value = ''
-  composerHint.value = draftName.value.trim()
-    ? 'You can add this as a custom product if it is not in the catalog.'
-    : 'Search your catalog, scan a barcode, or type a custom product.'
 }
 
 async function handleBarcodeScanned(barcode: string) {
@@ -83,11 +148,26 @@ async function handleBarcodeScanned(barcode: string) {
       return
     }
 
-    selectedProduct.value = null
-    draftName.value = ''
-    composerHint.value = `Barcode ${barcode} is new. Name the product and add it to save it in your catalog.`
+    // Product not found — open the new product modal
+    showNewProductModal.value = true
   } catch (error) {
     listError.value = error instanceof Error ? error.message : 'Unable to process barcode.'
+  }
+}
+
+function handleNewProductSaved(product: import('../types').ProductSuggestion) {
+  selectedProduct.value = product
+  draftName.value = product.product_name
+  composerHint.value = `Saved "${product.product_name}" to your catalog.`
+  showNewProductModal.value = false
+}
+
+function handleNewProductModalClose() {
+  showNewProductModal.value = false
+  if (!selectedProduct.value) {
+    composerHint.value = pendingBarcode.value
+      ? `Barcode ${pendingBarcode.value} not saved. Enter a product name manually.`
+      : 'Search your catalog, scan a barcode, or type a custom product.'
   }
 }
 
@@ -118,11 +198,6 @@ async function ensureMembership(): Promise<boolean> {
   return true
 }
 
-async function verifyMembershipSilently() {
-  if (!props.userId || !props.family?.id) return
-  await ensureMembership()
-}
-
 async function pullLatestItemsSilently() {
   if (!props.family?.id) return
 
@@ -134,6 +209,7 @@ async function pullLatestItemsSilently() {
 
   if (!response.error && response.data) {
     items.value = response.data as ShoppingItemModel[]
+    markItemsSynced()
   }
 }
 
@@ -143,21 +219,65 @@ function scheduleItemsReconnect() {
   itemsReconnectTimer = window.setTimeout(() => {
     itemsReconnectTimer = null
     startItemsSubscription()
+    lastItemsSyncAt = 0
     void pullLatestItemsSilently()
   }, 1500)
 }
 
+function handleItemsVisibilityChange() {
+  if (document.visibilityState !== 'visible') return
+
+  if (navigator.onLine) {
+    void syncOfflineQueueInternal(true)
+    return
+  }
+
+  if (!itemsSyncIsStale(VISIBILITY_SYNC_THRESHOLD_MS)) return
+  void pullLatestItemsSilently()
+}
+
 async function stopItemsSubscription() {
   if (!itemsChannel) return
+  itemsChannelSubscribed = false
   await supabase.removeChannel(itemsChannel)
   itemsChannel = null
 }
 
+async function recoverItemsRealtime() {
+  if (!props.family?.id) return
+
+  await stopItemsSubscription()
+  startItemsSubscription()
+  lastItemsSyncAt = 0
+
+  if (navigator.onLine) {
+    await syncOfflineQueueInternal(true)
+    return
+  }
+
+  await pullLatestItemsSilently()
+}
+
+function handleRealtimeResume() {
+  void recoverItemsRealtime()
+}
+
 function startItemsSubscription() {
   void stopItemsSubscription()
+  itemsChannelSubscribed = false
 
   itemsChannel = supabase
-    .channel(`items:${props.family.id}`)
+    .channel(`items:${props.family.id}`, {
+      config: {
+        broadcast: {
+          ack: false,
+          self: false,
+        },
+      },
+    })
+    .on('broadcast', { event: 'items-mutated' }, ({ payload }) => {
+      handleItemsBroadcast(payload as ItemsBroadcastPayload)
+    })
     .on(
       'postgres_changes',
       {
@@ -167,6 +287,8 @@ function startItemsSubscription() {
         filter: `family_id=eq.${props.family.id}`,
       },
       (payload) => {
+        markItemsSynced()
+
         if (payload.eventType === 'INSERT') {
           const nextItem = payload.new as ShoppingItemModel
           if (!items.value.some((i) => i.id === nextItem.id)) {
@@ -189,9 +311,25 @@ function startItemsSubscription() {
     )
     .subscribe((status) => {
       if (status === 'SUBSCRIBED') {
+        itemsChannelSubscribed = true
         listError.value = ''
+
+        if (debugOverlayEnabled) {
+          addDebugLog('info', 'Items channel subscribed', { familyId: props.family.id })
+        }
+
         void pullLatestItemsSilently()
         return
+      }
+
+      itemsChannelSubscribed = false
+
+      if (debugOverlayEnabled) {
+        addDebugLog('warn', 'Items channel status', {
+          familyId: props.family.id,
+          status,
+          online: navigator.onLine,
+        })
       }
 
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
@@ -203,6 +341,10 @@ function startItemsSubscription() {
 async function loadItems() {
   loadingItems.value = true
   listError.value = ''
+
+  if (navigator.onLine) {
+    await syncOfflineQueue()
+  }
 
   const hasMembership = await ensureMembership()
   if (!hasMembership) {
@@ -224,7 +366,153 @@ async function loadItems() {
   }
 
   items.value = (response.data as ShoppingItemModel[] | null) ?? []
+  markItemsSynced()
   loadingItems.value = false
+}
+
+function applyLocalAddOrIncrement(name: string, qty: number, brand: string, image: string) {
+  const normalizedName = name.trim().toLowerCase()
+  const normalizedBrand = brand.trim().toLowerCase()
+  const existing = items.value.find(
+    (item) =>
+      !item.completed
+      && item.name.trim().toLowerCase() === normalizedName
+      && (item.brand ?? '').trim().toLowerCase() === normalizedBrand,
+  )
+
+  if (existing) {
+    const nextQty = Math.min(existing.quantity + qty, 99)
+    items.value = items.value.map((item) =>
+      item.id === existing.id
+        ? {
+          ...item,
+          quantity: nextQty,
+          brand: item.brand || brand,
+          image: item.image || image,
+        }
+        : item,
+    )
+    return
+  }
+
+  const optimisticItem: ShoppingItemModel = {
+    id: `offline-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    family_id: props.family.id,
+    name,
+    brand,
+    image,
+    quantity: Math.min(Math.max(qty, 1), 99),
+    completed: false,
+    created_by: props.userId,
+    created_at: new Date().toISOString(),
+  }
+
+  items.value = [optimisticItem, ...items.value]
+}
+
+function applyServerItem(serverItem: ShoppingItemModel) {
+  const normalizedName = serverItem.name.trim().toLowerCase()
+  const normalizedBrand = (serverItem.brand ?? '').trim().toLowerCase()
+  const withoutOptimisticDuplicate = items.value.filter(
+    (item) => !(
+      item.id.startsWith('offline-')
+      && !item.completed
+      && item.name.trim().toLowerCase() === normalizedName
+      && (item.brand ?? '').trim().toLowerCase() === normalizedBrand
+    ),
+  )
+
+  if (withoutOptimisticDuplicate.some((item) => item.id === serverItem.id)) {
+    items.value = withoutOptimisticDuplicate.map((item) => (item.id === serverItem.id ? serverItem : item))
+    return
+  }
+
+  items.value = [serverItem, ...withoutOptimisticDuplicate]
+}
+
+function applyDeletedItem(itemId: string) {
+  items.value = items.value.filter((item) => item.id !== itemId)
+}
+
+function applyDeletedItems(itemIds: string[]) {
+  if (!itemIds.length) return
+
+  const deletedIds = new Set(itemIds)
+  items.value = items.value.filter((item) => !deletedIds.has(item.id))
+}
+
+function handleItemsBroadcast(payload: ItemsBroadcastPayload) {
+  markItemsSynced()
+
+  if (payload.type === 'upsert') {
+    applyServerItem(payload.item)
+    return
+  }
+
+  if (payload.type === 'delete') {
+    applyDeletedItem(payload.itemId)
+    return
+  }
+
+  applyDeletedItems(payload.itemIds)
+}
+
+async function broadcastItemsMutation(payload: ItemsBroadcastPayload) {
+  if (!itemsChannel || !itemsChannelSubscribed) {
+    if (debugOverlayEnabled) {
+      addDebugLog('warn', 'Skipped fast item broadcast', {
+        familyId: props.family.id,
+        subscribed: itemsChannelSubscribed,
+        hasChannel: Boolean(itemsChannel),
+        online: navigator.onLine,
+        type: payload.type,
+      })
+    }
+
+    return
+  }
+
+  try {
+    await itemsChannel.send({
+      type: 'broadcast',
+      event: 'items-mutated',
+      payload,
+    })
+  } catch (error) {
+    if (debugOverlayEnabled) {
+      addDebugLog('warn', 'Fast item broadcast failed', error)
+    }
+
+    // Postgres realtime remains the fallback when the fast broadcast misses.
+  }
+}
+
+async function syncOfflineQueue() {
+  await syncOfflineQueueInternal(false)
+}
+
+async function syncOfflineQueueInternal(forceRefresh: boolean) {
+  if (syncInFlight) {
+    await syncInFlight
+    return
+  }
+
+  syncInFlight = (async () => {
+    const result = await flushOfflineItemMutations()
+    if (result.applied > 0 || forceRefresh) {
+      await pullLatestItemsSilently()
+    }
+  })()
+
+  try {
+    await syncInFlight
+  } finally {
+    syncInFlight = null
+  }
+}
+
+function handleOnlineSync() {
+  void syncOfflineQueueInternal(true)
 }
 
 async function addItem() {
@@ -238,101 +526,180 @@ async function addItem() {
   isAdding.value = true
   listError.value = ''
 
+  const nextBrand = selectedProduct.value?.brand || ''
+  const nextImage = selectedProduct.value?.image_url || ''
+  const nextBarcode = selectedProduct.value?.barcode || pendingBarcode.value
+
   try {
-    const hasMembership = await ensureMembership()
-    if (!hasMembership) return
+    const response = await supabase.rpc('add_or_increment_item', {
+      p_family_id: props.family.id,
+      p_name: nextName,
+      p_brand: nextBrand,
+      p_image: nextImage,
+      p_quantity: draftQty.value,
+      p_created_by: props.userId,
+    })
 
-    // Insert directly from the client because Supabase is the only backend layer in this app.
-    const response = await supabase
-      .from('items')
-      .insert({
-        family_id: props.family.id,
-        name: nextName,
-        brand: selectedProduct.value?.brand || '',
-        image: selectedProduct.value?.image_url || '',
-        quantity: draftQty.value,
-        completed: false,
-        created_by: props.userId,
-        created_at: new Date().toISOString(),
-      })
-      .select('id, family_id, name, brand, image, quantity, completed, created_by, created_at')
-      .single()
-
-    if (response.error || !response.data) {
-      throw response.error ?? new Error('Unable to add item.')
+    if (response.error) {
+      throw response.error
     }
 
-    const createdItem = response.data as ShoppingItemModel
-    if (items.value.some((item) => item.id === createdItem.id)) {
-      items.value = items.value.map((item) => (item.id === createdItem.id ? createdItem : item))
-    } else {
-      items.value = [createdItem, ...items.value]
+    if (response.data) {
+      const serverItem = response.data as unknown as ShoppingItemModel
+      applyServerItem(serverItem)
+      markItemsSynced()
+      void broadcastItemsMutation({ type: 'upsert', item: serverItem })
     }
 
     void saveProductToCatalog({
       product_name: nextName,
-      brand: selectedProduct.value?.brand || '',
-      image_url: selectedProduct.value?.image_url || '',
-      barcode: selectedProduct.value?.barcode || pendingBarcode.value,
+      brand: nextBrand,
+      image_url: nextImage,
+      barcode: nextBarcode,
       created_by: props.userId,
     })
 
     resetComposer()
   } catch (error) {
-    listError.value = error instanceof Error ? error.message : 'Unable to add item.'
+    if (isOfflineLikeError(error)) {
+      applyLocalAddOrIncrement(nextName, draftQty.value, nextBrand, nextImage)
+      enqueueItemMutation({
+        type: 'add-or-increment',
+        payload: {
+          familyId: props.family.id,
+          name: nextName,
+          brand: nextBrand,
+          image: nextImage,
+          quantity: draftQty.value,
+          createdBy: props.userId,
+        },
+      })
+      listError.value = 'You are offline. Item queued and will sync automatically.'
+      resetComposer()
+    } else {
+      listError.value = formatSupabaseError(error, 'Unable to add item.')
+    }
   } finally {
     isAdding.value = false
   }
 }
 
 async function toggleItem(item: ShoppingItemModel) {
-  activeItemId.value = item.id
-  listError.value = ''
+  if (isItemPending(item.id)) return
 
-  const hasMembership = await ensureMembership()
-  if (!hasMembership) {
-    activeItemId.value = null
-    return
-  }
+  listError.value = ''
+  setItemPending(item.id, true)
+
+  const nextCompleted = !item.completed
+  items.value = items.value.map((currentItem) =>
+    currentItem.id === item.id ? { ...currentItem, completed: nextCompleted } : currentItem,
+  )
 
   const response = await supabase
     .from('items')
-    .update({ completed: !item.completed })
+    .update({ completed: nextCompleted })
     .eq('id', item.id)
+    .select('id, family_id, name, brand, image, quantity, completed, created_by, created_at')
+    .single()
 
   if (response.error) {
+    if (isOfflineLikeError(response.error)) {
+      enqueueItemMutation({
+        type: 'toggle',
+        payload: { itemId: item.id, completed: nextCompleted },
+      })
+      listError.value = 'You are offline. Change queued and will sync automatically.'
+      setItemPending(item.id, false)
+      return
+    }
+
     listError.value = response.error.message
-    activeItemId.value = null
+    items.value = items.value.map((currentItem) =>
+      currentItem.id === item.id ? { ...currentItem, completed: item.completed } : currentItem,
+    )
+    setItemPending(item.id, false)
     return
   }
 
-  items.value = items.value.map((currentItem) =>
-    currentItem.id === item.id ? { ...currentItem, completed: !currentItem.completed } : currentItem,
-  )
+  if (response.data) {
+    const serverItem = response.data as ShoppingItemModel
+    applyServerItem(serverItem)
+    markItemsSynced()
+    void broadcastItemsMutation({ type: 'upsert', item: serverItem })
+  }
 
-  activeItemId.value = null
+  setItemPending(item.id, false)
 }
 
 async function deleteItem(itemId: string) {
-  activeItemId.value = itemId
-  listError.value = ''
+  if (isItemPending(itemId)) return
 
-  const hasMembership = await ensureMembership()
-  if (!hasMembership) {
-    activeItemId.value = null
-    return
-  }
+  listError.value = ''
+  setItemPending(itemId, true)
+
+  const previousItems = items.value
+  applyDeletedItem(itemId)
 
   const response = await supabase.from('items').delete().eq('id', itemId)
 
   if (response.error) {
+    if (isOfflineLikeError(response.error)) {
+      enqueueItemMutation({
+        type: 'delete',
+        payload: { itemId },
+      })
+      listError.value = 'You are offline. Deletion queued and will sync automatically.'
+      setItemPending(itemId, false)
+      return
+    }
+
     listError.value = response.error.message
-    activeItemId.value = null
+    items.value = previousItems
+    setItemPending(itemId, false)
     return
   }
 
-  items.value = items.value.filter((item) => item.id !== itemId)
-  activeItemId.value = null
+  markItemsSynced()
+  void broadcastItemsMutation({ type: 'delete', itemId })
+  setItemPending(itemId, false)
+}
+
+const isCheckingOut = ref(false)
+
+async function checkoutCompleted() {
+  if (isCheckingOut.value) return
+
+  const ids = doneItems.value.map((item) => item.id)
+  if (!ids.length) return
+
+  isCheckingOut.value = true
+  listError.value = ''
+
+  const previousItems = items.value
+  applyDeletedItems(ids)
+
+  const response = await supabase.from('items').delete().in('id', ids)
+
+  if (response.error) {
+    if (isOfflineLikeError(response.error)) {
+      enqueueItemMutation({
+        type: 'checkout',
+        payload: { itemIds: ids },
+      })
+      listError.value = 'You are offline. Checkout queued and will sync automatically.'
+      isCheckingOut.value = false
+      return
+    }
+
+    listError.value = response.error.message
+    items.value = previousItems
+    isCheckingOut.value = false
+    return
+  }
+
+  markItemsSynced()
+  void broadcastItemsMutation({ type: 'delete-many', itemIds: ids })
+  isCheckingOut.value = false
 }
 
 watch(
@@ -345,18 +712,24 @@ watch(
 )
 
 onMounted(() => {
-  membershipCheckTimer = window.setInterval(() => {
-    void verifyMembershipSilently()
-  }, 5000)
-
   // Heartbeat fallback for cases where a mobile websocket silently stalls.
   syncRecoveryTimer = window.setInterval(() => {
-    if (document.visibilityState === 'visible') {
-      void pullLatestItemsSilently()
+    if (document.visibilityState === 'visible' && itemsSyncIsStale()) {
+      if (navigator.onLine) {
+        void syncOfflineQueueInternal(true)
+      } else {
+        void pullLatestItemsSilently()
+      }
     }
   }, 20000)
 
-  document.addEventListener('visibilitychange', pullLatestItemsSilently)
+  document.addEventListener('visibilitychange', handleItemsVisibilityChange)
+  window.addEventListener('online', handleOnlineSync)
+  window.addEventListener(REALTIME_RESUME_EVENT, handleRealtimeResume)
+
+  if (navigator.onLine) {
+    void syncOfflineQueue()
+  }
 })
 
 onBeforeUnmount(() => {
@@ -367,17 +740,14 @@ onBeforeUnmount(() => {
     itemsReconnectTimer = null
   }
 
-  if (membershipCheckTimer !== null) {
-    window.clearInterval(membershipCheckTimer)
-    membershipCheckTimer = null
-  }
-
   if (syncRecoveryTimer !== null) {
     window.clearInterval(syncRecoveryTimer)
     syncRecoveryTimer = null
   }
 
-  document.removeEventListener('visibilitychange', pullLatestItemsSilently)
+  document.removeEventListener('visibilitychange', handleItemsVisibilityChange)
+  window.removeEventListener('online', handleOnlineSync)
+  window.removeEventListener(REALTIME_RESUME_EVENT, handleRealtimeResume)
 })
 </script>
 
@@ -411,36 +781,39 @@ onBeforeUnmount(() => {
 
         <template v-else>
           <!-- Items to buy -->
-          <div v-if="pendingItems.length" class="group">
+          <TransitionGroup v-if="pendingItems.length" name="items-stagger" tag="div" class="group">
             <ShoppingItem
               v-for="item in pendingItems"
               :key="item.id"
               :item="item"
               :added-by-avatar="getMemberAvatar(item.created_by)"
               :added-by-name="getMemberName(item.created_by)"
-              :disabled="activeItemId === item.id"
+              :disabled="isItemPending(item.id)"
               @toggle="toggleItem"
               @remove="deleteItem"
             />
-          </div>
+          </TransitionGroup>
 
           <!-- Done items -->
           <template v-if="doneItems.length">
             <div class="section-header section-header--sub">
               <span class="section-label">Done ({{ doneItems.length }})</span>
+              <button type="button" class="checkout-btn" :disabled="isCheckingOut" @click="checkoutCompleted">
+                {{ isCheckingOut ? 'Clearing...' : 'Checkout' }}
+              </button>
             </div>
-            <div class="group group--done">
+            <TransitionGroup name="items-stagger" tag="div" class="group group--done">
               <ShoppingItem
                 v-for="item in doneItems"
                 :key="item.id"
                 :item="item"
                 :added-by-avatar="getMemberAvatar(item.created_by)"
                 :added-by-name="getMemberName(item.created_by)"
-                :disabled="activeItemId === item.id"
+                :disabled="isItemPending(item.id)"
                 @toggle="toggleItem"
                 @remove="deleteItem"
               />
-            </div>
+            </TransitionGroup>
           </template>
         </template>
       </section>
@@ -478,11 +851,6 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <div v-if="pendingBarcode" class="barcode-pill">
-          <span>Barcode: {{ pendingBarcode }}</span>
-          <button type="button" :disabled="isAdding" @click="clearPendingBarcode">Clear</button>
-        </div>
-
         <div v-if="selectedProduct" class="composer-preview">
           <img
             v-if="selectedProduct.image_url"
@@ -515,6 +883,14 @@ onBeforeUnmount(() => {
     </div>
 
     <BarcodeScanner :open="showScanner" @close="showScanner = false" @scanned="handleBarcodeScanned" />
+
+    <NewProductModal
+      v-if="showNewProductModal"
+      :barcode="pendingBarcode"
+      :user-id="props.userId"
+      @saved="handleNewProductSaved"
+      @close="handleNewProductModalClose"
+    />
   </div>
 </template>
 
@@ -530,6 +906,7 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: 0 16px;
+  animation: screen-fade-in 340ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* --- Section --- */
@@ -564,6 +941,7 @@ onBeforeUnmount(() => {
 
 /* --- iOS-style grouped rows --- */
 .group {
+  position: relative;
   background: #fff;
   border-radius: 12px;
   overflow: hidden;
@@ -575,6 +953,47 @@ onBeforeUnmount(() => {
 
 .section-header--sub {
   margin-top: 16px;
+}
+
+.checkout-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: #1a7a48;
+  color: #ffffff;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  box-shadow: 0 6px 14px rgba(26, 122, 72, 0.28);
+  transition: transform 180ms ease, box-shadow 180ms ease, opacity 180ms ease;
+}
+
+.checkout-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.35) 50%, transparent 70%);
+  transform: translateX(-120%);
+  transition: transform 520ms ease;
+}
+
+.checkout-btn:hover::after {
+  transform: translateX(120%);
+}
+
+.checkout-btn:active {
+  transform: translateY(1px) scale(0.98);
+  box-shadow: 0 3px 8px rgba(26, 122, 72, 0.22);
+}
+
+.checkout-btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 .group-row {
@@ -732,6 +1151,7 @@ onBeforeUnmount(() => {
   background: #ffffff;
   border-radius: 14px;
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+  animation: composer-rise 420ms cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 .composer-header {
@@ -785,26 +1205,13 @@ onBeforeUnmount(() => {
   background: rgba(15, 23, 42, 0.1);
 }
 
+.scan-icon-btn:hover {
+  transform: translateY(-1px);
+}
+
 .scan-icon-btn:disabled {
   opacity: 0.35;
   pointer-events: none;
-}
-
-.barcode-pill {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: rgba(15, 23, 42, 0.05);
-  color: #334155;
-  font-size: 0.8125rem;
-}
-
-.barcode-pill button {
-  color: #1a7a48;
-  font-weight: 700;
 }
 
 .composer-actions {
@@ -848,5 +1255,73 @@ onBeforeUnmount(() => {
 .composer-preview strong,
 .composer-preview p {
   display: block;
+}
+
+.items-stagger-enter-active,
+.items-stagger-leave-active {
+  transition: transform 260ms cubic-bezier(0.2, 0.7, 0.2, 1), opacity 220ms ease;
+}
+
+.items-stagger-move {
+  transition: transform 260ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.items-stagger-enter-from {
+  opacity: 0;
+  transform: translateY(12px) scale(0.985);
+}
+
+.items-stagger-leave-to {
+  opacity: 0;
+  transform: translateX(18px) scale(0.98);
+}
+
+.items-stagger-leave-active {
+  position: absolute;
+  width: 100%;
+}
+
+@keyframes composer-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.99);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes screen-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list-scroll,
+  .composer-card {
+    animation: none;
+  }
+
+  .items-stagger-enter-active,
+  .items-stagger-leave-active,
+  .items-stagger-move,
+  .checkout-btn,
+  .checkout-btn::after,
+  .scan-icon-btn {
+    transition: none;
+  }
+
+  .checkout-btn::after {
+    display: none;
+  }
 }
 </style>

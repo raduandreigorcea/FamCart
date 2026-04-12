@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useUser } from '@clerk/vue'
+import { useAuth, getUserDisplayName, getUserAvatarUrl } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 import type { Family } from '../types'
 
@@ -12,7 +12,7 @@ const emit = defineEmits<{
   familyReady: [family: Family]
 }>()
 
-const { user } = useUser()
+const { user } = useAuth()
 
 const mode = ref<'create' | 'join' | null>(null)
 const familyName = ref('')
@@ -26,12 +26,10 @@ function resetForm() {
 
 function getProfileDefaults() {
   const displayName =
-    user.value?.fullName?.trim()
-    || user.value?.firstName?.trim()
-    || user.value?.username?.trim()
-    || props.userId.slice(0, 14)
+    getUserDisplayName(user.value)
+    ?? props.userId.slice(0, 14)
 
-  const imageUrl = user.value?.imageUrl || null
+  const imageUrl = getUserAvatarUrl(user.value)
 
   return { displayName, imageUrl }
 }
@@ -223,7 +221,7 @@ async function joinFamily() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 48px 24px;
+  padding: 48px 24px calc(var(--safe-bottom) + 12px);
   text-align: center;
 }
 

@@ -24,6 +24,9 @@ dist-ssr
 *.sw?
 
 .env
+.env.development
+.env.production
+.env.local
 .vscode
 
 supabase-policies.sql

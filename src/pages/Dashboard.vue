@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { UserButton, useUser } from '@clerk/vue'
+import { UserButton } from '@clerk/vue'
+import { useAuth, getUserDisplayName, getUserAvatarUrl } from '../lib/auth'
+import { supabase } from '../lib/supabase'
 import FamilySetup from '../components/FamilySetup.vue'
 import ShoppingList from '../components/ShoppingList.vue'
 import SettingsModal from '../components/SettingsModal.vue'
-import { supabase } from '../lib/supabase'
 import type { Family, FamilyMember } from '../types'
 
-const { user } = useUser()
+const { user } = useAuth()
 
 const family = ref<Family | null>(null)
 const familyMembers = ref<FamilyMember[]>([])
@@ -45,6 +46,7 @@ const suppressRemovedNoticeUntil = ref(0)
 const selfLeftFlowActive = ref(false)
 const removedFlowActive = ref(false)
 const loadFamilyRequestId = ref(0)
+const REALTIME_RESUME_EVENT = 'famcart:realtime-resume'
 
 function sleep(ms: number) {
   return new Promise((resolve) => {
@@ -69,17 +71,13 @@ function formatJoinDate(value: string) {
 }
 
 function getCurrentUserDisplayName() {
-  return (
-    user.value?.fullName?.trim()
-    || user.value?.firstName?.trim()
-    || user.value?.username?.trim()
-    || null
-  )
+  return getUserDisplayName(user.value)
 }
 
 function getAvatarUrl(member: FamilyMember) {
-  if (member.user_id === userId.value && user.value?.imageUrl) {
-    return user.value.imageUrl
+  const selfAvatarUrl = getUserAvatarUrl(user.value)
+  if (member.user_id === userId.value && selfAvatarUrl) {
+    return selfAvatarUrl
   }
 
   if (member.image_url) return member.image_url
@@ -248,13 +246,8 @@ async function loadFamily(nextUserId: string) {
 }
 
 async function syncSelfProfile(selfUserId: string, familyId: string) {
-  const displayName =
-    user.value?.fullName?.trim() ||
-    user.value?.firstName?.trim() ||
-    user.value?.username?.trim() ||
-    null
-
-  const imageUrl = user.value?.imageUrl || null
+  const displayName = getUserDisplayName(user.value)
+  const imageUrl = getUserAvatarUrl(user.value)
 
   if (!displayName && !imageUrl) return
 
@@ -455,6 +448,20 @@ function startMembershipSubscription(nextUserId: string) {
     })
 }
 
+function handleRealtimeResume() {
+  if (!userId.value) return
+
+  startMembershipSubscription(userId.value)
+
+  if (!family.value?.id) {
+    void loadFamily(userId.value)
+    return
+  }
+
+  startFamilySubscription(family.value.id)
+  void refreshFamilyStateSilently(family.value.id)
+}
+
 watch(
   () => user.value?.id,
   (nextUserId) => {
@@ -515,6 +522,12 @@ onMounted(() => {
     if (document.visibilityState !== 'visible' || !family.value?.id) return
     void refreshFamilyStateSilently(family.value.id)
   }, 20000)
+
+  window.addEventListener(REALTIME_RESUME_EVENT, handleRealtimeResume)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener(REALTIME_RESUME_EVENT, handleRealtimeResume)
 })
 
 function handleFamilyReady(nextFamily: Family) {
@@ -600,7 +613,17 @@ function handleTryAgain() {
         <button v-if="hasActiveMembership" type="button" class="nav-icon-btn" @click="showSettings = true" aria-label="Settings">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
-        <UserButton />
+        <div class="nav-profile" aria-label="Profile management">
+          <UserButton
+            user-profile-mode="modal"
+            :appearance="{
+              elements: {
+                userButtonTrigger: 'nav-profile-trigger',
+                avatarBox: 'nav-profile-avatar',
+              },
+            }"
+          />
+        </div>
       </div>
     </header>
 
@@ -642,6 +665,7 @@ function handleTryAgain() {
     <Transition name="members-pop">
       <div v-if="showMembers && hasActiveMembership && family" class="members-overlay" @click.self="showMembers = false">
         <div class="members-sheet">
+          <div class="members-handle" />
           <div class="members-header">
             <h3>Family Members</h3>
             <button type="button" class="members-close" @click="showMembers = false">Done</button>
@@ -798,9 +822,17 @@ function handleTryAgain() {
   max-height: 80dvh;
   background: #f6f8f7;
   border-radius: 16px 16px 0 0;
-  padding: 16px;
+  padding: 0 16px calc(var(--safe-bottom) + 12px);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+.members-handle {
+  width: 36px;
+  height: 4px;
+  margin: 8px auto 6px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.15);
 }
 
 .members-header {
@@ -1024,6 +1056,22 @@ function handleTryAgain() {
 
 .nav-icon-btn:active {
   background: rgba(0, 0, 0, 0.06);
+}
+
+.nav-profile {
+  display: grid;
+  place-items: center;
+}
+
+.nav-profile :deep(.nav-profile-trigger) {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+}
+
+.nav-profile :deep(.nav-profile-avatar) {
+  width: 36px;
+  height: 36px;
 }
 
 .app-body {
