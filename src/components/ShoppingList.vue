@@ -40,6 +40,8 @@ let syncRecoveryTimer: number | null = null
 let lastItemsSyncAt = 0
 let syncInFlight: Promise<void> | null = null
 let itemsChannelSubscribed = false
+let itemsSubscriptionGen = 0
+let recoveryInFlight = false
 
 type ItemsBroadcastPayload =
   | { type: 'upsert'; item: ShoppingItemModel }
@@ -227,35 +229,43 @@ function scheduleItemsReconnect() {
 function handleItemsVisibilityChange() {
   if (document.visibilityState !== 'visible') return
 
-  if (navigator.onLine) {
-    void syncOfflineQueueInternal(true)
+  // Always re-subscribe — the WebSocket likely died while backgrounded
+  if (!itemsChannelSubscribed || itemsSyncIsStale(VISIBILITY_SYNC_THRESHOLD_MS)) {
+    void recoverItemsRealtime()
     return
   }
 
-  if (!itemsSyncIsStale(VISIBILITY_SYNC_THRESHOLD_MS)) return
-  void pullLatestItemsSilently()
+  if (navigator.onLine) {
+    void syncOfflineQueueInternal(true)
+  }
 }
 
 async function stopItemsSubscription() {
-  if (!itemsChannel) return
+  const channel = itemsChannel
+  if (!channel) return
   itemsChannelSubscribed = false
-  await supabase.removeChannel(itemsChannel)
   itemsChannel = null
+  await supabase.removeChannel(channel)
 }
 
 async function recoverItemsRealtime() {
-  if (!props.family?.id) return
+  if (!props.family?.id || recoveryInFlight) return
+  recoveryInFlight = true
 
-  await stopItemsSubscription()
-  startItemsSubscription()
-  lastItemsSyncAt = 0
+  try {
+    await stopItemsSubscription()
+    startItemsSubscription()
+    lastItemsSyncAt = 0
 
-  if (navigator.onLine) {
-    await syncOfflineQueueInternal(true)
-    return
+    if (navigator.onLine) {
+      await syncOfflineQueueInternal(true)
+      return
+    }
+
+    await pullLatestItemsSilently()
+  } finally {
+    recoveryInFlight = false
   }
-
-  await pullLatestItemsSilently()
 }
 
 function handleRealtimeResume() {
@@ -265,6 +275,8 @@ function handleRealtimeResume() {
 function startItemsSubscription() {
   void stopItemsSubscription()
   itemsChannelSubscribed = false
+
+  const gen = ++itemsSubscriptionGen
 
   itemsChannel = supabase
     .channel(`items:${props.family.id}`, {
@@ -276,6 +288,7 @@ function startItemsSubscription() {
       },
     })
     .on('broadcast', { event: 'items-mutated' }, ({ payload }) => {
+      if (gen !== itemsSubscriptionGen) return
       handleItemsBroadcast(payload as ItemsBroadcastPayload)
     })
     .on(
@@ -287,6 +300,7 @@ function startItemsSubscription() {
         filter: `family_id=eq.${props.family.id}`,
       },
       (payload) => {
+        if (gen !== itemsSubscriptionGen) return
         markItemsSynced()
 
         if (payload.eventType === 'INSERT') {
@@ -310,6 +324,8 @@ function startItemsSubscription() {
       },
     )
     .subscribe((status) => {
+      if (gen !== itemsSubscriptionGen) return
+
       if (status === 'SUBSCRIBED') {
         itemsChannelSubscribed = true
         listError.value = ''
@@ -512,7 +528,7 @@ async function syncOfflineQueueInternal(forceRefresh: boolean) {
 }
 
 function handleOnlineSync() {
-  void syncOfflineQueueInternal(true)
+  void recoverItemsRealtime()
 }
 
 async function addItem() {
@@ -591,9 +607,15 @@ async function toggleItem(item: ShoppingItemModel) {
   setItemPending(item.id, true)
 
   const nextCompleted = !item.completed
+  const optimisticItem = { ...item, completed: nextCompleted }
+
+  // Optimistic local update
   items.value = items.value.map((currentItem) =>
-    currentItem.id === item.id ? { ...currentItem, completed: nextCompleted } : currentItem,
+    currentItem.id === item.id ? optimisticItem : currentItem,
   )
+
+  // Broadcast optimistic state immediately so other family members see it instantly
+  void broadcastItemsMutation({ type: 'upsert', item: optimisticItem })
 
   const response = await supabase
     .from('items')
@@ -617,6 +639,8 @@ async function toggleItem(item: ShoppingItemModel) {
     items.value = items.value.map((currentItem) =>
       currentItem.id === item.id ? { ...currentItem, completed: item.completed } : currentItem,
     )
+    // Broadcast rollback so other family members revert too
+    void broadcastItemsMutation({ type: 'upsert', item })
     setItemPending(item.id, false)
     return
   }
@@ -625,7 +649,6 @@ async function toggleItem(item: ShoppingItemModel) {
     const serverItem = response.data as ShoppingItemModel
     applyServerItem(serverItem)
     markItemsSynced()
-    void broadcastItemsMutation({ type: 'upsert', item: serverItem })
   }
 
   setItemPending(item.id, false)
@@ -639,6 +662,9 @@ async function deleteItem(itemId: string) {
 
   const previousItems = items.value
   applyDeletedItem(itemId)
+
+  // Broadcast delete immediately so other family members see it instantly
+  void broadcastItemsMutation({ type: 'delete', itemId })
 
   const response = await supabase.from('items').delete().eq('id', itemId)
 
@@ -655,12 +681,16 @@ async function deleteItem(itemId: string) {
 
     listError.value = response.error.message
     items.value = previousItems
+    // Broadcast rollback — re-add the item for other family members
+    const restoredItem = previousItems.find((i) => i.id === itemId)
+    if (restoredItem) {
+      void broadcastItemsMutation({ type: 'upsert', item: restoredItem })
+    }
     setItemPending(itemId, false)
     return
   }
 
   markItemsSynced()
-  void broadcastItemsMutation({ type: 'delete', itemId })
   setItemPending(itemId, false)
 }
 
@@ -678,6 +708,9 @@ async function checkoutCompleted() {
   const previousItems = items.value
   applyDeletedItems(ids)
 
+  // Broadcast checkout immediately so other family members see it instantly
+  void broadcastItemsMutation({ type: 'delete-many', itemIds: ids })
+
   const response = await supabase.from('items').delete().in('id', ids)
 
   if (response.error) {
@@ -693,12 +726,16 @@ async function checkoutCompleted() {
 
     listError.value = response.error.message
     items.value = previousItems
+    // Broadcast rollback — re-add items for other family members
+    const restoredItems = previousItems.filter((i) => ids.includes(i.id))
+    for (const item of restoredItems) {
+      void broadcastItemsMutation({ type: 'upsert', item })
+    }
     isCheckingOut.value = false
     return
   }
 
   markItemsSynced()
-  void broadcastItemsMutation({ type: 'delete-many', itemIds: ids })
   isCheckingOut.value = false
 }
 
@@ -714,14 +751,23 @@ watch(
 onMounted(() => {
   // Heartbeat fallback for cases where a mobile websocket silently stalls.
   syncRecoveryTimer = window.setInterval(() => {
-    if (document.visibilityState === 'visible' && itemsSyncIsStale()) {
+    if (document.visibilityState !== 'visible') return
+
+    // If the channel is dead, fully recover (re-subscribe + pull)
+    if (!itemsChannelSubscribed) {
+      void recoverItemsRealtime()
+      return
+    }
+
+    // If the channel is alive but data is stale, just pull
+    if (itemsSyncIsStale()) {
       if (navigator.onLine) {
         void syncOfflineQueueInternal(true)
       } else {
         void pullLatestItemsSilently()
       }
     }
-  }, 20000)
+  }, 15000)
 
   document.addEventListener('visibilitychange', handleItemsVisibilityChange)
   window.addEventListener('online', handleOnlineSync)

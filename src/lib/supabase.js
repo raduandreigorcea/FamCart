@@ -15,4 +15,8 @@ export function setSupabaseAccessTokenGetter(getter) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   accessToken: async () => await accessTokenGetter(),
+  realtime: {
+    heartbeatIntervalMs: 15_000,
+    reconnectAfterMs: (attempts) => Math.min(1000 * 2 ** attempts, 10_000),
+  },
 })

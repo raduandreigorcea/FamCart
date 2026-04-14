@@ -462,6 +462,15 @@ function handleRealtimeResume() {
   void refreshFamilyStateSilently(family.value.id)
 }
 
+function handleDashboardVisibilityChange() {
+  if (document.visibilityState !== 'visible') return
+  handleRealtimeResume()
+}
+
+function handleDashboardOnline() {
+  handleRealtimeResume()
+}
+
 watch(
   () => user.value?.id,
   (nextUserId) => {
@@ -520,13 +529,18 @@ onMounted(() => {
   // Heartbeat fallback for stale realtime connections.
   familySyncTimer = window.setInterval(() => {
     if (document.visibilityState !== 'visible' || !family.value?.id) return
-    void refreshFamilyStateSilently(family.value.id)
-  }, 20000)
+    // Re-subscribe channels + refresh data periodically
+    handleRealtimeResume()
+  }, 15000)
 
+  document.addEventListener('visibilitychange', handleDashboardVisibilityChange)
+  window.addEventListener('online', handleDashboardOnline)
   window.addEventListener(REALTIME_RESUME_EVENT, handleRealtimeResume)
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', handleDashboardVisibilityChange)
+  window.removeEventListener('online', handleDashboardOnline)
   window.removeEventListener(REALTIME_RESUME_EVENT, handleRealtimeResume)
 })
 
