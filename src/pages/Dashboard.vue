@@ -897,6 +897,7 @@ function handleTryAgain() {
 }
 
 .member-row-name {
+  line-height: 1.35;
   font-size: 0.9rem;
   font-weight: 600;
   color: #1c1c1e;
@@ -913,7 +914,12 @@ function handleTryAgain() {
 
 .you-tag {
   margin-left: 6px;
-  padding: 2px 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  line-height: 1;
+  padding: 3px 6px;
   border-radius: 999px;
   font-size: 0.6875rem;
   font-weight: 700;

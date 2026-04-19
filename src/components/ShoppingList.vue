@@ -269,7 +269,14 @@ async function recoverItemsRealtime() {
 }
 
 function handleRealtimeResume() {
-  void recoverItemsRealtime()
+  // Only recover if the channel is actually dead. Avoid tearing down a
+  // healthy channel just because the app briefly backgrounded (e.g. the
+  // barcode scanner overlay triggers app-state / visibility events).
+  if (!itemsChannelSubscribed) {
+    void recoverItemsRealtime()
+  } else if (itemsSyncIsStale(VISIBILITY_SYNC_THRESHOLD_MS)) {
+    void pullLatestItemsSilently()
+  }
 }
 
 function startItemsSubscription() {
@@ -868,8 +875,6 @@ onBeforeUnmount(() => {
     <!-- Bottom composer bar -->
     <div class="composer">
       <div class="composer-card">
-        <div class="composer-header"></div>
-
         <div class="composer-input-row">
           <ProductSearch
             v-model="draftName"
