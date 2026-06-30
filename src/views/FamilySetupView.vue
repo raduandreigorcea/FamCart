@@ -181,7 +181,7 @@ async function joinFamily() {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  background: #f0f4f1;
+  background: var(--color-primary-bg);
 }
 
 /* ── Main content ────────────────────────────────────────── */
@@ -204,7 +204,7 @@ async function joinFamily() {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--green);
+  color: var(--color-primary);
   margin: 0 0 1.5rem;
 }
 
@@ -212,18 +212,18 @@ async function joinFamily() {
   font-family: inherit;
   font-size: 1.45rem;
   font-weight: 800;
-  color: #1a1a1a;
+  color: var(--text-primary);
   margin: 0 0 0.5rem;
   line-height: 1.2;
 }
 
 .heading--accent {
-  color: var(--green);
+  color: var(--color-primary);
 }
 
 .sub {
   font-size: 0.875rem;
-  color: #6b7280;
+  color: var(--text-secondary);
   margin: 0;
   line-height: 1.55;
 }

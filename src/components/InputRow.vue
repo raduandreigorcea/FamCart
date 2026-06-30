@@ -41,15 +41,15 @@ defineEmits(['update:modelValue'])
 .input-row {
   display: flex;
   align-items: center;
-  border: 1.5px solid #e4e4e4;
+  border: 1.5px solid var(--border-main);
   border-radius: 14px;
-  background: #fff;
+  background: var(--bg-surface);
   transition: border-color 0.15s;
   overflow: hidden;
 }
 
 .input-row:focus-within {
-  border-color: var(--green);
+  border-color: var(--color-primary);
 }
 
 .input-row input {
@@ -59,13 +59,13 @@ defineEmits(['update:modelValue'])
   background: transparent;
   font-family: inherit;
   font-size: 0.95rem;
-  color: #1a1a1a;
+  color: var(--text-primary);
   outline: none;
   min-width: 0;
 }
 
 .input-row input::placeholder {
-  color: #b0b8b0;
+  color: var(--text-disabled);
   font-weight: 400;
   letter-spacing: 0;
   text-transform: none;
@@ -82,8 +82,8 @@ defineEmits(['update:modelValue'])
   height: 40px;
   flex-shrink: 0;
   margin: 4px;
-  background: var(--green);
-  color: #fff;
+  background: var(--color-primary);
+  color: var(--bg-surface);
   border: none;
   border-radius: 10px;
   cursor: pointer;
@@ -108,7 +108,7 @@ defineEmits(['update:modelValue'])
   width: 18px;
   height: 18px;
   border: 2px solid rgba(255, 255, 255, 0.4);
-  border-top-color: #fff;
+  border-top-color: var(--bg-surface);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }

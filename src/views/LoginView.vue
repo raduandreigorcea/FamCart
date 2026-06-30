@@ -239,25 +239,25 @@ function goBack() {
     font-size: 2.1rem;
     font-weight: 800;
     letter-spacing: -0.02em;
-    color: #1a1a1a;
+    color: var(--text-primary);
     line-height: 1;
 }
 
 .brand-name--accent {
-    color: var(--green);
+    color: var(--color-primary);
 }
 
 .brand-tagline {
     font-family: inherit;
     font-size: 1rem;
     font-weight: 600;
-    color: #1a1a1a;
+    color: var(--text-primary);
     margin: 0;
     line-height: 1.4;
 }
 
 .brand-tagline--accent {
-    color: var(--green);
+    color: var(--color-primary);
     font-weight: 600;
 }
 
@@ -276,7 +276,7 @@ function goBack() {
 
 .code-hint {
     font-size: 0.85rem;
-    color: #555;
+    color: var(--text-secondary);
     margin: 0;
     line-height: 1.4;
 }
@@ -298,18 +298,18 @@ function goBack() {
     font-family: inherit;
     font-size: 1.4rem;
     font-weight: 700;
-    border: 1.5px solid #e4e4e4;
+    border: 1.5px solid var(--border-main);
     border-radius: 12px;
     outline: none;
-    color: #1a1a1a;
-    background: #fff;
+    color: var(--text-primary);
+    background: var(--bg-surface);
     transition: border-color 0.15s, background 0.15s;
     caret-color: transparent;
 }
 
 .otp-input:focus {
-    border-color: var(--green);
-    background: color-mix(in srgb, var(--green) 10%, white);
+    border-color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 10%, white);
 }
 
 .otp-status {
@@ -319,15 +319,15 @@ function goBack() {
 }
 
 .spinner--dark {
-    border-color: var(--green);
-    border-top-color: var(--green);
+    border-color: var(--color-primary);
+    border-top-color: var(--color-primary);
 }
 
 .spinner {
     width: 18px;
     height: 18px;
     border: 2px solid rgba(255, 255, 255, 0.4);
-    border-top-color: #fff;
+    border-top-color: var(--bg-surface);
     border-radius: 50%;
     animation: spin 0.7s linear infinite;
 }
@@ -343,7 +343,7 @@ function goBack() {
     display: flex;
     align-items: center;
     margin: 1.25rem 0;
-    color: #ccc;
+    color: var(--text-disabled);
     font-size: 0.75rem;
     gap: 0.75rem;
 }
@@ -353,7 +353,7 @@ function goBack() {
     content: '';
     flex: 1;
     height: 1px;
-    background: #ebebeb;
+    background: var(--border-main);
 }
 
 /* OAuth row */
@@ -368,17 +368,17 @@ function goBack() {
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1.5px solid #e4e4e4;
+    border: 1.5px solid var(--border-main);
     border-radius: 14px;
-    background: #fff;
+    background: var(--bg-surface);
     cursor: pointer;
     transition: background 0.15s, border-color 0.15s;
     padding: 0;
 }
 
 .oauth-btn:hover:not(:disabled) {
-    background: #f6f6f6;
-    border-color: #c8c8c8;
+    background: var(--bg-main);
+    border-color: var(--border-main);
 }
 
 .oauth-btn:disabled {
@@ -388,15 +388,15 @@ function goBack() {
 
 .oauth-btn--loading {
     opacity: 1 !important;
-    border-color: var(--green) !important;
-    background: color-mix(in srgb, var(--green) 12%, white) !important;
+    border-color: var(--color-primary) !important;
+    background: color-mix(in srgb, var(--color-primary) 12%, white) !important;
 }
 
 .oauth-spinner {
     width: 20px;
     height: 20px;
-    border: 2px solid color-mix(in srgb, var(--green) 20%, white);
-    border-top-color: var(--green);
+    border: 2px solid color-mix(in srgb, var(--color-primary) 20%, white);
+    border-top-color: var(--color-primary);
     border-radius: 50%;
     animation: spin 0.7s linear infinite;
 }

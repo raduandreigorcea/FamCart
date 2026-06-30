@@ -1,7 +1,40 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
 
 :root {
-  --green: #4d8c65;
+  /* Brand */
+  --color-primary: #4d8c65;         /* The main green */
+  --color-primary-bg: #f0f4f1;      /* Light green for backgrounds/badges */
+  --color-primary-text: #065f46;    /* Dark green for text in badges */
+
+  /* Surface & Backgrounds */
+  --bg-main: #f5f5f7;               /* The main body background */
+  --bg-surface: #ffffff;            /* Card/Modal backgrounds */
+  --bg-surface-alt: #f9fafb;        /* Slight contrast surface (headers, etc.) */
+  --bg-hover: #f3f4f6;              /* Hover state for items */
+
+  /* Text */
+  --text-primary: #1a1a1a;          /* Main readable text */
+  --text-secondary: #6b7280;        /* Secondary/muted text */
+  --text-disabled: #9ca3af;         /* Disabled or tertiary text */
+
+  /* Borders */
+  --border-light: #f3f4f6;          /* Very subtle dividers */
+  --border-main: #e5e7eb;           /* Standard borders */
+  --border-dark: #d1d5db;           /* Stronger borders/active inputs */
+
+  /* Danger / Destructive */
+  --danger-main: #ef4444;           /* Red buttons/icons */
+  --danger-bg: #fdf3f2;             /* Light red backgrounds */
+  --danger-border: #fecaca;         /* Red borders */
+  --danger-text: #c0392b;           /* Dark red text */
+
+  /* Warning */
+  --warning-bg: #fef3c7;            /* Light amber backgrounds */
+  --warning-border: #fde68a;        /* Amber borders */
+  --warning-text: #b45309;          /* Dark amber text */
+
+  /* Overlay */
+  --backdrop: rgba(0, 0, 0, 0.4);
 }
 
 *,
@@ -17,12 +50,12 @@ body {
   font-size: 1rem;
   font-weight: 400;
   letter-spacing: 0;
-  color: #1c1c1e;
+  color: var(--text-primary);
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-tap-highlight-color: transparent;
-  background: #f5f5f7;
+  background: var(--bg-main);
 }
 
 button,

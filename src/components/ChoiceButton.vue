@@ -25,18 +25,18 @@ defineEmits(['click'])
   gap: 1rem;
   width: 100%;
   padding: 1.125rem 1.25rem;
-  border: 1.5px solid #e4e4e4;
+  border: 1.5px solid var(--border-main);
   border-radius: 16px;
-  background: #fff;
+  background: var(--bg-surface);
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
   text-align: left;
 }
 
 .choice-btn:hover {
-  border-color: var(--green);
-  background: color-mix(in srgb, var(--green) 5%, white);
-  box-shadow: 0 2px 12px color-mix(in srgb, var(--green) 14%, transparent);
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 5%, white);
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--color-primary) 14%, transparent);
 }
 
 .choice-icon {
@@ -55,12 +55,12 @@ defineEmits(['click'])
   font-family: inherit;
   font-size: 0.95rem;
   font-weight: 700;
-  color: #1a1a1a;
+  color: var(--text-primary);
 }
 
 .choice-desc {
   font-size: 0.78rem;
-  color: #9ca3af;
+  color: var(--text-disabled);
   line-height: 1.35;
 }
 </style>

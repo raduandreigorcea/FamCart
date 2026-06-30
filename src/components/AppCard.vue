@@ -14,7 +14,7 @@ defineProps({
 <style scoped>
 .app-card {
   width: 100%;
-  background: #fff;
+  background: var(--bg-surface);
   border-radius: 24px;
   padding: 2.25rem 2rem 2rem;
   box-shadow: 0 2px 24px rgba(0, 0, 0, 0.06), 0 1px 4px rgba(0, 0, 0, 0.04);

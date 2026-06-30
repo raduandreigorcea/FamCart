@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { useSupabase } from '../supabase.js'
 import AppTopbar from '../components/AppTopbar.vue'
 import ErrorMessage from '../components/ErrorMessage.vue'
+import ShoppingListItem from '../components/ShoppingListItem.vue'
 
 const { userId, isLoaded, getToken } = useAuth()
 const { user } = useUser()
@@ -445,7 +446,7 @@ async function deleteItem(item) {
                 :disabled="newQty >= 99 || adding"
                 aria-label="Increase quantity"
               >
-                +
+                <span class="qty-icon qty-icon--plus"></span>
               </button>
               <button
                 type="button"
@@ -454,7 +455,7 @@ async function deleteItem(item) {
                 :disabled="newQty <= 1 || adding"
                 aria-label="Decrease quantity"
               >
-                -
+                <span class="qty-icon qty-icon--minus"></span>
               </button>
               </div>
             </div>
@@ -467,10 +468,7 @@ async function deleteItem(item) {
             />
             <button type="submit" class="add-btn" :disabled="adding || !newItem.trim()" aria-label="Add">
               <span v-if="adding" class="spinner"></span>
-              <svg v-else viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2"
-                  stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
+              <span v-else class="add-icon"></span>
             </button>
           </div>
           <ErrorMessage :message="addError" />
@@ -482,72 +480,25 @@ async function deleteItem(item) {
 
         <!-- List -->
         <ul v-if="uncheckedItems.length" class="item-list">
-          <li
+          <ShoppingListItem
             v-for="item in uncheckedItems"
             :key="item.id"
-            class="item"
-            :class="{ 'item--checked': item.checked }"
-          >
-            <button class="item-check" @click="toggleItem(item)" :aria-label="item.checked ? 'Uncheck' : 'Check'">
-              <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="10" cy="10" r="8.25" stroke="currentColor" stroke-width="1.5"/>
-                <path v-if="item.checked" d="M6.5 10.5l2.5 2.5 4.5-5" stroke="currentColor" stroke-width="1.75"
-                  stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-            <img
-              v-if="item.added_by_image_url"
-              :src="item.added_by_image_url"
-              :alt="(item.added_by_name || 'Member') + ' avatar'"
-              class="item-avatar"
-            />
-            <span v-else class="item-avatar item-avatar--fallback" :title="item.added_by_name || 'Member'">
-              {{ (item.added_by_name || '?').slice(0, 1).toUpperCase() }}
-            </span>
-            <span v-if="item.quantity > 1" class="item-qty">x{{ item.quantity }}</span>
-            <span class="item-name">{{ item.name }}</span>
-            <button class="item-delete" @click="deleteItem(item)" aria-label="Delete">
-              <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M6 6l8 8M14 6l-8 8" stroke="currentColor" stroke-width="1.5"
-                  stroke-linecap="round"/>
-              </svg>
-            </button>
-          </li>
+            :item="item"
+            @toggle="toggleItem"
+            @delete="deleteItem"
+          />
         </ul>
 
         <p v-if="checkedItems.length" class="section-label">Checked</p>
 
         <ul v-if="checkedItems.length" class="item-list item-list--checked">
-          <li
+          <ShoppingListItem
             v-for="item in checkedItems"
             :key="item.id"
-            class="item item--checked"
-          >
-            <button class="item-check" @click="toggleItem(item)" :aria-label="item.checked ? 'Uncheck' : 'Check'">
-              <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="10" cy="10" r="8.25" stroke="currentColor" stroke-width="1.5"/>
-                <path v-if="item.checked" d="M6.5 10.5l2.5 2.5 4.5-5" stroke="currentColor" stroke-width="1.75"
-                  stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-            <img
-              v-if="item.added_by_image_url"
-              :src="item.added_by_image_url"
-              :alt="(item.added_by_name || 'Member') + ' avatar'"
-              class="item-avatar"
-            />
-            <span v-else class="item-avatar item-avatar--fallback" :title="item.added_by_name || 'Member'">
-              {{ (item.added_by_name || '?').slice(0, 1).toUpperCase() }}
-            </span>
-            <span v-if="item.quantity > 1" class="item-qty">x{{ item.quantity }}</span>
-            <span class="item-name">{{ item.name }}</span>
-            <button class="item-delete" @click="deleteItem(item)" aria-label="Delete">
-              <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M6 6l8 8M14 6l-8 8" stroke="currentColor" stroke-width="1.5"
-                  stroke-linecap="round"/>
-              </svg>
-            </button>
-          </li>
+            :item="item"
+            @toggle="toggleItem"
+            @delete="deleteItem"
+          />
         </ul>
 
         <p v-if="!items.length && !loadError" class="empty-state">
@@ -564,7 +515,7 @@ async function deleteItem(item) {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  background: #f0f4f1;
+  background: var(--color-primary-bg);
 }
 
 .dashboard-main {
@@ -587,7 +538,7 @@ async function deleteItem(item) {
   margin-bottom: 0.9rem;
   font-size: 0.8rem;
   font-weight: 600;
-  color: #9ca3af;
+  color: var(--text-disabled);
 }
 
 /* Add form */
@@ -601,15 +552,15 @@ async function deleteItem(item) {
 .add-row {
   display: flex;
   align-items: center;
-  background: #fff;
-  border: 1.5px solid #e4e4e4;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-main);
   border-radius: 16px;
   overflow: hidden;
   transition: border-color 0.15s;
 }
 
 .add-row:focus-within {
-  border-color: var(--green);
+  border-color: var(--color-primary);
 }
 
 .add-row input {
@@ -619,13 +570,13 @@ async function deleteItem(item) {
   background: transparent;
   font-family: inherit;
   font-size: 0.95rem;
-  color: #1a1a1a;
+  color: var(--text-primary);
   outline: none;
   min-width: 0;
 }
 
 .add-row input::placeholder {
-  color: #b0b8b0;
+  color: var(--text-disabled);
 }
 
 .qty-picker {
@@ -634,7 +585,7 @@ async function deleteItem(item) {
   align-items: center;
   justify-content: center;
   gap: 0.35rem;
-  border-right: 1px solid #ececec;
+  border-right: 1px solid var(--border-main);
   padding: 0.2rem 0.5rem;
   margin-right: 0.2rem;
 }
@@ -649,14 +600,32 @@ async function deleteItem(item) {
 .qty-btn {
   width: 24px;
   height: 24px;
-  border: 1px solid #e4e4e4;
-  background: #fff;
-  color: #6b7280;
+  border: 1px solid var(--border-main);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
   border-radius: 6px;
   cursor: pointer;
   line-height: 1;
   padding: 0;
-  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qty-icon {
+  width: 14px;
+  height: 14px;
+  background-color: var(--text-secondary);
+}
+
+.qty-icon--plus {
+  mask: url('../assets/plus.svg') no-repeat center / contain;
+  -webkit-mask: url('../assets/plus.svg') no-repeat center / contain;
+}
+
+.qty-icon--minus {
+  mask: url('../assets/minus.svg') no-repeat center / contain;
+  -webkit-mask: url('../assets/minus.svg') no-repeat center / contain;
 }
 
 .qty-btn:disabled {
@@ -678,7 +647,7 @@ async function deleteItem(item) {
   text-align: center;
   font-size: 0.82rem;
   font-weight: 700;
-  color: #374151;
+  color: var(--text-primary);
 }
 
 .qty-slide-up-enter-active,
@@ -714,8 +683,8 @@ async function deleteItem(item) {
   flex-shrink: 0;
   margin: 4px;
   margin-right: 8px;
-  background: var(--green);
-  color: #fff;
+  background: var(--color-primary);
+  color: var(--bg-surface);
   border: none;
   border-radius: 12px;
   cursor: pointer;
@@ -726,9 +695,12 @@ async function deleteItem(item) {
   padding: 0;
 }
 
-.add-btn svg {
+.add-icon {
   width: 18px;
   height: 18px;
+  background-color: var(--bg-surface);
+  mask: url('../assets/plus.svg') no-repeat center / contain;
+  -webkit-mask: url('../assets/plus.svg') no-repeat center / contain;
 }
 
 .add-btn:disabled {
@@ -756,125 +728,14 @@ async function deleteItem(item) {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #9ca3af;
-}
-
-.item {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  background: #fff;
-  border-radius: 14px;
-  padding: 0.875rem 0.875rem 0.875rem 0.75rem;
-  border: 1.5px solid #ebebeb;
-  transition: opacity 0.2s;
-}
-
-.item--checked {
-  opacity: 0.5;
-}
-
-.item--checked .item-name {
-  text-decoration: line-through;
-  color: #9ca3af;
-}
-
-.item-check {
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  color: #d1d5db;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.15s;
-}
-
-.item--checked .item-check {
-  color: var(--green);
-}
-
-.item-check:hover {
-  color: var(--green);
-}
-
-.item-check svg {
-  width: 22px;
-  height: 22px;
-}
-
-.item-avatar {
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  object-fit: cover;
-  flex-shrink: 0;
-  border: 1px solid #e5e7eb;
-}
-
-.item-avatar--fallback {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: #f3f4f6;
-  color: #6b7280;
-  font-size: 0.8rem;
-  font-weight: 700;
-}
-
-.item-name {
-  flex: 1;
-  font-size: 0.95rem;
-  color: #1a1a1a;
-  line-height: 1.4;
-  word-break: break-word;
-}
-
-.item-qty {
-  flex-shrink: 0;
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--green);
-  background: color-mix(in srgb, var(--green) 10%, white);
-  border: 1px solid color-mix(in srgb, var(--green) 28%, white);
-  border-radius: 999px;
-  padding: 0.15rem 0.45rem;
-}
-
-.item-delete {
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  color: #d1d5db;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.15s;
-  border-radius: 6px;
-}
-
-.item-delete:hover {
-  color: #ef4444;
-}
-
-.item-delete svg {
-  width: 16px;
-  height: 16px;
+  color: var(--text-disabled);
 }
 
 /* Empty state */
 .empty-state {
   text-align: center;
   font-size: 0.875rem;
-  color: #9ca3af;
+  color: var(--text-disabled);
   margin: 2.5rem 0;
   line-height: 1.5;
 }
@@ -884,7 +745,7 @@ async function deleteItem(item) {
   width: 16px;
   height: 16px;
   border: 2px solid rgba(255, 255, 255, 0.4);
-  border-top-color: #fff;
+  border-top-color: var(--bg-surface);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }

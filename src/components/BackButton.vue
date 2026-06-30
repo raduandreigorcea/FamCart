@@ -18,7 +18,7 @@ defineEmits(['click'])
   gap: 0.3rem;
   background: none;
   border: none;
-  color: #6b7280;
+  color: var(--text-secondary);
   font-size: 0.82rem;
   font-family: inherit;
   cursor: pointer;
@@ -29,8 +29,8 @@ defineEmits(['click'])
 }
 
 .back-btn:hover {
-  color: var(--green);
-  background: color-mix(in srgb, var(--green) 8%, transparent);
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
 }
 
 .back-btn__arrow {

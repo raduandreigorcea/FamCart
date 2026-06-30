@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { useSupabase } from '../supabase.js'
 import logoImg from '../assets/logo.png'
 import settingsIcon from '../assets/settings.svg'
+import ConfirmModal from './ConfirmModal.vue'
 
 // Raw SVG imports for settings modal
 import layoutGridIcon from '../assets/layout-grid.svg?raw'
@@ -58,6 +59,21 @@ const leavingFamily = ref(false);
 const deletingFamily = ref(false)
 const copied = ref(false)
 
+// Confirm modal state
+const confirmModal = ref({ open: false, title: '', message: '', danger: false, resolve: null })
+
+function showConfirm({ title, message, danger = false }) {
+  return new Promise((resolve) => {
+    confirmModal.value = { open: true, title, message, danger, resolve }
+  })
+}
+
+function handleConfirmModalResult(result) {
+  const resolve = confirmModal.value.resolve
+  confirmModal.value = { open: false, title: '', message: '', danger: false, resolve: null }
+  if (resolve) resolve(result)
+}
+
 const memberCount = computed(() => props.memberProfiles.length);
 
 const visibleMembers = computed(() => props.memberProfiles.slice(0, 4));
@@ -98,7 +114,11 @@ async function copyInviteCode() {
 
 async function leaveFamily() {
   if (!props.familyId || leavingFamily.value) return
-  const confirmed = window.confirm('Leave this family? You will lose access to the shopping list.')
+  const confirmed = await showConfirm({
+    title: 'Leave Family?',
+    message: 'You will lose access to the shopping list and will need a new invite code to rejoin.',
+    danger: true,
+  })
   if (!confirmed) return
   leavingFamily.value = true
   db.from('family_members')
@@ -146,7 +166,11 @@ function randomInviteCode() {
 
 async function regenerateInviteCode() {
   if (!props.familyId || regenerating.value) return
-  const confirmed = window.confirm('Regenerating will invalidate the current invite code. Do you want to continue?')
+  const confirmed = await showConfirm({
+    title: 'Regenerate Invite Code?',
+    message: 'This will immediately invalidate the current invite code. Existing members are unaffected, but anyone with the old code will no longer be able to join.',
+    danger: false,
+  })
   if (!confirmed) return
   regenerating.value = true
   try {
@@ -168,7 +192,11 @@ async function regenerateInviteCode() {
 
 async function removeMember(memberUserId) {
   if (!props.familyId || removingMemberId.value) return
-  const confirmed = window.confirm('Are you sure you want to remove this member from the family?')
+  const confirmed = await showConfirm({
+    title: 'Remove Member?',
+    message: 'This person will immediately lose access to the family shopping list. They can be re-invited using the invite code.',
+    danger: true,
+  })
   if (!confirmed) return
   removingMemberId.value = memberUserId
   try {
@@ -185,7 +213,11 @@ async function removeMember(memberUserId) {
 
 async function deleteFamily() {
   if (!props.familyId || deletingFamily.value) return
-  const confirmed = window.confirm('Delete this family and all shopping data? This cannot be undone.')
+  const confirmed = await showConfirm({
+    title: 'Delete Family Group?',
+    message: `Deleting "${props.familyName}" will permanently remove all members, shopping list items, and history. This action cannot be undone.`,
+    danger: true,
+  })
   if (!confirmed) return
   deletingFamily.value = true
   try {
@@ -503,22 +535,21 @@ async function deleteFamily() {
                   <div class="card-item__info">
                     <p>This will remove you from the family group. You will no longer have access to the shopping list.</p>
                   </div>
-                  <button class="panel-action-btn" type="button" :disabled="leavingFamily" @click="leaveFamily">Leave Family</button>
+                  <button class="danger-action-btn" type="button" :disabled="leavingFamily" @click="leaveFamily">Leave Family</button>
                 </div>
               </div>
 
-              <!-- Invite Code Management Card -->
+              <!-- Invite Code Regen Card -->
               <div class="panel-section" v-if="isOwner">
                 <h4 class="panel-section-title">Invite Code Administration</h4>
                 <div class="card-item card-item--action">
                   <div class="card-item__info">
-                    <h5>Regenerate Invite Code</h5>
-                    <p>This will immediately invalidate the current invite code. Existing family members will not be affected, but future members must use the new code.</p>
+                    <p>Immediately invalidates the current invite code. Existing members are unaffected, but future members must use the new code.</p>
                   </div>
-                  <button 
-                    class="panel-action-btn" 
-                    type="button" 
-                    :disabled="regenerating" 
+                  <button
+                    class="panel-action-btn"
+                    type="button"
+                    :disabled="regenerating"
                     @click="regenerateInviteCode"
                   >
                     <span v-if="regenerating" class="btn-spinner"></span>
@@ -531,35 +562,22 @@ async function deleteFamily() {
                 </div>
               </div>
 
+              <!-- Delete Family Card -->
               <div class="panel-section" v-if="isOwner">
                 <h4 class="panel-section-title text-danger">Delete Family Group</h4>
-                
-                <div class="danger-zone-card">
-                  <div class="danger-zone-header">
-                    <svg class="danger-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    <h5>Warning: This is permanent!</h5>
+                <div class="card-item card-item--action card-item--danger">
+                  <div class="card-item__info">
+                    <p>Permanently deletes <strong>{{ familyName }}</strong>, removes all members, and erases all shopping list data. This cannot be undone.</p>
                   </div>
-                  <div class="danger-zone-body">
-                    <p>Deleting the family group <strong>{{ familyName }}</strong> will:</p>
-                    <ul>
-                      <li>Permanently delete this group and revoke access for all members.</li>
-                      <li>Delete all items in the shopping list, including checked history.</li>
-                      <li>Remove all database associations. This action cannot be reversed.</li>
-                    </ul>
-                  </div>
-                  <div class="danger-zone-footer">
-                    <button 
-                      class="danger-action-btn" 
-                      type="button" 
-                      :disabled="deletingFamily" 
-                      @click="deleteFamily"
-                    >
-                      <span v-if="deletingFamily" class="btn-spinner"></span>
-                      <span v-else>Delete Family</span>
-                    </button>
-                  </div>
+                  <button
+                    class="danger-action-btn"
+                    type="button"
+                    :disabled="deletingFamily"
+                    @click="deleteFamily"
+                  >
+                    <span v-if="deletingFamily" class="btn-spinner btn-spinner--light"></span>
+                    <span v-else>Delete Family</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -568,16 +586,26 @@ async function deleteFamily() {
       </div>
     </div>
   </Transition>
+
+  <!-- Confirm Modal -->
+  <ConfirmModal
+    :open="confirmModal.open"
+    :title="confirmModal.title"
+    :message="confirmModal.message"
+    :danger="confirmModal.danger"
+    @confirm="handleConfirmModalResult(true)"
+    @cancel="handleConfirmModalResult(false)"
+  />
 </template>
 
 <style scoped>
 .topbar {
-  --ui-border: #e5e7eb;
-  --ui-border-soft: #f1f5f9;
-  --ui-text: #374151;
-  --ui-text-muted: #6b7280;
-  --ui-text-strong: #1c1c1e;
-  --ui-bg: #ffffff;
+  --ui-border: var(--border-main);
+  --ui-border-soft: var(--bg-hover);
+  --ui-text: var(--text-primary);
+  --ui-text-muted: var(--text-secondary);
+  --ui-text-strong: var(--text-primary);
+  --ui-bg: var(--bg-surface);
 
   display: flex;
   align-items: center;
@@ -653,9 +681,9 @@ async function deleteFamily() {
   height: 30px;
   border-radius: 999px;
   object-fit: cover;
-  border: 1.5px solid #fff;
+  border: 1.5px solid var(--bg-surface);
   margin-left: -9px;
-  background: #f3f4f6;
+  background: var(--bg-hover);
 }
 
 .member-stack .member-avatar:first-child {
@@ -673,8 +701,8 @@ async function deleteFamily() {
 }
 
 .member-avatar--more {
-  background: #ecfdf5;
-  color: #065f46;
+  background: var(--color-primary-bg);
+  color: var(--color-primary-text);
 }
 
 .topbar-actions {
@@ -699,9 +727,9 @@ async function deleteFamily() {
 }
 
 .settings-btn:hover {
-  color: var(--green);
-  border-color: color-mix(in srgb, var(--green) 40%, white);
-  background: color-mix(in srgb, var(--green) 8%, white);
+  color: var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 40%, white);
+  background: color-mix(in srgb, var(--color-primary) 8%, white);
 }
 
 .settings-icon {
@@ -716,7 +744,7 @@ async function deleteFamily() {
   height: 40px;
   border-radius: 999px;
   border: 2px solid var(--ui-border);
-  background: #f3f4f6;
+  background: var(--bg-hover);
   padding: 0;
   cursor: pointer;
   overflow: hidden;
@@ -728,8 +756,8 @@ async function deleteFamily() {
 }
 
 .user-avatar-btn:hover {
-  border-color: var(--green);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 20%, white);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, white);
 }
 
 .user-avatar-img {
@@ -762,7 +790,7 @@ async function deleteFamily() {
 .settings-modal {
   width: 100%;
   max-width: 640px;
-  background: #ffffff;
+  background: var(--bg-surface);
   border-radius: 20px;
   border: 1px solid var(--ui-border);
   box-shadow: 0 20px 50px rgba(15, 23, 42, 0.15);
@@ -778,7 +806,7 @@ async function deleteFamily() {
   justify-content: space-between;
   padding: 1.25rem 1.5rem;
   border-bottom: 1px solid var(--ui-border-soft);
-  background: #ffffff;
+  background: var(--bg-surface);
 }
 
 .settings-modal__title-wrap {
@@ -791,8 +819,8 @@ async function deleteFamily() {
   width: 38px;
   height: 38px;
   border-radius: 10px;
-  background: color-mix(in srgb, var(--green) 10%, white);
-  color: var(--green);
+  background: color-mix(in srgb, var(--color-primary) 10%, white);
+  color: var(--color-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -823,7 +851,7 @@ async function deleteFamily() {
   height: 32px;
   border-radius: 50%;
   border: 1px solid var(--ui-border-soft);
-  background: #f8fafc;
+  background: var(--bg-surface-alt);
   cursor: pointer;
   color: var(--ui-text-muted);
   display: flex;
@@ -834,7 +862,7 @@ async function deleteFamily() {
 }
 
 .settings-close:hover {
-  background: #f1f5f9;
+  background: var(--bg-hover);
   color: var(--ui-text-strong);
   transform: rotate(90deg);
 }
@@ -848,7 +876,7 @@ async function deleteFamily() {
 .settings-modal__body {
   display: grid;
   grid-template-columns: 180px 1fr;
-  background: #ffffff;
+  background: var(--bg-surface);
   height: 480px;
   overflow: hidden;
 }
@@ -865,7 +893,7 @@ async function deleteFamily() {
 .settings-sidebar {
   padding: 1.25rem 0.75rem;
   border-right: 1px solid var(--ui-border-soft);
-  background: #f8fafc;
+  background: var(--bg-surface-alt);
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -904,7 +932,7 @@ async function deleteFamily() {
 }
 
 .sidebar-tab-btn:hover {
-  background: #f1f5f9;
+  background: var(--bg-hover);
   color: var(--ui-text-strong);
   transform: translateX(2px);
 }
@@ -921,18 +949,18 @@ async function deleteFamily() {
 }
 
 .sidebar-tab-btn.active {
-  background: color-mix(in srgb, var(--green) 8%, white);
-  color: var(--green);
+  background: color-mix(in srgb, var(--color-primary) 8%, white);
+  color: var(--color-primary);
 }
 
 .sidebar-tab-btn--danger:hover {
-  background: #fff5f5;
-  color: #b91c1c;
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .sidebar-tab-btn--danger.active {
-  background: #fff1f1;
-  color: #b91c1c;
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .tab-icon {
@@ -1053,23 +1081,23 @@ async function deleteFamily() {
 .tab-badge {
   margin-left: auto;
   font-size: 0.7rem;
-  background: #e2e8f0;
-  color: #475569;
+  background: var(--border-light);
+  color: var(--text-secondary);
   padding: 0.15rem 0.4rem;
   border-radius: 999px;
   font-weight: 700;
 }
 
 .sidebar-tab-btn.active .tab-badge {
-  background: var(--green);
-  color: #ffffff;
+  background: var(--color-primary);
+  color: var(--bg-surface);
 }
 
 /* Content Area */
 .settings-content-wrapper {
   padding: 1.5rem;
   overflow-y: auto;
-  background: #ffffff;
+  background: var(--bg-surface);
 }
 
 /* Panels */
@@ -1097,7 +1125,7 @@ async function deleteFamily() {
 }
 
 .panel-section-title.text-danger {
-  color: #b91c1c;
+  color: var(--danger-text);
 }
 
 .panel-section-desc {
@@ -1114,7 +1142,7 @@ async function deleteFamily() {
 /* Overview Panel cards */
 .summary-card {
   border: 1px solid var(--ui-border-soft);
-  background: #f8fafc;
+  background: var(--bg-surface-alt);
   border-radius: 12px;
   padding: 1rem;
 }
@@ -1143,14 +1171,14 @@ async function deleteFamily() {
 }
 
 .summary-value.highlight {
-  color: var(--green);
+  color: var(--color-primary);
 }
 
 .owner-chip {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  background: #ffffff;
+  background: var(--bg-surface);
   padding: 0.25rem 0.5rem;
   border-radius: 8px;
   border: 1px solid var(--ui-border-soft);
@@ -1171,8 +1199,8 @@ async function deleteFamily() {
 
 /* Invite card */
 .invite-card {
-  border: 1.5px dashed color-mix(in srgb, var(--green) 35%, #e2e8f0);
-  background: color-mix(in srgb, var(--green) 3%, white);
+  border: 1.5px dashed color-mix(in srgb, var(--color-primary) 35%, var(--border-light));
+  background: color-mix(in srgb, var(--color-primary) 3%, white);
   border-radius: 12px;
   padding: 1rem;
   display: flex;
@@ -1206,8 +1234,8 @@ async function deleteFamily() {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  background: var(--green);
-  color: #ffffff;
+  background: var(--color-primary);
+  color: var(--bg-surface);
   border: none;
   padding: 0.55rem 0.85rem;
   border-radius: 10px;
@@ -1218,20 +1246,20 @@ async function deleteFamily() {
 }
 
 .invite-copy-btn:hover {
-  background: color-mix(in srgb, var(--green) 85%, black);
+  background: color-mix(in srgb, var(--color-primary) 85%, black);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(77, 140, 101, 0.2);
 }
 
 .invite-copy-btn--copied {
-  background: #ecfdf5;
-  color: #065f46;
-  border: 1px solid #a7f3d0;
+  background: var(--color-primary-bg);
+  color: var(--color-primary-text);
+  border: 1px solid var(--color-primary-bg);
 }
 
 .invite-copy-btn--copied:hover {
-  background: #ecfdf5;
-  color: #065f46;
+  background: var(--color-primary-bg);
+  color: var(--color-primary-text);
   transform: none;
   box-shadow: none;
 }
@@ -1250,7 +1278,7 @@ async function deleteFamily() {
 .info-box {
   display: flex;
   gap: 0.65rem;
-  background: #f8fafc;
+  background: var(--bg-surface-alt);
   border: 1px solid var(--ui-border-soft);
   padding: 0.75rem 0.9rem;
   border-radius: 10px;
@@ -1274,14 +1302,14 @@ async function deleteFamily() {
 /* Form Settings (Preferences) */
 .card-item {
   border: 1px solid var(--ui-border-soft);
-  background: #ffffff;
+  background: var(--bg-surface);
   border-radius: 12px;
   padding: 1rem;
   transition: all 0.2s ease;
 }
 
 .card-item:focus-within {
-  border-color: color-mix(in srgb, var(--green) 30%, #e2e8f0);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--border-light));
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.02);
 }
 
@@ -1315,23 +1343,23 @@ async function deleteFamily() {
   border-radius: 10px;
   padding: 0.55rem 0.75rem;
   font-size: 0.88rem;
-  background: #ffffff;
+  background: var(--bg-surface);
   color: var(--ui-text-strong);
   transition: all 0.2s ease;
 }
 
 .panel-input:focus {
-  border-color: var(--green);
+  border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(77, 140, 101, 0.12);
   outline: none;
 }
 
 .panel-input::placeholder {
-  color: #cbd5e1;
+  color: var(--border-dark);
 }
 
 .panel-save-btn {
-  background: #f1f5f9;
+  background: var(--bg-hover);
   color: var(--ui-text-strong);
   border: 1px solid var(--ui-border-soft);
   border-radius: 10px;
@@ -1347,8 +1375,8 @@ async function deleteFamily() {
 }
 
 .panel-save-btn:hover:not(:disabled) {
-  background: #e2e8f0;
-  border-color: #cbd5e1;
+  background: var(--border-light);
+  border-color: var(--border-dark);
 }
 
 .panel-save-btn:disabled {
@@ -1362,7 +1390,7 @@ async function deleteFamily() {
   align-items: flex-start;
   justify-content: space-between;
   gap: 1.5rem;
-  background: #fcfcfd;
+  background: var(--bg-surface);
 }
 
 @media (max-width: 480px) {
@@ -1390,7 +1418,7 @@ async function deleteFamily() {
 }
 
 .panel-action-btn {
-  background: #ffffff;
+  background: var(--bg-surface);
   color: var(--ui-text-strong);
   border: 1px solid var(--ui-border);
   border-radius: 10px;
@@ -1407,8 +1435,8 @@ async function deleteFamily() {
 }
 
 .panel-action-btn:hover:not(:disabled) {
-  background: #f8fafc;
-  border-color: #cbd5e1;
+  background: var(--bg-surface-alt);
+  border-color: var(--border-dark);
 }
 
 .panel-action-btn:disabled {
@@ -1427,7 +1455,11 @@ async function deleteFamily() {
 }
 
 .btn-spinner--dark {
-  border-top-color: #ef4444;
+  border-top-color: var(--danger-main);
+}
+
+.btn-spinner--light {
+  border-top-color: var(--bg-surface);
 }
 
 @keyframes btnSpin {
@@ -1440,7 +1472,7 @@ async function deleteFamily() {
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  color: #15803d;
+  color: var(--color-primary-text);
   font-weight: 700;
 }
 
@@ -1455,7 +1487,7 @@ async function deleteFamily() {
   border: 1px solid var(--ui-border-soft);
   border-radius: 12px;
   overflow: hidden;
-  background: #ffffff;
+  background: var(--bg-surface);
 }
 
 .members-custom-list {
@@ -1490,7 +1522,7 @@ async function deleteFamily() {
   border-radius: 50%;
   object-fit: cover;
   border: 1px solid var(--ui-border-soft);
-  background: #f1f5f9;
+  background: var(--bg-hover);
   flex-shrink: 0;
 }
 
@@ -1520,7 +1552,7 @@ async function deleteFamily() {
 
 .you-tag {
   font-size: 0.75rem;
-  color: var(--green);
+  color: var(--color-primary);
   font-weight: 600;
   margin-left: 0.2rem;
 }
@@ -1543,9 +1575,9 @@ async function deleteFamily() {
 }
 
 .role-owner {
-  background: #fef3c7;
-  color: #b45309;
-  border: 1px solid #fde68a;
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  border: 1px solid var(--warning-border);
 }
 
 .badge-icon {
@@ -1554,15 +1586,15 @@ async function deleteFamily() {
 }
 
 .role-member {
-  background: #f1f5f9;
-  color: #475569;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-light);
 }
 
 .member-remove-btn {
-  background: #fff5f5;
-  color: #b91c1c;
-  border: 1px solid #fecaca;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  border: 1px solid var(--danger-border);
   font-size: 0.72rem;
   font-weight: 700;
   border-radius: 8px;
@@ -1576,8 +1608,8 @@ async function deleteFamily() {
 }
 
 .member-remove-btn:hover:not(:disabled) {
-  background: #fee2e2;
-  border-color: #fca5a5;
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
 }
 
 .member-remove-btn:disabled {
@@ -1585,64 +1617,15 @@ async function deleteFamily() {
   cursor: not-allowed;
 }
 
-/* Danger Zone Panel */
-.danger-zone-card {
-  border: 1px solid #fee2e2;
-  background: #fffcfc;
-  border-radius: 12px;
-  padding: 1.25rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.9rem;
-}
-
-.danger-zone-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: #b91c1c;
-}
-
-.danger-icon {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-}
-
-.danger-zone-header h5 {
-  margin: 0;
-  font-size: 0.9rem;
-  font-weight: 800;
-}
-
-.danger-zone-body {
-  font-size: 0.8rem;
-  color: #7f1d1d;
-  line-height: 1.5;
-}
-
-.danger-zone-body p {
-  margin: 0 0 0.4rem 0;
-}
-
-.danger-zone-body ul {
-  margin: 0;
-  padding-left: 1.2rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.danger-zone-footer {
-  border-top: 1px solid #fecaca;
-  padding-top: 0.9rem;
-  display: flex;
-  justify-content: flex-end;
+/* Danger zone card modifier */
+.card-item--danger {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
 }
 
 .danger-action-btn {
-  background: #dc2626;
-  color: #ffffff;
+  background: var(--danger-text);
+  color: var(--bg-surface);
   border: none;
   border-radius: 10px;
   padding: 0.6rem 1.25rem;
@@ -1651,10 +1634,15 @@ async function deleteFamily() {
   cursor: pointer;
   transition: all 0.2s ease;
   box-shadow: 0 4px 12px rgba(220, 38, 38, 0.15);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 100px;
 }
 
 .danger-action-btn:hover:not(:disabled) {
-  background: #b91c1c;
+  background: var(--danger-text);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25);
 }
@@ -1731,4 +1719,6 @@ async function deleteFamily() {
     opacity: 0;
   }
 }
+
+
 </style>

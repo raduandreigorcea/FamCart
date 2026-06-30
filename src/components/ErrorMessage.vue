@@ -9,11 +9,11 @@ defineProps({ message: String })
 <style scoped>
 .error-msg {
   font-size: 0.8rem;
-  color: #c0392b;
+  color: var(--danger-text);
   margin: 0;
   padding: 0.45rem 0.75rem;
-  background: #fdf3f2;
+  background: var(--danger-bg);
   border-radius: 8px;
-  border: 1px solid #f5c6c2;
+  border: 1px solid var(--danger-border);
 }
 </style>
