@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useAuth, useClerk, useUser } from '@clerk/vue'
 import { useRouter } from 'vue-router'
 import { useSupabase } from '../supabase.js'
@@ -20,6 +20,7 @@ import infoIcon from '../assets/info.svg?raw'
 import crownIcon from '../assets/crown.svg?raw'
 import squarePenIcon from '../assets/square-pen.svg?raw'
 import shoppingCartIcon from '../assets/shopping-cart.svg?raw'
+import ellipsisIcon from '../assets/ellipsis.svg?raw'
 
 const props = defineProps({
   familyId: { type: String, default: '' },
@@ -93,7 +94,8 @@ const savingItemLimit = ref(false)
 const itemLimitSaved = ref(false)
 const regenerating = ref(false)
 const codeRegenerated = ref(false)
-const removingMemberId = ref('')
+const memberActionPendingId = ref('')
+const openMemberMenuId = ref('')
 const leavingFamily = ref(false);
 const deletingFamily = ref(false)
 const copied = ref(false)
@@ -118,12 +120,27 @@ const memberCount = computed(() => props.memberProfiles.length);
 const visibleMembers = computed(() => props.memberProfiles.slice(0, 4));
 const extraMembers = computed(() => Math.max(0, memberCount.value - visibleMembers.value.length));
 const isOwner = computed(() => !!props.ownerUserId && props.ownerUserId === userId.value)
-const membersForOwnerList = computed(() => props.memberProfiles.filter((m) => m.user_id !== props.ownerUserId))
+
+function normalizeMemberRole(role) {
+  if (role === 'admin') return 'moderator'
+  return role === 'moderator' ? 'moderator' : 'member'
+}
+
+const currentUserRole = computed(() => {
+  const membership = props.memberProfiles.find((m) => m.user_id === userId.value)
+  return normalizeMemberRole(membership?.role)
+})
+
+const isOwnerOrModerator = computed(() => isOwner.value || currentUserRole.value === 'moderator')
 
 const sortedMembers = computed(() => {
   return [...props.memberProfiles].sort((a, b) => {
     if (a.user_id === props.ownerUserId) return -1
     if (b.user_id === props.ownerUserId) return 1
+    const roleA = normalizeMemberRole(a.role)
+    const roleB = normalizeMemberRole(b.role)
+    if (roleA === 'moderator' && roleB !== 'moderator') return -1
+    if (roleB === 'moderator' && roleA !== 'moderator') return 1
     return 0
   })
 })
@@ -188,6 +205,7 @@ async function leaveFamily() {
 }
 
 async function renameFamily() {
+  if (!isOwner.value) return
   const nextName = renameValue.value.trim()
   if (!nextName || !props.familyId || savingName.value) return
   savingName.value = true
@@ -265,14 +283,15 @@ async function regenerateInviteCode() {
 }
 
 async function removeMember(memberUserId) {
-  if (!props.familyId || removingMemberId.value) return
+  if (!props.familyId || memberActionPendingId.value) return
   const confirmed = await showConfirm({
     title: 'Remove Member?',
     message: 'This person will immediately lose access to the family shopping list. They can be re-invited using the invite code.',
     danger: true,
   })
   if (!confirmed) return
-  removingMemberId.value = memberUserId
+  memberActionPendingId.value = memberUserId
+  openMemberMenuId.value = ''
   try {
     const { error } = await db
       .from('family_members')
@@ -281,7 +300,71 @@ async function removeMember(memberUserId) {
       .eq('user_id', memberUserId)
     if (!error) emit('refresh-family')
   } finally {
-    removingMemberId.value = ''
+    memberActionPendingId.value = ''
+  }
+}
+
+function toggleMemberMenu(memberUserId) {
+  if (memberActionPendingId.value) return
+  openMemberMenuId.value = openMemberMenuId.value === memberUserId ? '' : memberUserId
+}
+
+function closeMemberMenu() {
+  openMemberMenuId.value = ''
+}
+
+function handleGlobalPointerDown(event) {
+  if (!openMemberMenuId.value) return
+
+  const target = event.target
+  if (!(target instanceof Element)) {
+    closeMemberMenu()
+    return
+  }
+
+  if (target.closest('.member-actions-menu-wrap')) return
+  closeMemberMenu()
+}
+
+onMounted(() => {
+  window.addEventListener('pointerdown', handleGlobalPointerDown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('pointerdown', handleGlobalPointerDown)
+})
+
+function canManageMember(member) {
+  if (!isOwnerOrModerator.value) return false
+  if (member.user_id === props.ownerUserId) return false
+  if (member.user_id === userId.value) return false
+  return true
+}
+
+function canPromoteToModerator(member) {
+  return isOwner.value && normalizeMemberRole(member.role) !== 'moderator'
+}
+
+function canDemoteFromModerator(member) {
+  return isOwner.value && normalizeMemberRole(member.role) === 'moderator'
+}
+
+async function setMemberRole(memberUserId, role) {
+  if (!isOwner.value) return
+  if (!props.familyId || memberActionPendingId.value) return
+  memberActionPendingId.value = memberUserId
+  try {
+    const { error } = await db
+      .from('family_members')
+      .update({ role })
+      .eq('family_id', props.familyId)
+      .eq('user_id', memberUserId)
+    if (!error) {
+      emit('refresh-family')
+      openMemberMenuId.value = ''
+    }
+  } finally {
+    memberActionPendingId.value = ''
   }
 }
 
@@ -370,7 +453,7 @@ async function deleteFamily() {
 
   <!-- Settings Modal Overlay -->
   <Transition name="modal-fade">
-    <div v-if="settingsOpen" class="settings-modal-overlay" @click.self="settingsOpen = false">
+    <div v-if="settingsOpen" class="settings-modal-overlay" @click.self="settingsOpen = false; closeMemberMenu()">
       <div class="settings-modal" role="dialog" aria-modal="true" aria-label="Settings">
         
         <!-- Modal Header -->
@@ -402,7 +485,7 @@ async function deleteFamily() {
             </button>
 
             <button 
-              v-if="isOwner"
+              v-if="isOwnerOrModerator"
               class="sidebar-tab-btn" 
               :class="{ active: activeTab === 'family' }"
               @click="activeTab = 'family'"
@@ -507,13 +590,13 @@ async function deleteFamily() {
               </div>
             </div>
 
-            <!-- PREFERENCES PANEL (Owner Only) -->
-            <div v-if="activeTab === 'family' && isOwner" class="tab-panel">
+            <!-- PREFERENCES PANEL (Owner + Moderators) -->
+            <div v-if="activeTab === 'family' && isOwnerOrModerator" class="tab-panel">
               <div class="panel-section">
                 <h4 class="panel-section-title">General Preferences</h4>
 
                 <div class="preferences-grid">
-                  <section class="card-item pref-card">
+                  <section v-if="isOwner" class="card-item pref-card">
                     <div class="pref-card__head">
                       <span class="pref-card__icon" v-html="squarePenIcon"></span>
                       <div class="pref-card__meta">
@@ -605,7 +688,12 @@ async function deleteFamily() {
                 
                 <div class="members-list-wrapper">
                   <ul class="members-custom-list">
-                    <li v-for="member in sortedMembers" :key="member.user_id" class="member-custom-item">
+                    <li
+                      v-for="member in sortedMembers"
+                      :key="member.user_id"
+                      class="member-custom-item"
+                      :class="{ 'member-custom-item--menu-open': openMemberMenuId === member.user_id }"
+                    >
                       <div class="member-custom-left">
                         <img 
                           v-if="member.image_url" 
@@ -629,21 +717,53 @@ async function deleteFamily() {
                           <span class="badge-icon-wrap" v-html="crownIcon"></span>
                           Owner
                         </span>
-                        
-                        <!-- Remove button (only visible to owner, and only for other users) -->
-                        <button 
-                          v-if="isOwner && member.user_id !== ownerUserId"
-                          class="member-remove-btn" 
-                          type="button" 
-                          :disabled="removingMemberId === member.user_id" 
-                          @click="removeMember(member.user_id)"
-                          aria-label="Remove member"
-                        >
-                          <span v-if="removingMemberId === member.user_id" class="btn-spinner btn-spinner--dark"></span>
-                          <span v-else>Remove</span>
-                        </button>
 
-                        <span v-if="member.user_id !== ownerUserId" class="member-role-badge role-member">Member</span>
+                        <div
+                          v-if="canManageMember(member)"
+                          class="member-actions-menu-wrap"
+                          :class="{ 'member-actions-menu-wrap--open': openMemberMenuId === member.user_id }"
+                          @click.stop
+                        >
+                          <button
+                            class="member-actions-trigger"
+                            type="button"
+                            aria-label="Open member actions"
+                            :disabled="memberActionPendingId === member.user_id"
+                            @click.stop="toggleMemberMenu(member.user_id)"
+                          >
+                            <span v-if="memberActionPendingId === member.user_id" class="btn-spinner btn-spinner--dark"></span>
+                            <span v-else class="member-actions-icon" v-html="ellipsisIcon"></span>
+                          </button>
+
+                          <div v-if="openMemberMenuId === member.user_id" class="member-actions-menu">
+                            <button
+                              v-if="canPromoteToModerator(member)"
+                              class="member-action-item"
+                              type="button"
+                              @click="setMemberRole(member.user_id, 'moderator')"
+                            >
+                              Promote to moderator
+                            </button>
+                            <button
+                              v-if="canDemoteFromModerator(member)"
+                              class="member-action-item"
+                              type="button"
+                              @click="setMemberRole(member.user_id, 'member')"
+                            >
+                              Demote to member
+                            </button>
+                            <button
+                              class="member-action-item member-action-item--danger"
+                              type="button"
+                              @click="removeMember(member.user_id)"
+                            >
+                              Remove from family
+                            </button>
+                          </div>
+                        </div>
+
+                        <span v-if="member.user_id !== ownerUserId && normalizeMemberRole(member.role) === 'moderator'" class="member-role-badge role-moderator">Moderator</span>
+                        <span v-if="member.user_id !== ownerUserId && normalizeMemberRole(member.role) !== 'moderator'" class="member-role-badge role-member">Member</span>
                       </div>
                     </li>
                   </ul>
@@ -652,19 +772,8 @@ async function deleteFamily() {
             </div>
             <!-- DANGER ZONE PANEL (Owner Only + Member Leave) -->
             <div v-if="activeTab === 'danger'" class="tab-panel">
-              <!-- Leave Family Card (Visible to non-owners) -->
-              <div class="panel-section" v-if="!isOwner">
-                <h4 class="panel-section-title text-danger">Leave Family</h4>
-                <div class="card-item card-item--action">
-                  <div class="card-item__info">
-                    <p>This will remove you from the family group. You will no longer have access to the shopping list.</p>
-                  </div>
-                  <button class="danger-action-btn" type="button" :disabled="leavingFamily" @click="leaveFamily">Leave Family</button>
-                </div>
-              </div>
-
               <!-- Invite Code Regen Card -->
-              <div class="panel-section" v-if="isOwner">
+              <div class="panel-section" v-if="isOwnerOrModerator">
                 <h4 class="panel-section-title">Invite Code Administration</h4>
                 <div class="card-item card-item--action">
                   <div class="card-item__info">
@@ -683,6 +792,17 @@ async function deleteFamily() {
                     </span>
                     <span v-else>Regenerate</span>
                   </button>
+                </div>
+              </div>
+
+              <!-- Leave Family Card (Visible to non-owners) -->
+              <div class="panel-section" v-if="!isOwner">
+                <h4 class="panel-section-title text-danger">Leave Family</h4>
+                <div class="card-item card-item--action">
+                  <div class="card-item__info">
+                    <p>This will remove you from the family group. You will no longer have access to the shopping list.</p>
+                  </div>
+                  <button class="danger-action-btn" type="button" :disabled="leavingFamily" @click="leaveFamily">Leave Family</button>
                 </div>
               </div>
 
@@ -1041,14 +1161,13 @@ async function deleteFamily() {
   font-weight: 600;
   cursor: pointer;
   text-align: left;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background 0.25s cubic-bezier(0.4, 0, 0.2, 1), color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   width: 100%;
 }
 
 .sidebar-tab-btn:hover {
   background: var(--bg-hover);
   color: var(--ui-text-strong);
-  transform: translateX(2px);
 }
 
 @media (max-width: 580px) {
@@ -1729,7 +1848,7 @@ async function deleteFamily() {
 .members-list-wrapper {
   border: 1px solid var(--ui-border-soft);
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  overflow: visible;
   background: var(--bg-surface);
 }
 
@@ -1746,6 +1865,12 @@ async function deleteFamily() {
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--ui-border-soft);
   gap: 1rem;
+  position: relative;
+  overflow: visible;
+}
+
+.member-custom-item--menu-open {
+  z-index: 7000;
 }
 
 .member-custom-item:last-child {
@@ -1805,6 +1930,8 @@ async function deleteFamily() {
   align-items: center;
   gap: 0.5rem;
   flex-shrink: 0;
+  position: relative;
+  overflow: visible;
 }
 
 .member-role-badge {
@@ -1834,30 +1961,112 @@ async function deleteFamily() {
   border: 1px solid var(--border-light);
 }
 
-.member-remove-btn {
-  background: var(--danger-bg);
-  color: var(--danger-text);
-  border: 1px solid var(--danger-border);
-  font-size: 0.72rem;
-  font-weight: 700;
+.role-moderator {
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
+  color: var(--color-primary-text);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, var(--bg-surface));
+}
+
+.member-actions-menu-wrap {
+  position: relative;
+}
+
+.member-actions-menu-wrap--open {
+  z-index: 6000;
+}
+
+.member-actions-trigger {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--ui-border-soft);
+  background: var(--bg-surface);
   border-radius: var(--radius-sm);
-  padding: 0.35rem 0.6rem;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  transition: all 0.2s ease;
-  min-width: 60px;
-  display: flex;
+  padding: 0;
+}
+
+.member-actions-trigger:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.member-actions-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.member-actions-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
-.member-remove-btn:hover:not(:disabled) {
-  background: var(--danger-bg);
-  border-color: var(--danger-border);
+.member-actions-icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
 }
 
-.member-remove-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.member-actions-menu {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  left: auto;
+  z-index: 6100;
+  min-width: 190px;
+  padding: 0.25rem;
+  border: 1px solid color-mix(in srgb, var(--border-dark) 45%, var(--ui-border-soft));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-surface-alt) 88%, var(--border-light));
+  box-shadow: 0 12px 28px rgba(12, 18, 28, 0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  animation: memberMenuIn 0.16s cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
+  transform-origin: top right;
+}
+
+.member-action-item {
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.55rem;
+  cursor: pointer;
+}
+
+.member-action-item:hover {
+  background: var(--bg-hover);
+}
+
+.member-action-item--danger {
+  color: var(--danger-text);
+}
+
+.member-action-item--danger:hover {
+  background: var(--danger-bg);
+}
+
+@keyframes memberMenuIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 /* Danger zone card modifier */

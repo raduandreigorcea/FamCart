@@ -4,6 +4,7 @@ import { useAuth, useUser } from '@clerk/vue'
 import { useRouter } from 'vue-router'
 import { useSupabase } from '../supabase.js'
 import AppTopbar from '../components/AppTopbar.vue'
+import ConfirmModal from '../components/ConfirmModal.vue'
 import ErrorMessage from '../components/ErrorMessage.vue'
 import ShoppingListItem from '../components/ShoppingListItem.vue'
 
@@ -24,6 +25,7 @@ const newQty = ref(1)
 const qtyDirection = ref('up')
 const loadError = ref('')
 const addError = ref('')
+const limitReachedPopupOpen = ref(false)
 const adding = ref(false)
 const realtimeChannels = []
 const hasInitialized = ref(false)
@@ -133,7 +135,7 @@ function sanitizeAuthCallbackUrl() {
 async function loadFamilyHeader() {
   const [{ data: family, error: familyErr }, { data: members, error: membersErr }] = await Promise.all([
     db.from('families').select('name, invite_code, created_by, max_items_per_member').eq('id', familyId.value).single(),
-    db.from('family_members').select('user_id, display_name, image_url').eq('family_id', familyId.value),
+    db.from('family_members').select('user_id, display_name, image_url, role').eq('family_id', familyId.value),
   ])
 
   let resolvedFamily = family
@@ -174,6 +176,7 @@ async function loadFamilyHeader() {
       user_id: m.user_id,
       display_name: m.user_id,
       image_url: null,
+      role: 'member',
     }))
   }
 }
@@ -273,6 +276,7 @@ async function setupRealtimeSubscriptions() {
               user_id: newMember.user_id,
               display_name: newMember.display_name || newMember.user_id,
               image_url: newMember.image_url || null,
+              role: newMember.role || 'member',
             },
           ]
         }
@@ -391,7 +395,7 @@ async function addItem() {
     if (countError) throw countError
 
     if ((currentUserActiveItemCount || 0) >= familyItemLimit.value) {
-      addError.value = `You reached your limit of ${familyItemLimit.value} active items.`
+      limitReachedPopupOpen.value = true
       return
     }
 
@@ -423,6 +427,10 @@ async function addItem() {
   } finally {
     adding.value = false
   }
+}
+
+function closeLimitReachedPopup() {
+  limitReachedPopupOpen.value = false
 }
 
 async function toggleItem(item) {
@@ -539,6 +547,16 @@ async function deleteItem(item) {
 
       </div>
     </main>
+
+    <ConfirmModal
+      :open="limitReachedPopupOpen"
+      title="Limit reached"
+      :message="`You reached your limit of ${familyItemLimit} active items. Check or delete items before adding more.`"
+      confirm-text="Got it"
+      :show-cancel="false"
+      @confirm="closeLimitReachedPopup"
+      @cancel="closeLimitReachedPopup"
+    />
   </div>
 </template>
 

@@ -1,4 +1,6 @@
 <script setup>
+import { getProductEmoji } from '../lib/productEmoji'
+
 const props = defineProps({
   item: {
     type: Object,
@@ -29,8 +31,9 @@ function handleDelete() {
           stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </button>
-    <span v-if="item.quantity > 1" class="item-qty">x{{ item.quantity }}</span>
+    <span class="item-emoji" aria-hidden="true">{{ getProductEmoji(item.name, item.brand || '') }}</span>
     <span class="item-name">{{ item.name }}</span>
+    <span v-if="item.quantity > 1" class="item-qty">x{{ item.quantity }}</span>
     <img
       v-if="item.added_by_image_url"
       :src="item.added_by_image_url"
@@ -96,6 +99,20 @@ function handleDelete() {
 .item-check svg {
   width: 22px;
   height: 22px;
+}
+
+.item-emoji {
+  flex-shrink: 0;
+  font-size: 1.05rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.05rem;
+  height: 2.05rem;
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
+  border: 1px solid color-mix(in srgb, var(--color-primary) 22%, var(--bg-surface));
 }
 
 .item-avatar {

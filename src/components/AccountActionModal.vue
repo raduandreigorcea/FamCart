@@ -268,13 +268,12 @@ watch(
   gap: 0.65rem;
   text-align: left;
   cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+  transition: background 0.18s ease, border-color 0.18s ease;
 }
 
 .account-menu-item:hover:not(:disabled) {
   background: var(--bg-hover);
   border-color: color-mix(in srgb, var(--color-primary) 45%, var(--bg-surface));
-  transform: translateY(-1px);
 }
 
 .account-menu-item:disabled {

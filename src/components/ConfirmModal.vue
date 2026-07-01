@@ -4,6 +4,9 @@ defineProps({
   title: { type: String, default: '' },
   message: { type: String, default: '' },
   danger: { type: Boolean, default: false },
+  confirmText: { type: String, default: 'Confirm' },
+  cancelText: { type: String, default: 'Cancel' },
+  showCancel: { type: Boolean, default: true },
 })
 
 const emit = defineEmits(['confirm', 'cancel'])
@@ -28,14 +31,14 @@ const emit = defineEmits(['confirm', 'cancel'])
           <p class="confirm-dialog__message">{{ message }}</p>
         </div>
 
-        <div class="confirm-dialog__actions">
-          <button class="confirm-btn confirm-btn--cancel" type="button" @click="emit('cancel')">Cancel</button>
+        <div class="confirm-dialog__actions" :class="{ 'confirm-dialog__actions--single': !showCancel }">
+          <button v-if="showCancel" class="confirm-btn confirm-btn--cancel" type="button" @click="emit('cancel')">{{ cancelText }}</button>
           <button
             class="confirm-btn"
             :class="danger ? 'confirm-btn--danger' : 'confirm-btn--primary'"
             type="button"
             @click="emit('confirm')"
-          >Confirm</button>
+          >{{ confirmText }}</button>
         </div>
       </div>
     </div>
@@ -120,6 +123,12 @@ const emit = defineEmits(['confirm', 'cancel'])
   gap: 0.65rem;
   width: 100%;
   margin-top: 0.25rem;
+}
+
+.confirm-dialog__actions--single .confirm-btn {
+  flex: 0 0 auto;
+  min-width: 120px;
+  margin: 0 auto;
 }
 
 .confirm-btn {

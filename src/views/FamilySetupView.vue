@@ -51,7 +51,7 @@ async function createFamily() {
       .insert({
         family_id: family.id,
         user_id: userId.value,
-        role: 'admin',
+        role: 'moderator',
         display_name: displayName,
         image_url: imageUrl,
       })
