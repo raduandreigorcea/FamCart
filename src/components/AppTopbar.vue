@@ -1640,7 +1640,9 @@ async function deleteFamily() {
     gap: 0.75rem;
   }
   .card-item--action .panel-action-btn {
-    width: 100%;
+    width: auto;
+    align-self: flex-start;
+    justify-content: flex-start;
   }
 }
 
@@ -1923,7 +1925,7 @@ async function deleteFamily() {
 /* Modal Transitions */
 .modal-fade-enter-active,
 .modal-fade-leave-active {
-  transition: opacity 0.25s ease;
+  transition: opacity 0.18s ease;
 }
 
 .modal-fade-enter-from,
@@ -1932,16 +1934,16 @@ async function deleteFamily() {
 }
 
 .modal-fade-enter-active .settings-modal {
-  animation: modalScaleIn 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: modalScaleIn 0.18s cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
 }
 
 .modal-fade-leave-active .settings-modal {
-  animation: modalScaleOut 0.22s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: modalScaleOut 0.16s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
 @keyframes modalScaleIn {
   from {
-    transform: scale(0.94);
+    transform: scale(0.96);
     opacity: 0;
   }
   to {
@@ -1958,6 +1960,57 @@ async function deleteFamily() {
   to {
     transform: scale(0.96);
     opacity: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .settings-modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .settings-modal {
+    max-width: none;
+    height: min(88dvh, 760px);
+    max-height: min(88dvh, 760px);
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+  }
+
+  .settings-modal__header {
+    padding: 1rem;
+  }
+
+  .settings-modal__body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    height: 100%;
+  }
+
+  .settings-sidebar {
+    flex-direction: row;
+    padding: 0.75rem;
+    border-right: none;
+    border-bottom: 1px solid var(--ui-border-soft);
+    overflow-x: auto;
+    gap: 0.5rem;
+    scrollbar-width: none;
+  }
+
+  .settings-sidebar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sidebar-tab-btn {
+    width: auto;
+    white-space: nowrap;
+    padding: 0.5rem 0.85rem;
+  }
+
+  .sidebar-tab-btn:hover {
+    transform: none;
   }
 }
 
