@@ -6,6 +6,8 @@ import { useSupabase } from '../supabase.js'
 import logoImg from '../assets/logo.png'
 import settingsIcon from '../assets/settings.svg'
 import ConfirmModal from './ConfirmModal.vue'
+import AccountActionModal from './AccountActionModal.vue'
+import ModalCloseButton from './ModalCloseButton.vue'
 
 // Raw SVG imports for settings modal
 import layoutGridIcon from '../assets/layout-grid.svg?raw'
@@ -15,13 +17,15 @@ import trashIcon from '../assets/trash-2.svg?raw'
 import copyIcon from '../assets/copy.svg?raw'
 import checkIcon from '../assets/check.svg?raw'
 import infoIcon from '../assets/info.svg?raw'
-import xIcon from '../assets/x.svg?raw'
 import crownIcon from '../assets/crown.svg?raw'
+import squarePenIcon from '../assets/square-pen.svg?raw'
+import shoppingCartIcon from '../assets/shopping-cart.svg?raw'
 
 const props = defineProps({
   familyId: { type: String, default: '' },
   familyName: { type: String, default: '' },
   inviteCode: { type: String, default: '' },
+  familyItemLimit: { type: Number, default: 50 },
   ownerUserId: { type: String, default: '' },
   memberProfiles: {
     type: Array,
@@ -37,11 +41,43 @@ const { user } = useUser()
 const router = useRouter()
 const db = useSupabase()
 
+const accountMenuOpen = ref(false)
+const signingOut = ref(false)
+
+function openAccountMenu() {
+  accountMenuOpen.value = true
+}
+
 function openAccountSettings() {
+  accountMenuOpen.value = false
   clerk.value?.openUserProfile()
 }
 
+function openFamilySettingsTab(tab) {
+  accountMenuOpen.value = false
+  renameValue.value = props.familyName || ''
+  activeTab.value = tab
+  settingsOpen.value = true
+}
+
+async function handleSignOut() {
+  if (signingOut.value) return
+  signingOut.value = true
+  try {
+    await clerk.value?.signOut({ redirectUrl: `${window.location.origin}/login` })
+    accountMenuOpen.value = false
+  } catch (error) {
+    console.error('Failed to sign out:', error)
+  } finally {
+    signingOut.value = false
+  }
+}
+
 const userAvatarUrl = computed(() => user.value?.imageUrl || null)
+const userDisplayName = computed(() => {
+  return user.value?.fullName || user.value?.firstName || 'Account'
+})
+const userEmail = computed(() => user.value?.primaryEmailAddress?.emailAddress || user.value?.emailAddresses?.[0]?.emailAddress || '')
 const userInitial = computed(() => {
   const name = user.value?.fullName || user.value?.firstName || user.value?.emailAddresses?.[0]?.emailAddress || '?'
   return name.slice(0, 1).toUpperCase()
@@ -52,6 +88,9 @@ const activeTab = ref('overview')
 const renameValue = ref('')
 const savingName = ref(false)
 const nameSaved = ref(false)
+const itemLimitValue = ref(50)
+const savingItemLimit = ref(false)
+const itemLimitSaved = ref(false)
 const regenerating = ref(false)
 const codeRegenerated = ref(false)
 const removingMemberId = ref('')
@@ -95,6 +134,7 @@ const ownerProfile = computed(() => {
 
 function openSettings() {
   renameValue.value = props.familyName || ''
+  itemLimitValue.value = Math.min(50, Math.max(1, Number(props.familyItemLimit) || 50))
   activeTab.value = 'overview'
   settingsOpen.value = true
 }
@@ -110,6 +150,15 @@ async function copyInviteCode() {
   } catch {
     // no-op
   }
+}
+
+async function inviteMembersFromAccountMenu() {
+  accountMenuOpen.value = false
+  if (props.inviteCode) {
+    await copyInviteCode()
+    return
+  }
+  openFamilySettingsTab('overview')
 }
 
 async function leaveFamily() {
@@ -156,6 +205,31 @@ async function renameFamily() {
     }
   } finally {
     savingName.value = false
+  }
+}
+
+async function saveItemLimit() {
+  if (!props.familyId || savingItemLimit.value) return
+
+  const normalizedLimit = Math.min(50, Math.max(1, Number(itemLimitValue.value) || 1))
+  itemLimitValue.value = normalizedLimit
+
+  savingItemLimit.value = true
+  try {
+    const { error } = await db
+      .from('families')
+      .update({ max_items_per_member: normalizedLimit })
+      .eq('id', props.familyId)
+
+    if (!error) {
+      emit('refresh-family')
+      itemLimitSaved.value = true
+      setTimeout(() => {
+        itemLimitSaved.value = false
+      }, 2000)
+    }
+  } finally {
+    savingItemLimit.value = false
   }
 }
 
@@ -281,7 +355,7 @@ async function deleteFamily() {
         class="user-avatar-btn"
         type="button"
         aria-label="Account settings"
-        @click="openAccountSettings()"
+        @click="openAccountMenu"
       >
         <img
           v-if="userAvatarUrl"
@@ -310,9 +384,7 @@ async function deleteFamily() {
               <p class="settings-modal__subtitle">{{ familyName }}</p>
             </div>
           </div>
-          <button class="settings-close" type="button" aria-label="Close settings" @click="settingsOpen = false">
-            <span class="close-icon-wrap" v-html="xIcon"></span>
-          </button>
+          <ModalCloseButton aria-label="Close settings" @click="settingsOpen = false" />
         </div>
 
         <!-- Modal Body Container -->
@@ -439,37 +511,88 @@ async function deleteFamily() {
             <div v-if="activeTab === 'family' && isOwner" class="tab-panel">
               <div class="panel-section">
                 <h4 class="panel-section-title">General Preferences</h4>
-                
-                <!-- Rename Card -->
-                <div class="card-item">
-                  <div class="card-item__form">
-                    <label class="panel-label" for="familyNameInput">Family Name</label>
-                    <div class="input-action-group">
-                      <div class="input-wrapper">
-                        <input 
-                          id="familyNameInput" 
-                          v-model="renameValue" 
-                          class="panel-input" 
-                          type="text" 
-                          maxlength="60"
-                          placeholder="My Awesome Family"
-                        />
+
+                <div class="preferences-grid">
+                  <section class="card-item pref-card">
+                    <div class="pref-card__head">
+                      <span class="pref-card__icon" v-html="squarePenIcon"></span>
+                      <div class="pref-card__meta">
+                        <h5>Family Name</h5>
+                        <p>Choose a name everyone in your household can recognize quickly.</p>
                       </div>
-                      <button 
-                        class="panel-save-btn" 
-                        type="button" 
-                        :disabled="savingName" 
-                        @click="renameFamily"
-                      >
-                        <span v-if="savingName" class="btn-spinner"></span>
-                        <span v-else-if="nameSaved" class="success-state animate-pop">
-                          <span class="success-icon-wrap" v-html="checkIcon"></span>
-                          Saved
-                        </span>
-                        <span v-else>Save</span>
-                      </button>
                     </div>
-                  </div>
+
+                    <div class="card-item__form">
+                      <div class="input-action-group">
+                        <div class="input-wrapper">
+                          <input
+                            id="familyNameInput"
+                            v-model="renameValue"
+                            class="panel-input"
+                            type="text"
+                            maxlength="60"
+                            placeholder="My Awesome Family"
+                          />
+                        </div>
+                        <button
+                          class="panel-save-btn"
+                          type="button"
+                          :disabled="savingName"
+                          @click="renameFamily"
+                        >
+                          <span v-if="savingName" class="btn-spinner"></span>
+                          <span v-else-if="nameSaved" class="success-state animate-pop">
+                            <span class="success-icon-wrap" v-html="checkIcon"></span>
+                            Saved
+                          </span>
+                          <span v-else>Save</span>
+                        </button>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section class="card-item pref-card">
+                    <div class="pref-card__head">
+                      <span class="pref-card__icon" v-html="shoppingCartIcon"></span>
+                      <div class="pref-card__meta">
+                        <h5>Item Limit Per User</h5>
+                        <p>Control how many active (unchecked) items each member can add.</p>
+                      </div>
+                      <span class="pref-card__value">{{ itemLimitValue }}</span>
+                    </div>
+
+                    <div class="pref-range-wrap">
+                      <span class="pref-range-minmax">1</span>
+                      <input
+                        v-model.number="itemLimitValue"
+                        class="pref-range"
+                        type="range"
+                        min="1"
+                        max="50"
+                        step="1"
+                        aria-label="Item limit slider"
+                      />
+                      <span class="pref-range-minmax">50</span>
+                    </div>
+
+                    <div class="card-item__form">
+                      <div class="input-action-group input-action-group--end">
+                        <button
+                          class="panel-save-btn"
+                          type="button"
+                          :disabled="savingItemLimit"
+                          @click="saveItemLimit"
+                        >
+                          <span v-if="savingItemLimit" class="btn-spinner"></span>
+                          <span v-else-if="itemLimitSaved" class="success-state animate-pop">
+                            <span class="success-icon-wrap" v-html="checkIcon"></span>
+                            Saved
+                          </span>
+                          <span v-else>Save</span>
+                        </button>
+                      </div>
+                    </div>
+                  </section>
                 </div>
               </div>
             </div>
@@ -506,7 +629,6 @@ async function deleteFamily() {
                           <span class="badge-icon-wrap" v-html="crownIcon"></span>
                           Owner
                         </span>
-                        <span v-else class="member-role-badge role-member">Member</span>
                         
                         <!-- Remove button (only visible to owner, and only for other users) -->
                         <button 
@@ -520,6 +642,8 @@ async function deleteFamily() {
                           <span v-if="removingMemberId === member.user_id" class="btn-spinner btn-spinner--dark"></span>
                           <span v-else>Remove</span>
                         </button>
+
+                        <span v-if="member.user_id !== ownerUserId" class="member-role-badge role-member">Member</span>
                       </div>
                     </li>
                   </ul>
@@ -595,6 +719,22 @@ async function deleteFamily() {
     :danger="confirmModal.danger"
     @confirm="handleConfirmModalResult(true)"
     @cancel="handleConfirmModalResult(false)"
+  />
+
+  <AccountActionModal
+    :open="accountMenuOpen"
+    :loading-sign-out="signingOut"
+    :avatar-url="userAvatarUrl"
+    :display-name="userDisplayName"
+    :email="userEmail"
+    :initial="userInitial"
+    :family-name="familyName"
+    :family-member-count="memberCount"
+    @close="accountMenuOpen = false"
+    @edit-account="openAccountSettings"
+    @manage-family="openFamilySettingsTab('overview')"
+    @invite-members="inviteMembersFromAccountMenu"
+    @sign-out="handleSignOut"
   />
 </template>
 
@@ -679,7 +819,7 @@ async function deleteFamily() {
 .member-avatar {
   width: 30px;
   height: 30px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   object-fit: cover;
   border: 1.5px solid var(--bg-surface);
   margin-left: -9px;
@@ -712,24 +852,23 @@ async function deleteFamily() {
 }
 
 .settings-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 999px;
-  border: 1px solid var(--ui-border);
-  background: var(--ui-bg);
+  width: var(--size-control-md);
+  height: var(--size-control-md);
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--ui-border);
+  background: var(--bg-hover);
   color: var(--ui-text-muted);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 .settings-btn:hover {
-  color: var(--color-primary);
-  border-color: color-mix(in srgb, var(--color-primary) 40%, white);
-  background: color-mix(in srgb, var(--color-primary) 8%, white);
+  border-color: var(--color-primary);
+  box-shadow: var(--focus-ring-primary-soft);
 }
 
 .settings-icon {
@@ -740,9 +879,9 @@ async function deleteFamily() {
 }
 
 .user-avatar-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 999px;
+  width: var(--size-control-md);
+  height: var(--size-control-md);
+  border-radius: var(--radius-pill);
   border: 2px solid var(--ui-border);
   background: var(--bg-hover);
   padding: 0;
@@ -757,14 +896,14 @@ async function deleteFamily() {
 
 .user-avatar-btn:hover {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, white);
+  box-shadow: var(--focus-ring-primary-soft);
 }
 
 .user-avatar-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .user-avatar-fallback {
@@ -777,23 +916,23 @@ async function deleteFamily() {
 .settings-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.45);
+  background: var(--overlay-dark);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 999;
-  padding: 1rem;
+  padding: var(--space-4);
 }
 
 .settings-modal {
   width: 100%;
   max-width: 640px;
   background: var(--bg-surface);
-  border-radius: 20px;
+  border-radius: var(--radius-3xl);
   border: 1px solid var(--ui-border);
-  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.15);
+  box-shadow: var(--elevation-modal);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -804,7 +943,7 @@ async function deleteFamily() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1.25rem 1.5rem;
+  padding: var(--space-5) var(--space-6);
   border-bottom: 1px solid var(--ui-border-soft);
   background: var(--bg-surface);
 }
@@ -818,8 +957,8 @@ async function deleteFamily() {
 .settings-modal__icon-bg {
   width: 38px;
   height: 38px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--color-primary) 10%, white);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
   color: var(--color-primary);
   display: flex;
   align-items: center;
@@ -846,31 +985,6 @@ async function deleteFamily() {
   font-weight: 500;
 }
 
-.settings-close {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid var(--ui-border-soft);
-  background: var(--bg-surface-alt);
-  cursor: pointer;
-  color: var(--ui-text-muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-  padding: 0;
-}
-
-.settings-close:hover {
-  background: var(--bg-hover);
-  color: var(--ui-text-strong);
-  transform: rotate(90deg);
-}
-
-.settings-close svg {
-  width: 16px;
-  height: 16px;
-}
 
 /* Modal Body split screen */
 .settings-modal__body {
@@ -919,7 +1033,7 @@ async function deleteFamily() {
   align-items: center;
   gap: 0.65rem;
   padding: 0.65rem 0.75rem;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   border: none;
   background: transparent;
   color: var(--ui-text-muted);
@@ -949,7 +1063,7 @@ async function deleteFamily() {
 }
 
 .sidebar-tab-btn.active {
-  background: color-mix(in srgb, var(--color-primary) 8%, white);
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--bg-surface));
   color: var(--color-primary);
 }
 
@@ -989,22 +1103,6 @@ async function deleteFamily() {
 }
 
 .header-icon :deep(svg) {
-  width: 100%;
-  height: 100%;
-  stroke: currentColor;
-  stroke-width: 2;
-  fill: none;
-}
-
-.close-icon-wrap {
-  width: 16px;
-  height: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.close-icon-wrap :deep(svg) {
   width: 100%;
   height: 100%;
   stroke: currentColor;
@@ -1084,7 +1182,7 @@ async function deleteFamily() {
   background: var(--border-light);
   color: var(--text-secondary);
   padding: 0.15rem 0.4rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-weight: 700;
 }
 
@@ -1095,7 +1193,7 @@ async function deleteFamily() {
 
 /* Content Area */
 .settings-content-wrapper {
-  padding: 1.5rem;
+  padding: var(--space-6);
   overflow-y: auto;
   background: var(--bg-surface);
 }
@@ -1143,8 +1241,8 @@ async function deleteFamily() {
 .summary-card {
   border: 1px solid var(--ui-border-soft);
   background: var(--bg-surface-alt);
-  border-radius: 12px;
-  padding: 1rem;
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
 }
 
 .summary-details {
@@ -1179,8 +1277,8 @@ async function deleteFamily() {
   align-items: center;
   gap: 0.4rem;
   background: var(--bg-surface);
-  padding: 0.25rem 0.5rem;
-  border-radius: 8px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
   border: 1px solid var(--ui-border-soft);
 }
 
@@ -1200,9 +1298,9 @@ async function deleteFamily() {
 /* Invite card */
 .invite-card {
   border: 1.5px dashed color-mix(in srgb, var(--color-primary) 35%, var(--border-light));
-  background: color-mix(in srgb, var(--color-primary) 3%, white);
-  border-radius: 12px;
-  padding: 1rem;
+  background: color-mix(in srgb, var(--color-primary) 3%, var(--bg-surface));
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1238,7 +1336,7 @@ async function deleteFamily() {
   color: var(--bg-surface);
   border: none;
   padding: 0.55rem 0.85rem;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   font-size: 0.8rem;
   font-weight: 700;
   cursor: pointer;
@@ -1246,9 +1344,9 @@ async function deleteFamily() {
 }
 
 .invite-copy-btn:hover {
-  background: color-mix(in srgb, var(--color-primary) 85%, black);
+  background: color-mix(in srgb, var(--color-primary) 85%, var(--text-primary));
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(77, 140, 101, 0.2);
+  box-shadow: var(--elevation-primary);
 }
 
 .invite-copy-btn--copied {
@@ -1280,8 +1378,8 @@ async function deleteFamily() {
   gap: 0.65rem;
   background: var(--bg-surface-alt);
   border: 1px solid var(--ui-border-soft);
-  padding: 0.75rem 0.9rem;
-  border-radius: 10px;
+  padding: var(--space-3) 0.9rem;
+  border-radius: var(--radius-md);
 }
 
 .info-box-icon {
@@ -1299,18 +1397,134 @@ async function deleteFamily() {
   line-height: 1.45;
 }
 
+.preferences-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.pref-card {
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--color-primary) 3%, var(--bg-surface)) 0%,
+    var(--bg-surface) 60%
+  );
+}
+
+.pref-card__head {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.7rem;
+}
+
+.pref-card__meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.pref-card__meta h5 {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 800;
+  color: var(--ui-text-strong);
+}
+
+.pref-card__meta p {
+  margin: 0.18rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--ui-text-muted);
+}
+
+.pref-card__icon {
+  width: 20px;
+  height: 20px;
+  color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pref-card__icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+}
+
+.pref-card__value {
+  font-family: 'SF Mono', Consolas, Monaco, 'Andale Mono', monospace;
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--ui-text-strong);
+  background: var(--bg-surface-alt);
+  border: 1px solid var(--ui-border-soft);
+  border-radius: var(--radius-sm);
+  padding: 0.22rem 0.5rem;
+  min-width: 2.2rem;
+  text-align: center;
+}
+
+.pref-range-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.pref-range-minmax {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--ui-text-muted);
+  min-width: 1rem;
+  text-align: center;
+}
+
+.pref-range {
+  flex: 1;
+  appearance: none;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--border-light);
+  outline: none;
+}
+
+.pref-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  border: 2px solid var(--bg-surface);
+  box-shadow: var(--elevation-soft);
+  cursor: pointer;
+}
+
+.pref-range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  border: 2px solid var(--bg-surface);
+  box-shadow: var(--elevation-soft);
+  cursor: pointer;
+}
+
 /* Form Settings (Preferences) */
 .card-item {
   border: 1px solid var(--ui-border-soft);
   background: var(--bg-surface);
-  border-radius: 12px;
-  padding: 1rem;
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
   transition: all 0.2s ease;
 }
 
 .card-item:focus-within {
   border-color: color-mix(in srgb, var(--color-primary) 30%, var(--border-light));
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.02);
+  box-shadow: var(--elevation-soft);
 }
 
 .card-item__form {
@@ -1325,10 +1539,37 @@ async function deleteFamily() {
   color: var(--ui-text-strong);
 }
 
+.panel-label--with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+}
+
+.panel-label-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--ui-text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.panel-label-icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+}
+
 .input-action-group {
   display: flex;
   gap: 0.5rem;
   margin-top: 0.15rem;
+}
+
+.input-action-group--end {
+  justify-content: flex-end;
 }
 
 .input-wrapper {
@@ -1340,7 +1581,7 @@ async function deleteFamily() {
 .panel-input {
   width: 100%;
   border: 1px solid var(--ui-border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: 0.55rem 0.75rem;
   font-size: 0.88rem;
   background: var(--bg-surface);
@@ -1350,7 +1591,7 @@ async function deleteFamily() {
 
 .panel-input:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(77, 140, 101, 0.12);
+  box-shadow: var(--focus-ring-primary);
   outline: none;
 }
 
@@ -1362,8 +1603,8 @@ async function deleteFamily() {
   background: var(--bg-hover);
   color: var(--ui-text-strong);
   border: 1px solid var(--ui-border-soft);
-  border-radius: 10px;
-  padding: 0 1rem;
+  border-radius: var(--radius-md);
+  padding: 0.55rem 1rem;
   font-size: 0.82rem;
   font-weight: 700;
   cursor: pointer;
@@ -1371,7 +1612,7 @@ async function deleteFamily() {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 70px;
+  min-width: 82px;
 }
 
 .panel-save-btn:hover:not(:disabled) {
@@ -1421,7 +1662,7 @@ async function deleteFamily() {
   background: var(--bg-surface);
   color: var(--ui-text-strong);
   border: 1px solid var(--ui-border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: 0.55rem 0.9rem;
   font-size: 0.8rem;
   font-weight: 700;
@@ -1485,7 +1726,7 @@ async function deleteFamily() {
 /* Members tab styling */
 .members-list-wrapper {
   border: 1px solid var(--ui-border-soft);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
   background: var(--bg-surface);
 }
@@ -1568,7 +1809,7 @@ async function deleteFamily() {
   font-size: 0.68rem;
   font-weight: 700;
   padding: 0.15rem 0.45rem;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   display: inline-flex;
   align-items: center;
   gap: 0.2rem;
@@ -1597,7 +1838,7 @@ async function deleteFamily() {
   border: 1px solid var(--danger-border);
   font-size: 0.72rem;
   font-weight: 700;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   padding: 0.35rem 0.6rem;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -1627,13 +1868,13 @@ async function deleteFamily() {
   background: var(--danger-text);
   color: var(--bg-surface);
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: 0.6rem 1.25rem;
   font-size: 0.82rem;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.15);
+  box-shadow: var(--elevation-danger-subtle);
   white-space: nowrap;
   display: flex;
   align-items: center;
@@ -1644,7 +1885,7 @@ async function deleteFamily() {
 .danger-action-btn:hover:not(:disabled) {
   background: var(--danger-text);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25);
+  box-shadow: var(--elevation-danger-hover);
 }
 
 .danger-action-btn:disabled {

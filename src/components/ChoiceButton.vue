@@ -24,9 +24,9 @@ defineEmits(['click'])
   align-items: center;
   gap: 1rem;
   width: 100%;
-  padding: 1.125rem 1.25rem;
+  padding: 1.125rem var(--space-5);
   border: 1.5px solid var(--border-main);
-  border-radius: 16px;
+  border-radius: var(--radius-2xl);
   background: var(--bg-surface);
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
@@ -35,8 +35,8 @@ defineEmits(['click'])
 
 .choice-btn:hover {
   border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 5%, white);
-  box-shadow: 0 2px 12px color-mix(in srgb, var(--color-primary) 14%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 5%, var(--bg-surface));
+  box-shadow: var(--elevation-primary-soft);
 }
 
 .choice-icon {

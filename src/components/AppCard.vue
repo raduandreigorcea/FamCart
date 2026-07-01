@@ -15,9 +15,9 @@ defineProps({
 .app-card {
   width: 100%;
   background: var(--bg-surface);
-  border-radius: 24px;
-  padding: 2.25rem 2rem 2rem;
-  box-shadow: 0 2px 24px rgba(0, 0, 0, 0.06), 0 1px 4px rgba(0, 0, 0, 0.04);
+  border-radius: var(--radius-4xl);
+  padding: 2.25rem var(--space-8) var(--space-8);
+  box-shadow: var(--elevation-card);
   position: relative;
   z-index: 1;
 }
@@ -28,8 +28,8 @@ defineProps({
 
 .app-card--narrow {
   max-width: 340px;
-  border-radius: 20px;
-  padding: 2rem 1.75rem 1.75rem;
-  box-shadow: 0 4px 32px rgba(0, 0, 0, 0.07);
+  border-radius: var(--radius-3xl);
+  padding: var(--space-8) var(--space-7) var(--space-7);
+  box-shadow: var(--elevation-card-strong);
 }
 </style>

@@ -42,7 +42,7 @@ defineEmits(['update:modelValue'])
   display: flex;
   align-items: center;
   border: 1.5px solid var(--border-main);
-  border-radius: 14px;
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
   transition: border-color 0.15s;
   overflow: hidden;
@@ -54,7 +54,7 @@ defineEmits(['update:modelValue'])
 
 .input-row input {
   flex: 1;
-  padding: 0.75rem 1rem;
+  padding: var(--space-3) var(--space-4);
   border: none;
   background: transparent;
   font-family: inherit;
@@ -78,14 +78,14 @@ defineEmits(['update:modelValue'])
 }
 
 .submit-btn {
-  width: 40px;
-  height: 40px;
+  width: var(--size-control-md);
+  height: var(--size-control-md);
   flex-shrink: 0;
   margin: 4px;
   background: var(--color-primary);
   color: var(--bg-surface);
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: opacity 0.15s;
   display: flex;
@@ -95,8 +95,8 @@ defineEmits(['update:modelValue'])
 }
 
 .submit-btn svg {
-  width: 18px;
-  height: 18px;
+  width: var(--size-icon-lg);
+  height: var(--size-icon-lg);
 }
 
 .submit-btn:disabled {
@@ -105,9 +105,9 @@ defineEmits(['update:modelValue'])
 }
 
 .spinner {
-  width: 18px;
-  height: 18px;
-  border: 2px solid rgba(255, 255, 255, 0.4);
+  width: var(--size-icon-lg);
+  height: var(--size-icon-lg);
+  border: 2px solid var(--spinner-stroke);
   border-top-color: var(--bg-surface);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;

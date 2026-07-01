@@ -46,24 +46,24 @@ const emit = defineEmits(['confirm', 'cancel'])
 .confirm-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.5);
+  background: var(--overlay-dark-strong);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1100;
-  padding: 1rem;
+  padding: var(--space-4);
 }
 
 .confirm-dialog {
   width: 100%;
   max-width: 400px;
   background: var(--bg-surface);
-  border-radius: 18px;
+  border-radius: var(--radius-dialog);
   border: 1px solid var(--border-main);
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
-  padding: 1.75rem 1.75rem 1.5rem;
+  box-shadow: var(--elevation-dialog);
+  padding: var(--space-7) var(--space-7) var(--space-6);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -76,8 +76,8 @@ const emit = defineEmits(['confirm', 'cancel'])
   width: 52px;
   height: 52px;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--color-primary, var(--color-primary)) 10%, white);
-  color: var(--color-primary, var(--color-primary));
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
+  color: var(--color-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -124,8 +124,8 @@ const emit = defineEmits(['confirm', 'cancel'])
 
 .confirm-btn {
   flex: 1;
-  border-radius: 10px;
-  padding: 0.65rem 1rem;
+  border-radius: var(--radius-md);
+  padding: 0.65rem var(--space-4);
   font-size: 0.86rem;
   font-weight: 700;
   cursor: pointer;
@@ -144,20 +144,20 @@ const emit = defineEmits(['confirm', 'cancel'])
 }
 
 .confirm-btn--primary {
-  background: var(--color-primary, var(--color-primary));
+  background: var(--color-primary);
   color: var(--bg-surface);
-  box-shadow: 0 4px 12px rgba(77, 140, 101, 0.2);
+  box-shadow: var(--elevation-primary);
 }
 
 .confirm-btn--primary:hover {
-  background: color-mix(in srgb, var(--color-primary, var(--color-primary)) 85%, black);
+  background: color-mix(in srgb, var(--color-primary) 85%, var(--text-primary));
   transform: translateY(-1px);
 }
 
 .confirm-btn--danger {
   background: var(--danger-text);
   color: var(--bg-surface);
-  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.18);
+  box-shadow: var(--elevation-danger);
 }
 
 .confirm-btn--danger:hover {

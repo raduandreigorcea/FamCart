@@ -17,6 +17,7 @@ const familyId = ref(null)
 const familyName = ref('')
 const familyInviteCode = ref('')
 const familyOwnerId = ref('')
+const familyItemLimit = ref(50)
 const familyMembers = ref([])
 const newItem = ref('')
 const newQty = ref(1)
@@ -131,14 +132,30 @@ function sanitizeAuthCallbackUrl() {
 
 async function loadFamilyHeader() {
   const [{ data: family, error: familyErr }, { data: members, error: membersErr }] = await Promise.all([
-    db.from('families').select('name, invite_code, created_by').eq('id', familyId.value).single(),
+    db.from('families').select('name, invite_code, created_by, max_items_per_member').eq('id', familyId.value).single(),
     db.from('family_members').select('user_id, display_name, image_url').eq('family_id', familyId.value),
   ])
 
-  if (!familyErr && family) {
-    familyName.value = family.name
-    familyInviteCode.value = family.invite_code || ''
-    familyOwnerId.value = family.created_by || ''
+  let resolvedFamily = family
+  let resolvedFamilyErr = familyErr
+
+  // Backward-compatible fallback for environments where the new column is not migrated yet.
+  if (resolvedFamilyErr?.message?.includes('max_items_per_member')) {
+    const { data: legacyFamily, error: legacyFamilyErr } = await db
+      .from('families')
+      .select('name, invite_code, created_by')
+      .eq('id', familyId.value)
+      .single()
+
+    resolvedFamily = legacyFamily
+    resolvedFamilyErr = legacyFamilyErr
+  }
+
+  if (!resolvedFamilyErr && resolvedFamily) {
+    familyName.value = resolvedFamily.name
+    familyInviteCode.value = resolvedFamily.invite_code || ''
+    familyOwnerId.value = resolvedFamily.created_by || ''
+    familyItemLimit.value = Math.min(50, Math.max(1, Number(resolvedFamily.max_items_per_member) || 50))
   }
 
   if (!membersErr && Array.isArray(members)) {
@@ -364,6 +381,20 @@ async function addItem() {
   addError.value = ''
   adding.value = true
   try {
+    const { count: currentUserActiveItemCount, error: countError } = await db
+      .from('shopping_list_items')
+      .select('id', { count: 'exact', head: true })
+      .eq('family_id', familyId.value)
+      .eq('added_by', userId.value)
+      .eq('checked', false)
+
+    if (countError) throw countError
+
+    if ((currentUserActiveItemCount || 0) >= familyItemLimit.value) {
+      addError.value = `You reached your limit of ${familyItemLimit.value} active items.`
+      return
+    }
+
     const creatorName = user.value?.fullName
       || user.value?.firstName
       || user.value?.emailAddresses?.[0]?.emailAddress
@@ -419,6 +450,7 @@ async function deleteItem(item) {
       :family-id="familyId || ''"
       :family-name="familyName"
       :invite-code="familyInviteCode"
+      :family-item-limit="familyItemLimit"
       :owner-user-id="familyOwnerId"
       :member-profiles="familyMembers"
       @refresh-family="loadFamilyHeader"
@@ -554,7 +586,7 @@ async function deleteItem(item) {
   align-items: center;
   background: var(--bg-surface);
   border: 1.5px solid var(--border-main);
-  border-radius: 16px;
+  border-radius: var(--radius-2xl);
   overflow: hidden;
   transition: border-color 0.15s;
 }
@@ -603,7 +635,7 @@ async function deleteItem(item) {
   border: 1px solid var(--border-main);
   background: var(--bg-surface);
   color: var(--text-secondary);
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   cursor: pointer;
   line-height: 1;
   padding: 0;
@@ -613,8 +645,8 @@ async function deleteItem(item) {
 }
 
 .qty-icon {
-  width: 14px;
-  height: 14px;
+  width: var(--size-icon-sm);
+  height: var(--size-icon-sm);
   background-color: var(--text-secondary);
 }
 
@@ -686,7 +718,7 @@ async function deleteItem(item) {
   background: var(--color-primary);
   color: var(--bg-surface);
   border: none;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -696,8 +728,8 @@ async function deleteItem(item) {
 }
 
 .add-icon {
-  width: 18px;
-  height: 18px;
+  width: var(--size-icon-lg);
+  height: var(--size-icon-lg);
   background-color: var(--bg-surface);
   mask: url('../assets/plus.svg') no-repeat center / contain;
   -webkit-mask: url('../assets/plus.svg') no-repeat center / contain;
@@ -744,7 +776,7 @@ async function deleteItem(item) {
 .spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(255, 255, 255, 0.4);
+  border: 2px solid var(--spinner-stroke);
   border-top-color: var(--bg-surface);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;

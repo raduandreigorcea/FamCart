@@ -23,7 +23,7 @@ defineEmits(['click'])
   font-family: inherit;
   cursor: pointer;
   padding: 0.45rem 0.65rem 0.45rem 0.4rem;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   transition: color 0.15s, background 0.15s;
   margin-top: 0.25rem;
 }
@@ -34,8 +34,8 @@ defineEmits(['click'])
 }
 
 .back-btn__arrow {
-  width: 14px;
-  height: 14px;
+  width: var(--size-icon-sm);
+  height: var(--size-icon-sm);
   flex-shrink: 0;
 }
 </style>

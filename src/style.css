@@ -35,6 +35,69 @@
 
   /* Overlay */
   --backdrop: rgba(0, 0, 0, 0.4);
+  --overlay-dark: rgba(15, 23, 42, 0.45);
+  --overlay-dark-strong: rgba(15, 23, 42, 0.5);
+
+  /* Shared alpha and shadow colors */
+  --spinner-stroke: rgba(255, 255, 255, 0.4);
+  --shadow-ink-02: rgba(15, 23, 42, 0.02);
+  --shadow-ink-04: rgba(15, 23, 42, 0.04);
+  --shadow-ink-06: rgba(15, 23, 42, 0.06);
+  --shadow-ink-07: rgba(15, 23, 42, 0.07);
+  --shadow-ink-15: rgba(15, 23, 42, 0.15);
+  --shadow-ink-18: rgba(15, 23, 42, 0.18);
+  --shadow-primary-12: rgba(77, 140, 101, 0.12);
+  --shadow-primary-20: rgba(77, 140, 101, 0.2);
+  --shadow-danger-15: rgba(220, 38, 38, 0.15);
+  --shadow-danger-18: rgba(220, 38, 38, 0.18);
+  --shadow-danger-25: rgba(220, 38, 38, 0.25);
+
+  /* Radius scale */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 14px;
+  --radius-2xl: 16px;
+  --radius-dialog: 18px;
+  --radius-3xl: 20px;
+  --radius-4xl: 24px;
+  --radius-pill: 999px;
+
+  /* Spacing scale */
+  --space-1: 0.25rem;
+  --space-1-5: 0.375rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-7: 1.75rem;
+  --space-8: 2rem;
+
+  /* Shared sizing */
+  --size-control-sm: 32px;
+  --size-control-md: 40px;
+  --size-control-lg: 52px;
+  --size-avatar-sm: 30px;
+  --size-avatar-md: 40px;
+  --size-icon-sm: 14px;
+  --size-icon-md: 16px;
+  --size-icon-lg: 18px;
+
+  /* Elevation and focus */
+  --elevation-card: 0 2px 24px var(--shadow-ink-06), 0 1px 4px var(--shadow-ink-04);
+  --elevation-card-strong: 0 4px 32px var(--shadow-ink-07);
+  --elevation-modal: 0 20px 50px var(--shadow-ink-15);
+  --elevation-dialog: 0 24px 60px var(--shadow-ink-18);
+  --elevation-soft: 0 4px 12px var(--shadow-ink-02);
+  --elevation-primary: 0 4px 12px var(--shadow-primary-20);
+  --elevation-danger: 0 4px 12px var(--shadow-danger-18);
+  --elevation-danger-subtle: 0 4px 12px var(--shadow-danger-15);
+  --elevation-danger-hover: 0 4px 12px var(--shadow-danger-25);
+  --elevation-primary-soft: 0 2px 12px color-mix(in srgb, var(--color-primary) 14%, transparent);
+  --focus-ring-primary: 0 0 0 3px var(--shadow-primary-12);
+  --focus-ring-primary-soft: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, var(--bg-surface));
 }
 
 *,

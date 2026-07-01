@@ -55,7 +55,7 @@ function handleDelete() {
   align-items: center;
   gap: 0.75rem;
   background: var(--bg-surface);
-  border-radius: 14px;
+  border-radius: var(--radius-xl);
   padding: 0.875rem 0.875rem 0.875rem 0.75rem;
   border: 1.5px solid var(--border-main);
   transition: opacity 0.2s;
@@ -99,9 +99,9 @@ function handleDelete() {
 }
 
 .item-avatar {
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
+  width: var(--size-avatar-sm);
+  height: var(--size-avatar-sm);
+  border-radius: var(--radius-pill);
   object-fit: cover;
   flex-shrink: 0;
   border: 1px solid var(--border-main);
@@ -130,9 +130,9 @@ function handleDelete() {
   font-size: 0.78rem;
   font-weight: 700;
   color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 10%, white);
-  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, white);
-  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
+  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, var(--bg-surface));
+  border-radius: var(--radius-pill);
   padding: 0.15rem 0.45rem;
 }
 
@@ -144,12 +144,12 @@ function handleDelete() {
   border: none;
   padding: 0;
   cursor: pointer;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
   transition: color 0.15s;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
 }
 
 .item-delete:hover {
@@ -157,7 +157,7 @@ function handleDelete() {
 }
 
 .item-delete svg {
-  width: 16px;
-  height: 16px;
+  width: var(--size-icon-md);
+  height: var(--size-icon-md);
 }
 </style>
