@@ -519,7 +519,7 @@ async function deleteItem(item) {
         </div>
 
         <!-- List -->
-        <ul v-if="uncheckedItems.length" class="item-list">
+        <TransitionGroup tag="ul" name="unchecked" class="item-list">
           <ShoppingListItem
             v-for="item in uncheckedItems"
             :key="item.id"
@@ -527,11 +527,13 @@ async function deleteItem(item) {
             @toggle="toggleItem"
             @delete="deleteItem"
           />
-        </ul>
+        </TransitionGroup>
 
-        <p v-if="checkedItems.length" class="section-label">Checked</p>
+        <Transition name="section-fade">
+          <p v-if="checkedItems.length" class="section-label">Checked</p>
+        </Transition>
 
-        <ul v-if="checkedItems.length" class="item-list item-list--checked">
+        <TransitionGroup tag="ul" name="checked" class="item-list" :class="{ 'item-list--checked': checkedItems.length }">
           <ShoppingListItem
             v-for="item in checkedItems"
             :key="item.id"
@@ -539,7 +541,7 @@ async function deleteItem(item) {
             @toggle="toggleItem"
             @delete="deleteItem"
           />
-        </ul>
+        </TransitionGroup>
 
         <p v-if="!items.length && !loadError" class="empty-state">
           Nothing here yet — add your first item above!
@@ -766,10 +768,61 @@ async function deleteItem(item) {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  position: relative;
 }
 
 .item-list--checked {
   margin-top: 0.4rem;
+}
+
+.unchecked-move,
+.checked-move {
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.unchecked-enter-active,
+.checked-enter-active {
+  transition: opacity 0.32s ease, transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.unchecked-leave-active,
+.checked-leave-active {
+  transition: opacity 0.24s ease, transform 0.24s ease;
+  position: absolute;
+  width: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.unchecked-enter-from {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.995);
+}
+
+.unchecked-leave-to {
+  opacity: 0;
+  transform: translateY(8px) scale(0.995);
+}
+
+.checked-enter-from {
+  opacity: 0;
+  transform: translateY(8px) scale(0.995);
+}
+
+.checked-leave-to {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.995);
+}
+
+.section-fade-enter-active,
+.section-fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.section-fade-enter-from,
+.section-fade-leave-to {
+  opacity: 0;
 }
 
 .section-label {

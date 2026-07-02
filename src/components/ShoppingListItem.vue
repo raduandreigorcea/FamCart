@@ -25,11 +25,11 @@ function handleDelete() {
     :class="{ 'item--checked': item.checked }"
   >
     <button class="item-check" @click="handleToggle" :aria-label="item.checked ? 'Uncheck' : 'Check'">
-      <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="10" cy="10" r="8.25" stroke="currentColor" stroke-width="1"/>
-        <path v-if="item.checked" d="M6.5 10.5l2.5 2.5 4.5-5" stroke="currentColor" stroke-width="1.75"
-          stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
+      <span class="check-circle" aria-hidden="true">
+        <svg class="check-icon" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <polyline points="2,7 6,11 12,3" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
     </button>
     <span class="item-emoji" aria-hidden="true">{{ getProductEmoji(item.name, item.brand || '') }}</span>
     <span class="item-name">{{ item.name }}</span>
@@ -81,24 +81,73 @@ function handleDelete() {
   border: none;
   padding: 0;
   cursor: pointer;
-  color: var(--text-disabled);
+  color: var(--bg-surface);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.15s;
+  transition: transform 0.18s ease;
 }
 
-.item--checked .item-check {
-  color: var(--color-primary);
+.check-circle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1.8px solid var(--border-dark);
+  background: var(--bg-surface);
+  color: var(--bg-surface);
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.18s ease;
 }
 
-.item-check:hover {
-  color: var(--color-primary);
+.check-circle::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
+  opacity: 0;
+  transform: scale(0.72);
+  transition: opacity 0.2s ease, transform 0.22s ease;
 }
 
-.item-check svg {
-  width: 22px;
-  height: 22px;
+.check-icon {
+  width: 14px;
+  height: 14px;
+  opacity: 0;
+  transform: scale(0.6) rotate(-10deg);
+  transition: opacity 0.15s ease, transform 0.18s ease;
+}
+
+.item-check:hover .check-circle {
+  border-color: var(--color-primary);
+}
+
+.item--checked .check-circle {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  transform: scale(1.06);
+}
+
+.item--checked .check-circle::after {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.item--checked .check-icon {
+  opacity: 1;
+  transform: scale(1) rotate(0deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .check-circle,
+  .check-circle::after,
+  .check-icon,
+  .item-name {
+    transition: none;
+  }
 }
 
 .item-emoji {
