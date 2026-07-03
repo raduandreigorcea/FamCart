@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useAuth, useUser } from '@clerk/vue'
 import { useRouter } from 'vue-router'
 import { useSupabase } from '../supabase.js'
@@ -20,6 +20,10 @@ const familyName = ref('')
 const inviteCode = ref('')
 const error = ref('')
 const loading = ref(false)
+const FAMILY_NAME_MAX_LENGTH = 40
+const INVITE_CODE_REGEX = /^[A-HJ-NP-Z2-9]{8}$/
+const familyNameLength = computed(() => familyName.value.length)
+const familyNameOverLimit = computed(() => familyNameLength.value > FAMILY_NAME_MAX_LENGTH)
 
 function randomInviteCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -27,7 +31,13 @@ function randomInviteCode() {
 }
 
 async function createFamily() {
-  if (loading.value || !familyName.value.trim()) return
+  if (loading.value) return
+  if (familyNameOverLimit.value) {
+    error.value = `Family name must be ${FAMILY_NAME_MAX_LENGTH} characters or fewer.`
+    return
+  }
+  const nextFamilyName = familyName.value.trim()
+  if (!nextFamilyName) return
   error.value = ''
   loading.value = true
   try {
@@ -40,7 +50,7 @@ async function createFamily() {
 
     const { data: family, error: familyErr } = await db
       .from('families')
-      .insert({ name: familyName.value.trim(), invite_code: code, created_by: userId.value })
+      .insert({ name: nextFamilyName, invite_code: code, created_by: userId.value })
       .select('id')
       .single()
 
@@ -72,6 +82,10 @@ async function joinFamily() {
   loading.value = true
   try {
     const code = inviteCode.value.trim().toUpperCase()
+    if (!INVITE_CODE_REGEX.test(code)) {
+      error.value = 'Invite code must be 8 characters using A-Z and 2-9.'
+      return
+    }
     const displayName = user.value?.fullName
       || user.value?.firstName
       || user.value?.emailAddresses?.[0]?.emailAddress
@@ -150,7 +164,10 @@ async function joinFamily() {
             <p class="sub">This is how your family list will appear for everyone.</p>
           </div>
           <form @submit.prevent="createFamily" class="input-form">
-            <InputRow v-model="familyName" placeholder="e.g. The Smiths" maxlength="40" :loading="loading" required autofocus />
+            <InputRow v-model="familyName" placeholder="e.g. The Smiths" :loading="loading" required autofocus />
+            <p class="field-counter" :class="{ 'field-counter--danger': familyNameOverLimit }">
+              {{ familyNameLength }}/{{ FAMILY_NAME_MAX_LENGTH }}
+            </p>
             <ErrorMessage :message="error" />
           </form>
           <BackButton @click="mode = null; error = ''" />
@@ -241,5 +258,17 @@ async function joinFamily() {
   flex-direction: column;
   gap: 0.6rem;
   margin-bottom: 0.875rem;
+}
+
+.field-counter {
+  margin: -0.15rem 0 0;
+  text-align: right;
+  font-size: 0.78rem;
+  color: var(--text-disabled);
+}
+
+.field-counter--danger {
+  color: var(--danger-main);
+  font-weight: 700;
 }
 </style>

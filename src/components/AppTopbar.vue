@@ -35,6 +35,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['refresh-family', 'family-deleted'])
+const FAMILY_NAME_MAX_LENGTH = 40
 
 const { userId } = useAuth()
 const clerk = useClerk()
@@ -89,6 +90,8 @@ const activeTab = ref('overview')
 const renameValue = ref('')
 const savingName = ref(false)
 const nameSaved = ref(false)
+const renameLength = computed(() => renameValue.value.length)
+const renameOverLimit = computed(() => renameLength.value > FAMILY_NAME_MAX_LENGTH)
 const itemLimitValue = ref(50)
 const savingItemLimit = ref(false)
 const itemLimitSaved = ref(false)
@@ -208,6 +211,7 @@ async function renameFamily() {
   if (!isOwner.value) return
   const nextName = renameValue.value.trim()
   if (!nextName || !props.familyId || savingName.value) return
+  if (renameOverLimit.value || nextName.length > FAMILY_NAME_MAX_LENGTH) return
   savingName.value = true
   try {
     const { error } = await db
@@ -613,14 +617,16 @@ async function deleteFamily() {
                             v-model="renameValue"
                             class="panel-input"
                             type="text"
-                            maxlength="60"
                             placeholder="My Awesome Family"
                           />
+                          <p class="panel-counter" :class="{ 'panel-counter--danger': renameOverLimit }">
+                            {{ renameLength }}/{{ FAMILY_NAME_MAX_LENGTH }}
+                          </p>
                         </div>
                         <button
                           class="panel-save-btn"
                           type="button"
-                          :disabled="savingName"
+                          :disabled="savingName || renameOverLimit"
                           @click="renameFamily"
                         >
                           <span v-if="savingName" class="btn-spinner"></span>
@@ -1695,6 +1701,7 @@ async function deleteFamily() {
   position: relative;
   flex: 1;
   display: flex;
+  flex-direction: column;
 }
 
 .panel-input {
@@ -1716,6 +1723,18 @@ async function deleteFamily() {
 
 .panel-input::placeholder {
   color: var(--border-dark);
+}
+
+.panel-counter {
+  margin: 0.25rem 0 0;
+  text-align: right;
+  font-size: 0.75rem;
+  color: var(--ui-text-muted);
+}
+
+.panel-counter--danger {
+  color: var(--danger-main);
+  font-weight: 700;
 }
 
 .panel-save-btn {

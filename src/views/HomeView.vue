@@ -29,6 +29,7 @@ const limitReachedPopupOpen = ref(false)
 const adding = ref(false)
 const realtimeChannels = []
 const hasInitialized = ref(false)
+const ITEM_NAME_MAX_LENGTH = 120
 
 const uncheckedItems = computed(() => items.value.filter((i) => !i.checked))
 const checkedItems = computed(() => items.value.filter((i) => i.checked))
@@ -410,6 +411,10 @@ async function loadItems() {
 async function addItem() {
   const name = newItem.value.trim()
   if (!name || adding.value) return
+  if (name.length > ITEM_NAME_MAX_LENGTH) {
+    addError.value = `Item name must be ${ITEM_NAME_MAX_LENGTH} characters or fewer.`
+    return
+  }
   addError.value = ''
   adding.value = true
   try {
