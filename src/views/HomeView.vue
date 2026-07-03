@@ -30,6 +30,16 @@ const adding = ref(false)
 const realtimeChannels = []
 const hasInitialized = ref(false)
 const ITEM_NAME_MAX_LENGTH = 120
+const realtimeHealthy = ref(false)
+const reconnectInProgress = ref(false)
+const channelsRefreshing = ref(false)
+let reconnectTimeoutId = null
+let fallbackRefreshIntervalId = null
+let lastReconnectAttemptAt = 0
+
+const RECONNECT_THROTTLE_MS = 1500
+const RECONNECT_RETRY_MS = 2500
+const FALLBACK_REFRESH_MS = 15000
 
 const uncheckedItems = computed(() => items.value.filter((i) => !i.checked))
 const checkedItems = computed(() => items.value.filter((i) => i.checked))
@@ -53,15 +63,112 @@ function handleVisibilityOrOnline() {
       console.log('App focused or online: refreshing state and reconnecting WebSocket...')
       void loadItems()
       void loadFamilyHeader()
-      if (db && db.realtime) {
-        db.realtime.connect()
-      }
+      scheduleRealtimeReconnect('focus/online', 0)
     }
   } else {
     console.log('App backgrounded/unfocused: disconnecting WebSocket to save connection resources...')
     if (db && db.realtime) {
       db.realtime.disconnect()
     }
+    realtimeHealthy.value = false
+  }
+}
+
+function shouldKeepRealtimeActive() {
+  return hasInitialized.value
+    && !!familyId.value
+    && document.visibilityState === 'visible'
+    && navigator.onLine
+}
+
+function setupFallbackRefresh() {
+  if (fallbackRefreshIntervalId) return
+  fallbackRefreshIntervalId = window.setInterval(() => {
+    if (!shouldKeepRealtimeActive()) return
+    if (!realtimeHealthy.value) {
+      scheduleRealtimeReconnect('fallback refresh tick', 0)
+    }
+    void loadItems()
+    void loadFamilyHeader()
+  }, FALLBACK_REFRESH_MS)
+}
+
+function cleanupReconnectResources() {
+  if (reconnectTimeoutId) {
+    clearTimeout(reconnectTimeoutId)
+    reconnectTimeoutId = null
+  }
+  if (fallbackRefreshIntervalId) {
+    clearInterval(fallbackRefreshIntervalId)
+    fallbackRefreshIntervalId = null
+  }
+}
+
+function handleUserActivity() {
+  if (!shouldKeepRealtimeActive()) return
+  if (realtimeHealthy.value) return
+  scheduleRealtimeReconnect('user activity', 0)
+}
+
+async function reconnectRealtime(reason) {
+  if (reconnectInProgress.value || !shouldKeepRealtimeActive()) return
+
+  const now = Date.now()
+  if (now - lastReconnectAttemptAt < RECONNECT_THROTTLE_MS) return
+  lastReconnectAttemptAt = now
+
+  reconnectInProgress.value = true
+  try {
+    console.log(`Attempting realtime reconnect (${reason})...`)
+    db.realtime.setAuth()
+    db.realtime.connect()
+    await setupRealtimeSubscriptions()
+    await Promise.all([loadItems(), loadFamilyHeader()])
+  } catch (error) {
+    console.error('Realtime reconnect failed:', error)
+    scheduleRealtimeReconnect('retry after failure', RECONNECT_RETRY_MS)
+  } finally {
+    reconnectInProgress.value = false
+  }
+}
+
+function scheduleRealtimeReconnect(reason, delayMs = RECONNECT_THROTTLE_MS) {
+  if (!shouldKeepRealtimeActive()) return
+  if (reconnectTimeoutId || reconnectInProgress.value) return
+
+  reconnectTimeoutId = window.setTimeout(() => {
+    reconnectTimeoutId = null
+    void reconnectRealtime(reason)
+  }, delayMs)
+}
+
+function handleChannelStatus(channelName, status, err) {
+  console.log(`${channelName} subscription status: ${status}`, err || '')
+
+  if (status === 'SUBSCRIBED') {
+    realtimeHealthy.value = true
+    if (hasInitialized.value) {
+      if (channelName === 'listChannel') {
+        console.log('listChannel reconnected: fetching active items')
+        void loadItems()
+      }
+      if (channelName === 'membersChannel') {
+        console.log('membersChannel reconnected: fetching members')
+        void loadFamilyHeader()
+      }
+      if (channelName === 'familyChannel') {
+        console.log('familyChannel reconnected: fetching family header')
+        void loadFamilyHeader()
+      }
+    }
+    return
+  }
+
+  if (channelsRefreshing.value) return
+
+  if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+    realtimeHealthy.value = false
+    scheduleRealtimeReconnect(`${channelName}:${status}`, 0)
   }
 }
 
@@ -69,6 +176,10 @@ onMounted(() => {
   void initializeHome()
   window.addEventListener('visibilitychange', handleVisibilityOrOnline)
   window.addEventListener('online', handleVisibilityOrOnline)
+  window.addEventListener('pointerdown', handleUserActivity)
+  window.addEventListener('keydown', handleUserActivity)
+  window.addEventListener('touchstart', handleUserActivity, { passive: true })
+  setupFallbackRefresh()
 })
 
 watch([isLoaded, userId], () => {
@@ -77,8 +188,12 @@ watch([isLoaded, userId], () => {
 
 onBeforeUnmount(() => {
   cleanupRealtimeSubscriptions()
+  cleanupReconnectResources()
   window.removeEventListener('visibilitychange', handleVisibilityOrOnline)
   window.removeEventListener('online', handleVisibilityOrOnline)
+  window.removeEventListener('pointerdown', handleUserActivity)
+  window.removeEventListener('keydown', handleUserActivity)
+  window.removeEventListener('touchstart', handleUserActivity)
 })
 
 async function initializeHome() {
@@ -183,6 +298,7 @@ async function loadFamilyHeader() {
 }
 
 function cleanupRealtimeSubscriptions() {
+  realtimeHealthy.value = false
   while (realtimeChannels.length) {
     const channel = realtimeChannels.pop()
     db.removeChannel(channel)
@@ -218,9 +334,11 @@ async function setupRealtimeSubscriptions() {
   // preventing static token expiration during automatic WebSocket reconnects.
   db.realtime.setAuth()
 
+  channelsRefreshing.value = true
   cleanupRealtimeSubscriptions()
 
-  const listChannel = db
+  try {
+    const listChannel = db
     .channel(`shopping-list:${familyId.value}`)
     .on(
       'postgres_changes',
@@ -278,14 +396,10 @@ async function setupRealtimeSubscriptions() {
       },
     )
     .subscribe((status, err) => {
-      console.log(`listChannel subscription status: ${status}`, err || '')
-      if (status === 'SUBSCRIBED' && hasInitialized.value) {
-        console.log('listChannel reconnected: fetching active items')
-        void loadItems()
-      }
+      handleChannelStatus('listChannel', status, err)
     })
 
-  const membersChannel = db
+    const membersChannel = db
     .channel(`family-members:${familyId.value}`)
     .on(
       'postgres_changes',
@@ -344,14 +458,10 @@ async function setupRealtimeSubscriptions() {
       },
     )
     .subscribe((status, err) => {
-      console.log(`membersChannel subscription status: ${status}`, err || '')
-      if (status === 'SUBSCRIBED' && hasInitialized.value) {
-        console.log('membersChannel reconnected: fetching members')
-        void loadFamilyHeader()
-      }
+      handleChannelStatus('membersChannel', status, err)
     })
 
-  const familyChannel = db
+    const familyChannel = db
     .channel(`family:${familyId.value}`)
     .on(
       'postgres_changes',
@@ -372,14 +482,13 @@ async function setupRealtimeSubscriptions() {
       },
     )
     .subscribe((status, err) => {
-      console.log(`familyChannel subscription status: ${status}`, err || '')
-      if (status === 'SUBSCRIBED' && hasInitialized.value) {
-        console.log('familyChannel reconnected: fetching family header')
-        void loadFamilyHeader()
-      }
+      handleChannelStatus('familyChannel', status, err)
     })
 
-  realtimeChannels.push(listChannel, membersChannel, familyChannel)
+    realtimeChannels.push(listChannel, membersChannel, familyChannel)
+  } finally {
+    channelsRefreshing.value = false
+  }
 }
 
 async function loadItems() {
