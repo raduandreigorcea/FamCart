@@ -224,27 +224,55 @@ async function setupRealtimeSubscriptions() {
     .on(
       'postgres_changes',
       {
-        event: '*',
+        event: 'INSERT',
         schema: 'public',
         table: 'shopping_list_items',
         filter: `family_id=eq.${familyId.value}`,
       },
       (payload) => {
         console.log('listChannel event received:', payload)
-        const { eventType, new: newRecord, old: oldRecord } = payload
+        const newRecord = payload.new
 
-        if (eventType === 'INSERT') {
-          if (!items.value.some((i) => i.id === newRecord.id)) {
-            items.value.push(newRecord)
-            items.value.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-          }
-        } else if (eventType === 'UPDATE') {
-          const idx = items.value.findIndex((i) => i.id === newRecord.id)
-          if (idx !== -1) {
-            items.value[idx] = { ...items.value[idx], ...newRecord }
-          }
-        } else if (eventType === 'DELETE') {
+        if (!items.value.some((i) => i.id === newRecord.id)) {
+          items.value.push(newRecord)
+          items.value.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+        }
+      },
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'shopping_list_items',
+        filter: `family_id=eq.${familyId.value}`,
+      },
+      (payload) => {
+        console.log('listChannel event received:', payload)
+        const newRecord = payload.new
+        const idx = items.value.findIndex((i) => i.id === newRecord.id)
+        if (idx !== -1) {
+          items.value[idx] = { ...items.value[idx], ...newRecord }
+        } else {
+          void loadItems()
+        }
+      },
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'shopping_list_items',
+      },
+      (payload) => {
+        console.log('listChannel event received:', payload)
+        const oldRecord = payload.old
+        if (oldRecord?.id) {
           items.value = items.value.filter((i) => i.id !== oldRecord.id)
+        } else {
+          // Fallback for environments where DELETE payloads are minimal.
+          void loadItems()
         }
       },
     )
@@ -751,8 +779,8 @@ async function deleteItem(item) {
   width: var(--size-icon-lg);
   height: var(--size-icon-lg);
   background-color: var(--bg-surface);
-  mask: url('../assets/plus.svg') no-repeat center / contain;
-  -webkit-mask: url('../assets/plus.svg') no-repeat center / contain;
+  mask: url('../assets/add.svg') no-repeat center / contain;
+  -webkit-mask: url('../assets/add.svg') no-repeat center / contain;
 }
 
 .add-btn:disabled {
