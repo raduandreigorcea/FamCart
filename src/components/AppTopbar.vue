@@ -6,6 +6,7 @@ import { useSupabase } from '../supabase.js'
 import ConfirmModal from './ConfirmModal.vue'
 import AccountActionModal from './AccountActionModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
+import SkeletonBlock from './SkeletonBlock.vue'
 
 // Raw SVG imports for settings modal
 import layoutGridIcon from '../assets/layout-grid.svg?raw'
@@ -23,6 +24,7 @@ import ellipsisIcon from '../assets/ellipsis.svg?raw'
 const props = defineProps({
   familyId: { type: String, default: '' },
   familyName: { type: String, default: '' },
+  loading: { type: Boolean, default: false },
   inviteCode: { type: String, default: '' },
   familyItemLimit: { type: Number, default: 50 },
   ownerUserId: { type: String, default: '' },
@@ -454,6 +456,19 @@ async function deleteFamily() {
               </span>
             </template>
             <span v-if="extraMembers > 0" class="member-avatar member-avatar--more">+{{ extraMembers }}</span>
+          </div>
+        </div>
+      </template>
+      <template v-else-if="loading">
+        <div class="family-meta" aria-hidden="true">
+          <div class="family-info">
+            <SkeletonBlock width="7.5rem" height="1rem" />
+            <div class="family-subrow">
+              <SkeletonBlock width="4.5rem" height="0.7rem" />
+            </div>
+          </div>
+          <div class="member-stack">
+            <SkeletonBlock v-for="n in 3" :key="n" class="member-avatar" width="30px" height="30px" radius="var(--radius-pill)" />
           </div>
         </div>
       </template>

@@ -7,6 +7,7 @@ import AppTopbar from '../components/AppTopbar.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import ErrorMessage from '../components/ErrorMessage.vue'
 import ShoppingListItem from '../components/ShoppingListItem.vue'
+import SkeletonBlock from '../components/SkeletonBlock.vue'
 import {
   sumActiveQuantities,
   findActiveItemByName,
@@ -49,6 +50,11 @@ const FALLBACK_REFRESH_MS = 30000
 const uncheckedItems = computed(() => items.value.filter((i) => !i.checked))
 const checkedItems = computed(() => items.value.filter((i) => i.checked))
 const leftCount = computed(() => sumActiveQuantities(items.value))
+
+// Initial load: nothing fetched yet and no error to show instead. Items arriving
+// (realtime or fetch) end the skeleton early even before hasInitialized flips.
+const initialLoading = computed(() => !hasInitialized.value && !items.value.length && !loadError.value)
+const skeletonNameWidths = ['55%', '38%', '62%', '30%']
 
 function increaseQty() {
   qtyDirection.value = 'up'
@@ -775,6 +781,7 @@ async function deleteItem(item) {
     <AppTopbar
       :family-id="familyId || ''"
       :family-name="familyName"
+      :loading="initialLoading"
       :invite-code="familyInviteCode"
       :family-item-limit="familyItemLimit"
       :owner-user-id="familyOwnerId"
@@ -836,6 +843,16 @@ async function deleteItem(item) {
           {{ leftCount }} left
         </div>
 
+        <!-- Skeleton rows while the first fetch is in flight -->
+        <ul v-if="initialLoading" class="item-list" aria-hidden="true">
+          <li v-for="(nameWidth, idx) in skeletonNameWidths" :key="idx" class="skeleton-item">
+            <SkeletonBlock width="24px" height="24px" radius="50%" />
+            <SkeletonBlock width="2.05rem" height="2.05rem" radius="0.65rem" />
+            <SkeletonBlock class="skeleton-item__name" :width="nameWidth" height="0.95rem" />
+            <SkeletonBlock width="var(--size-avatar-sm)" height="var(--size-avatar-sm)" radius="var(--radius-pill)" />
+          </li>
+        </ul>
+
         <!-- List -->
         <TransitionGroup tag="ul" name="unchecked" class="item-list">
           <ShoppingListItem
@@ -861,7 +878,7 @@ async function deleteItem(item) {
           />
         </TransitionGroup>
 
-        <p v-if="!items.length && !loadError" class="empty-state">
+        <p v-if="hasInitialized && !items.length && !loadError" class="empty-state">
           Nothing here yet — add your first item above!
         </p>
 
@@ -886,6 +903,21 @@ async function deleteItem(item) {
   display: flex;
   flex-direction: column;
   background: var(--color-primary-bg);
+}
+
+/* Mirrors ShoppingListItem's .item card so rows swap in without layout shift */
+.skeleton-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--bg-surface);
+  border-radius: var(--radius-xl);
+  padding: 0.875rem 0.875rem 0.875rem 0.75rem;
+  border: 1.5px solid var(--border-main);
+}
+
+.skeleton-item__name {
+  margin-right: auto;
 }
 
 .dashboard-main {
