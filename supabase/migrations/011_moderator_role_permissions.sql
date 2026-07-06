@@ -123,13 +123,26 @@ create policy "family owner or moderator can update family"
   using (public.is_family_owner_or_moderator(id))
   with check (true);
 
+-- Members may always remove themselves; the owner may remove anyone; a moderator
+-- may remove only plain members (never the owner, never another moderator).
 drop policy if exists "family owner or self can delete memberships" on public.family_members;
 drop policy if exists "family owner or moderator or self can delete memberships" on public.family_members;
 create policy "family owner or moderator or self can delete memberships"
   on public.family_members for delete
   using (
     user_id = requesting_user_id()
-    or public.is_family_owner_or_moderator(family_id)
+    or exists (
+      select 1 from public.families f
+      where f.id = family_id
+        and f.created_by = requesting_user_id()
+    )
+    or (
+      public.is_family_owner_or_moderator(family_id)
+      and role = 'member'
+      and user_id is distinct from (
+        select f.created_by from public.families f where f.id = family_id
+      )
+    )
   );
 
 drop policy if exists "family owner or moderator can update memberships" on public.family_members;

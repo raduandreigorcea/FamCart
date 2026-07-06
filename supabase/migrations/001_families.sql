@@ -46,10 +46,13 @@ create policy "family members can read their family"
     )
   );
 
--- Anyone authenticated can look up a family by invite code (needed for joining)
-create policy "authenticated users can look up by invite code"
+-- Creators can read families they own. This covers the create-family
+-- INSERT ... RETURNING before the creator's family_members row exists, and is
+-- scoped so it never exposes other tenants' rows. Joining by invite code goes
+-- through find_family_by_invite_code() (below), not a blanket SELECT policy.
+create policy "family owners can read own families"
   on public.families for select
-  using (requesting_user_id() is not null);
+  using (created_by = requesting_user_id());
 
 -- Authenticated users can create a family
 create policy "authenticated users can create a family"
@@ -67,3 +70,24 @@ create policy "users can read own memberships"
 create policy "users can insert own membership"
   on public.family_members for insert
   with check (user_id = requesting_user_id());
+
+-- ─── invite-code lookup ───────────────────────────────────────────────────────
+-- Scoped, definer-owned lookup for the join flow: returns only id + name for an
+-- exact invite-code match, so authenticated users cannot enumerate families via
+-- a blanket SELECT policy.
+create or replace function public.find_family_by_invite_code(code text)
+returns table (id uuid, name text)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select f.id, f.name
+  from public.families f
+  where requesting_user_id() is not null
+    and f.invite_code = code
+  limit 1;
+$$;
+
+revoke all on function public.find_family_by_invite_code(text) from public;
+grant execute on function public.find_family_by_invite_code(text) to authenticated;

@@ -31,10 +31,17 @@ create policy "family members can insert items"
     )
   );
 
--- Family members can update items (e.g. toggle checked)
+-- Family members can update items (e.g. toggle checked). WITH CHECK keeps the
+-- row within the caller's families; the trigger below pins added_by/family_id.
 create policy "family members can update items"
   on public.shopping_list_items for update
   using (
+    family_id in (
+      select family_id from public.family_members
+      where user_id = requesting_user_id()
+    )
+  )
+  with check (
     family_id in (
       select family_id from public.family_members
       where user_id = requesting_user_id()
@@ -50,3 +57,32 @@ create policy "family members can delete items"
       where user_id = requesting_user_id()
     )
   );
+
+-- Prevent reassigning an item's creator or moving it between families on update
+-- (a WITH CHECK expression cannot compare old vs new).
+create or replace function public.prevent_item_ownership_change()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  if new.added_by is distinct from old.added_by then
+    raise exception 'Item creator cannot be changed.'
+      using errcode = 'P0001';
+  end if;
+
+  if new.family_id is distinct from old.family_id then
+    raise exception 'Item cannot be moved between families.'
+      using errcode = 'P0001';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_prevent_item_ownership_change on public.shopping_list_items;
+create trigger trg_prevent_item_ownership_change
+before update on public.shopping_list_items
+for each row
+execute function public.prevent_item_ownership_change();

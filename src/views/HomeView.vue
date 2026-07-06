@@ -43,7 +43,7 @@ const FALLBACK_REFRESH_MS = 15000
 
 const uncheckedItems = computed(() => items.value.filter((i) => !i.checked))
 const checkedItems = computed(() => items.value.filter((i) => i.checked))
-const leftCount = computed(() => uncheckedItems.value.length)
+const leftCount = computed(() => uncheckedItems.value.reduce((sum, i) => sum + (Number(i.quantity) || 1), 0))
 
 function increaseQty() {
   qtyDirection.value = 'up'
@@ -878,7 +878,7 @@ async function deleteItem(item) {
   margin: 4px;
   margin-right: 8px;
   background: var(--color-primary);
-  color: var(--bg-surface);
+  color: var(--text-inverse);
   border: none;
   border-radius: var(--radius-lg);
   cursor: pointer;
@@ -892,7 +892,7 @@ async function deleteItem(item) {
 .add-icon {
   width: var(--size-icon-lg);
   height: var(--size-icon-lg);
-  background-color: var(--bg-surface);
+  background-color: var(--text-inverse);
   mask: url('../assets/add.svg') no-repeat center / contain;
   -webkit-mask: url('../assets/add.svg') no-repeat center / contain;
 }
@@ -990,7 +990,7 @@ async function deleteItem(item) {
   width: 16px;
   height: 16px;
   border: 2px solid var(--spinner-stroke);
-  border-top-color: var(--bg-surface);
+  border-top-color: var(--text-inverse);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }

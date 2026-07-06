@@ -4,7 +4,6 @@ import { useAuth, useClerk, useUser } from '@clerk/vue'
 import { useRouter } from 'vue-router'
 import { useSupabase } from '../supabase.js'
 import logoImg from '../assets/logo.png'
-import settingsIcon from '../assets/settings.svg'
 import ConfirmModal from './ConfirmModal.vue'
 import AccountActionModal from './AccountActionModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
@@ -35,7 +34,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['refresh-family', 'family-deleted'])
-const FAMILY_NAME_MAX_LENGTH = 40
+const FAMILY_NAME_MAX_LENGTH = 25
 
 const { userId } = useAuth()
 const clerk = useClerk()
@@ -104,18 +103,46 @@ const deletingFamily = ref(false)
 const copied = ref(false)
 
 // Confirm modal state
-const confirmModal = ref({ open: false, title: '', message: '', danger: false, resolve: null })
+const confirmModal = ref({
+  open: false,
+  title: '',
+  message: '',
+  danger: false,
+  confirmText: 'Confirm',
+  cancelText: 'Cancel',
+  showCancel: true,
+  resolve: null,
+})
 
-function showConfirm({ title, message, danger = false }) {
+function showConfirm({ title, message, danger = false, confirmText = 'Confirm', cancelText = 'Cancel', showCancel = true }) {
   return new Promise((resolve) => {
-    confirmModal.value = { open: true, title, message, danger, resolve }
+    confirmModal.value = { open: true, title, message, danger, confirmText, cancelText, showCancel, resolve }
   })
 }
 
 function handleConfirmModalResult(result) {
   const resolve = confirmModal.value.resolve
-  confirmModal.value = { open: false, title: '', message: '', danger: false, resolve: null }
+  confirmModal.value = {
+    open: false,
+    title: '',
+    message: '',
+    danger: false,
+    confirmText: 'Confirm',
+    cancelText: 'Cancel',
+    showCancel: true,
+    resolve: null,
+  }
   if (resolve) resolve(result)
+}
+
+async function showValidationErrorModal(message) {
+  await showConfirm({
+    title: 'Name Too Long',
+    message,
+    danger: true,
+    confirmText: 'OK',
+    showCancel: false,
+  })
 }
 
 const memberCount = computed(() => props.memberProfiles.length);
@@ -211,7 +238,10 @@ async function renameFamily() {
   if (!isOwner.value) return
   const nextName = renameValue.value.trim()
   if (!nextName || !props.familyId || savingName.value) return
-  if (renameOverLimit.value || nextName.length > FAMILY_NAME_MAX_LENGTH) return
+  if (renameOverLimit.value || nextName.length > FAMILY_NAME_MAX_LENGTH) {
+    await showValidationErrorModal(`Family name must be ${FAMILY_NAME_MAX_LENGTH} characters or fewer.`)
+    return
+  }
   savingName.value = true
   try {
     const { error } = await db
@@ -435,7 +465,7 @@ async function deleteFamily() {
 
     <div class="topbar-actions">
       <button v-if="familyName" class="settings-btn" type="button" aria-label="Open settings" @click="openSettings">
-        <img :src="settingsIcon" alt="" class="settings-icon" />
+        <span class="settings-icon" aria-hidden="true"></span>
       </button>
 
       <button
@@ -619,23 +649,25 @@ async function deleteFamily() {
                             type="text"
                             placeholder="My Awesome Family"
                           />
-                          <p class="panel-counter" :class="{ 'panel-counter--danger': renameOverLimit }">
+                        </div>
+                        <div class="panel-save-stack">
+                          <button
+                            class="panel-save-btn"
+                            type="button"
+                            :disabled="savingName"
+                            @click="renameFamily"
+                          >
+                            <span v-if="savingName" class="btn-spinner"></span>
+                            <span v-else-if="nameSaved" class="success-state animate-pop">
+                              <span class="success-icon-wrap" v-html="checkIcon"></span>
+                              Saved
+                            </span>
+                            <span v-else>Save</span>
+                          </button>
+                          <p class="panel-counter panel-counter--under-save" :class="{ 'panel-counter--danger': renameOverLimit }">
                             {{ renameLength }}/{{ FAMILY_NAME_MAX_LENGTH }}
                           </p>
                         </div>
-                        <button
-                          class="panel-save-btn"
-                          type="button"
-                          :disabled="savingName || renameOverLimit"
-                          @click="renameFamily"
-                        >
-                          <span v-if="savingName" class="btn-spinner"></span>
-                          <span v-else-if="nameSaved" class="success-state animate-pop">
-                            <span class="success-icon-wrap" v-html="checkIcon"></span>
-                            Saved
-                          </span>
-                          <span v-else>Save</span>
-                        </button>
                       </div>
                     </div>
                   </section>
@@ -820,7 +852,7 @@ async function deleteFamily() {
                     <p>Permanently deletes <strong>{{ familyName }}</strong>, removes all members, and erases all shopping list data. This cannot be undone.</p>
                   </div>
                   <button
-                    class="danger-action-btn"
+                    class="danger-action-btn danger-action-btn--delete"
                     type="button"
                     :disabled="deletingFamily"
                     @click="deleteFamily"
@@ -843,6 +875,9 @@ async function deleteFamily() {
     :title="confirmModal.title"
     :message="confirmModal.message"
     :danger="confirmModal.danger"
+    :confirm-text="confirmModal.confirmText"
+    :cancel-text="confirmModal.cancelText"
+    :show-cancel="confirmModal.showCancel"
     @confirm="handleConfirmModalResult(true)"
     @cancel="handleConfirmModalResult(false)"
   />
@@ -1000,8 +1035,16 @@ async function deleteFamily() {
 .settings-icon {
   width: 20px;
   height: 20px;
-  object-fit: contain;
+  display: inline-block;
+  background-color: currentColor;
+  mask: url('../assets/settings.svg') no-repeat center / contain;
+  -webkit-mask: url('../assets/settings.svg') no-repeat center / contain;
   opacity: 0.86;
+}
+
+:global(:root[data-theme='dark']) .settings-icon {
+  background-color: var(--text-inverse);
+  opacity: 0.96;
 }
 
 .user-avatar-btn {
@@ -1171,7 +1214,7 @@ async function deleteFamily() {
   width: 100%;
 }
 
-.sidebar-tab-btn:hover {
+.sidebar-tab-btn:hover:not(.active) {
   background: var(--bg-hover);
   color: var(--ui-text-strong);
 }
@@ -1192,7 +1235,7 @@ async function deleteFamily() {
   color: var(--color-primary);
 }
 
-.sidebar-tab-btn--danger:hover {
+.sidebar-tab-btn--danger:hover:not(.active) {
   background: var(--danger-bg);
   color: var(--danger-text);
 }
@@ -1313,7 +1356,7 @@ async function deleteFamily() {
 
 .sidebar-tab-btn.active .tab-badge {
   background: var(--color-primary);
-  color: var(--bg-surface);
+  color: var(--text-inverse);
 }
 
 /* Content Area */
@@ -1458,7 +1501,7 @@ async function deleteFamily() {
   align-items: center;
   gap: 0.4rem;
   background: var(--color-primary);
-  color: var(--bg-surface);
+  color: var(--text-inverse);
   border: none;
   padding: 0.55rem 0.85rem;
   border-radius: var(--radius-md);
@@ -1691,6 +1734,7 @@ async function deleteFamily() {
   display: flex;
   gap: 0.5rem;
   margin-top: 0.15rem;
+  align-items: flex-start;
 }
 
 .input-action-group--end {
@@ -1730,6 +1774,17 @@ async function deleteFamily() {
   text-align: right;
   font-size: 0.75rem;
   color: var(--ui-text-muted);
+}
+
+.panel-counter--under-save {
+  min-width: 82px;
+  text-align: center;
+}
+
+.panel-save-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .panel-counter--danger {
@@ -1840,7 +1895,7 @@ async function deleteFamily() {
 }
 
 .btn-spinner--light {
-  border-top-color: var(--bg-surface);
+  border-top-color: var(--text-inverse);
 }
 
 @keyframes btnSpin {
@@ -2045,7 +2100,7 @@ async function deleteFamily() {
   border: 1px solid color-mix(in srgb, var(--border-dark) 45%, var(--ui-border-soft));
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--bg-surface-alt) 88%, var(--border-light));
-  box-shadow: 0 12px 28px rgba(12, 18, 28, 0.22);
+  box-shadow: 0 12px 28px var(--shadow-popover);
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
@@ -2095,8 +2150,8 @@ async function deleteFamily() {
 }
 
 .danger-action-btn {
-  background: var(--danger-text);
-  color: var(--bg-surface);
+  background: var(--danger-solid);
+  color: var(--text-inverse);
   border: none;
   border-radius: var(--radius-md);
   padding: 0.6rem 1.25rem;
@@ -2113,9 +2168,13 @@ async function deleteFamily() {
 }
 
 .danger-action-btn:hover:not(:disabled) {
-  background: var(--danger-text);
+  background: var(--danger-solid-hover);
   transform: translateY(-1px);
   box-shadow: var(--elevation-danger-hover);
+}
+
+.danger-action-btn--delete:hover:not(:disabled) {
+  transform: none;
 }
 
 .danger-action-btn:disabled {

@@ -1,6 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
 
 :root {
+  color-scheme: light;
+
   /* Brand */
   --color-primary: #4d8c65;         /* The main green */
   --color-primary-bg: #f0f4f1;      /* Light green for backgrounds/badges */
@@ -27,11 +29,16 @@
   --danger-bg: #fdf3f2;             /* Light red backgrounds */
   --danger-border: #fecaca;         /* Red borders */
   --danger-text: #c0392b;           /* Dark red text */
+  --danger-solid: #c0392b;          /* Filled danger button */
+  --danger-solid-hover: #a53227;    /* Filled danger button hover */
 
   /* Warning */
   --warning-bg: #fef3c7;            /* Light amber backgrounds */
   --warning-border: #fde68a;        /* Amber borders */
   --warning-text: #b45309;          /* Dark amber text */
+
+  /* Text on colored surfaces */
+  --text-inverse: #ffffff;
 
   /* Overlay */
   --backdrop: rgba(0, 0, 0, 0.4);
@@ -51,6 +58,7 @@
   --shadow-danger-15: rgba(220, 38, 38, 0.15);
   --shadow-danger-18: rgba(220, 38, 38, 0.18);
   --shadow-danger-25: rgba(220, 38, 38, 0.25);
+  --shadow-popover: rgba(12, 18, 28, 0.22);
 
   /* Radius scale */
   --radius-xs: 6px;
@@ -98,6 +106,67 @@
   --elevation-primary-soft: 0 2px 12px color-mix(in srgb, var(--color-primary) 14%, transparent);
   --focus-ring-primary: 0 0 0 3px var(--shadow-primary-12);
   --focus-ring-primary-soft: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, var(--bg-surface));
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Brand */
+  --color-primary: #6ea78a;
+  --color-primary-bg: #10161f;
+  --color-primary-text: #a6ccb8;
+
+  /* Surface & Backgrounds */
+  --bg-main: #0d1219;
+  --bg-surface: #151c25;
+  --bg-surface-alt: #1b2430;
+  --bg-hover: #232f3d;
+
+  /* Text */
+  --text-primary: #e6edf5;
+  --text-secondary: #a9b4c2;
+  --text-disabled: #7d8a9a;
+
+  /* Borders */
+  --border-light: #243242;
+  --border-main: #2f3f52;
+  --border-dark: #3d5167;
+
+  /* Danger / Destructive */
+  --danger-main: #d84134;
+  --danger-bg: #402326;
+  --danger-border: #5b312b;
+  --danger-text: #d3aca8;
+  --danger-solid: #b1372b;
+  --danger-solid-hover: #c13f32;
+
+  /* Warning */
+  --warning-bg: #3a2d12;
+  --warning-border: #66502a;
+  --warning-text: #e8c78e;
+
+  /* Text on colored surfaces */
+  --text-inverse: #f7fbff;
+
+  /* Overlay */
+  --backdrop: rgba(0, 0, 0, 0.56);
+  --overlay-dark: rgba(6, 11, 19, 0.66);
+  --overlay-dark-strong: rgba(6, 11, 19, 0.74);
+
+  /* Shared alpha and shadow colors */
+  --spinner-stroke: rgba(255, 255, 255, 0.25);
+  --shadow-ink-02: rgba(0, 0, 0, 0.2);
+  --shadow-ink-04: rgba(0, 0, 0, 0.28);
+  --shadow-ink-06: rgba(0, 0, 0, 0.34);
+  --shadow-ink-07: rgba(0, 0, 0, 0.4);
+  --shadow-ink-15: rgba(0, 0, 0, 0.5);
+  --shadow-ink-18: rgba(0, 0, 0, 0.58);
+  --shadow-primary-12: rgba(110, 167, 138, 0.22);
+  --shadow-primary-20: rgba(110, 167, 138, 0.32);
+  --shadow-danger-15: rgba(192, 57, 43, 0.16);
+  --shadow-danger-18: rgba(192, 57, 43, 0.22);
+  --shadow-danger-25: rgba(192, 57, 43, 0.3);
+  --shadow-popover: rgba(0, 0, 0, 0.52);
 }
 
 *,

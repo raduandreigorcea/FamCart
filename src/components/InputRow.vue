@@ -83,7 +83,7 @@ defineEmits(['update:modelValue'])
   flex-shrink: 0;
   margin: 4px;
   background: var(--color-primary);
-  color: var(--bg-surface);
+  color: var(--text-inverse);
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
@@ -108,7 +108,7 @@ defineEmits(['update:modelValue'])
   width: var(--size-icon-lg);
   height: var(--size-icon-lg);
   border: 2px solid var(--spinner-stroke);
-  border-top-color: var(--bg-surface);
+  border-top-color: var(--text-inverse);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }

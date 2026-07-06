@@ -1,12 +1,30 @@
 <script setup>
-defineProps({
+import { computed } from 'vue'
+
+const props = defineProps({
   open: { type: Boolean, default: false },
   title: { type: String, default: '' },
   message: { type: String, default: '' },
   danger: { type: Boolean, default: false },
+  tone: {
+    type: String,
+    default: '',
+    validator: (value) => ['danger', 'warning', 'success', ''].includes(value),
+  },
   confirmText: { type: String, default: 'Confirm' },
   cancelText: { type: String, default: 'Cancel' },
   showCancel: { type: Boolean, default: true },
+})
+
+const resolvedTone = computed(() => {
+  if (props.tone) return props.tone
+  return props.danger ? 'danger' : 'warning'
+})
+
+const confirmButtonClass = computed(() => {
+  if (resolvedTone.value === 'danger') return 'confirm-btn--danger'
+  if (resolvedTone.value === 'warning') return 'confirm-btn--warning'
+  return 'confirm-btn--primary'
 })
 
 const emit = defineEmits(['confirm', 'cancel'])
@@ -15,10 +33,14 @@ const emit = defineEmits(['confirm', 'cancel'])
 <template>
   <Transition name="confirm-fade">
     <div v-if="open" class="confirm-overlay" @click.self="emit('cancel')">
-      <div class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-modal-title">
-        <div class="confirm-dialog__icon-wrap" :class="{ 'confirm-dialog__icon-wrap--danger': danger }">
-          <svg v-if="danger" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="confirm-dialog__icon">
+      <div class="confirm-dialog" :class="`confirm-dialog--${resolvedTone}`" role="alertdialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+        <div class="confirm-dialog__icon-wrap" :class="`confirm-dialog__icon-wrap--${resolvedTone}`">
+          <svg v-if="resolvedTone === 'danger'" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="confirm-dialog__icon">
             <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <svg v-else-if="resolvedTone === 'success'" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="confirm-dialog__icon">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+            <path d="M8 12.5l2.5 2.5L16 9.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
           <svg v-else viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="confirm-dialog__icon">
             <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
@@ -35,7 +57,7 @@ const emit = defineEmits(['confirm', 'cancel'])
           <button v-if="showCancel" class="confirm-btn confirm-btn--cancel" type="button" @click="emit('cancel')">{{ cancelText }}</button>
           <button
             class="confirm-btn"
-            :class="danger ? 'confirm-btn--danger' : 'confirm-btn--primary'"
+            :class="confirmButtonClass"
             type="button"
             @click="emit('confirm')"
           >{{ confirmText }}</button>
@@ -75,6 +97,18 @@ const emit = defineEmits(['confirm', 'cancel'])
   animation: confirmScaleIn 0.26s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
+.confirm-dialog--danger {
+  border-color: color-mix(in srgb, var(--danger-main) 40%, var(--border-main));
+}
+
+.confirm-dialog--warning {
+  border-color: color-mix(in srgb, var(--warning-border) 60%, var(--border-main));
+}
+
+.confirm-dialog--success {
+  border-color: color-mix(in srgb, var(--color-primary) 42%, var(--border-main));
+}
+
 .confirm-dialog__icon-wrap {
   width: 52px;
   height: 52px;
@@ -90,6 +124,16 @@ const emit = defineEmits(['confirm', 'cancel'])
 .confirm-dialog__icon-wrap--danger {
   background: var(--danger-bg);
   color: var(--danger-text);
+}
+
+.confirm-dialog__icon-wrap--warning {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.confirm-dialog__icon-wrap--success {
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--bg-surface));
+  color: var(--color-primary);
 }
 
 .confirm-dialog__icon {
@@ -154,7 +198,7 @@ const emit = defineEmits(['confirm', 'cancel'])
 
 .confirm-btn--primary {
   background: var(--color-primary);
-  color: var(--bg-surface);
+  color: var(--text-inverse);
   box-shadow: var(--elevation-primary);
 }
 
@@ -163,14 +207,25 @@ const emit = defineEmits(['confirm', 'cancel'])
   transform: translateY(-1px);
 }
 
+.confirm-btn--warning {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  border: 1px solid var(--warning-border);
+}
+
+.confirm-btn--warning:hover {
+  background: color-mix(in srgb, var(--warning-bg) 82%, var(--warning-border));
+  transform: translateY(-1px);
+}
+
 .confirm-btn--danger {
-  background: var(--danger-text);
-  color: var(--bg-surface);
+  background: var(--danger-solid);
+  color: var(--text-inverse);
   box-shadow: var(--elevation-danger);
 }
 
 .confirm-btn--danger:hover {
-  background: var(--danger-text);
+  background: var(--danger-solid-hover);
   transform: translateY(-1px);
 }
 

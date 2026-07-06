@@ -4,15 +4,15 @@
 update public.families
 set name = case
   when char_length(btrim(name)) = 0 then 'Family'
-  else left(btrim(name), 40)
+  else left(btrim(name), 25)
 end
-where char_length(btrim(name)) not between 1 and 40;
+where char_length(btrim(name)) not between 1 and 25;
 
 alter table public.families
   drop constraint if exists families_name_length_check;
 alter table public.families
   add constraint families_name_length_check
-  check (char_length(btrim(name)) between 1 and 40);
+  check (char_length(btrim(name)) between 1 and 25);
 
 alter table public.families
   drop constraint if exists families_invite_code_format_check;

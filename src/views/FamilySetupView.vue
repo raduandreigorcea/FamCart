@@ -9,6 +9,7 @@ import ErrorMessage from '../components/ErrorMessage.vue'
 import AppCard from '../components/AppCard.vue'
 import ChoiceButton from '../components/ChoiceButton.vue'
 import BackButton from '../components/BackButton.vue'
+import ConfirmModal from '../components/ConfirmModal.vue'
 
 const { userId } = useAuth()
 const { user } = useUser()
@@ -20,10 +21,23 @@ const familyName = ref('')
 const inviteCode = ref('')
 const error = ref('')
 const loading = ref(false)
-const FAMILY_NAME_MAX_LENGTH = 40
+const FAMILY_NAME_MAX_LENGTH = 25
 const INVITE_CODE_REGEX = /^[A-HJ-NP-Z2-9]{8}$/
 const familyNameLength = computed(() => familyName.value.length)
 const familyNameOverLimit = computed(() => familyNameLength.value > FAMILY_NAME_MAX_LENGTH)
+const limitModal = ref({ open: false, title: '', message: '' })
+
+function openLimitModal(message) {
+  limitModal.value = {
+    open: true,
+    title: 'Name Too Long',
+    message,
+  }
+}
+
+function closeLimitModal() {
+  limitModal.value = { open: false, title: '', message: '' }
+}
 
 function randomInviteCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -33,10 +47,14 @@ function randomInviteCode() {
 async function createFamily() {
   if (loading.value) return
   if (familyNameOverLimit.value) {
-    error.value = `Family name must be ${FAMILY_NAME_MAX_LENGTH} characters or fewer.`
+    openLimitModal(`Family name must be ${FAMILY_NAME_MAX_LENGTH} characters or fewer.`)
     return
   }
   const nextFamilyName = familyName.value.trim()
+  if (nextFamilyName.length > FAMILY_NAME_MAX_LENGTH) {
+    openLimitModal(`Family name must be ${FAMILY_NAME_MAX_LENGTH} characters or fewer.`)
+    return
+  }
   if (!nextFamilyName) return
   error.value = ''
   loading.value = true
@@ -93,10 +111,8 @@ async function joinFamily() {
     const imageUrl = user.value?.imageUrl || null
 
     const { data: family, error: familyErr } = await db
-      .from('families')
-      .select('id')
-      .eq('invite_code', code)
-      .single()
+      .rpc('find_family_by_invite_code', { code })
+      .maybeSingle()
 
     if (familyErr || !family) {
       error.value = 'No family found with that invite code.'
@@ -189,6 +205,17 @@ async function joinFamily() {
 
       </AppCard>
     </main>
+
+    <ConfirmModal
+      :open="limitModal.open"
+      :title="limitModal.title"
+      :message="limitModal.message"
+      :danger="true"
+      confirm-text="OK"
+      :show-cancel="false"
+      @confirm="closeLimitModal"
+      @cancel="closeLimitModal"
+    />
   </div>
 </template>
 

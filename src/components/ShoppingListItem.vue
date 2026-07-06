@@ -81,7 +81,7 @@ function handleDelete() {
   border: none;
   padding: 0;
   cursor: pointer;
-  color: var(--bg-surface);
+  color: var(--text-inverse);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -98,7 +98,7 @@ function handleDelete() {
   border-radius: 50%;
   border: 1.8px solid var(--border-dark);
   background: var(--bg-surface);
-  color: var(--bg-surface);
+  color: var(--text-inverse);
   transition: background 0.2s ease, border-color 0.2s ease, transform 0.18s ease;
 }
 

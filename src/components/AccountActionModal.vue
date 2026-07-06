@@ -1,6 +1,7 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ModalCloseButton from './ModalCloseButton.vue'
+import userRoundIconRaw from '../assets/user-round.svg?raw'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -16,6 +17,42 @@ const props = defineProps({
 const emit = defineEmits(['close', 'edit-account', 'sign-out', 'manage-family', 'invite-members'])
 
 const themeMode = ref('system')
+const notificationMode = ref('on')
+let mediaQuery = null
+
+function syncPreferencesFromStorage() {
+  const savedTheme = localStorage.getItem('famcart-theme')
+  if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system') {
+    themeMode.value = savedTheme
+    applyResolvedTheme(savedTheme)
+  } else {
+    themeMode.value = 'system'
+    applyResolvedTheme('system')
+  }
+
+  const savedNotifications = localStorage.getItem('famcart-notifications')
+  if (savedNotifications === 'off') {
+    notificationMode.value = 'off'
+  } else {
+    notificationMode.value = 'on'
+  }
+}
+
+function applyResolvedTheme(mode) {
+  const root = document.documentElement
+  if (mode === 'system') {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    root.setAttribute('data-theme', prefersDark ? 'dark' : 'light')
+    return
+  }
+  root.setAttribute('data-theme', mode)
+}
+
+function handleSystemThemeChange() {
+  if (themeMode.value === 'system') {
+    applyResolvedTheme('system')
+  }
+}
 
 function closeMenu() {
   emit('close')
@@ -30,34 +67,31 @@ function onKeydown(event) {
 function applyTheme(mode) {
   themeMode.value = mode
   localStorage.setItem('famcart-theme', mode)
-  const root = document.documentElement
-  if (mode === 'system') {
-    root.removeAttribute('data-theme')
-    return
-  }
-  root.setAttribute('data-theme', mode)
+  applyResolvedTheme(mode)
+}
+
+function applyNotifications(mode) {
+  notificationMode.value = mode
+  localStorage.setItem('famcart-notifications', mode)
 }
 
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
-  const saved = localStorage.getItem('famcart-theme')
-  if (saved === 'light' || saved === 'dark' || saved === 'system') {
-    themeMode.value = saved
-  }
+  mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+  mediaQuery.addEventListener('change', handleSystemThemeChange)
+  syncPreferencesFromStorage()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
+  mediaQuery?.removeEventListener('change', handleSystemThemeChange)
 })
 
 watch(
   () => props.open,
   (isOpen) => {
     if (!isOpen) return
-    const saved = localStorage.getItem('famcart-theme')
-    if (saved === 'light' || saved === 'dark' || saved === 'system') {
-      themeMode.value = saved
-    }
+    syncPreferencesFromStorage()
   },
 )
 </script>
@@ -66,78 +100,114 @@ watch(
   <Transition name="modal-fade">
     <div v-if="open" class="account-overlay" @click.self="closeMenu">
       <div class="account-dialog" role="dialog" aria-modal="true" aria-labelledby="account-modal-title">
-        <div class="account-dialog__top-row">
-          <p class="account-dialog__eyebrow">Account menu</p>
+        <div class="account-dialog__header">
+          <div class="account-dialog__title-wrap">
+            <div class="account-dialog__icon-bg">
+              <span class="account-header-icon" v-html="userRoundIconRaw"></span>
+            </div>
+            <div>
+              <h3 id="account-modal-title">Account Settings</h3>
+              <p class="account-dialog__subtitle">Manage your profile and preferences</p>
+            </div>
+          </div>
           <ModalCloseButton aria-label="Close account modal" @click="closeMenu" />
         </div>
 
-        <div class="account-user-card">
-          <div class="account-user-card__avatar-wrap">
-            <img v-if="avatarUrl" :src="avatarUrl" alt="Profile picture" class="account-user-card__avatar" />
-            <span v-else class="account-user-card__avatar account-user-card__avatar--fallback">{{ initial }}</span>
-          </div>
-          <div class="account-user-card__identity">
-            <h4 id="account-modal-title">{{ displayName }}</h4>
-            <p>{{ email || 'No email available' }}</p>
-          </div>
-        </div>
-
-        <div class="account-section">
-          <button class="account-menu-item" type="button" @click="emit('edit-account')">
-            <span class="account-menu-item__label">Account</span>
-            <span class="account-menu-item__hint">Manage profile</span>
-          </button>
-          <button class="account-menu-item" type="button" @click="emit('manage-family')">
-            <span class="account-menu-item__label">Manage family</span>
-            <span class="account-menu-item__hint">{{ familyName || 'Family' }}</span>
-          </button>
-          <button class="account-menu-item" type="button" @click="emit('invite-members')">
-            <span class="account-menu-item__label">Invite members</span>
-            <span class="account-menu-item__hint">{{ familyMemberCount }} members</span>
-          </button>
-
-          <div class="account-divider"></div>
-
-          <div class="theme-control" role="group" aria-label="Theme mode">
-            <button
-              class="theme-control__btn"
-              :class="{ 'theme-control__btn--active': themeMode === 'light' }"
-              type="button"
-              @click="applyTheme('light')"
-            >
-              Light
-            </button>
-            <button
-              class="theme-control__btn"
-              :class="{ 'theme-control__btn--active': themeMode === 'dark' }"
-              type="button"
-              @click="applyTheme('dark')"
-            >
-              Dark
-            </button>
-            <button
-              class="theme-control__btn"
-              :class="{ 'theme-control__btn--active': themeMode === 'system' }"
-              type="button"
-              @click="applyTheme('system')"
-            >
-              System
-            </button>
+        <div class="account-dialog__body">
+          <div class="account-user-card">
+            <div class="account-user-card__avatar-wrap">
+              <img v-if="avatarUrl" :src="avatarUrl" alt="Profile picture" class="account-user-card__avatar" />
+              <span v-else class="account-user-card__avatar account-user-card__avatar--fallback">{{ initial }}</span>
+            </div>
+            <div class="account-user-card__identity">
+              <h4>{{ displayName }}</h4>
+              <p>{{ email || 'No email available' }}</p>
+            </div>
           </div>
 
-          <div class="account-divider"></div>
+          <div class="account-section">
+            <button class="account-menu-item" type="button" @click="emit('edit-account')">
+              <span class="account-menu-item__label">Account</span>
+              <span class="account-menu-item__hint">Manage profile</span>
+            </button>
+            <button class="account-menu-item" type="button" @click="emit('manage-family')">
+              <span class="account-menu-item__label">Manage family</span>
+              <span class="account-menu-item__hint">{{ familyName || 'Family' }}</span>
+            </button>
+            <button class="account-menu-item" type="button" @click="emit('invite-members')">
+              <span class="account-menu-item__label">Invite members</span>
+              <span class="account-menu-item__hint">{{ familyMemberCount }} members</span>
+            </button>
 
-          <button
-            class="account-menu-item account-menu-item--danger"
-            type="button"
-            :disabled="loadingSignOut"
-            @click="emit('sign-out')"
-          >
-            <span class="account-menu-item__label account-menu-item__label--danger">
-              <span v-if="loadingSignOut" class="account-spinner"></span>
-              <span v-else>Sign out</span>
-            </span>
-          </button>
+            <div class="account-divider"></div>
+
+            <div class="theme-control" role="group" aria-label="Theme mode">
+              <button
+                class="theme-control__btn"
+                :class="{ 'theme-control__btn--active': themeMode === 'light' }"
+                type="button"
+                @click="applyTheme('light')"
+              >
+                <span class="control-icon control-icon--theme-light" aria-hidden="true"></span>
+                <span>Light</span>
+              </button>
+              <button
+                class="theme-control__btn"
+                :class="{ 'theme-control__btn--active': themeMode === 'dark' }"
+                type="button"
+                @click="applyTheme('dark')"
+              >
+                <span class="control-icon control-icon--theme-dark" aria-hidden="true"></span>
+                <span>Dark</span>
+              </button>
+              <button
+                class="theme-control__btn"
+                :class="{ 'theme-control__btn--active': themeMode === 'system' }"
+                type="button"
+                @click="applyTheme('system')"
+              >
+                <span class="control-icon control-icon--theme-system" aria-hidden="true"></span>
+                <span>System</span>
+              </button>
+            </div>
+
+            <div class="account-divider"></div>
+
+            <div class="theme-control theme-control--two" role="group" aria-label="Notification mode">
+              <button
+                class="theme-control__btn"
+                :class="{ 'theme-control__btn--active': notificationMode === 'on' }"
+                type="button"
+                @click="applyNotifications('on')"
+              >
+                <span class="control-icon control-icon--notify-all" aria-hidden="true"></span>
+                <span>On</span>
+              </button>
+              <button
+                class="theme-control__btn"
+                :class="{ 'theme-control__btn--active': notificationMode === 'off' }"
+                type="button"
+                @click="applyNotifications('off')"
+              >
+                <span class="control-icon control-icon--notify-off" aria-hidden="true"></span>
+                <span>Off</span>
+              </button>
+            </div>
+
+            <div class="account-divider"></div>
+
+            <button
+              class="account-menu-item account-menu-item--danger"
+              type="button"
+              :disabled="loadingSignOut"
+              @click="emit('sign-out')"
+            >
+              <span class="account-menu-item__label account-menu-item__label--danger">
+                <span v-if="loadingSignOut" class="account-spinner"></span>
+                <span v-else>Sign out</span>
+              </span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -162,28 +232,78 @@ watch(
   width: 100%;
   max-width: 360px;
   background: var(--bg-surface);
-  border: 1px solid var(--border-main);
-  border-radius: var(--radius-xl);
+  border: none;
+  border-radius: var(--radius-3xl);
   box-shadow: var(--elevation-modal);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.account-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg-surface);
+}
+
+.account-dialog__title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.account-dialog__icon-bg {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.account-header-icon {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.account-header-icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+}
+
+.account-dialog__header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.account-dialog__subtitle {
+  margin: 0.1rem 0 0;
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.account-dialog__body {
   padding: 1rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;
-}
-
-.account-dialog__top-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.account-dialog__eyebrow {
-  margin: 0;
-  font-size: 0.78rem;
-  letter-spacing: 0.04em;
-  color: var(--text-secondary);
-  font-weight: 700;
 }
 
 .account-user-card {
@@ -191,9 +311,8 @@ watch(
   align-items: flex-start;
   gap: 0.8rem;
   background: var(--bg-surface-alt);
-  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, var(--border-light));
   border-radius: var(--radius-lg);
-  padding: 0.9rem;
+  padding: 0.9rem 0.9rem 0.65rem;
 }
 
 .account-user-card__avatar-wrap {
@@ -236,7 +355,7 @@ watch(
 }
 
 .account-user-card__identity p {
-  margin: 0.2rem 0 0;
+  margin: 0.12rem 0 0;
   font-size: 0.76rem;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -288,7 +407,7 @@ watch(
 }
 
 .account-menu-item__label--danger {
-  color: var(--bg-surface);
+  color: var(--text-inverse);
 }
 
 .account-menu-item__hint {
@@ -298,13 +417,13 @@ watch(
 
 .account-menu-item--danger {
   border: none;
-  background: var(--danger-text);
-  color: var(--bg-surface);
+  background: var(--danger-solid);
+  color: var(--text-inverse);
   box-shadow: var(--elevation-danger-subtle);
 }
 
 .account-menu-item--danger:hover:not(:disabled) {
-  background: var(--danger-text);
+  background: var(--danger-solid-hover);
   border-color: transparent;
   box-shadow: var(--elevation-danger-hover);
 }
@@ -323,6 +442,10 @@ watch(
   padding: 0.25rem;
 }
 
+.theme-control--two {
+  grid-template-columns: repeat(2, 1fr);
+}
+
 .theme-control__btn {
   border: none;
   background: transparent;
@@ -333,9 +456,13 @@ watch(
   padding: 0.42rem 0.2rem;
   cursor: pointer;
   transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.28rem;
 }
 
-.theme-control__btn:hover {
+.theme-control__btn:hover:not(.theme-control__btn--active) {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
@@ -346,11 +473,49 @@ watch(
   box-shadow: var(--elevation-soft);
 }
 
+.control-icon {
+  width: 12px;
+  height: 12px;
+  display: inline-block;
+  background-color: currentColor;
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: contain;
+}
+
+.control-icon--theme-light {
+  mask-image: url('../assets/sun-medium.svg');
+  -webkit-mask-image: url('../assets/sun-medium.svg');
+}
+
+.control-icon--theme-dark {
+  mask-image: url('../assets/moon.svg');
+  -webkit-mask-image: url('../assets/moon.svg');
+}
+
+.control-icon--theme-system {
+  mask-image: url('../assets/sun-moon.svg');
+  -webkit-mask-image: url('../assets/sun-moon.svg');
+}
+
+.control-icon--notify-all {
+  mask-image: url('../assets/bell.svg');
+  -webkit-mask-image: url('../assets/bell.svg');
+}
+
+.control-icon--notify-off {
+  mask-image: url('../assets/bell-off.svg');
+  -webkit-mask-image: url('../assets/bell-off.svg');
+}
+
 .account-spinner {
   width: 14px;
   height: 14px;
-  border: 2px solid color-mix(in srgb, var(--bg-surface) 45%, transparent);
-  border-top-color: var(--bg-surface);
+  border: 2px solid color-mix(in srgb, var(--text-inverse) 45%, transparent);
+  border-top-color: var(--text-inverse);
   border-radius: 50%;
   display: inline-block;
   animation: account-spin 0.7s linear infinite;
