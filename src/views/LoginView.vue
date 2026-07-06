@@ -1,8 +1,6 @@
 <script setup>
 import { useSignIn } from '@clerk/vue'
 import { ref, nextTick } from 'vue'
-import screenBg from '../assets/screen.png'
-import logoImg from '../assets/logo.png'
 import InputRow from '../components/InputRow.vue'
 import ErrorMessage from '../components/ErrorMessage.vue'
 import AppCard from '../components/AppCard.vue'
@@ -142,12 +140,12 @@ function goBack() {
 </script>
 
 <template>
-    <div class="login-page" :style="{ backgroundImage: `url(${screenBg})` }">
+    <div class="login-page">
         <AppCard variant="narrow">
             <!-- Brand -->
             <div class="brand">
                 <div class="brand-top">
-                    <img :src="logoImg" alt="FamCart logo" class="brand-logo" />
+                    <img src="/icons/pwa-192.png" alt="FamCart logo" class="brand-logo" />
                     <!-- <span class="brand-name">Fam<span class="brand-name--accent">Cart</span></span> -->
                 </div>
                 <p class="brand-tagline">Family Groceries, <span class="brand-tagline--accent">fresh together daily</span></p>
@@ -212,6 +210,15 @@ function goBack() {
     justify-content: center;
     padding: 1rem;
     position: relative;
+    /* The backdrop's gradient runs top-to-bottom, so it must span the full
+       height exactly once (no vertical tiling). Size it to the viewport height,
+       anchor from the centre, and tile only horizontally to fill wide screens.
+       The fill is a fallback behind it. */
+    background-color: var(--color-primary-bg);
+    background-image: url('/screen.webp');
+    background-size: auto 100%;
+    background-position: center;
+    background-repeat: repeat-x;
 }
 
 /* Brand */

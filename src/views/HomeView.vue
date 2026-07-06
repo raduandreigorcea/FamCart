@@ -39,7 +39,7 @@ let lastReconnectAttemptAt = 0
 
 const RECONNECT_THROTTLE_MS = 1500
 const RECONNECT_RETRY_MS = 2500
-const FALLBACK_REFRESH_MS = 15000
+const FALLBACK_REFRESH_MS = 30000
 
 const uncheckedItems = computed(() => items.value.filter((i) => !i.checked))
 const checkedItems = computed(() => items.value.filter((i) => i.checked))
@@ -83,11 +83,14 @@ function shouldKeepRealtimeActive() {
 
 function setupFallbackRefresh() {
   if (fallbackRefreshIntervalId) return
+  // Watchdog only. When realtime is healthy the WebSocket already delivers every
+  // change, so this does nothing and steady-state REST traffic is zero. It only
+  // acts when the socket is down: try to reconnect and pull one fresh snapshot to
+  // reconcile whatever was missed while disconnected.
   fallbackRefreshIntervalId = window.setInterval(() => {
     if (!shouldKeepRealtimeActive()) return
-    if (!realtimeHealthy.value) {
-      scheduleRealtimeReconnect('fallback refresh tick', 0)
-    }
+    if (realtimeHealthy.value) return
+    scheduleRealtimeReconnect('watchdog tick', 0)
     void loadItems()
     void loadFamilyHeader()
   }, FALLBACK_REFRESH_MS)
@@ -525,49 +528,140 @@ async function addItem() {
     return
   }
   addError.value = ''
-  adding.value = true
-  try {
-    const { count: currentUserActiveItemCount, error: countError } = await db
-      .from('shopping_list_items')
-      .select('id', { count: 'exact', head: true })
-      .eq('family_id', familyId.value)
-      .eq('added_by', userId.value)
-      .eq('checked', false)
 
-    if (countError) throw countError
+  const quantity = newQty.value
 
-    if ((currentUserActiveItemCount || 0) >= familyItemLimit.value) {
-      limitReachedPopupOpen.value = true
-      return
-    }
-
-    const creatorName = user.value?.fullName
-      || user.value?.firstName
-      || user.value?.emailAddresses?.[0]?.emailAddress
-      || 'Unknown'
-    const creatorImageUrl = user.value?.imageUrl || null
-
-    const { data, error } = await db
-      .from('shopping_list_items')
-      .insert({
-        family_id: familyId.value,
-        name,
-        quantity: newQty.value,
-        added_by: userId.value,
-        added_by_name: creatorName,
-        added_by_image_url: creatorImageUrl,
-      })
-      .select()
-      .single()
-
-    if (error) throw error
-    items.value.push(data)
+  // If an unchecked item with the same name already exists, bump its quantity
+  // instead of adding a duplicate row. Checked (already-bought) items are left
+  // alone so re-adding them starts a fresh active item.
+  const existing = items.value.find(
+    (i) => !i.checked && i.name.trim().toLowerCase() === name.toLowerCase(),
+  )
+  if (existing) {
     newItem.value = ''
     newQty.value = 1
-  } catch (e) {
-    addError.value = e.message ?? 'Failed to add item.'
-  } finally {
-    adding.value = false
+    const previousQty = Number(existing.quantity) || 1
+    existing.quantity = previousQty + quantity // optimistic
+    const { error } = await db
+      .from('shopping_list_items')
+      .update({ quantity: existing.quantity })
+      .eq('id', existing.id)
+    if (error) {
+      existing.quantity = previousQty // rollback
+      addError.value = error.message ?? 'Could not update that item.'
+    }
+    return
+  }
+
+  // Guard the per-member active-item cap locally so we never flash an optimistic
+  // row that the DB trigger would reject. The trigger (migration 010) stays the
+  // authoritative backstop for races or stale local state.
+  const activeCount = items.value.filter(
+    (i) => i.added_by === userId.value && !i.checked,
+  ).length
+  if (activeCount >= familyItemLimit.value) {
+    limitReachedPopupOpen.value = true
+    return
+  }
+  const creatorName = user.value?.fullName
+    || user.value?.firstName
+    || user.value?.emailAddresses?.[0]?.emailAddress
+    || 'Unknown'
+  const creatorImageUrl = user.value?.imageUrl || null
+
+  // Optimistic: show the item instantly and clear the form. The per-member cap
+  // is enforced authoritatively by the DB trigger (migration 010), so we don't
+  // pre-count here — a rejection rolls the row back below.
+  //
+  // Generate the id client-side and reuse it as the row's primary key so the
+  // optimistic row and the real row share the same TransitionGroup key. If the
+  // key changed when the insert echoed back, Vue would remount the element and
+  // restart the add animation mid-flight.
+  const id = crypto.randomUUID()
+  items.value.push({
+    id,
+    family_id: familyId.value,
+    name,
+    quantity,
+    checked: false,
+    added_by: userId.value,
+    added_by_name: creatorName,
+    added_by_image_url: creatorImageUrl,
+    created_at: new Date().toISOString(),
+  })
+  newItem.value = ''
+  newQty.value = 1
+
+  const { data, error } = await db
+    .from('shopping_list_items')
+    .insert({
+      id,
+      family_id: familyId.value,
+      name,
+      quantity,
+      added_by: userId.value,
+      added_by_name: creatorName,
+      added_by_image_url: creatorImageUrl,
+    })
+    .select()
+    .single()
+
+  if (error) {
+    // Lost a race: the DB already has an unchecked item with this name (our local
+    // check missed it). Fold this quantity into that row instead of erroring.
+    if (error.code === '23505') {
+      await incrementActiveItemByName(name, quantity, id)
+      return
+    }
+    // Roll back the optimistic row and surface the reason.
+    items.value = items.value.filter((i) => i.id !== id)
+    if (error.message?.includes('member_active_item_limit_exceeded')
+      || error.message?.includes('limit of')) {
+      limitReachedPopupOpen.value = true
+    } else {
+      addError.value = error.message ?? 'Failed to add item.'
+      newItem.value = name
+      newQty.value = quantity
+    }
+    return
+  }
+
+  // Refresh the row with server-authoritative fields. The id is unchanged, so no
+  // remount; the realtime INSERT echo dedupes on this same id and is a no-op.
+  const index = items.value.findIndex((i) => i.id === id)
+  if (index !== -1) items.value[index] = data
+}
+
+// Increment the existing active row with this name (used when a concurrent add
+// beat us to it). Looks locally first, then fetches to reconcile stale state.
+async function incrementActiveItemByName(name, quantity, optimisticId) {
+  items.value = items.value.filter((i) => i.id !== optimisticId)
+
+  const key = name.trim().toLowerCase()
+  let target = items.value.find((i) => !i.checked && i.name.trim().toLowerCase() === key)
+  if (!target) {
+    const { data } = await db
+      .from('shopping_list_items')
+      .select('*')
+      .eq('family_id', familyId.value)
+      .eq('checked', false)
+    target = (data || []).find((i) => i.name.trim().toLowerCase() === key)
+    if (target && !items.value.some((i) => i.id === target.id)) items.value.push(target)
+  }
+  if (!target) {
+    addError.value = 'Could not add that item.'
+    return
+  }
+
+  const previousQty = Number(target.quantity) || 1
+  target.quantity = previousQty + quantity
+  const { error } = await db
+    .from('shopping_list_items')
+    .update({ quantity: target.quantity })
+    .eq('id', target.id)
+  if (error) {
+    target.quantity = previousQty
+    addError.value = error.message ?? 'Could not update that item.'
   }
 }
 
@@ -576,21 +670,110 @@ function closeLimitReachedPopup() {
 }
 
 async function toggleItem(item) {
+  const previous = item.checked
+  const nextChecked = !previous
+
+  // Unchecking: if another unchecked item with the same name already exists,
+  // fold this one into it instead of leaving two active rows — same merge rule
+  // as adding.
+  if (!nextChecked) {
+    const target = items.value.find(
+      (i) => i.id !== item.id
+        && !i.checked
+        && i.name.trim().toLowerCase() === item.name.trim().toLowerCase(),
+    )
+    if (target) {
+      await mergeItemInto(item, target)
+      return
+    }
+  }
+
+  // Optimistic: flip immediately, roll back if the write fails.
+  item.checked = nextChecked
+
   const { error } = await db
     .from('shopping_list_items')
-    .update({ checked: !item.checked })
+    .update({ checked: nextChecked })
     .eq('id', item.id)
 
-  if (!error) item.checked = !item.checked
+  if (error) {
+    item.checked = previous
+    // Unique-violation while unchecking: an active same-name row appeared (race).
+    // Merge into it rather than surfacing an error.
+    if (!nextChecked && error.code === '23505') {
+      const key = item.name.trim().toLowerCase()
+      let target = items.value.find(
+        (i) => i.id !== item.id && !i.checked && i.name.trim().toLowerCase() === key,
+      )
+      if (!target) {
+        const { data } = await db
+          .from('shopping_list_items')
+          .select('*')
+          .eq('family_id', familyId.value)
+          .eq('checked', false)
+        target = (data || []).find((i) => i.name.trim().toLowerCase() === key)
+        if (target && !items.value.some((i) => i.id === target.id)) items.value.push(target)
+      }
+      if (target) {
+        await mergeItemInto(item, target)
+        return
+      }
+    }
+    loadError.value = error.message ?? 'Could not update that item.'
+  }
+}
+
+// Fold `source`'s quantity into `target` (same-name unchecked row) and remove
+// `source`. Optimistic, with rollback if either write fails.
+async function mergeItemInto(source, target) {
+  const sourceIndex = items.value.findIndex((i) => i.id === source.id)
+  const previousTargetQty = Number(target.quantity) || 1
+  const addedQty = Number(source.quantity) || 1
+
+  target.quantity = previousTargetQty + addedQty
+  const removedSource = sourceIndex !== -1 ? items.value.splice(sourceIndex, 1)[0] : source
+
+  const rollback = (message) => {
+    target.quantity = previousTargetQty
+    if (sourceIndex !== -1) items.value.splice(sourceIndex, 0, removedSource)
+    loadError.value = message
+  }
+
+  const { error: updateErr } = await db
+    .from('shopping_list_items')
+    .update({ quantity: target.quantity })
+    .eq('id', target.id)
+  if (updateErr) {
+    rollback(updateErr.message ?? 'Could not merge those items.')
+    return
+  }
+
+  const { error: deleteErr } = await db
+    .from('shopping_list_items')
+    .delete()
+    .eq('id', source.id)
+  if (deleteErr) {
+    // Undo the quantity bump we already committed, then restore the row.
+    await db.from('shopping_list_items').update({ quantity: previousTargetQty }).eq('id', target.id)
+    rollback(deleteErr.message ?? 'Could not merge those items.')
+  }
 }
 
 async function deleteItem(item) {
+  // Optimistic: remove immediately, restore at its original position on failure.
+  const index = items.value.findIndex((i) => i.id === item.id)
+  if (index === -1) return
+  const [removed] = items.value.splice(index, 1)
+
   const { error } = await db
     .from('shopping_list_items')
     .delete()
     .eq('id', item.id)
 
-  if (!error) items.value = items.value.filter(i => i.id !== item.id)
+  if (error) {
+    items.value.splice(index, 0, removed)
+    loadError.value = error.message ?? 'Could not delete that item.'
+  }
 }
 </script>
 

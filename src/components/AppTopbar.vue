@@ -3,7 +3,6 @@ import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useAuth, useClerk, useUser } from '@clerk/vue'
 import { useRouter } from 'vue-router'
 import { useSupabase } from '../supabase.js'
-import logoImg from '../assets/logo.png'
 import ConfirmModal from './ConfirmModal.vue'
 import AccountActionModal from './AccountActionModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
@@ -459,7 +458,7 @@ async function deleteFamily() {
         </div>
       </template>
       <template v-else>
-        <img :src="logoImg" alt="FamCart" class="topbar-logo" />
+        <img src="/icons/pwa-192.png" alt="FamCart" class="topbar-logo" />
       </template>
     </div>
 
