@@ -7,6 +7,11 @@ import AppTopbar from '../components/AppTopbar.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import ErrorMessage from '../components/ErrorMessage.vue'
 import ShoppingListItem from '../components/ShoppingListItem.vue'
+import {
+  sumActiveQuantities,
+  findActiveItemByName,
+  countActiveItemsByMember,
+} from '../lib/shoppingList'
 
 const { userId, isLoaded, getToken } = useAuth()
 const { user } = useUser()
@@ -43,7 +48,7 @@ const FALLBACK_REFRESH_MS = 30000
 
 const uncheckedItems = computed(() => items.value.filter((i) => !i.checked))
 const checkedItems = computed(() => items.value.filter((i) => i.checked))
-const leftCount = computed(() => uncheckedItems.value.reduce((sum, i) => sum + (Number(i.quantity) || 1), 0))
+const leftCount = computed(() => sumActiveQuantities(items.value))
 
 function increaseQty() {
   qtyDirection.value = 'up'
@@ -534,9 +539,7 @@ async function addItem() {
   // If an unchecked item with the same name already exists, bump its quantity
   // instead of adding a duplicate row. Checked (already-bought) items are left
   // alone so re-adding them starts a fresh active item.
-  const existing = items.value.find(
-    (i) => !i.checked && i.name.trim().toLowerCase() === name.toLowerCase(),
-  )
+  const existing = findActiveItemByName(items.value, name)
   if (existing) {
     newItem.value = ''
     newQty.value = 1
@@ -556,9 +559,7 @@ async function addItem() {
   // Guard the per-member active-item cap locally so we never flash an optimistic
   // row that the DB trigger would reject. The trigger (migration 010) stays the
   // authoritative backstop for races or stale local state.
-  const activeCount = items.value.filter(
-    (i) => i.added_by === userId.value && !i.checked,
-  ).length
+  const activeCount = countActiveItemsByMember(items.value, userId.value)
   if (activeCount >= familyItemLimit.value) {
     limitReachedPopupOpen.value = true
     return
@@ -637,15 +638,14 @@ async function addItem() {
 async function incrementActiveItemByName(name, quantity, optimisticId) {
   items.value = items.value.filter((i) => i.id !== optimisticId)
 
-  const key = name.trim().toLowerCase()
-  let target = items.value.find((i) => !i.checked && i.name.trim().toLowerCase() === key)
+  let target = findActiveItemByName(items.value, name)
   if (!target) {
     const { data } = await db
       .from('shopping_list_items')
       .select('*')
       .eq('family_id', familyId.value)
       .eq('checked', false)
-    target = (data || []).find((i) => i.name.trim().toLowerCase() === key)
+    target = findActiveItemByName(data || [], name)
     if (target && !items.value.some((i) => i.id === target.id)) items.value.push(target)
   }
   if (!target) {
@@ -677,11 +677,7 @@ async function toggleItem(item) {
   // fold this one into it instead of leaving two active rows — same merge rule
   // as adding.
   if (!nextChecked) {
-    const target = items.value.find(
-      (i) => i.id !== item.id
-        && !i.checked
-        && i.name.trim().toLowerCase() === item.name.trim().toLowerCase(),
-    )
+    const target = findActiveItemByName(items.value, item.name, { excludeId: item.id })
     if (target) {
       await mergeItemInto(item, target)
       return
@@ -701,17 +697,14 @@ async function toggleItem(item) {
     // Unique-violation while unchecking: an active same-name row appeared (race).
     // Merge into it rather than surfacing an error.
     if (!nextChecked && error.code === '23505') {
-      const key = item.name.trim().toLowerCase()
-      let target = items.value.find(
-        (i) => i.id !== item.id && !i.checked && i.name.trim().toLowerCase() === key,
-      )
+      let target = findActiveItemByName(items.value, item.name, { excludeId: item.id })
       if (!target) {
         const { data } = await db
           .from('shopping_list_items')
           .select('*')
           .eq('family_id', familyId.value)
           .eq('checked', false)
-        target = (data || []).find((i) => i.name.trim().toLowerCase() === key)
+        target = findActiveItemByName(data || [], item.name, { excludeId: item.id })
         if (target && !items.value.some((i) => i.id === target.id)) items.value.push(target)
       }
       if (target) {
