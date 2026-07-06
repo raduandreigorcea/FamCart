@@ -1,0 +1,15 @@
+{
+  // Typechecks the incrementally-adopted TS code in src/lib only. The Vue SFCs
+  // are still plain JS; widen `include` (and switch to vue-tsc) as they migrate.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": ["src/lib/**/*.ts"]
+}
