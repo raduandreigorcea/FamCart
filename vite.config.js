@@ -1,9 +1,23 @@
+import fs from 'node:fs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
+import { sentryVitePlugin } from '@sentry/vite-plugin'
+
+// Source maps are built and uploaded to Sentry only when an auth token is
+// available: locally via .env.sentry-build-plugin (auto-read by the plugin),
+// in CI/hosting via the SENTRY_AUTH_TOKEN env var. Builds without a token are
+// completely unaffected.
+const uploadSourceMaps = !!process.env.SENTRY_AUTH_TOKEN || fs.existsSync('.env.sentry-build-plugin')
 
 // https://vite.dev/config/
 export default defineConfig({
+  build: {
+    // 'hidden' emits the maps for upload without adding sourceMappingURL
+    // comments to the bundles; the maps are deleted after upload so they are
+    // never deployed or precached.
+    sourcemap: uploadSourceMaps ? 'hidden' : false,
+  },
   plugins: [
     vue(),
     VitePWA({
@@ -35,5 +49,11 @@ export default defineConfig({
         navigateFallback: '/index.html',
       },
     }),
+    uploadSourceMaps &&
+      sentryVitePlugin({
+        org: 'famcart',
+        project: 'javascript-vue',
+        sourcemaps: { filesToDeleteAfterUpload: 'dist/**/*.map' },
+      }),
   ],
 })

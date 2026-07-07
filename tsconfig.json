@@ -1,6 +1,6 @@
 {
-  // Typechecks the incrementally-adopted TS code in src/lib only. The Vue SFCs
-  // are still plain JS; widen `include` (and switch to vue-tsc) as they migrate.
+  // Typechecks the incrementally-adopted TS code under src (lib, router). The
+  // Vue SFCs are still plain JS; switch to vue-tsc as they migrate.
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -11,5 +11,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["src/lib/**/*.ts"]
+  "include": ["src/**/*.ts"]
 }

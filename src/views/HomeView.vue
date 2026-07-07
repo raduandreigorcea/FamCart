@@ -15,6 +15,7 @@ import {
 } from '../lib/shoppingList'
 import { getUserDisplayName, getUserPrimaryEmail } from '../lib/userIdentity'
 import { cleanAuthCallbackUrl } from '../lib/authCallbackUrl'
+import { loadFamilySnapshot, saveFamilySnapshot, clearFamilySnapshot } from '../lib/familyCache'
 
 const { userId, isLoaded, getToken } = useAuth()
 const { user } = useUser()
@@ -67,6 +68,7 @@ async function initializeHome() {
   if (hasInitialized.value || !isLoaded.value || !userId.value) return
 
   sanitizeAuthCallbackUrl()
+  hydrateFromCachedSnapshot()
 
   // Fetch the user's family only after Clerk has finished loading.
   const { data: membership, error: mErr } = await db
@@ -82,6 +84,7 @@ async function initializeHome() {
   }
 
   if (!membership?.family_id) {
+    clearFamilySnapshot(localStorage)
     router.replace('/family-setup')
     return
   }
@@ -91,7 +94,43 @@ async function initializeHome() {
   await loadItems()
   await setupRealtimeSubscriptions()
   hasInitialized.value = true
+  persistSnapshot()
 }
+
+// Paint the last known state immediately (stale-while-revalidate): a returning
+// user sees their list instead of skeletons while the fresh fetches above run.
+function hydrateFromCachedSnapshot() {
+  if (items.value.length) return
+  const snapshot = loadFamilySnapshot(localStorage, userId.value)
+  if (!snapshot) return
+  familyId.value = snapshot.familyId
+  familyName.value = snapshot.familyName
+  familyInviteCode.value = snapshot.familyInviteCode
+  familyOwnerId.value = snapshot.familyOwnerId
+  familyItemLimit.value = snapshot.familyItemLimit
+  familyMembers.value = snapshot.familyMembers
+  items.value = snapshot.items
+}
+
+function persistSnapshot() {
+  if (!hasInitialized.value || !userId.value || !familyId.value) return
+  saveFamilySnapshot(localStorage, userId.value, {
+    familyId: familyId.value,
+    familyName: familyName.value,
+    familyInviteCode: familyInviteCode.value,
+    familyOwnerId: familyOwnerId.value,
+    familyItemLimit: familyItemLimit.value,
+    familyMembers: familyMembers.value,
+    items: items.value,
+  })
+}
+
+// Keep the snapshot current as state changes (mutations, realtime events).
+// Guarded by hasInitialized inside persistSnapshot, so hydration itself and
+// partial init states are never written back.
+watch([items, familyMembers, familyName, familyInviteCode, familyItemLimit], persistSnapshot, {
+  deep: true,
+})
 
 function sanitizeAuthCallbackUrl() {
   const cleanedUrl = cleanAuthCallbackUrl(window.location.href)
@@ -104,46 +143,15 @@ async function loadFamilyHeader() {
     db.from('family_members').select('user_id, display_name, image_url, role').eq('family_id', familyId.value),
   ])
 
-  let resolvedFamily = family
-  let resolvedFamilyErr = familyErr
-
-  // Backward-compatible fallback for environments where the new column is not migrated yet.
-  if (resolvedFamilyErr?.message?.includes('max_items_per_member')) {
-    const { data: legacyFamily, error: legacyFamilyErr } = await db
-      .from('families')
-      .select('name, invite_code, created_by')
-      .eq('id', familyId.value)
-      .single()
-
-    resolvedFamily = legacyFamily
-    resolvedFamilyErr = legacyFamilyErr
-  }
-
-  if (!resolvedFamilyErr && resolvedFamily) {
-    familyName.value = resolvedFamily.name
-    familyInviteCode.value = resolvedFamily.invite_code || ''
-    familyOwnerId.value = resolvedFamily.created_by || ''
-    familyItemLimit.value = Math.min(50, Math.max(1, Number(resolvedFamily.max_items_per_member) || 50))
+  if (!familyErr && family) {
+    familyName.value = family.name
+    familyInviteCode.value = family.invite_code || ''
+    familyOwnerId.value = family.created_by || ''
+    familyItemLimit.value = Math.min(50, Math.max(1, Number(family.max_items_per_member) || 50))
   }
 
   if (!membersErr && Array.isArray(members)) {
     familyMembers.value = members
-    return
-  }
-
-  // Backward-compatible fallback when profile columns are missing.
-  const { data: legacyMembers, error: legacyMembersErr } = await db
-    .from('family_members')
-    .select('user_id')
-    .eq('family_id', familyId.value)
-
-  if (!legacyMembersErr && Array.isArray(legacyMembers)) {
-    familyMembers.value = legacyMembers.map((m) => ({
-      user_id: m.user_id,
-      display_name: m.user_id,
-      image_url: null,
-      role: 'member',
-    }))
   }
 }
 
@@ -157,6 +165,7 @@ async function refreshMembershipOrRedirect() {
 
   if (!membership?.family_id) {
     cleanupRealtimeSubscriptions()
+    clearFamilySnapshot(localStorage)
     router.replace('/family-setup')
     return
   }
