@@ -2,7 +2,9 @@
 import { computed, defineAsyncComponent, ref } from 'vue'
 import { useClerk, useUser } from '@clerk/vue'
 import AccountActionModal from './AccountActionModal.vue'
+import MemberAvatarStack from './MemberAvatarStack.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
+import { getUserDisplayName, getUserInitial, getUserPrimaryEmail } from '../lib/userIdentity'
 
 // The settings modal is by far the heaviest part of the topbar; load its chunk
 // only when someone actually opens it.
@@ -81,18 +83,11 @@ async function handleSignOut() {
 }
 
 const userAvatarUrl = computed(() => user.value?.imageUrl || null)
-const userDisplayName = computed(() => {
-  return user.value?.fullName || user.value?.firstName || 'Account'
-})
-const userEmail = computed(() => user.value?.primaryEmailAddress?.emailAddress || user.value?.emailAddresses?.[0]?.emailAddress || '')
-const userInitial = computed(() => {
-  const name = user.value?.fullName || user.value?.firstName || user.value?.emailAddresses?.[0]?.emailAddress || '?'
-  return name.slice(0, 1).toUpperCase()
-})
+const userDisplayName = computed(() => getUserDisplayName(user.value) || 'Account')
+const userEmail = computed(() => getUserPrimaryEmail(user.value))
+const userInitial = computed(() => getUserInitial(user.value))
 
 const memberCount = computed(() => props.memberProfiles.length)
-const visibleMembers = computed(() => props.memberProfiles.slice(0, 4))
-const extraMembers = computed(() => Math.max(0, memberCount.value - visibleMembers.value.length))
 </script>
 
 <template>
@@ -106,24 +101,7 @@ const extraMembers = computed(() => Math.max(0, memberCount.value - visibleMembe
               <span class="family-members-count">{{ memberCount }} members</span>
             </div>
           </div>
-          <div class="member-stack" v-if="memberCount">
-            <template v-for="(member, idx) in visibleMembers" :key="member.user_id || idx">
-              <img
-                v-if="member.image_url"
-                :src="member.image_url"
-                :alt="(member.display_name || 'Member') + ' avatar'"
-                class="member-avatar"
-              />
-              <span
-                v-else
-                class="member-avatar member-avatar--fallback"
-                :title="member.display_name || 'Member'"
-              >
-                {{ (member.display_name || member.user_id || '?').slice(0, 1).toUpperCase() }}
-              </span>
-            </template>
-            <span v-if="extraMembers > 0" class="member-avatar member-avatar--more">+{{ extraMembers }}</span>
-          </div>
+          <MemberAvatarStack :members="memberProfiles" />
         </div>
       </template>
       <template v-else-if="loading">
@@ -134,9 +112,7 @@ const extraMembers = computed(() => Math.max(0, memberCount.value - visibleMembe
               <SkeletonBlock width="4.5rem" height="0.7rem" />
             </div>
           </div>
-          <div class="member-stack">
-            <SkeletonBlock v-for="n in 3" :key="n" class="member-avatar" width="30px" height="30px" radius="var(--radius-pill)" />
-          </div>
+          <MemberAvatarStack loading />
         </div>
       </template>
       <template v-else>
@@ -269,40 +245,6 @@ const extraMembers = computed(() => Math.max(0, memberCount.value - visibleMembe
   letter-spacing: -0.01em;
   color: var(--ui-text-muted);
   font-family: inherit;
-}
-
-.member-stack {
-  display: flex;
-  align-items: center;
-}
-
-.member-avatar {
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-pill);
-  object-fit: cover;
-  border: 1.5px solid var(--bg-surface);
-  margin-left: -9px;
-  background: var(--bg-hover);
-}
-
-.member-stack .member-avatar:first-child {
-  margin-left: 0;
-}
-
-.member-avatar--fallback,
-.member-avatar--more {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: var(--ui-text-muted);
-}
-
-.member-avatar--more {
-  background: var(--color-primary-bg);
-  color: var(--color-primary-text);
 }
 
 .topbar-actions {
