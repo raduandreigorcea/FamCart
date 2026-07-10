@@ -23,10 +23,14 @@ create index if not exists push_subscriptions_user_id_idx
 -- Writes go exclusively through claim_push_subscription() below, so there are
 -- deliberately no insert/update policies (and no insert/update grants).
 
+-- drop-then-create so the migration is safe to re-run even if it was already
+-- applied out-of-band (the remote migration history was empty when this landed).
+drop policy if exists "users can read own push subscriptions" on public.push_subscriptions;
 create policy "users can read own push subscriptions"
   on public.push_subscriptions for select
   using (user_id = requesting_user_id());
 
+drop policy if exists "users can delete own push subscriptions" on public.push_subscriptions;
 create policy "users can delete own push subscriptions"
   on public.push_subscriptions for delete
   using (user_id = requesting_user_id());

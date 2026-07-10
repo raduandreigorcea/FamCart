@@ -27,10 +27,14 @@ create index if not exists device_push_tokens_user_id_idx
 -- Writes go exclusively through claim_device_push_token() below, so there are
 -- deliberately no insert/update policies (and no insert/update grants).
 
+-- drop-then-create so the migration is safe to re-run even if it was already
+-- applied out-of-band (the remote migration history was empty when this landed).
+drop policy if exists "users can read own device push tokens" on public.device_push_tokens;
 create policy "users can read own device push tokens"
   on public.device_push_tokens for select
   using (user_id = requesting_user_id());
 
+drop policy if exists "users can delete own device push tokens" on public.device_push_tokens;
 create policy "users can delete own device push tokens"
   on public.device_push_tokens for delete
   using (user_id = requesting_user_id());
