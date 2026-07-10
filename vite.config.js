@@ -21,7 +21,12 @@ export default defineConfig({
   plugins: [
     vue(),
     VitePWA({
-      // Ship SW updates automatically — no "new version, reload?" prompt to wire up.
+      // Custom SW (src/sw.js): precaching plus the Web Push handlers that
+      // generateSW cannot express. skipWaiting/clientsClaim in the SW mirror
+      // the autoUpdate behavior.
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       registerType: 'autoUpdate',
       injectRegister: 'auto',
       includeAssets: ['icons/*.png', 'screen.webp'],
@@ -41,12 +46,10 @@ export default defineConfig({
           { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
-      workbox: {
-        // Precache the app shell + brand assets so the list opens offline. Only
-        // same-origin build output is precached; the Supabase and Clerk APIs are
-        // cross-origin and are never intercepted or cached here.
+      injectManifest: {
+        // Precache the app shell + brand assets so the list opens offline; the
+        // navigation fallback lives in src/sw.js (NavigationRoute).
         globPatterns: ['**/*.{js,css,html,svg,png,webp,ico,woff2}'],
-        navigateFallback: '/index.html',
       },
     }),
     uploadSourceMaps &&

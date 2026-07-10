@@ -1,7 +1,11 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useAuth } from '@clerk/vue'
 import ModalCloseButton from './ModalCloseButton.vue'
+import ErrorModal from './ErrorModal.vue'
 import userRoundIconRaw from '../assets/user-round.svg?raw'
+import { useSupabase } from '../supabase'
+import { enablePushNotifications, disablePushNotifications } from '../lib/pushNotifications'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -16,8 +20,12 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'edit-account', 'sign-out', 'manage-family', 'invite-members'])
 
+const { userId } = useAuth()
+const db = useSupabase()
+
 const themeMode = ref('system')
 const notificationMode = ref('on')
+const notificationHint = ref('')
 let mediaQuery = null
 
 function syncPreferencesFromStorage() {
@@ -70,9 +78,30 @@ function applyTheme(mode) {
   applyResolvedTheme(mode)
 }
 
-function applyNotifications(mode) {
+async function applyNotifications(mode) {
   notificationMode.value = mode
   localStorage.setItem('famcart-notifications', mode)
+  notificationHint.value = ''
+
+  if (mode === 'off') {
+    await disablePushNotifications(db)
+    return
+  }
+
+  if (!userId.value) return
+  const result = await enablePushNotifications(db, userId.value)
+  if (result === 'permission-denied') {
+    // The browser said no — reflect reality instead of a toggle that lies.
+    notificationMode.value = 'off'
+    localStorage.setItem('famcart-notifications', 'off')
+    notificationHint.value = 'Notifications are blocked in your browser settings.'
+  } else if (result === 'error') {
+    notificationMode.value = 'off'
+    localStorage.setItem('famcart-notifications', 'off')
+    notificationHint.value = 'Could not enable notifications. Please try again.'
+  }
+  // 'unsupported' / 'not-configured': push is unavailable in this environment;
+  // the preference is still saved and the toggle stays on.
 }
 
 onMounted(() => {
@@ -194,6 +223,7 @@ watch(
               </button>
             </div>
 
+
             <div class="account-divider"></div>
 
             <button
@@ -212,6 +242,8 @@ watch(
       </div>
     </div>
   </Transition>
+
+  <ErrorModal title="Notifications" :message="notificationHint" @dismiss="notificationHint = ''" />
 </template>
 
 <style scoped>
@@ -225,7 +257,7 @@ watch(
   align-items: center;
   justify-content: center;
   z-index: 1100;
-  padding: var(--space-4);
+  padding: calc(var(--space-4) + var(--safe-top)) var(--space-4) calc(var(--space-4) + var(--safe-bottom));
 }
 
 .account-dialog {
