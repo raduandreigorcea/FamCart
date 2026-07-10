@@ -2,7 +2,7 @@
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useAuth } from '@clerk/vue'
 import { useRouter } from 'vue-router'
-import { useSupabase } from '../supabase.js'
+import { useSupabase } from '../supabase'
 import ConfirmModal from './ConfirmModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
 import {
@@ -25,6 +25,8 @@ import crownIcon from '../assets/crown.svg?raw'
 import squarePenIcon from '../assets/square-pen.svg?raw'
 import shoppingCartIcon from '../assets/shopping-cart.svg?raw'
 import ellipsisIcon from '../assets/ellipsis.svg?raw'
+import shieldIcon from '../assets/shield.svg?raw'
+import userRoundIcon from '../assets/user-round.svg?raw'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -249,7 +251,11 @@ async function saveItemLimit() {
 
 function randomInviteCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+  // Use a CSPRNG, not Math.random(): the code is the only credential guarding
+  // family membership. The 32-char alphabet divides 256 evenly, so `byte & 31`
+  // maps to a character with no modulo bias.
+  const bytes = crypto.getRandomValues(new Uint8Array(8))
+  return Array.from(bytes, (b) => chars[b & 31]).join('')
 }
 
 async function regenerateInviteCode() {
@@ -280,6 +286,8 @@ async function regenerateInviteCode() {
 
 async function removeMember(memberUserId) {
   if (!props.familyId || memberActionPendingId.value) return
+  // Dismiss first: on mobile the action sheet covers the confirm dialog.
+  closeMemberMenu()
   const confirmed = await showConfirm({
     title: 'Remove Member?',
     message: 'This person will immediately lose access to the family shopping list. They can be re-invited using the invite code.',
@@ -287,7 +295,6 @@ async function removeMember(memberUserId) {
   })
   if (!confirmed) return
   memberActionPendingId.value = memberUserId
-  openMemberMenuId.value = ''
   try {
     const { error } = await db
       .from('family_members')
@@ -309,6 +316,13 @@ function closeMemberMenu() {
   openMemberMenuId.value = ''
 }
 
+// The member whose actions are showing, used by the mobile action sheet, which
+// lives outside the list (teleported) and so cannot read the v-for's `member`.
+const activeMenuMember = computed(() => {
+  if (!openMemberMenuId.value) return null
+  return props.memberProfiles.find((m) => m.user_id === openMemberMenuId.value) || null
+})
+
 function handleGlobalPointerDown(event) {
   if (!openMemberMenuId.value) return
 
@@ -318,32 +332,40 @@ function handleGlobalPointerDown(event) {
     return
   }
 
+  // The sheet is teleported to <body>, so it is outside the trigger's wrapper.
+  // Without this it would close on pointerdown, before the click ever lands.
   if (target.closest('.member-actions-menu-wrap')) return
+  if (target.closest('.member-sheet')) return
   closeMemberMenu()
+}
+
+function handleMemberMenuKeydown(event) {
+  if (event.key === 'Escape' && openMemberMenuId.value) closeMemberMenu()
 }
 
 onMounted(() => {
   window.addEventListener('pointerdown', handleGlobalPointerDown)
+  window.addEventListener('keydown', handleMemberMenuKeydown)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('pointerdown', handleGlobalPointerDown)
+  window.removeEventListener('keydown', handleMemberMenuKeydown)
 })
 
 async function setMemberRole(memberUserId, role) {
   if (!isOwner.value) return
   if (!props.familyId || memberActionPendingId.value) return
   memberActionPendingId.value = memberUserId
+  // Dismiss on tap; the row's spinner carries the pending state from here.
+  closeMemberMenu()
   try {
     const { error } = await db
       .from('family_members')
       .update({ role })
       .eq('family_id', props.familyId)
       .eq('user_id', memberUserId)
-    if (!error) {
-      emit('refresh-family')
-      openMemberMenuId.value = ''
-    }
+    if (!error) emit('refresh-family')
   } finally {
     memberActionPendingId.value = ''
   }
@@ -387,7 +409,7 @@ async function deleteFamily() {
             </div>
             <div>
               <h3>Family Settings</h3>
-              <p class="settings-modal__subtitle">{{ familyName }}</p>
+              <p class="settings-modal__subtitle">Manage your family and members</p>
             </div>
           </div>
           <ModalCloseButton aria-label="Close settings" @click="requestClose()" />
@@ -451,8 +473,16 @@ async function deleteFamily() {
           <!-- Content Panel Area -->
           <main class="settings-content-wrapper">
             
-            <!-- OVERVIEW PANEL -->
-            <div v-if="activeTab === 'overview'" class="tab-panel">
+            <!-- OVERVIEW PANEL
+                 Always in the layout, even when another tab is active: it is the
+                 tallest panel, so it fixes the modal's height and the other tabs
+                 overlay it. Hidden copies are inert and out of the a11y tree. -->
+            <div
+              class="tab-panel tab-panel--base"
+              :class="{ 'tab-panel--ghost': activeTab !== 'overview' }"
+              :inert="activeTab !== 'overview'"
+              :aria-hidden="activeTab !== 'overview'"
+            >
               <div class="panel-section">
                 <h4 class="panel-section-title">Family Summary</h4>
                 
@@ -514,7 +544,7 @@ async function deleteFamily() {
             </div>
 
             <!-- PREFERENCES PANEL (Owner + Moderators) -->
-            <div v-if="activeTab === 'family' && isOwnerOrModerator" class="tab-panel">
+            <div v-if="activeTab === 'family' && isOwnerOrModerator" class="tab-panel tab-panel--overlay">
               <div class="panel-section">
                 <h4 class="panel-section-title">General Preferences</h4>
 
@@ -608,7 +638,7 @@ async function deleteFamily() {
             </div>
 
             <!-- MEMBERS PANEL -->
-            <div v-if="activeTab === 'members'" class="tab-panel">
+            <div v-if="activeTab === 'members'" class="tab-panel tab-panel--overlay">
               <div class="panel-section">
                 <h4 class="panel-section-title">Family Members ({{ memberCount }})</h4>
                 <p class="panel-section-desc">Below are the people who have access to this shopping list.</p>
@@ -658,7 +688,7 @@ async function deleteFamily() {
                             :disabled="memberActionPendingId === member.user_id"
                             @click.stop="toggleMemberMenu(member.user_id)"
                           >
-                            <span v-if="memberActionPendingId === member.user_id" class="btn-spinner btn-spinner--dark"></span>
+                            <span v-if="memberActionPendingId === member.user_id" class="btn-spinner btn-spinner--accent"></span>
                             <span v-else class="member-actions-icon" v-html="ellipsisIcon"></span>
                           </button>
 
@@ -669,7 +699,11 @@ async function deleteFamily() {
                               type="button"
                               @click="setMemberRole(member.user_id, 'moderator')"
                             >
-                              Promote to moderator
+                              <span class="member-action-icon" v-html="shieldIcon"></span>
+                              <span class="member-action-text">
+                                <span class="member-action-label">Promote to moderator</span>
+                                <span class="member-action-hint">Can manage items and members</span>
+                              </span>
                             </button>
                             <button
                               v-if="canDemoteFromModerator(member)"
@@ -677,14 +711,22 @@ async function deleteFamily() {
                               type="button"
                               @click="setMemberRole(member.user_id, 'member')"
                             >
-                              Demote to member
+                              <span class="member-action-icon" v-html="userRoundIcon"></span>
+                              <span class="member-action-text">
+                                <span class="member-action-label">Demote to member</span>
+                                <span class="member-action-hint">Removes moderator permissions</span>
+                              </span>
                             </button>
                             <button
                               class="member-action-item member-action-item--danger"
                               type="button"
                               @click="removeMember(member.user_id)"
                             >
-                              Remove from family
+                              <span class="member-action-icon" v-html="trashIcon"></span>
+                              <span class="member-action-text">
+                                <span class="member-action-label">Remove from family</span>
+                                <span class="member-action-hint">Loses access to the shopping list</span>
+                              </span>
                             </button>
                           </div>
                         </div>
@@ -698,7 +740,7 @@ async function deleteFamily() {
               </div>
             </div>
             <!-- DANGER ZONE PANEL (Owner Only + Member Leave) -->
-            <div v-if="activeTab === 'danger'" class="tab-panel">
+            <div v-if="activeTab === 'danger'" class="tab-panel tab-panel--overlay">
               <!-- Invite Code Regen Card -->
               <div class="panel-section" v-if="isOwnerOrModerator">
                 <h4 class="panel-section-title">Invite Code Administration</h4>
@@ -757,6 +799,82 @@ async function deleteFamily() {
       </div>
     </div>
   </Transition>
+
+  <!-- Mobile member actions: a bottom sheet teleported out of the scrolling
+       tab panel, which would otherwise clip an anchored dropdown. Hidden by
+       CSS above the phone breakpoint, where the inline dropdown is used. -->
+  <Teleport to="body">
+    <Transition name="member-sheet-fade">
+      <div
+        v-if="activeMenuMember"
+        class="member-sheet-overlay"
+        @click.self="closeMemberMenu()"
+      >
+        <div class="member-sheet" role="dialog" aria-modal="true" :aria-label="`Actions for ${activeMenuMember.display_name || 'member'}`">
+          <div class="member-sheet__head">
+            <img
+              v-if="activeMenuMember.image_url"
+              :src="activeMenuMember.image_url"
+              alt=""
+              class="member-sheet__avatar"
+            />
+            <span v-else class="member-sheet__avatar member-sheet__avatar--fallback">
+              {{ (activeMenuMember.display_name || '?').slice(0, 1).toUpperCase() }}
+            </span>
+            <div class="member-sheet__meta">
+              <span class="member-sheet__name">{{ activeMenuMember.display_name || 'Member' }}</span>
+              <span class="member-sheet__role">
+                {{ normalizeMemberRole(activeMenuMember.role) === 'moderator' ? 'Moderator' : 'Member' }}
+              </span>
+            </div>
+          </div>
+
+          <div class="member-sheet__actions">
+            <button
+              v-if="canPromoteToModerator(activeMenuMember)"
+              class="member-sheet__action"
+              type="button"
+              @click="setMemberRole(activeMenuMember.user_id, 'moderator')"
+            >
+              <span class="member-sheet__action-icon" v-html="shieldIcon"></span>
+              <span class="member-sheet__action-text">
+                <span class="member-sheet__action-label">Promote to moderator</span>
+                <span class="member-sheet__action-hint">Can manage items and members</span>
+              </span>
+            </button>
+
+            <button
+              v-if="canDemoteFromModerator(activeMenuMember)"
+              class="member-sheet__action"
+              type="button"
+              @click="setMemberRole(activeMenuMember.user_id, 'member')"
+            >
+              <span class="member-sheet__action-icon" v-html="userRoundIcon"></span>
+              <span class="member-sheet__action-text">
+                <span class="member-sheet__action-label">Demote to member</span>
+                <span class="member-sheet__action-hint">Removes moderator permissions</span>
+              </span>
+            </button>
+
+            <button
+              class="member-sheet__action member-sheet__action--danger"
+              type="button"
+              @click="removeMember(activeMenuMember.user_id)"
+            >
+              <span class="member-sheet__action-icon" v-html="trashIcon"></span>
+              <span class="member-sheet__action-text">
+                <span class="member-sheet__action-label">Remove from family</span>
+                <span class="member-sheet__action-hint">Loses access to the shopping list</span>
+              </span>
+            </button>
+          </div>
+
+          <button class="member-sheet__cancel" type="button" @click="closeMemberMenu()">Cancel</button>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
   <!-- Confirm Modal -->
   <ConfirmModal
     :open="confirmModal.open"
@@ -789,7 +907,7 @@ async function deleteFamily() {
   align-items: center;
   justify-content: center;
   z-index: 999;
-  padding: var(--space-4);
+  padding: calc(var(--space-4) + var(--safe-top)) var(--space-4) calc(var(--space-4) + var(--safe-bottom));
 }
 
 .settings-modal {
@@ -797,7 +915,7 @@ async function deleteFamily() {
   max-width: 640px;
   background: var(--bg-surface);
   border-radius: var(--radius-3xl);
-  border: 1px solid var(--ui-border);
+  border: none;
   box-shadow: var(--elevation-modal);
   display: flex;
   flex-direction: column;
@@ -810,7 +928,6 @@ async function deleteFamily() {
   align-items: center;
   justify-content: space-between;
   padding: var(--space-5) var(--space-6);
-  border-bottom: 1px solid var(--ui-border-soft);
   background: var(--bg-surface);
 }
 
@@ -864,7 +981,7 @@ async function deleteFamily() {
 @media (max-width: 580px) {
   .settings-modal__body {
     grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
     height: 520px;
   }
 }
@@ -872,7 +989,6 @@ async function deleteFamily() {
 /* Sidebar Nav */
 .settings-sidebar {
   padding: 1.25rem 0.75rem;
-  border-right: 1px solid var(--ui-border-soft);
   background: var(--bg-surface-alt);
   display: flex;
   flex-direction: column;
@@ -883,8 +999,6 @@ async function deleteFamily() {
   .settings-sidebar {
     flex-direction: row;
     padding: 0.75rem;
-    border-right: none;
-    border-bottom: 1px solid var(--ui-border-soft);
     overflow-x: auto;
     gap: 0.5rem;
     scrollbar-width: none; /* Hide scrollbar for clean tab-bar look */
@@ -1058,7 +1172,7 @@ async function deleteFamily() {
 
 /* Content Area */
 .settings-content-wrapper {
-  padding: var(--space-6);
+  position: relative;
   overflow-y: auto;
   background: var(--bg-surface);
 }
@@ -1070,6 +1184,22 @@ async function deleteFamily() {
   flex-direction: column;
   gap: 1.25rem;
   min-height: 100%;
+  padding: var(--space-6);
+}
+
+/* The Overview panel stays in flow at all times to hold the modal's height
+   open; when another tab is active it is hidden but still occupies its box. */
+.tab-panel--ghost {
+  visibility: hidden;
+}
+
+/* Every other tab is painted over the Overview panel's box and scrolls
+   independently if its content runs longer. */
+.tab-panel--overlay {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  background: var(--bg-surface);
 }
 
 .panel-section {
@@ -1242,7 +1372,6 @@ async function deleteFamily() {
   display: flex;
   gap: 0.65rem;
   background: var(--bg-surface-alt);
-  border: 1px solid var(--ui-border-soft);
   padding: var(--space-3) 0.9rem;
   border-radius: var(--radius-md);
 }
@@ -1587,8 +1716,8 @@ async function deleteFamily() {
   animation: btnSpin 0.6s linear infinite;
 }
 
-.btn-spinner--dark {
-  border-top-color: var(--danger-main);
+.btn-spinner--accent {
+  border-top-color: var(--color-primary);
 }
 
 .btn-spinner--light {
@@ -1617,7 +1746,6 @@ async function deleteFamily() {
 
 /* Members tab styling */
 .members-list-wrapper {
-  border: 1px solid var(--ui-border-soft);
   border-radius: var(--radius-lg);
   overflow: visible;
   background: var(--bg-surface);
@@ -1708,7 +1836,9 @@ async function deleteFamily() {
 .member-role-badge {
   font-size: 0.68rem;
   font-weight: 700;
-  padding: 0.15rem 0.45rem;
+  /* Match the height of the ellipsis trigger sitting beside it. */
+  min-height: 28px;
+  padding: 0 0.55rem;
   border-radius: var(--radius-xs);
   display: inline-flex;
   align-items: center;
@@ -1792,7 +1922,7 @@ async function deleteFamily() {
   right: 0;
   left: auto;
   z-index: 6100;
-  min-width: 190px;
+  min-width: 248px;
   padding: 0.25rem;
   border: 1px solid color-mix(in srgb, var(--border-dark) 45%, var(--ui-border-soft));
   border-radius: var(--radius-md);
@@ -1806,14 +1936,15 @@ async function deleteFamily() {
 }
 
 .member-action-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   border: none;
   background: transparent;
   color: var(--text-primary);
   text-align: left;
-  font-size: 0.78rem;
-  font-weight: 600;
   border-radius: var(--radius-sm);
-  padding: 0.45rem 0.55rem;
+  padding: 0.5rem 0.55rem;
   cursor: pointer;
 }
 
@@ -1827,6 +1958,247 @@ async function deleteFamily() {
 
 .member-action-item--danger:hover {
   background: var(--danger-bg);
+}
+
+.member-action-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+}
+
+.member-action-icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+}
+
+.member-action-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.member-action-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.member-action-hint {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--ui-text-muted);
+  margin-top: 0.05rem;
+}
+
+/* Mobile member action sheet (hidden on desktop; dropdown is used there) */
+.member-sheet-overlay {
+  display: none;
+}
+
+.member-sheet__head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0 0.35rem 0.9rem;
+  border-bottom: 1px solid var(--ui-border-soft);
+}
+
+.member-sheet__avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--ui-border-soft);
+  background: var(--bg-hover);
+  flex-shrink: 0;
+}
+
+.member-sheet__avatar--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ui-text-muted);
+}
+
+.member-sheet__meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.member-sheet__name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ui-text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.member-sheet__role {
+  font-size: 0.78rem;
+  color: var(--ui-text-muted);
+  font-weight: 500;
+}
+
+.member-sheet__actions {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0;
+}
+
+.member-sheet__action {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  /* Comfortable touch target; the old 0.45rem dropdown rows were ~28px tall. */
+  min-height: 56px;
+  padding: 0.75rem 0.35rem;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  color: var(--ui-text-strong);
+  text-align: left;
+  cursor: pointer;
+}
+
+.member-sheet__action:active {
+  background: var(--bg-hover);
+}
+
+.member-sheet__action--danger {
+  color: var(--danger-text);
+}
+
+.member-sheet__action--danger:active {
+  background: var(--danger-bg);
+}
+
+.member-sheet__action-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+}
+
+.member-sheet__action-icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+}
+
+.member-sheet__action-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.member-sheet__action-label {
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.member-sheet__action-hint {
+  font-size: 0.75rem;
+  color: var(--ui-text-muted);
+  font-weight: 500;
+  margin-top: 0.1rem;
+}
+
+.member-sheet__cancel {
+  width: 100%;
+  min-height: 52px;
+  margin-top: 0.35rem;
+  border: 1px solid var(--ui-border-soft);
+  background: var(--bg-surface-alt);
+  border-radius: var(--radius-md);
+  color: var(--ui-text-strong);
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.member-sheet__cancel:active {
+  background: var(--bg-hover);
+}
+
+@media (max-width: 520px) {
+  /* Swap the anchored dropdown for the bottom sheet. */
+  .member-actions-menu {
+    display: none;
+  }
+
+  .member-role-badge {
+    min-height: 32px;
+    padding: 0 0.6rem;
+    font-size: 0.72rem;
+  }
+
+  .member-actions-trigger {
+    width: 32px;
+    height: 32px;
+    position: relative;
+  }
+
+  /* Keep a 44px touch target without drawing a 44px button. */
+  .member-actions-trigger::after {
+    content: '';
+    position: absolute;
+    inset: -6px;
+  }
+
+  .member-sheet-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 7500;
+    display: flex;
+    align-items: flex-end;
+    background: var(--overlay-dark);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+
+  .member-sheet {
+    width: 100%;
+    background: var(--bg-surface);
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    box-shadow: var(--elevation-modal);
+    padding: 1.15rem 1rem calc(0.75rem + var(--safe-bottom));
+    animation: memberSheetUp 0.22s cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
+  }
+}
+
+@keyframes memberSheetUp {
+  from {
+    transform: translateY(12%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.member-sheet-fade-enter-active,
+.member-sheet-fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.member-sheet-fade-enter-from,
+.member-sheet-fade-leave-to {
+  opacity: 0;
 }
 
 @keyframes memberMenuIn {
@@ -1955,12 +2327,14 @@ async function deleteFamily() {
 
   .settings-modal {
     max-width: none;
-    height: min(88dvh, 760px);
-    max-height: min(88dvh, 760px);
+    /* Height comes from the always-present Overview panel, so it is the same on
+       every tab. The cap only bites on very short viewports. */
+    height: auto;
+    max-height: min(88dvh, calc(760px + var(--safe-bottom)));
     border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-    border-left: none;
-    border-right: none;
-    border-bottom: none;
+    /* Bottom sheet: the surface runs behind the phone's nav bar while the
+       content stays above it (the overlay's safe padding is zeroed here). */
+    padding-bottom: var(--safe-bottom);
   }
 
   .settings-modal__header {
@@ -1969,8 +2343,9 @@ async function deleteFamily() {
 
   .settings-modal__body {
     grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
-    height: 100%;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: auto;
+    min-height: 0;
   }
 
   .settings-sidebar {

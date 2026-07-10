@@ -8,7 +8,15 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
 })
 
-const visibleMembers = computed(() => props.members.slice(0, props.maxVisible))
+// Collapsing to "+1" hides one avatar to show a "+1" bubble in its place — it
+// saves no room and just looks odd. So only collapse when it actually hides two
+// or more: up to maxVisible + 1 members all render; beyond that we show
+// maxVisible avatars and roll the rest into "+n".
+const visibleMembers = computed(() =>
+  props.members.length <= props.maxVisible + 1
+    ? props.members
+    : props.members.slice(0, props.maxVisible),
+)
 const extraMembers = computed(() => Math.max(0, props.members.length - visibleMembers.value.length))
 </script>
 
@@ -40,6 +48,7 @@ const extraMembers = computed(() => Math.max(0, props.members.length - visibleMe
 .member-stack {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .member-avatar {

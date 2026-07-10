@@ -63,7 +63,7 @@ const skeletonNameWidths = ['55%', '38%', '62%', '30%']
   </TransitionGroup>
 
   <p v-if="showEmpty" class="empty-state">
-    Nothing here yet — add your first item above!
+    Nothing here yet. Add your first item above!
   </p>
 </template>
 
