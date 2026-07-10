@@ -5,7 +5,18 @@ const props = defineProps({
   item: {
     type: Object,
     required: true
-  }
+  },
+  // Set while a purchase animation is playing on this checked row: it drains
+  // toward the buy bar instead of using the list's normal leave transition.
+  draining: {
+    type: Boolean,
+    default: false,
+  },
+  // Position among the draining rows, so they fall into the bar in a stagger.
+  drainIndex: {
+    type: Number,
+    default: 0,
+  },
 })
 
 const emit = defineEmits(['toggle', 'delete'])
@@ -22,7 +33,8 @@ function handleDelete() {
 <template>
   <li
     class="item"
-    :class="{ 'item--checked': item.checked }"
+    :class="{ 'item--checked': item.checked, 'item--draining': draining }"
+    :style="draining ? { '--drain-index': drainIndex } : null"
   >
     <button class="item-check" @click="handleToggle" :aria-label="item.checked ? 'Uncheck' : 'Check'">
       <span class="check-circle" aria-hidden="true">
@@ -66,6 +78,39 @@ function handleDelete() {
 
 .item--checked {
   opacity: 0.5;
+}
+
+/* Buy animation: the row lifts, then drops and shrinks toward the buy bar at the
+   bottom of the screen, staggered so the rows drain in one after another. It
+   holds at the end state (forwards) so the row is already invisible when the
+   parent removes it from the list a moment later. */
+.item--draining {
+  animation: itemDrain 0.55s cubic-bezier(0.5, 0, 0.75, 0) forwards;
+  animation-delay: calc(var(--drain-index, 0) * 55ms);
+  pointer-events: none;
+  z-index: 3;
+}
+
+@keyframes itemDrain {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  32% {
+    opacity: 1;
+    transform: translateY(-7px) scale(1.02);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(52px) scale(0.4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .item--draining {
+    animation: none;
+    opacity: 0;
+  }
 }
 
 .item--checked .item-name {

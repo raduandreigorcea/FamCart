@@ -23,6 +23,14 @@ export function sumActiveQuantities(items: ShoppingItem[]): number {
     .reduce((sum, i) => sum + (Number(i.quantity) || 1), 0)
 }
 
+// Total units marked to buy: sum of quantities across checked items, so a stack
+// like "grapes x4" counts as 4. A missing or invalid quantity counts as 1.
+export function sumCheckedQuantities(items: ShoppingItem[]): number {
+  return items
+    .filter((i) => i.checked)
+    .reduce((sum, i) => sum + (Number(i.quantity) || 1), 0)
+}
+
 // First unchecked item whose name matches `name` (case/whitespace-insensitive),
 // optionally excluding one id. Returns undefined if none match.
 export function findActiveItemByName(

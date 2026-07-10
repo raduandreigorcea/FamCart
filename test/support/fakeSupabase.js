@@ -67,10 +67,25 @@ export function createFakeDb() {
     return query
   }
 
+  // Postgres function calls (db.rpc('fn', params)) dispatch to a `rpc.<fn>`
+  // handler, mirroring the table dispatch above.
+  function makeRpc(fn, params) {
+    const query = {
+      table: 'rpc',
+      op: fn,
+      params,
+      then(onFulfilled, onRejected) {
+        return Promise.resolve(dispatch(query)).then(onFulfilled, onRejected)
+      },
+    }
+    return query
+  }
+
   return {
     calls,
     handlers,
     from: (table) => makeQuery(table),
+    rpc: (fn, params) => makeRpc(fn, params),
     realtime: { setAuth() {}, connect() {}, disconnect() {} },
     removeChannel() {},
   }

@@ -604,6 +604,48 @@ async function mergeItemInto(source, target) {
   }
 }
 
+// Buy every checked item: archive them to purchase history and drop them from
+// the active list. The animation has already played in ShoppingList by the time
+// this runs, so we just persist the outcome.
+async function buyCheckedItems(ids) {
+  const idSet = new Set(ids)
+  const bought = items.value.filter((i) => idSet.has(i.id) && i.checked)
+  if (!bought.length) return
+
+  // Optimistic removal. Only drop the rows actually bought (checked) — never an
+  // unchecked row that happened to be named in `ids` — mirroring the RPC's own
+  // `checked = true` guard. Keep the pre-removal array so a hard failure can
+  // restore the exact list, order included.
+  const boughtIds = new Set(bought.map((i) => i.id))
+  const snapshot = items.value
+  items.value = items.value.filter((i) => !boughtIds.has(i.id))
+
+  // Offline (or a WebView that lies about connectivity): there is no multi-table
+  // transaction to run here, so queue plain deletes. The rows leave the list but
+  // an offline purchase is not recorded in history — it is archived only when the
+  // buy runs against the server.
+  if (isOffline()) {
+    for (const it of bought) {
+      enqueueOfflineMutation(localStorage, effectiveUserId.value, { kind: 'delete', id: it.id })
+    }
+    return
+  }
+
+  const { error } = await db.rpc('buy_items', { p_item_ids: bought.map((i) => i.id) })
+  if (error) {
+    // Never reached the server: keep them off the list and fall back to queued
+    // deletes, same as the offline path.
+    if (isOfflineError(error)) {
+      for (const it of bought) {
+        enqueueOfflineMutation(localStorage, effectiveUserId.value, { kind: 'delete', id: it.id })
+      }
+      return
+    }
+    items.value = snapshot
+    loadError.value = error.message ?? 'Could not complete the purchase.'
+  }
+}
+
 async function deleteItem(item) {
   // Optimistic: remove immediately, restore at its original position on failure.
   const index = items.value.findIndex((i) => i.id === item.id)
@@ -661,6 +703,7 @@ async function deleteItem(item) {
           :show-empty="hasInitialized && !items.length && !loadError"
           @toggle="toggleItem"
           @delete="deleteItem"
+          @buy="buyCheckedItems"
         />
 
       </div>

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   normalizeItemName,
   sumActiveQuantities,
+  sumCheckedQuantities,
   findActiveItemByName,
   countActiveItemsByMember,
 } from '../src/lib/shoppingList'
@@ -58,6 +59,38 @@ describe('sumActiveQuantities', () => {
   it('returns 0 for an empty or all-checked list', () => {
     expect(sumActiveQuantities([])).toBe(0)
     expect(sumActiveQuantities([item({ checked: true, quantity: 9 })])).toBe(0)
+  })
+})
+
+describe('sumCheckedQuantities', () => {
+  it('sums quantities of checked items (grapes x4 + milk x1 = 5)', () => {
+    const items = [
+      item({ name: 'grapes', quantity: 4, checked: true }),
+      item({ name: 'milk', quantity: 1, checked: true }),
+    ]
+    expect(sumCheckedQuantities(items)).toBe(5)
+  })
+
+  it('ignores unchecked items', () => {
+    const items = [
+      item({ name: 'grapes', quantity: 4, checked: true }),
+      item({ name: 'bread', quantity: 5 }),
+    ]
+    expect(sumCheckedQuantities(items)).toBe(4)
+  })
+
+  it('counts missing or invalid quantity as 1', () => {
+    const items = [
+      item({ checked: true, quantity: undefined }),
+      item({ checked: true, quantity: 'nope' }),
+      item({ checked: true, quantity: 0 }),
+    ]
+    expect(sumCheckedQuantities(items)).toBe(3)
+  })
+
+  it('returns 0 for an empty or all-unchecked list', () => {
+    expect(sumCheckedQuantities([])).toBe(0)
+    expect(sumCheckedQuantities([item({ quantity: 9 })])).toBe(0)
   })
 })
 
