@@ -150,3 +150,33 @@ create policy "family owner or moderator can update memberships"
   on public.family_members for update
   using (public.is_family_owner_or_moderator(family_id))
   with check (public.is_family_owner_or_moderator(family_id));
+
+-- The update policy above is family-wide so the owner can change roles. A
+-- role-only update leaves display_name/image_url untouched, so this trigger
+-- blocks changes to another member's profile fields without impeding role
+-- changes on their row.
+create or replace function public.prevent_member_profile_tamper()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  if new.user_id is distinct from requesting_user_id()
+     and (
+       new.display_name is distinct from old.display_name
+       or new.image_url is distinct from old.image_url
+     ) then
+    raise exception 'You can only change your own profile.'
+      using errcode = 'P0001';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_prevent_member_profile_tamper on public.family_members;
+create trigger trg_prevent_member_profile_tamper
+before update on public.family_members
+for each row
+execute function public.prevent_member_profile_tamper();

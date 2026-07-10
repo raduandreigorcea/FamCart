@@ -84,3 +84,38 @@ create policy "family owner or moderator can update family"
   on public.families for update
   using (public.is_family_owner_or_moderator(id))
   with check (public.is_family_owner_or_moderator(id));
+
+-- ─── 4. Stamp item author identity server-side ────────────────────────────────
+-- added_by is already pinned to the caller by the INSERT policy, but the display
+-- fields added_by_name / added_by_image_url arrive from the client and were
+-- trusted verbatim, letting a member post an item under another member's name.
+-- Overwrite them from the caller's own family_members row on insert. Falls back
+-- to the same 'Member' default the client uses when a profile has no name.
+create or replace function public.stamp_item_author_identity()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  member_name  text;
+  member_image text;
+begin
+  select fm.display_name, fm.image_url
+    into member_name, member_image
+  from public.family_members fm
+  where fm.family_id = new.family_id
+    and fm.user_id = new.added_by;
+
+  new.added_by_name := coalesce(member_name, 'Member');
+  new.added_by_image_url := member_image;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_stamp_item_author_identity on public.shopping_list_items;
+create trigger trg_stamp_item_author_identity
+before insert on public.shopping_list_items
+for each row
+execute function public.stamp_item_author_identity();

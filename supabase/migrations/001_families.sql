@@ -66,10 +66,23 @@ create policy "users can read own memberships"
   on public.family_members for select
   using (user_id = requesting_user_id());
 
--- Users can insert their own membership
+-- Users can insert their own membership. Role is pinned to 'member' for anyone
+-- joining: only the family creator may seed themselves as an elevated role (the
+-- create-family flow inserts the creator as a moderator). Without this, a member
+-- could leave and re-insert themselves as 'moderator'/'admin' to self-escalate.
 create policy "users can insert own membership"
   on public.family_members for insert
-  with check (user_id = requesting_user_id());
+  with check (
+    user_id = requesting_user_id()
+    and (
+      role = 'member'
+      or exists (
+        select 1 from public.families f
+        where f.id = family_id
+          and f.created_by = requesting_user_id()
+      )
+    )
+  );
 
 -- ─── invite-code lookup ───────────────────────────────────────────────────────
 -- Scoped, definer-owned lookup for the join flow: returns only id + name for an
