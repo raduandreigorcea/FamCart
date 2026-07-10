@@ -1,10 +1,10 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { useAuth } from '@clerk/vue'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-let authClient = null
-let getTokenFn = null
+let authClient: SupabaseClient | null = null
+let getTokenFn: (() => Promise<string | null>) | null = null
 
 // Reads that die at the network layer are retried with a short backoff: after
 // the machine sleeps, the first request often goes out on a dead keep-alive
@@ -14,14 +14,18 @@ let getTokenFn = null
 // applied, so replaying it could double-apply.
 const RETRY_DELAYS_MS = [250, 750]
 
-export async function fetchWithRetry(url, options = {}) {
+export async function fetchWithRetry(
+  url: RequestInfo | URL,
+  options: RequestInit = {},
+): Promise<Response> {
   const method = (options.method || 'GET').toUpperCase()
   const retriable = method === 'GET' || method === 'HEAD'
   for (let attempt = 0; ; attempt++) {
     try {
       return await fetch(url, options)
     } catch (error) {
-      const aborted = options.signal?.aborted || error?.name === 'AbortError'
+      const aborted =
+        options.signal?.aborted || (error as { name?: string })?.name === 'AbortError'
       if (!retriable || aborted || attempt >= RETRY_DELAYS_MS.length) throw error
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]))
     }
@@ -42,7 +46,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 // Returns a Supabase client authenticated with the current Clerk session token.
 // Use this inside Vue components/composables where useAuth() is available.
-export function useSupabase() {
+export function useSupabase(): SupabaseClient {
   const { getToken } = useAuth()
   getTokenFn = async () => getToken.value({ template: 'supabase' })
 

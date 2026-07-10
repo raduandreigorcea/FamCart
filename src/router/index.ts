@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { watch } from 'vue'
 import { useAuth } from '@clerk/vue'
+import { ensureOnlineStatus } from '../lib/connectivity'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -26,6 +27,11 @@ const routes: RouteRecordRaw[] = [
     name: 'sso-callback',
     component: () => import('../views/SSOCallbackView.vue'),
   },
+  {
+    path: '/offline',
+    name: 'offline',
+    component: () => import('../views/OfflineView.vue'),
+  },
 ]
 
 const router = createRouter({
@@ -33,7 +39,7 @@ const router = createRouter({
   routes,
 })
 
-const CLERK_LOAD_TIMEOUT_MS = 10000
+const CLERK_LOAD_TIMEOUT_MS = 6000
 
 // Resolves as soon as Clerk finishes loading. The timeout only exists so
 // navigation is never blocked forever (e.g. Clerk's script unreachable);
@@ -79,7 +85,31 @@ async function hasFamilyMembership(getToken: ReturnType<typeof useAuth>['getToke
 router.beforeEach(async (to) => {
   const { isLoaded, isSignedIn, getToken } = useAuth()
 
+  // Decide connectivity first. Offline, Clerk can never verify the session, so
+  // we must NOT wait on it (that 10s wait was the blank screen). A cold start
+  // with no connection always goes to the offline screen — we deliberately do
+  // NOT boot into a cached list. Offline editing is only supported once a
+  // session is established online: a queue flushed before Clerk re-authenticates
+  // is rejected by the server and dropped, silently losing the user's writes.
+  // OfflineView retries and hands back to this guard, landing on the real list.
+  const online = await ensureOnlineStatus()
+  if (!online) {
+    return to.name === 'offline' ? true : { name: 'offline' }
+  }
+
   await waitForClerkLoad(() => isLoaded.value)
+
+  // Clerk never loaded within the timeout — almost always a dead network that
+  // getStatus didn't flag. Treat it like being offline (show the offline screen)
+  // rather than a misleading bounce to a login that also can't work.
+  if (!isLoaded.value) {
+    return to.name === 'offline' ? true : { name: 'offline' }
+  }
+
+  // Back online while sitting on the offline screen: send them where they belong.
+  if (to.name === 'offline') {
+    return isSignedIn.value ? { name: 'home' } : { name: 'login' }
+  }
 
   if (to.meta.requiresAuth && !isSignedIn.value) {
     return { name: 'login' }

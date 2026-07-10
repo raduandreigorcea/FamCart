@@ -1,6 +1,5 @@
 <script setup>
 import { ref } from 'vue'
-import ErrorMessage from './ErrorMessage.vue'
 
 // Presentational: name/quantity state lives in the parent (via v-model) so the
 // add flow can restore values when an optimistic insert fails.
@@ -9,7 +8,6 @@ const quantity = defineModel('quantity', { type: Number, default: 1 })
 
 defineProps({
   adding: { type: Boolean, default: false },
-  error: { type: String, default: '' },
   maxLength: { type: Number, default: 120 },
 })
 
@@ -70,7 +68,6 @@ function decreaseQty() {
         <span v-else class="add-icon"></span>
       </button>
     </div>
-    <ErrorMessage :message="error" />
   </form>
 </template>
 

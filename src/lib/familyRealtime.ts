@@ -189,7 +189,7 @@ export function useFamilyRealtime({
   async function setupRealtimeSubscriptions() {
     if (!familyId.value) return
 
-    // Revert Realtime auth to use the dynamic accessToken callback function configured in supabase.js,
+    // Revert Realtime auth to use the dynamic accessToken callback function configured in supabase.ts,
     // preventing static token expiration during automatic WebSocket reconnects.
     db.realtime.setAuth()
 

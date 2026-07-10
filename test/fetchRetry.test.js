@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({}) }))
 vi.mock('@clerk/vue', () => ({ useAuth: () => ({}) }))
 
-import { fetchWithRetry } from '../src/supabase.js'
+import { fetchWithRetry } from '../src/supabase'
 
 const networkError = () => Object.assign(new TypeError('Failed to fetch'), {})
 

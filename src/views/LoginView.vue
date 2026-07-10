@@ -1,12 +1,17 @@
 <script setup>
-import { useSignIn } from '@clerk/vue'
-import { ref, nextTick } from 'vue'
+import { useAuth, useSignIn } from '@clerk/vue'
+import { ref, nextTick, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import InputRow from '../components/InputRow.vue'
-import ErrorMessage from '../components/ErrorMessage.vue'
+import ErrorModal from '../components/ErrorModal.vue'
+import ConfirmModal from '../components/ConfirmModal.vue'
 import AppCard from '../components/AppCard.vue'
 import BackButton from '../components/BackButton.vue'
+import { isOfflineError } from '../lib/offlineQueue'
 
 const { signIn, isLoaded: signInLoaded } = useSignIn()
+const { isSignedIn } = useAuth()
+const router = useRouter()
 
 const step = ref('email') // 'email' | 'code'
 const email = ref('')
@@ -15,6 +20,37 @@ const digitRefs = ref([])
 const error = ref('')
 const loading = ref(false)
 const loadingProvider = ref(null)
+const alreadySignedInOpen = ref(false)
+
+// The router guard redirects signed-in users away from /login, but it can be
+// bypassed: Clerk may load after the guard's timeout let the navigation
+// through, or the user signs in from another tab while this one sits on the
+// login page. Home is always the right destination for a signed-in user.
+watch(isSignedIn, (signedIn) => {
+    if (signedIn) router.replace('/')
+}, { immediate: true })
+
+// Clerk rejects sign-in attempts with session_exists when a session is
+// already active. That is an account-level condition, not an input problem,
+// so it gets the app's announcement dialog instead of the inline field error.
+function handleSignInError(e, fallback) {
+    if (e?.errors?.some((err) => err.code === 'session_exists')) {
+        alreadySignedInOpen.value = true
+        return
+    }
+    // A network failure has no Clerk error array; show a plain offline message
+    // rather than the raw "Failed to fetch".
+    if (isOfflineError(e) && !e?.errors?.length) {
+        error.value = 'You appear to be offline. Check your connection and try again.'
+        return
+    }
+    error.value = e?.errors?.[0]?.longMessage ?? e?.errors?.[0]?.message ?? fallback
+}
+
+function goToApp() {
+    // Full reload so Clerk re-reads the active session before HomeView boots.
+    window.location.href = '/'
+}
 
 const oauthProviders = [
     {
@@ -45,7 +81,7 @@ async function signInWithOAuth(providerId) {
             redirectUrlComplete: `${window.location.origin}/`,
         })
     } catch (e) {
-        error.value = e.errors?.[0]?.message ?? 'OAuth sign-in failed.'
+        handleSignInError(e, 'OAuth sign-in failed.')
         loadingProvider.value = null
     }
 }
@@ -74,7 +110,7 @@ async function handleEmailSubmit() {
         await nextTick()
         digitRefs.value[0]?.focus()
     } catch (e) {
-        error.value = e.errors?.[0]?.longMessage ?? e.errors?.[0]?.message ?? 'Something went wrong.'
+        handleSignInError(e, 'Something went wrong.')
     } finally {
         loading.value = false
     }
@@ -97,7 +133,7 @@ async function handleCodeSubmit() {
             error.value = 'Verification incomplete. Please try again.'
         }
     } catch (e) {
-        error.value = e.errors?.[0]?.longMessage ?? e.errors?.[0]?.message ?? 'Invalid code.'
+        handleSignInError(e, 'Invalid code.')
         digits.value = ['', '', '', '', '', '']
         await nextTick()
         digitRefs.value[0]?.focus()
@@ -154,7 +190,6 @@ function goBack() {
             <!-- Email form -->
             <form v-if="step === 'email'" @submit.prevent="handleEmailSubmit" class="email-form">
                 <InputRow v-model="email" type="email" placeholder="your@email.com" autocomplete="email" :loading="loading" required />
-                <ErrorMessage :message="error" />
             </form>
 
             <!-- OTP code form -->
@@ -180,7 +215,6 @@ function goBack() {
                 </div>
                 <div class="otp-status">
                     <span v-if="loading" class="spinner spinner--dark"></span>
-                    <ErrorMessage v-else :message="error" />
                 </div>
                 <BackButton @click="goBack" />
             </div>
@@ -199,6 +233,18 @@ function goBack() {
                 </button>
             </div>
         </AppCard>
+
+        <ConfirmModal
+            :open="alreadySignedInOpen"
+            title="You're already signed in"
+            message="This device already has an active FamCart session."
+            confirm-text="Go to my list"
+            :show-cancel="false"
+            @confirm="goToApp"
+            @cancel="goToApp"
+        />
+
+        <ErrorModal title="Sign-in failed" :message="error" @dismiss="error = ''" />
     </div>
 </template>
 
@@ -208,7 +254,7 @@ function goBack() {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 1rem;
+    padding: calc(1rem + var(--safe-top)) 1rem calc(1rem + var(--safe-bottom));
     position: relative;
     /* The backdrop's gradient runs top-to-bottom, so it must span the full
        height exactly once (no vertical tiling). Size it to the viewport height,

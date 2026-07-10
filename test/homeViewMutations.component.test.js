@@ -1,25 +1,27 @@
-// @vitest-environment happy-dom
+﻿// @vitest-environment happy-dom
 //
 // Component tests for HomeView's optimistic mutation paths: the UI updates
 // first, and every DB failure mode must either roll back or fold into the
 // surviving row. These flows (insert races, 23505 handling, merge-on-uncheck)
 // are the riskiest code in the app and regress silently without coverage.
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import HomeView from '../src/views/HomeView.vue'
 import AddItemForm from '../src/components/AddItemForm.vue'
 import ShoppingList from '../src/components/ShoppingList.vue'
 import ConfirmModal from '../src/components/ConfirmModal.vue'
-import ErrorMessage from '../src/components/ErrorMessage.vue'
+import ErrorModal from '../src/components/ErrorModal.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
 import { saveFamilySnapshot } from '../src/lib/familyCache'
+import { loadOfflineQueue } from '../src/lib/offlineQueue'
+import { __setOnlineForTest } from '../src/lib/connectivity'
 
 const mocks = vi.hoisted(() => ({
   db: null,
   routerReplace: () => {},
 }))
 
-vi.mock('../src/supabase.js', () => ({
+vi.mock('../src/supabase', () => ({
   useSupabase: () => mocks.db,
 }))
 
@@ -89,11 +91,19 @@ function setDefaultHandlers(db, { items = [], maxItemsPerMember = 50 } = {}) {
   })
 }
 
+const mountedWrappers = []
+
+function trackMount(...args) {
+  const wrapper = mount(...args)
+  mountedWrappers.push(wrapper)
+  return wrapper
+}
+
 async function mountHome({ items = [], maxItemsPerMember = 50 } = {}) {
   mocks.db = createFakeDb()
   mocks.routerReplace = vi.fn()
   setDefaultHandlers(mocks.db, { items, maxItemsPerMember })
-  const wrapper = mount(HomeView, { shallow: true })
+  const wrapper = trackMount(HomeView, { shallow: true })
   await flushPromises()
   await flushPromises()
   return wrapper
@@ -118,6 +128,27 @@ beforeEach(() => {
   localStorage.clear()
 })
 
+afterEach(() => {
+  // Unmount so each HomeView's window 'online' listener is removed; a leaked
+  // listener from an earlier test would flush the offline queue against that
+  // test's stale fake db.
+  while (mountedWrappers.length) mountedWrappers.pop().unmount()
+  // Reset the connectivity singleton to online (after unmount, so no detached
+  // reconnect handler fires) — otherwise an offline test would leak into the
+  // next, whose isOffline() would then always report offline.
+  __setOnlineForTest(true)
+  vi.restoreAllMocks()
+})
+
+function goOffline() {
+  vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false)
+}
+
+function goOnline() {
+  vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(true)
+  window.dispatchEvent(new Event('online'))
+}
+
 describe('cached snapshot', () => {
   it('paints the cached list instantly while the real fetches are still in flight', async () => {
     saveFamilySnapshot(localStorage, 'user-1', {
@@ -138,7 +169,7 @@ describe('cached snapshot', () => {
     mocks.db.handlers['families.select'] = never
     mocks.db.handlers['shopping_list_items.select'] = never
 
-    const wrapper = mount(HomeView, { shallow: true })
+    const wrapper = trackMount(HomeView, { shallow: true })
     await flushPromises()
 
     const list = wrapper.findComponent(ShoppingList)
@@ -189,8 +220,9 @@ describe('addItem', () => {
     await submitAdd(wrapper, 'Milk', 2)
 
     expect(listedItems(wrapper)).toHaveLength(0)
+    // Second ErrorModal is the add-item one (first is the load error).
+    expect(wrapper.findAllComponents(ErrorModal)[1].props('message')).toBe('boom')
     const form = wrapper.findComponent(AddItemForm)
-    expect(form.props('error')).toBe('boom')
     expect(form.props('name')).toBe('Milk')
     expect(form.props('quantity')).toBe(2)
   })
@@ -257,7 +289,7 @@ describe('toggleItem', () => {
     await flushPromises()
 
     expect(listedItems(wrapper)[0].checked).toBe(false)
-    expect(wrapper.findComponent(ErrorMessage).props('message')).toBe('nope')
+    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('nope')
   })
 
   it('merges an unchecked item into the existing active row with the same name', async () => {
@@ -297,7 +329,7 @@ describe('toggleItem', () => {
     expect(items).toHaveLength(2)
     expect(items.find((i) => i.id === 'item-b').quantity).toBe(3)
     expect(items.find((i) => i.id === 'item-a')).toBeTruthy()
-    expect(wrapper.findComponent(ErrorMessage).props('message')).toBe('delete failed')
+    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('delete failed')
   })
 })
 
@@ -316,7 +348,7 @@ describe('deleteItem', () => {
 
     const items = listedItems(wrapper)
     expect(items.map((i) => i.id)).toEqual(['item-1', 'item-2'])
-    expect(wrapper.findComponent(ErrorMessage).props('message')).toBe('cannot delete')
+    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('cannot delete')
   })
 
   it('removes the row optimistically when the delete succeeds', async () => {
@@ -328,5 +360,209 @@ describe('deleteItem', () => {
     await flushPromises()
 
     expect(listedItems(wrapper)).toHaveLength(0)
+  })
+})
+
+describe('offline queue', () => {
+  it('queues the add locally when offline instead of calling the network', async () => {
+    const wrapper = await mountHome()
+    goOffline()
+
+    await submitAdd(wrapper, 'Milk', 2)
+
+    const items = listedItems(wrapper)
+    expect(items).toHaveLength(1)
+    expect(items[0].name).toBe('Milk')
+    expect(items[0].quantity).toBe(2)
+    expect(mocks.db.calls.some((q) => q.op === 'insert')).toBe(false)
+    const queue = loadOfflineQueue(localStorage, 'user-1')
+    expect(queue).toHaveLength(1)
+    expect(queue[0].kind).toBe('insert')
+  })
+
+  it('cancels the queued insert when the item is deleted while still offline', async () => {
+    const wrapper = await mountHome()
+    goOffline()
+
+    await submitAdd(wrapper, 'Milk')
+    wrapper.findComponent(ShoppingList).vm.$emit('delete', listedItems(wrapper)[0])
+    await flushPromises()
+
+    expect(listedItems(wrapper)).toHaveLength(0)
+    expect(loadOfflineQueue(localStorage, 'user-1')).toHaveLength(0)
+    // The row never existed on the server, so nothing must go over the wire.
+    expect(mocks.db.calls.some((q) => q.op === 'insert' || q.op === 'delete')).toBe(false)
+  })
+
+  it('flushes queued writes and re-fetches when connectivity returns', async () => {
+    const wrapper = await mountHome()
+    goOffline()
+    await submitAdd(wrapper, 'Milk', 2)
+    wrapper.findComponent(ShoppingList).vm.$emit('toggle', listedItems(wrapper)[0])
+    await flushPromises()
+    expect(loadOfflineQueue(localStorage, 'user-1')).toHaveLength(1)
+
+    const serverRow = makeItem({ id: 'ignored', name: 'Milk', quantity: 2, checked: true })
+    mocks.db.handlers['shopping_list_items.insert'] = (q) => {
+      serverRow.id = q.payload.id
+      return { data: { ...q.payload, checked: true }, error: null }
+    }
+    mocks.db.handlers['shopping_list_items.select'] = (q) => ({
+      data: [serverRow].filter((i) => i.checked === q.filters.checked),
+      error: null,
+    })
+    goOnline()
+    await flushPromises()
+
+    // The queued insert (with the offline toggle folded into it) was replayed...
+    const insert = mocks.db.calls.find((q) => q.op === 'insert')
+    expect(insert.payload.name).toBe('Milk')
+    expect(insert.payload.checked).toBe(true)
+    expect(loadOfflineQueue(localStorage, 'user-1')).toHaveLength(0)
+    // ...and the re-fetch converged the list on the server's state.
+    const items = listedItems(wrapper)
+    expect(items).toHaveLength(1)
+    expect(items[0].checked).toBe(true)
+  })
+
+  it('runs from the cached snapshot without an error banner when opened offline', async () => {
+    saveFamilySnapshot(localStorage, 'user-1', {
+      familyId: 'fam-1',
+      familyName: 'Fam',
+      familyInviteCode: 'ABCDEFGH',
+      familyOwnerId: 'user-1',
+      familyItemLimit: 50,
+      familyMembers: [{ user_id: 'user-1', display_name: 'Me', image_url: null, role: 'moderator' }],
+      items: [makeItem({ id: 'cached-1', name: 'Milk' })],
+    })
+    goOffline()
+
+    mocks.db = createFakeDb()
+    mocks.routerReplace = vi.fn()
+    // The membership fetch dies at the network layer, like a dead connection.
+    mocks.db.handlers['family_members.select'] = () => ({
+      data: null,
+      error: { message: 'TypeError: Failed to fetch' },
+    })
+
+    const wrapper = trackMount(HomeView, { shallow: true })
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('')
+    expect(listedItems(wrapper)).toHaveLength(1)
+    expect(listedItems(wrapper)[0].id).toBe('cached-1')
+    expect(mocks.routerReplace).not.toHaveBeenCalled()
+  })
+})
+
+// The device can lose connectivity while navigator.onLine still reports true
+// (common in the Android WebView). A live write then fails with a raw
+// "TypeError: Failed to fetch"; these must be treated exactly like offline —
+// keep the optimistic state, queue the write, show no error modal. These tests
+// deliberately stay in the default online state (no goOnline(): that dispatches
+// an 'online' event whose handleBackOnline reload would clobber the optimistic
+// row we are asserting on) — only the DB handler fails.
+describe('network failure while reported online', () => {
+  const fetchError = () => ({ data: null, error: { message: 'TypeError: Failed to fetch' } })
+
+  function anyErrorModalShown(wrapper) {
+    return wrapper.findAllComponents(ErrorModal).some((m) => m.props('message'))
+  }
+
+  it('keeps the added item and queues it when the insert fails at the network layer', async () => {
+    const wrapper = await mountHome()
+    mocks.db.handlers['shopping_list_items.insert'] = fetchError
+
+    await submitAdd(wrapper, 'Milk', 2)
+
+    expect(listedItems(wrapper)).toHaveLength(1)
+    expect(anyErrorModalShown(wrapper)).toBe(false)
+    const queue = loadOfflineQueue(localStorage, 'user-1')
+    expect(queue).toHaveLength(1)
+    expect(queue[0].kind).toBe('insert')
+  })
+
+  it('keeps the checkbox flipped and queues it when the toggle fails at the network layer', async () => {
+    const existing = makeItem({ id: 'item-1' })
+    const wrapper = await mountHome({ items: [existing] })
+    mocks.db.handlers['shopping_list_items.update'] = fetchError
+
+    wrapper.findComponent(ShoppingList).vm.$emit('toggle', listedItems(wrapper)[0])
+    await flushPromises()
+
+    expect(listedItems(wrapper)[0].checked).toBe(true)
+    expect(anyErrorModalShown(wrapper)).toBe(false)
+    const queue = loadOfflineQueue(localStorage, 'user-1')
+    expect(queue).toEqual([{ kind: 'update', id: 'item-1', patch: { checked: true } }])
+  })
+
+  it('keeps the row removed and queues it when the delete fails at the network layer', async () => {
+    const existing = makeItem({ id: 'item-1' })
+    const wrapper = await mountHome({ items: [existing] })
+    mocks.db.handlers['shopping_list_items.delete'] = fetchError
+
+    wrapper.findComponent(ShoppingList).vm.$emit('delete', listedItems(wrapper)[0])
+    await flushPromises()
+
+    expect(listedItems(wrapper)).toHaveLength(0)
+    expect(anyErrorModalShown(wrapper)).toBe(false)
+    const queue = loadOfflineQueue(localStorage, 'user-1')
+    expect(queue).toEqual([{ kind: 'delete', id: 'item-1' }])
+  })
+
+  it('shows no error modal when the initial list fetch fails at the network layer', async () => {
+    mocks.db = createFakeDb()
+    mocks.routerReplace = vi.fn()
+    // Membership and header resolve, but the items fetch dies at the network.
+    mocks.db.handlers['family_members.select'] = (q) =>
+      q.wantSingle === 'maybe'
+        ? { data: { family_id: 'fam-1' }, error: null }
+        : { data: [{ user_id: 'user-1', display_name: 'Me', image_url: null, role: 'moderator' }], error: null }
+    mocks.db.handlers['families.select'] = () => ({
+      data: { name: 'Fam', invite_code: 'ABCDEFGH', created_by: 'user-1', max_items_per_member: 50 },
+      error: null,
+    })
+    mocks.db.handlers['shopping_list_items.select'] = fetchError
+
+    const wrapper = trackMount(HomeView, { shallow: true })
+    await flushPromises()
+    await flushPromises()
+
+    expect(anyErrorModalShown(wrapper)).toBe(false)
+  })
+})
+
+// On native, the window 'online' event can fail to fire; the Capacitor
+// connectivity signal is what reliably reports reconnection. Queued writes must
+// flush on that signal alone — otherwise (the reported bug) they only sync on an
+// app restart, so other clients never see them.
+describe('reliable reconnect via connectivity signal', () => {
+  it('flushes queued writes on the connectivity reconnect edge, with no window online event', async () => {
+    const wrapper = await mountHome()
+
+    // Reliable native offline (navigator may still claim online).
+    __setOnlineForTest(false)
+    await submitAdd(wrapper, 'Milk', 2)
+    expect(loadOfflineQueue(localStorage, 'user-1')).toHaveLength(1)
+    expect(mocks.db.calls.some((q) => q.op === 'insert')).toBe(false)
+
+    // Server accepts the replayed insert; the refetch converges the list.
+    const serverRow = makeItem({ id: 'srv', name: 'Milk', quantity: 2 })
+    mocks.db.handlers['shopping_list_items.insert'] = (q) => {
+      serverRow.id = q.payload.id
+      return { data: q.payload, error: null }
+    }
+    mocks.db.handlers['shopping_list_items.select'] = (q) => ({
+      data: [serverRow].filter((i) => i.checked === q.filters.checked),
+      error: null,
+    })
+
+    // Connectivity restored — the native edge, not a window 'online' event.
+    __setOnlineForTest(true)
+    await flushPromises()
+
+    expect(mocks.db.calls.some((q) => q.op === 'insert')).toBe(true)
+    expect(loadOfflineQueue(localStorage, 'user-1')).toHaveLength(0)
   })
 })

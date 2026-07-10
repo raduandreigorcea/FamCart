@@ -5,6 +5,9 @@ import AccountActionModal from './AccountActionModal.vue'
 import MemberAvatarStack from './MemberAvatarStack.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { getUserDisplayName, getUserInitial, getUserPrimaryEmail } from '../lib/userIdentity'
+import { forgetUser } from '../lib/session'
+import { clearFamilySnapshot } from '../lib/familyCache'
+import { clearOfflineQueue } from '../lib/offlineQueue'
 
 // The settings modal is by far the heaviest part of the topbar; load its chunk
 // only when someone actually opens it.
@@ -17,6 +20,7 @@ const props = defineProps({
   inviteCode: { type: String, default: '' },
   familyItemLimit: { type: Number, default: 50 },
   ownerUserId: { type: String, default: '' },
+  currentUserId: { type: String, default: '' },
   memberProfiles: {
     type: Array,
     default: () => [],
@@ -73,6 +77,11 @@ async function handleSignOut() {
   if (signingOut.value) return
   signingOut.value = true
   try {
+    // Drop the cached session and local data so the offline-boot path and the
+    // snapshot can't resurrect this account after signing out.
+    forgetUser(localStorage)
+    clearFamilySnapshot(localStorage)
+    clearOfflineQueue(localStorage)
     await clerk.value?.signOut({ redirectUrl: `${window.location.origin}/login` })
     accountMenuOpen.value = false
   } catch (error) {
@@ -82,10 +91,26 @@ async function handleSignOut() {
   }
 }
 
-const userAvatarUrl = computed(() => user.value?.imageUrl || null)
-const userDisplayName = computed(() => getUserDisplayName(user.value) || 'Account')
+// Offline (cold-booted from cache) Clerk can't load, so `user` is null. The
+// cached family roster still holds this user's profile, so fall back to it for
+// the account button and menu rather than showing an empty "Account".
+const cachedProfile = computed(() =>
+  props.currentUserId
+    ? props.memberProfiles.find((m) => m.user_id === props.currentUserId) || null
+    : null,
+)
+
+const userAvatarUrl = computed(() => user.value?.imageUrl || cachedProfile.value?.image_url || null)
+const userDisplayName = computed(
+  () => getUserDisplayName(user.value) || cachedProfile.value?.display_name || 'Account',
+)
 const userEmail = computed(() => getUserPrimaryEmail(user.value))
-const userInitial = computed(() => getUserInitial(user.value))
+const userInitial = computed(() => {
+  const clerkInitial = user.value ? getUserInitial(user.value) : ''
+  if (clerkInitial && clerkInitial !== '?') return clerkInitial
+  const name = cachedProfile.value?.display_name
+  return name ? name.slice(0, 1).toUpperCase() : '?'
+})
 
 const memberCount = computed(() => props.memberProfiles.length)
 </script>
@@ -186,8 +211,13 @@ const memberCount = computed(() => props.memberProfiles.length)
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 1.25rem;
-  height: 72px;
+  /* Always keep breathing room between the family name and the action buttons,
+     so the name can never butt up against (or slide under) them. */
+  gap: 0.75rem;
+  /* The bar's surface extends up behind the phone's status bar; its content
+     keeps the usual 72px strip below it. */
+  padding: var(--safe-top) 1.25rem 0;
+  height: calc(72px + var(--safe-top));
   background: var(--ui-bg);
   border-bottom: 1px solid var(--ui-border);
   position: fixed;
@@ -200,13 +230,18 @@ const memberCount = computed(() => props.memberProfiles.length)
 .topbar-left {
   display: flex;
   align-items: center;
+  /* min-width:0 lets this region shrink below its content width so the name can
+     ellipsize; overflow:hidden guarantees nothing ever spills over the buttons,
+     which paint on top of it (they come later in the DOM). */
   min-width: 0;
+  overflow: hidden;
 }
 
 .family-meta {
   display: flex;
   align-items: center;
   gap: 0.7rem;
+  min-width: 0;
 }
 
 .topbar-logo {
@@ -226,6 +261,12 @@ const memberCount = computed(() => props.memberProfiles.length)
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--ui-text-strong);
+  /* A long family name must never shove the settings/account buttons off the
+     edge: cap it to the available width and ellipsize the overflow. */
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -251,6 +292,8 @@ const memberCount = computed(() => props.memberProfiles.length)
   display: flex;
   align-items: center;
   gap: 0.55rem;
+  /* Never let the family name squeeze the action buttons. */
+  flex-shrink: 0;
 }
 
 .settings-btn {

@@ -4,6 +4,11 @@ import * as Sentry from '@sentry/vue'
 import './style.css'
 import App from './App.vue'
 import router from './router'
+import { startConnectivity } from './lib/connectivity'
+
+// Begin tracking real connectivity as early as possible so the router's first
+// navigation can make a trustworthy offline/online decision.
+startConnectivity()
 
 const savedTheme = localStorage.getItem('famcart-theme')
 const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches

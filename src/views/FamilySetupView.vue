@@ -2,14 +2,17 @@
 import { computed, ref } from 'vue'
 import { useAuth, useUser } from '@clerk/vue'
 import { useRouter } from 'vue-router'
-import { useSupabase } from '../supabase.js'
+import { useSupabase } from '../supabase'
 import AppTopbar from '../components/AppTopbar.vue'
 import InputRow from '../components/InputRow.vue'
-import ErrorMessage from '../components/ErrorMessage.vue'
+import ErrorModal from '../components/ErrorModal.vue'
 import AppCard from '../components/AppCard.vue'
 import ChoiceButton from '../components/ChoiceButton.vue'
 import BackButton from '../components/BackButton.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
+import { isOfflineError } from '../lib/offlineQueue'
+
+const OFFLINE_MESSAGE = 'You appear to be offline. Check your connection and try again.'
 
 const { userId } = useAuth()
 const { user } = useUser()
@@ -41,7 +44,11 @@ function closeLimitModal() {
 
 function randomInviteCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+  // Use a CSPRNG, not Math.random(): the code is the only credential guarding
+  // family membership. The 32-char alphabet divides 256 evenly, so `byte & 31`
+  // maps to a character with no modulo bias.
+  const bytes = crypto.getRandomValues(new Uint8Array(8))
+  return Array.from(bytes, (b) => chars[b & 31]).join('')
 }
 
 async function createFamily() {
@@ -88,7 +95,7 @@ async function createFamily() {
 
     router.replace('/')
   } catch (e) {
-    error.value = e.message ?? 'Failed to create family.'
+    error.value = isOfflineError(e) ? OFFLINE_MESSAGE : (e.message ?? 'Failed to create family.')
   } finally {
     loading.value = false
   }
@@ -133,7 +140,7 @@ async function joinFamily() {
 
     router.replace('/')
   } catch (e) {
-    error.value = e.message ?? 'Failed to join family.'
+    error.value = isOfflineError(e) ? OFFLINE_MESSAGE : (e.message ?? 'Failed to join family.')
   } finally {
     loading.value = false
   }
@@ -160,7 +167,7 @@ async function joinFamily() {
             <ChoiceButton
               icon="🏠"
               label="Create a family"
-              description="Start fresh — you'll get a shareable invite code"
+              description="Start fresh and get a shareable invite code"
               @click="mode = 'create'"
             />
             <ChoiceButton
@@ -183,9 +190,7 @@ async function joinFamily() {
             <InputRow v-model="familyName" placeholder="e.g. The Smiths" :loading="loading" required autofocus />
             <p class="field-counter" :class="{ 'field-counter--danger': familyNameOverLimit }">
               {{ familyNameLength }}/{{ FAMILY_NAME_MAX_LENGTH }}
-            </p>
-            <ErrorMessage :message="error" />
-          </form>
+            </p>          </form>
           <BackButton @click="mode = null; error = ''" />
         </template>
 
@@ -197,9 +202,7 @@ async function joinFamily() {
             <p class="sub">Ask a family member for their 8-character code.</p>
           </div>
           <form @submit.prevent="joinFamily" class="input-form">
-            <InputRow v-model="inviteCode" placeholder="e.g. AB3K7XYZ" maxlength="8" :loading="loading" :uppercase="true" required autofocus />
-            <ErrorMessage :message="error" />
-          </form>
+            <InputRow v-model="inviteCode" placeholder="e.g. AB3K7XYZ" maxlength="8" :loading="loading" :uppercase="true" required autofocus />          </form>
           <BackButton @click="mode = null; error = ''" />
         </template>
 
@@ -216,6 +219,8 @@ async function joinFamily() {
       @confirm="closeLimitModal"
       @cancel="closeLimitModal"
     />
+
+    <ErrorModal :message="error" @dismiss="error = ''" />
   </div>
 </template>
 
@@ -235,7 +240,8 @@ async function joinFamily() {
   align-items: center;
   justify-content: center;
   padding: 2rem 1rem;
-  padding-top: calc(56px + 2rem);
+  padding-top: calc(56px + 2rem + var(--safe-top));
+  padding-bottom: calc(2rem + var(--safe-bottom));
 }
 
 /* ── Card header ─────────────────────────────────────────── */
