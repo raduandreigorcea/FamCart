@@ -169,6 +169,14 @@
   --shadow-popover: rgba(0, 0, 0, 0.52);
 }
 
+:root {
+  /* Phone safe areas (status bar on top, home/back bar on the bottom).
+     The Android shell injects --safe-area-inset-*; env() covers iOS and
+     installed PWAs; both resolve to 0px in desktop browsers. */
+  --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+}
+
 *,
 *::before,
 *::after {

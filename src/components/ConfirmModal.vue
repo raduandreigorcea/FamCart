@@ -78,7 +78,7 @@ const emit = defineEmits(['confirm', 'cancel'])
   align-items: center;
   justify-content: center;
   z-index: 1100;
-  padding: var(--space-4);
+  padding: calc(var(--space-4) + var(--safe-top)) var(--space-4) calc(var(--space-4) + var(--safe-bottom));
 }
 
 .confirm-dialog {
