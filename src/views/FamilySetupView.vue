@@ -117,26 +117,22 @@ async function joinFamily() {
       || 'Member'
     const imageUrl = user.value?.imageUrl || null
 
-    const { data: family, error: familyErr } = await db
-      .rpc('find_family_by_invite_code', { code })
+    // The RPC checks the code and inserts the membership in one server-side
+    // step; a direct family_members insert would be rejected by RLS, so the
+    // code is a real credential (rotating it locks out removed members).
+    const { data: family, error: joinErr } = await db
+      .rpc('join_family_with_code', {
+        p_code: code,
+        p_display_name: displayName,
+        p_image_url: imageUrl,
+      })
       .maybeSingle()
 
-    if (familyErr || !family) {
+    if (joinErr) throw joinErr
+    if (!family) {
       error.value = 'No family found with that invite code.'
       return
     }
-
-    const { error: memberErr } = await db
-      .from('family_members')
-      .insert({
-        family_id: family.id,
-        user_id: userId.value,
-        role: 'member',
-        display_name: displayName,
-        image_url: imageUrl,
-      })
-
-    if (memberErr) throw memberErr
 
     router.replace('/')
   } catch (e) {

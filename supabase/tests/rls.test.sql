@@ -9,11 +9,17 @@
 --   3. The per-member active-item cap is enforced by the DB trigger, not just the UI.
 --   4. Push subscriptions are private per user, and the claim RPC both inserts
 --      for the caller and takes over an endpoint left by a previous account.
+--   5. Purchase history is written only by buy_items(): the RPC is scoped to
+--      the caller's families, and direct inserts (forged names/timestamps) are
+--      rejected outright.
+--   6. The invite code is checked by the database at join time: a direct
+--      membership insert fails even with a known family uuid (the removed-
+--      member-rejoin vector), and join_family_with_code() is the only way in.
 --
 -- Tests run inside a transaction that is rolled back, so they leave no data behind.
 
 begin;
-select plan(6);
+select plan(14);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 insert into public.families (id, name, invite_code, created_by) values
@@ -24,8 +30,10 @@ insert into public.family_members (family_id, user_id, role) values
   ('00000000-0000-0000-0000-0000000000a1', 'user_a', 'moderator'),
   ('00000000-0000-0000-0000-0000000000b1', 'user_b', 'moderator');
 
-insert into public.shopping_list_items (family_id, name, added_by) values
-  ('00000000-0000-0000-0000-0000000000b1', 'family B secret', 'user_b');
+-- Checked, so only the membership check in buy_items() can protect it.
+insert into public.shopping_list_items (id, family_id, name, added_by, checked) values
+  ('00000000-0000-0000-0000-0000000000b2',
+   '00000000-0000-0000-0000-0000000000b1', 'family B secret', 'user_b', true);
 
 -- Cap Family A at one active item so the trigger is easy to trip.
 update public.families
@@ -95,6 +103,83 @@ select is(
    where endpoint = 'https://push.example.com/ep-a' and p256dh = 'p256dh-a2'),
   1,
   'claim RPC re-claims an endpoint for the newly signed-in user'
+);
+
+-- ── 5. Purchase history is written only through buy_items ────────────────────
+set local request.jwt.claims = '{"sub":"user_a"}';
+
+-- 5a. buy_items is scoped to the caller's families, even for checked items
+-- named by id (buy_items is SECURITY DEFINER, so this guard is all there is).
+select is(
+  public.buy_items(array['00000000-0000-0000-0000-0000000000b2']::uuid[]),
+  0,
+  'buy_items ignores items in families the caller is not a member of'
+);
+
+-- 5b. Buying own checked item archives it...
+update public.shopping_list_items
+set checked = true
+where family_id = '00000000-0000-0000-0000-0000000000a1' and added_by = 'user_a';
+
+select is(
+  public.buy_items(array(
+    select id from public.shopping_list_items
+    where family_id = '00000000-0000-0000-0000-0000000000a1' and added_by = 'user_a'
+  )),
+  1,
+  'buy_items archives the caller''s checked item'
+);
+
+-- 5c. ...into history, server-stamped with a checkout id.
+select is(
+  (select count(*)::int from public.purchase_history
+   where family_id = '00000000-0000-0000-0000-0000000000a1'
+     and purchased_by = 'user_a'
+     and checkout_id is not null),
+  1,
+  'the purchase landed in history with a checkout id'
+);
+
+-- 5d. Direct inserts (forged author fields / future timestamps) are rejected.
+select throws_ok(
+  $$ insert into public.purchase_history (checkout_id, family_id, name, purchased_by)
+     values (gen_random_uuid(), '00000000-0000-0000-0000-0000000000a1', 'forged', 'user_a') $$,
+  '42501',
+  null,
+  'clients cannot insert purchase history directly'
+);
+
+-- ── 6. The invite code is a real credential at join time ─────────────────────
+
+-- 6a. Knowing a family uuid is not enough to (re)join it: the direct insert a
+-- removed member could replay is blocked by RLS.
+select throws_ok(
+  $$ insert into public.family_members (family_id, user_id, role)
+     values ('00000000-0000-0000-0000-0000000000b1', 'user_a', 'member') $$,
+  '42501',
+  null,
+  'direct membership insert without being the family creator is rejected'
+);
+
+-- 6b. The join RPC admits a valid code...
+select is(
+  (select name from public.join_family_with_code('BBBBBBB2', 'User A', null)),
+  'Family B',
+  'join RPC resolves a valid invite code and returns the family'
+);
+
+select is(
+  (select count(*)::int from public.family_members
+   where family_id = '00000000-0000-0000-0000-0000000000b1' and user_id = 'user_a'),
+  1,
+  'join RPC created the membership row'
+);
+
+-- 6c. ...and an unknown code joins nothing.
+select is(
+  (select count(*)::int from public.join_family_with_code('ZZZZZZZ2', 'User A', null)),
+  0,
+  'join RPC returns nothing for an unknown code'
 );
 
 select * from finish();

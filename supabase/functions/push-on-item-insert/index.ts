@@ -36,9 +36,25 @@ interface ItemRecord {
   added_by_name: string | null
 }
 
+// Compare SHA-256 digests instead of the raw strings so the check cannot leak
+// matching-prefix timing (a plain === short-circuits on the first wrong byte).
+async function secretMatches(given: string | null, expected: string): Promise<boolean> {
+  if (given === null) return false
+  const enc = new TextEncoder()
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest('SHA-256', enc.encode(given)),
+    crypto.subtle.digest('SHA-256', enc.encode(expected)),
+  ])
+  const av = new Uint8Array(a)
+  const bv = new Uint8Array(b)
+  let diff = 0
+  for (let i = 0; i < av.length; i++) diff |= av[i] ^ bv[i]
+  return diff === 0
+}
+
 Deno.serve(async (req) => {
   const secret = Deno.env.get('PUSH_WEBHOOK_SECRET')
-  if (!secret || req.headers.get('x-webhook-secret') !== secret) {
+  if (!secret || !(await secretMatches(req.headers.get('x-webhook-secret'), secret))) {
     return new Response('unauthorized', { status: 401 })
   }
 
