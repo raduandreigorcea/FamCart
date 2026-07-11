@@ -105,13 +105,29 @@ function formatTime(iso) {
         </div>
 
         <div class="history-modal__body">
-          <!-- Loading -->
-          <ul v-if="loading" class="history-list" aria-hidden="true">
-            <li v-for="n in 5" :key="n" class="history-row history-row--skeleton">
-              <SkeletonBlock width="2.05rem" height="2.05rem" radius="0.65rem" />
-              <SkeletonBlock :width="`${40 + (n % 3) * 12}%`" height="0.9rem" />
-            </li>
-          </ul>
+          <!-- Loading: the exact structure and classes of the loaded list
+               (dl / dt / dd), so every spacing rule applies identically and
+               the swap to real content cannot shift the layout. Two skeleton
+               days fill the fixed-height modal. -->
+          <dl v-if="loading" class="history-days" aria-hidden="true">
+            <template v-for="(cards, d) in [[3, 2], [3]]" :key="d">
+              <dt class="history-day__label">
+                <SkeletonBlock width="4rem" height="0.9rem" />
+              </dt>
+              <dd v-for="(rows, c) in cards" :key="c" class="checkout">
+                <div class="checkout__head">
+                  <SkeletonBlock width="24px" height="24px" radius="50%" />
+                  <SkeletonBlock width="34%" height="0.85rem" />
+                </div>
+                <ul class="history-list">
+                  <li v-for="n in rows" :key="n" class="history-row history-row--skeleton">
+                    <SkeletonBlock width="2.05rem" height="2.05rem" radius="0.65rem" />
+                    <SkeletonBlock :width="`${42 + ((n + c + d) % 3) * 14}%`" height="0.9rem" />
+                  </li>
+                </ul>
+              </dd>
+            </template>
+          </dl>
 
           <!-- Error / empty -->
           <p v-else-if="error" class="history-empty">{{ error }}</p>
@@ -119,12 +135,14 @@ function formatTime(iso) {
             No checkouts yet. Items you check out will show up here.
           </p>
 
-          <!-- Day -> checkout -> items -->
-          <template v-else>
-            <section v-for="day in days" :key="day.label" class="history-day">
-              <h4 class="history-day__label">{{ day.label }}</h4>
+          <!-- Day -> checkout -> items. A description list so the day labels
+               (dt) can stick to the top of the scrolling body; each checkout
+               is a dd under its day. -->
+          <dl v-else class="history-days">
+            <template v-for="day in days" :key="day.label">
+              <dt class="history-day__label">{{ day.label }}</dt>
 
-              <div v-for="checkout in day.checkouts" :key="checkout.key" class="checkout">
+              <dd v-for="checkout in day.checkouts" :key="checkout.key" class="checkout">
                 <div class="checkout__head">
                   <img
                     v-if="buyerProfile(checkout.purchasedBy)?.image_url"
@@ -160,9 +178,9 @@ function formatTime(iso) {
                     </span>
                   </li>
                 </ul>
-              </div>
-            </section>
-          </template>
+              </dd>
+            </template>
+          </dl>
         </div>
       </div>
     </div>
@@ -192,7 +210,10 @@ function formatTime(iso) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  max-height: min(85vh, 640px);
+  /* Fixed height (not max-height): the skeleton and the loaded list render in
+     the same frame size, so the modal doesn't snap bigger when data arrives.
+     Mirrors the phone bottom sheet, which is already fixed-height. */
+  height: min(85vh, 640px);
 }
 
 .history-modal__header {
@@ -252,21 +273,52 @@ function formatTime(iso) {
 }
 
 .history-modal__body {
-  padding: var(--space-4) var(--space-6) var(--space-6);
+  /* No top padding on the scroll container: a sticky child pins below it and
+     rows stay visible scrolling through the strip, so the label looks afloat.
+     The resting gap lives inside the scrolled content (.history-days /
+     .history-skeleton) instead, where it scrolls away naturally. */
+  padding: 0 var(--space-6) var(--space-6);
   overflow-y: auto;
 }
 
-.history-day + .history-day {
-  margin-top: 1.4rem;
+/* The label's own 0.6rem top padding (below) is part of every vertical gap it
+   appears in, so the paddings/margins here are reduced by that amount to keep
+   the original rhythm: 1rem below the header, 1.4rem between day groups. */
+.history-days {
+  margin: 0;
+  padding-top: 0.4rem;
 }
 
+/* dd carries a browser-default indent; the cards do their own layout. */
+.history-days dd {
+  margin: 0;
+}
+
+/* Day labels stick to the top of the scrolling body; the next day's label
+   slides in over the previous one. The opaque background is what stops rows
+   from showing through while they scroll underneath (dt is not sticky by
+   itself — position: sticky does the work). */
 .history-day__label {
-  margin: 0 0 0.6rem;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  /* Symmetric padding: this box is what shows while pinned, so equal space
+     above and below the text keeps the pinned label centered in its strip. */
+  padding: 0.6rem 0;
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-disabled);
+  background: var(--bg-surface);
+}
+
+/* Day-group spacing lives on the last card before the next label, not on the
+   sticky label itself: margins travel with a stuck element, so margin-top on
+   the dt would show as a transparent gap floating above it while pinned. */
+.history-days dd:has(+ dt) {
+  margin-bottom: 0.8rem;
 }
 
 /* One checkout event: a buyer + time header over the items bought together. */
@@ -460,7 +512,7 @@ function formatTime(iso) {
   }
 
   .history-modal__body {
-    padding: var(--space-4) 1rem 1rem;
+    padding: 0 1rem 1rem;
   }
 }
 </style>
