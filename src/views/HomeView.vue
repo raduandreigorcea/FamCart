@@ -12,6 +12,7 @@ import { useFamilyRealtime } from '../lib/familyRealtime'
 import {
   findActiveItemByName,
   countActiveItemsByMember,
+  sortItemsForDisplay,
 } from '../lib/shoppingList'
 import { getUserDisplayName, getUserPrimaryEmail } from '../lib/userIdentity'
 import { cleanAuthCallbackUrl } from '../lib/authCallbackUrl'
@@ -328,10 +329,13 @@ async function loadItems() {
     return
   }
 
-  // Merge the two lists (checkedRes.data is sorted descending, but we preserve it in items state)
-  // We reverse the checked items so they display in creation order if needed, 
-  // or simply keep them as is. Let's sort the merged items to match how they were displayed.
-  items.value = [...uncheckedRes.data, ...checkedRes.data]
+  // The checked query fetches newest-first so its 30-row cap keeps the most
+  // recent purchases, but the merged array goes into the one canonical display
+  // order. A locally toggled item keeps its array position, so if a refetch
+  // ordered things differently, rows would visibly swap on the next background
+  // sync (focus, reconnect, watchdog) — sorting every rebuild the same way is
+  // what keeps the list still.
+  items.value = sortItemsForDisplay([...uncheckedRes.data, ...checkedRes.data])
 }
 
 async function addItem() {

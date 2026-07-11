@@ -81,6 +81,18 @@ describe('groupCheckouts', () => {
   it('returns an empty array for no entries', () => {
     expect(groupCheckouts([], NOW)).toEqual([])
   })
+
+  it('sorts items within a checkout alphabetically', () => {
+    const days = groupCheckouts(
+      [
+        { ...row('a', '2026-07-10T10:00:00', 'co-1'), name: 'milk' },
+        { ...row('b', '2026-07-10T10:00:00', 'co-1'), name: 'Apples' },
+        { ...row('c', '2026-07-10T10:00:00', 'co-1'), name: 'bread' },
+      ],
+      NOW,
+    )
+    expect(days[0].checkouts[0].items.map((i) => i.name)).toEqual(['Apples', 'bread', 'milk'])
+  })
 })
 
 describe('trimPartialTail', () => {

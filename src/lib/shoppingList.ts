@@ -49,3 +49,20 @@ export function findActiveItemByName(
 export function countActiveItemsByMember(items: ShoppingItem[], userId: string): number {
   return items.filter((i) => !i.checked && i.added_by === userId).length
 }
+
+// The one canonical display order: creation time ascending, id as tiebreaker.
+// Every path that rebuilds the list array (fetch, realtime insert) must use
+// this order. Postgres returns equal-timestamp rows in whatever order it
+// likes, and a fetch that disagrees with what a local action produced makes
+// rows visibly swap on the next background sync — the id tiebreak and the
+// single shared order make every rebuild land identically.
+export function sortItemsForDisplay<T extends ShoppingItem & { created_at?: unknown }>(
+  items: T[],
+): T[] {
+  return [...items].sort((a, b) => {
+    const ta = new Date(String(a.created_at ?? '')).getTime() || 0
+    const tb = new Date(String(b.created_at ?? '')).getTime() || 0
+    if (ta !== tb) return ta - tb
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+  })
+}

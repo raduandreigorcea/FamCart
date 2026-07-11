@@ -5,6 +5,7 @@ import {
   sumCheckedQuantities,
   findActiveItemByName,
   countActiveItemsByMember,
+  sortItemsForDisplay,
 } from '../src/lib/shoppingList'
 
 // Small factory for readable fixtures.
@@ -139,5 +140,36 @@ describe('countActiveItemsByMember', () => {
     expect(countActiveItemsByMember(items, 'u1')).toBe(2)
     expect(countActiveItemsByMember(items, 'u2')).toBe(1)
     expect(countActiveItemsByMember(items, 'nobody')).toBe(0)
+  })
+})
+
+describe('sortItemsForDisplay', () => {
+  it('orders by creation time ascending', () => {
+    const items = [
+      item({ id: 'b', created_at: '2026-07-10T12:00:00Z' }),
+      item({ id: 'a', created_at: '2026-07-10T10:00:00Z' }),
+    ]
+    expect(sortItemsForDisplay(items).map((i) => i.id)).toEqual(['a', 'b'])
+  })
+
+  it('breaks creation-time ties by id, so refetches can never swap them', () => {
+    const at = '2026-07-10T10:00:00Z'
+    const shuffled = [
+      item({ id: 'c', created_at: at }),
+      item({ id: 'a', created_at: at }),
+      item({ id: 'b', created_at: at }),
+    ]
+    expect(sortItemsForDisplay(shuffled).map((i) => i.id)).toEqual(['a', 'b', 'c'])
+    expect(sortItemsForDisplay(shuffled.reverse()).map((i) => i.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('sorts rows missing created_at first and does not mutate the input', () => {
+    const items = [
+      item({ id: 'b', created_at: '2026-07-10T10:00:00Z' }),
+      item({ id: 'a' }),
+    ]
+    const sorted = sortItemsForDisplay(items)
+    expect(sorted.map((i) => i.id)).toEqual(['a', 'b'])
+    expect(items.map((i) => i.id)).toEqual(['b', 'a'])
   })
 })

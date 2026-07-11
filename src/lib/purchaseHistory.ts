@@ -104,5 +104,14 @@ export function groupCheckouts(
     group.checkouts.push(event)
   }
 
+  // Items inside one checkout were archived in a single statement, so their
+  // timestamps are identical and carry no order. Alphabetical is stable across
+  // fetches and devices, and easy to scan.
+  for (const event of events) {
+    event.items.sort((a, b) =>
+      String(a.name ?? '').localeCompare(String(b.name ?? ''), undefined, { sensitivity: 'base' }),
+    )
+  }
+
   return days
 }

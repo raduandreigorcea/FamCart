@@ -45,7 +45,13 @@ async function loadHistory() {
     .from('purchase_history')
     .select('id, name, quantity, checkout_id, purchased_by, purchased_at, added_by_name, added_by_image_url')
     .eq('family_id', props.familyId)
+    // Rows in one checkout share a single purchased_at, and Postgres returns
+    // tied rows in no particular order — without tiebreakers every open could
+    // shuffle them. checkout_id keeps a checkout's rows contiguous (which the
+    // partial-tail trim relies on); id pins the order within it.
     .order('purchased_at', { ascending: false })
+    .order('checkout_id', { ascending: true })
+    .order('id', { ascending: true })
     .limit(HISTORY_LIMIT)
 
   if (fetchError) {

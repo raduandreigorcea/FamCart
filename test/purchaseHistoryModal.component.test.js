@@ -80,10 +80,12 @@ describe('PurchaseHistoryModal', () => {
     expect(text).toContain('Bread')
     expect(text).toContain('x2')
 
-    // Each item keeps the person who added it (adder avatar per row).
+    // Each item keeps the person who added it (adder avatar per row). Items in
+    // a checkout render alphabetically, so Bread (Mom) comes before Milk (Dad).
     const adders = wrapper.findAll('.history-adder')
     expect(adders).toHaveLength(2)
-    expect(adders[0].attributes('title')).toBe('Added by Dad')
+    expect(adders[0].attributes('title')).toBe('Added by Mom')
+    expect(adders[1].attributes('title')).toBe('Added by Dad')
 
     // One checkout header for the shared checkout_id.
     expect(wrapper.findAll('.checkout')).toHaveLength(1)

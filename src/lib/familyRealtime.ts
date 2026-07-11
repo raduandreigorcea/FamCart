@@ -1,6 +1,6 @@
 import { onBeforeUnmount, onMounted, ref, type Ref } from 'vue'
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
-import type { ShoppingItem } from './shoppingList'
+import { sortItemsForDisplay, type ShoppingItem } from './shoppingList'
 
 // A shopping_list_items row as held in view state: the pure-helper shape plus
 // the DB columns the realtime handlers touch.
@@ -212,10 +212,9 @@ export function useFamilyRealtime({
             const newRecord = payload.new as ShoppingItemRow
 
             if (!items.value.some((i) => i.id === newRecord.id)) {
-              items.value.push(newRecord)
-              items.value.sort(
-                (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-              )
+              // Same canonical order as loadItems, so the echo of an insert
+              // lands exactly where the next refetch would put it.
+              items.value = sortItemsForDisplay([...items.value, newRecord])
             }
           },
         )
