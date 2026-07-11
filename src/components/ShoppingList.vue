@@ -45,6 +45,11 @@ function startCheckout() {
   const ids = checkedItems.value.map((i) => i.id)
   buying.value = true
   buttonSuccess.value = true
+  // Park the thumb at the end of the track for the success state, whichever
+  // path got us here (a completed drag already has it there; the keyboard
+  // path animates it across).
+  maxTravel = maxTravel || measureTravel()
+  dragX.value = maxTravel
 
   if (prefersReducedMotion) {
     finishCheckout(ids)
@@ -67,8 +72,95 @@ function finishCheckout(ids) {
   // restores the items and the bar reappears cleanly in its idle state.
   window.setTimeout(() => {
     buttonSuccess.value = false
+    dragX.value = 0
   }, 260)
 }
+
+// ─── Slide to confirm ─────────────────────────────────────────────────────────
+// Checking out archives the whole checked section, so the bar is a
+// slide-to-confirm control rather than a tap target: drag the thumb across the
+// track to trigger it. Below the completion threshold the thumb snaps back.
+// Keyboard users are not made to simulate a drag: Enter/Space on the focused
+// thumb (a click with detail 0) checks out directly.
+const THUMB_SIZE = 46 // px; keep in sync with .buy-bar__thumb
+const THUMB_INSET = 4 // px gap between thumb and track edge
+const COMPLETE_AT = 0.85 // fraction of the travel that counts as done
+
+const barEl = ref(null)
+const thumbEl = ref(null)
+const dragging = ref(false)
+const dragX = ref(0)
+let activePointerId = null
+let grabOffsetX = 0
+let maxTravel = 0
+
+function measureTravel() {
+  if (!barEl.value || !thumbEl.value) return 0
+  return Math.max(0, barEl.value.clientWidth - thumbEl.value.offsetWidth - THUMB_INSET * 2)
+}
+
+function onThumbDown(e) {
+  if (buying.value) return
+  maxTravel = measureTravel()
+  if (!maxTravel) return
+  dragging.value = true
+  activePointerId = e.pointerId
+  grabOffsetX = e.clientX - dragX.value
+  e.currentTarget.setPointerCapture?.(e.pointerId)
+}
+
+function onThumbMove(e) {
+  if (!dragging.value || e.pointerId !== activePointerId) return
+  dragX.value = Math.min(Math.max(e.clientX - grabOffsetX, 0), maxTravel)
+}
+
+function onThumbUp(e) {
+  if (!dragging.value || e.pointerId !== activePointerId) return
+  dragging.value = false
+  activePointerId = null
+  if (dragX.value >= maxTravel * COMPLETE_AT) {
+    startCheckout()
+  } else {
+    dragX.value = 0
+  }
+}
+
+function onThumbCancel() {
+  dragging.value = false
+  activePointerId = null
+  dragX.value = 0
+}
+
+// A pointer click must not check out — requiring the slide is the point. A
+// keyboard activation of the button arrives as a click with detail === 0.
+function onThumbClick(e) {
+  if (e.detail === 0) startCheckout()
+}
+
+const thumbStyle = computed(() => ({ transform: `translateX(${dragX.value}px)` }))
+// The green trail extends one inset past the thumb's leading edge, so the
+// white thumb always rides on green with an even margin on every side (ending
+// it flush with the thumb left the right side without a green rim). At full
+// travel this is exactly the bar's width; success pins it there.
+const fillWidth = computed(() => THUMB_INSET * 2 + THUMB_SIZE + dragX.value)
+const fillStyle = computed(() => ({
+  width: buttonSuccess.value ? '100%' : `${fillWidth.value}px`,
+}))
+// A white copy of the label is clipped to the swept region, so the hint text
+// turns white where the green has covered it. The clip line sits at the
+// thumb's midline — under the solid knob — not at the trail's leading edge:
+// clipping at the edge flipped letters white a few pixels ahead of the knob
+// (visibly so around its rounded nose).
+const inverseLabelStyle = computed(() => ({
+  clipPath: buttonSuccess.value
+    ? 'inset(0 0 0 0)'
+    : `inset(0 calc(100% - ${THUMB_INSET + THUMB_SIZE / 2 + dragX.value}px) 0 0)`,
+}))
+const labelText = computed(() =>
+  buttonSuccess.value
+    ? 'Checked out!'
+    : `Slide to check out ${checkedUnitCount.value} ${checkedUnitCount.value === 1 ? 'item' : 'items'}`,
+)
 </script>
 
 <template>
@@ -120,31 +212,44 @@ function finishCheckout(ids) {
     Nothing here yet. Add your first item above!
   </p>
 
-  <!-- Floating "buy" action: appears whenever something is checked. -->
+  <!-- Floating checkout slider: appears whenever something is checked. -->
   <Transition name="buybar">
     <div v-if="checkedItems.length && !loading" class="buy-bar-wrap">
-      <button
+      <div
+        ref="barEl"
         class="buy-bar"
-        :class="{ 'buy-bar--success': buttonSuccess }"
-        type="button"
-        :disabled="buying"
-        @click="startCheckout"
+        :class="{ 'buy-bar--success': buttonSuccess, 'buy-bar--dragging': dragging }"
       >
-        <span class="buy-bar__icon" aria-hidden="true">
-          <svg class="buy-bar__cart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="8" cy="21" r="1" />
-            <circle cx="19" cy="21" r="1" />
-            <path d="M2.5 3h2l2.4 12.4a2 2 0 0 0 2 1.6h9.3a2 2 0 0 0 2-1.5L23 7H6" />
-          </svg>
-          <svg class="buy-bar__check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M20 6 9 17l-5-5" />
-          </svg>
+        <div class="buy-bar__fill" :style="fillStyle" aria-hidden="true"></div>
+        <span class="buy-bar__label">{{ labelText }}</span>
+        <span class="buy-bar__label buy-bar__label--inverse" :style="inverseLabelStyle" aria-hidden="true">
+          {{ labelText }}
         </span>
-        <span class="buy-bar__label">
-          <template v-if="buttonSuccess">Checked out!</template>
-          <template v-else>Check out {{ checkedUnitCount }} {{ checkedUnitCount === 1 ? 'item' : 'items' }}</template>
-        </span>
-      </button>
+        <button
+          ref="thumbEl"
+          class="buy-bar__thumb"
+          type="button"
+          :style="thumbStyle"
+          :disabled="buying"
+          :aria-label="`Check out ${checkedUnitCount} ${checkedUnitCount === 1 ? 'item' : 'items'}`"
+          @pointerdown="onThumbDown"
+          @pointermove="onThumbMove"
+          @pointerup="onThumbUp"
+          @pointercancel="onThumbCancel"
+          @click="onThumbClick"
+        >
+          <span class="buy-bar__icon" aria-hidden="true">
+            <svg class="buy-bar__cart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="8" cy="21" r="1" />
+              <circle cx="19" cy="21" r="1" />
+              <path d="M2.5 3h2l2.4 12.4a2 2 0 0 0 2 1.6h9.3a2 2 0 0 0 2-1.5L23 7H6" />
+            </svg>
+            <svg class="buy-bar__check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+          </span>
+        </button>
+      </div>
     </div>
   </Transition>
 </template>
@@ -277,36 +382,102 @@ function finishCheckout(ids) {
 
 .buy-bar {
   pointer-events: auto;
+  position: relative;
   width: 100%;
   max-width: 480px;
+  height: 54px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.6rem;
-  min-height: 54px;
-  padding: 0 1.25rem;
-  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-main);
+  color: var(--color-primary);
+  box-shadow: var(--elevation-primary, 0 10px 24px rgba(0, 0, 0, 0.22));
+  overflow: hidden; /* fill and thumb stay inside the pill */
+}
+
+/* Green trail the thumb leaves behind as it crosses the white track. */
+.buy-bar__fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
   border-radius: var(--radius-pill);
   background: var(--color-primary);
-  color: var(--text-inverse);
-  font-size: 0.98rem;
+  pointer-events: none;
+  transition: width 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.buy-bar__label {
+  position: relative;
+  z-index: 1;
+  /* Keep the hint clear of the thumb's resting spot. */
+  padding: 0 3.4rem;
+  font-size: 0.95rem;
   font-weight: 800;
   letter-spacing: -0.01em;
-  cursor: pointer;
-  box-shadow: var(--elevation-primary, 0 10px 24px rgba(0, 0, 0, 0.22));
-  transition: transform 0.16s ease, background 0.25s ease, box-shadow 0.2s ease;
+  pointer-events: none;
 }
 
-.buy-bar:hover:not(:disabled) {
-  transform: translateY(-1px);
+/* White copy of the label, clipped to the green fill: the text reads white
+   exactly where the trail has swept over it and green where it hasn't. */
+.buy-bar__label--inverse {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-inverse);
+  transition: clip-path 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.buy-bar:active:not(:disabled) {
-  transform: translateY(1px) scale(0.995);
+/* The thumb is the same green as the trail, so the two merge into one shape —
+   a circle at rest, stretching into a pill as it's dragged — instead of
+   reading as a bullseye of rings. It must be painted (not transparent): it
+   sits above the labels, so a solid thumb blots out text it crosses; a
+   transparent one let the letters show through inside the knob. */
+.buy-bar__thumb {
+  position: absolute;
+  left: 4px;
+  top: calc(50% - 23px); /* centered regardless of the track border */
+  z-index: 2;
+  width: 46px; /* keep in sync with THUMB_SIZE */
+  height: 46px;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: var(--text-inverse);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  /* The drag owns the gesture; don't let touch scroll the page instead. */
+  touch-action: none;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.buy-bar--success {
+.buy-bar__thumb:disabled {
   cursor: default;
+}
+
+/* The thumb is invisible, so keyboard focus draws its own ring on the green
+   disc beneath. */
+.buy-bar__thumb:focus-visible {
+  outline: 2px solid var(--text-inverse);
+  outline-offset: -4px;
+}
+
+/* While the finger drives the thumb, everything follows it instantly; the
+   transitions above are for the snap back/forward on release. */
+.buy-bar--dragging .buy-bar__thumb,
+.buy-bar--dragging .buy-bar__fill,
+.buy-bar--dragging .buy-bar__label {
+  transition: none;
+}
+
+.buy-bar--dragging .buy-bar__thumb {
+  cursor: grabbing;
 }
 
 .buy-bar__icon {
@@ -314,6 +485,12 @@ function finishCheckout(ids) {
   width: 22px;
   height: 22px;
   flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+/* Slight tactile swell while the finger is on it. */
+.buy-bar--dragging .buy-bar__icon {
+  transform: scale(1.12);
 }
 
 .buy-bar__cart,
@@ -362,7 +539,9 @@ function finishCheckout(ids) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .buy-bar,
+  .buy-bar__fill,
+  .buy-bar__thumb,
+  .buy-bar__label,
   .buy-bar__cart,
   .buy-bar__check,
   .buybar-enter-active,
