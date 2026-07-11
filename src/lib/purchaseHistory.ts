@@ -26,13 +26,31 @@ function startOfDay(ms: number): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
 }
 
+// Rows share a checkout_id when bought in one action; legacy rows without one
+// fall back to grouping by purchaser + timestamp, which was one checkout.
+function checkoutKey(entry: CheckoutEntry): string {
+  return entry.checkout_id
+    ? `c:${entry.checkout_id}`
+    : `t:${entry.purchased_by ?? ''}@${entry.purchased_at}`
+}
+
+// A row-capped query can cut the oldest checkout in half: some of its items
+// fall past the cap. When the result fills the cap, drop the trailing rows of
+// that possibly-partial checkout so every checkout shown is complete. If all
+// rows belong to a single checkout, keep them — a partial view beats an empty
+// one.
+export function trimPartialTail(entries: CheckoutEntry[], limit: number): CheckoutEntry[] {
+  if (entries.length < limit) return entries
+  const lastKey = checkoutKey(entries[entries.length - 1])
+  let cut = entries.length
+  while (cut > 0 && checkoutKey(entries[cut - 1]) === lastKey) cut--
+  return cut === 0 ? entries : entries.slice(0, cut)
+}
+
 // Collapse purchase rows into checkout events (all items bought together), then
 // bucket those events under day headers ("Today", "Yesterday", or a date).
 // Input is assumed newest-first (as the query returns it); that order is
 // preserved throughout. Rows with an unparseable timestamp are dropped.
-//
-// Rows share a checkout_id when bought in one action; legacy rows without one
-// fall back to grouping by purchaser + timestamp, which was one checkout.
 export function groupCheckouts(
   entries: CheckoutEntry[],
   now: number = Date.now(),
@@ -43,10 +61,7 @@ export function groupCheckouts(
   for (const entry of entries) {
     if (Number.isNaN(new Date(entry.purchased_at).getTime())) continue
 
-    const key = entry.checkout_id
-      ? `c:${entry.checkout_id}`
-      : `t:${entry.purchased_by ?? ''}@${entry.purchased_at}`
-
+    const key = checkoutKey(entry)
     let event = byKey.get(key)
     if (!event) {
       event = {

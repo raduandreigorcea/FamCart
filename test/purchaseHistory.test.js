@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { groupCheckouts } from '../src/lib/purchaseHistory'
+import { groupCheckouts, trimPartialTail } from '../src/lib/purchaseHistory'
 
 // Fixed "now" (local) so Today/Yesterday buckets are deterministic. Entries use
 // local (no-timezone) timestamps too, so the comparison is TZ-stable.
@@ -80,5 +80,43 @@ describe('groupCheckouts', () => {
 
   it('returns an empty array for no entries', () => {
     expect(groupCheckouts([], NOW)).toEqual([])
+  })
+})
+
+describe('trimPartialTail', () => {
+  it('leaves results under the cap untouched', () => {
+    const entries = [
+      row('a', '2026-07-10T10:00:00', 'co-1'),
+      row('b', '2026-07-10T08:00:00', 'co-2'),
+    ]
+    expect(trimPartialTail(entries, 500)).toBe(entries)
+  })
+
+  it('drops the possibly-partial oldest checkout when the cap is hit', () => {
+    const entries = [
+      row('a', '2026-07-10T10:00:00', 'co-1'),
+      row('b', '2026-07-10T08:00:00', 'co-2'),
+      row('c', '2026-07-10T08:00:00', 'co-2'), // co-2 may continue past the cap
+    ]
+    const trimmed = trimPartialTail(entries, 3)
+    expect(trimmed.map((e) => e.id)).toEqual(['a'])
+  })
+
+  it('groups legacy rows without checkout_id by purchaser + timestamp', () => {
+    const entries = [
+      row('a', '2026-07-10T10:00:00', null, 'u1'),
+      row('b', '2026-07-10T08:00:00', null, 'u2'),
+      row('c', '2026-07-10T08:00:00', null, 'u2'),
+    ]
+    const trimmed = trimPartialTail(entries, 3)
+    expect(trimmed.map((e) => e.id)).toEqual(['a'])
+  })
+
+  it('keeps everything when the whole capped result is one checkout', () => {
+    const entries = [
+      row('a', '2026-07-10T10:00:00', 'co-1'),
+      row('b', '2026-07-10T10:00:00', 'co-1'),
+    ]
+    expect(trimPartialTail(entries, 2)).toBe(entries)
   })
 })

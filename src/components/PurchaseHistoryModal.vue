@@ -4,7 +4,7 @@ import { useSupabase } from '../supabase'
 import ModalCloseButton from './ModalCloseButton.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { getProductEmoji } from '../lib/productEmoji'
-import { groupCheckouts } from '../lib/purchaseHistory'
+import { groupCheckouts, trimPartialTail } from '../lib/purchaseHistory'
 import historyIconRaw from '../assets/history.svg?raw'
 
 const props = defineProps({
@@ -52,7 +52,9 @@ async function loadHistory() {
     error.value = 'Could not load history. Check your connection and try again.'
     entries.value = []
   } else {
-    entries.value = data || []
+    // If the fetch filled the row cap, the oldest checkout may have been cut
+    // mid-way; trim it so every checkout shown is complete.
+    entries.value = trimPartialTail(data || [], HISTORY_LIMIT)
   }
   loading.value = false
 }
