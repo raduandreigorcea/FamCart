@@ -604,10 +604,10 @@ async function mergeItemInto(source, target) {
   }
 }
 
-// Buy every checked item: archive them to purchase history and drop them from
-// the active list. The animation has already played in ShoppingList by the time
-// this runs, so we just persist the outcome.
-async function buyCheckedItems(ids) {
+// Check out every checked item: archive them to purchase history and drop them
+// from the active list. The animation has already played in ShoppingList by the
+// time this runs, so we just persist the outcome.
+async function checkoutItems(ids) {
   const idSet = new Set(ids)
   const bought = items.value.filter((i) => idSet.has(i.id) && i.checked)
   if (!bought.length) return
@@ -622,8 +622,8 @@ async function buyCheckedItems(ids) {
 
   // Offline (or a WebView that lies about connectivity): there is no multi-table
   // transaction to run here, so queue plain deletes. The rows leave the list but
-  // an offline purchase is not recorded in history — it is archived only when the
-  // buy runs against the server.
+  // an offline checkout is not recorded in history — it is archived only when the
+  // checkout runs against the server.
   if (isOffline()) {
     for (const it of bought) {
       enqueueOfflineMutation(localStorage, effectiveUserId.value, { kind: 'delete', id: it.id })
@@ -642,7 +642,7 @@ async function buyCheckedItems(ids) {
       return
     }
     items.value = snapshot
-    loadError.value = error.message ?? 'Could not complete the purchase.'
+    loadError.value = error.message ?? 'Could not complete the checkout.'
   }
 }
 
@@ -703,7 +703,7 @@ async function deleteItem(item) {
           :show-empty="hasInitialized && !items.length && !loadError"
           @toggle="toggleItem"
           @delete="deleteItem"
-          @buy="buyCheckedItems"
+          @checkout="checkoutItems"
         />
 
       </div>

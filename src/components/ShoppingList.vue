@@ -13,7 +13,7 @@ const props = defineProps({
   showEmpty: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['toggle', 'delete', 'buy'])
+const emit = defineEmits(['toggle', 'delete', 'checkout'])
 
 const uncheckedItems = computed(() => props.items.filter((i) => !i.checked))
 const checkedItems = computed(() => props.items.filter((i) => i.checked))
@@ -23,7 +23,7 @@ const checkedUnitCount = computed(() => sumCheckedQuantities(props.items))
 
 const skeletonNameWidths = ['55%', '38%', '62%', '30%']
 
-// ─── Buy action ──────────────────────────────────────────────────────────────
+// ─── Checkout action ─────────────────────────────────────────────────────────
 // The bar owns the celebration: it drains the checked rows into the cart and
 // morphs to a check, then hands the ids up so the parent archives them. Removal
 // is deferred to the end of the animation so the rows are still on screen while
@@ -40,14 +40,14 @@ const buttonSuccess = ref(false)
 const drainingIds = ref([])
 const isDraining = (id) => drainingIds.value.includes(id)
 
-function buyChecked() {
+function startCheckout() {
   if (buying.value || !checkedItems.value.length) return
   const ids = checkedItems.value.map((i) => i.id)
   buying.value = true
   buttonSuccess.value = true
 
   if (prefersReducedMotion) {
-    finishBuy(ids)
+    finishCheckout(ids)
     return
   }
 
@@ -55,15 +55,15 @@ function buyChecked() {
   // Wait out the last row's fall (its delay + one drain duration) before the
   // parent removes them, so nothing pops out mid-animation.
   const total = DRAIN_MS + Math.min(ids.length - 1, 6) * STAGGER_MS
-  window.setTimeout(() => finishBuy(ids), total)
+  window.setTimeout(() => finishCheckout(ids), total)
 }
 
-function finishBuy(ids) {
-  emit('buy', ids)
+function finishCheckout(ids) {
+  emit('checkout', ids)
   drainingIds.value = []
   buying.value = false
   // Let the success tick linger a beat; the bar usually unmounts before this
-  // fires because the checked list just emptied. On a failed buy the parent
+  // fires because the checked list just emptied. On a failed checkout the parent
   // restores the items and the bar reappears cleanly in its idle state.
   window.setTimeout(() => {
     buttonSuccess.value = false
@@ -128,7 +128,7 @@ function finishBuy(ids) {
         :class="{ 'buy-bar--success': buttonSuccess }"
         type="button"
         :disabled="buying"
-        @click="buyChecked"
+        @click="startCheckout"
       >
         <span class="buy-bar__icon" aria-hidden="true">
           <svg class="buy-bar__cart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -141,8 +141,8 @@ function finishBuy(ids) {
           </svg>
         </span>
         <span class="buy-bar__label">
-          <template v-if="buttonSuccess">Bought!</template>
-          <template v-else>Buy {{ checkedUnitCount }} {{ checkedUnitCount === 1 ? 'item' : 'items' }}</template>
+          <template v-if="buttonSuccess">Checked out!</template>
+          <template v-else>Check out {{ checkedUnitCount }} {{ checkedUnitCount === 1 ? 'item' : 'items' }}</template>
         </span>
       </button>
     </div>

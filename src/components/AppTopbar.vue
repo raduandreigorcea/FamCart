@@ -12,6 +12,8 @@ import { clearOfflineQueue } from '../lib/offlineQueue'
 // The settings modal is by far the heaviest part of the topbar; load its chunk
 // only when someone actually opens it.
 const FamilySettingsModal = defineAsyncComponent(() => import('./FamilySettingsModal.vue'))
+// Same treatment for the purchase-history modal: fetched and rendered on demand.
+const PurchaseHistoryModal = defineAsyncComponent(() => import('./PurchaseHistoryModal.vue'))
 
 const props = defineProps({
   familyId: { type: String, default: '' },
@@ -39,6 +41,14 @@ const settingsOpen = ref(false)
 const settingsTab = ref('overview')
 // Stays true after the first open so the async chunk keeps its close transition.
 const settingsEverOpened = ref(false)
+
+const historyOpen = ref(false)
+const historyEverOpened = ref(false)
+
+function openHistory() {
+  historyEverOpened.value = true
+  historyOpen.value = true
+}
 
 function openAccountMenu() {
   accountMenuOpen.value = true
@@ -146,7 +156,11 @@ const memberCount = computed(() => props.memberProfiles.length)
     </div>
 
     <div class="topbar-actions">
-      <button v-if="familyName" class="settings-btn" type="button" aria-label="Open settings" @click="openSettings">
+      <button v-if="familyName" class="topbar-icon-btn" type="button" aria-label="Checkout history" @click="openHistory">
+        <span class="history-icon" aria-hidden="true"></span>
+      </button>
+
+      <button v-if="familyName" class="topbar-icon-btn" type="button" aria-label="Open settings" @click="openSettings">
         <span class="settings-icon" aria-hidden="true"></span>
       </button>
 
@@ -166,6 +180,15 @@ const memberCount = computed(() => props.memberProfiles.length)
       </button>
     </div>
   </header>
+
+  <PurchaseHistoryModal
+    v-if="historyEverOpened"
+    :open="historyOpen"
+    :family-id="familyId"
+    :current-user-id="currentUserId"
+    :member-profiles="memberProfiles"
+    @close="historyOpen = false"
+  />
 
   <FamilySettingsModal
     v-if="settingsEverOpened"
@@ -296,7 +319,7 @@ const memberCount = computed(() => props.memberProfiles.length)
   flex-shrink: 0;
 }
 
-.settings-btn {
+.topbar-icon-btn {
   width: var(--size-control-md);
   height: var(--size-control-md);
   border-radius: var(--radius-pill);
@@ -311,22 +334,32 @@ const memberCount = computed(() => props.memberProfiles.length)
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.settings-btn:hover {
+.topbar-icon-btn:hover {
   border-color: var(--color-primary);
   box-shadow: var(--focus-ring-primary-soft);
 }
 
-.settings-icon {
+.settings-icon,
+.history-icon {
   width: 20px;
   height: 20px;
   display: inline-block;
   background-color: currentColor;
-  mask: url('../assets/settings.svg') no-repeat center / contain;
-  -webkit-mask: url('../assets/settings.svg') no-repeat center / contain;
   opacity: 0.86;
 }
 
-:global(:root[data-theme='dark']) .settings-icon {
+.settings-icon {
+  mask: url('../assets/settings.svg') no-repeat center / contain;
+  -webkit-mask: url('../assets/settings.svg') no-repeat center / contain;
+}
+
+.history-icon {
+  mask: url('../assets/history.svg') no-repeat center / contain;
+  -webkit-mask: url('../assets/history.svg') no-repeat center / contain;
+}
+
+:global(:root[data-theme='dark']) .settings-icon,
+:global(:root[data-theme='dark']) .history-icon {
   background-color: var(--text-inverse);
   opacity: 0.96;
 }

@@ -98,7 +98,7 @@ function listedItems(wrapper) {
 }
 
 async function emitBuy(wrapper, ids) {
-  wrapper.findComponent(ShoppingList).vm.$emit('buy', ids)
+  wrapper.findComponent(ShoppingList).vm.$emit('checkout', ids)
   await flushPromises()
 }
 
