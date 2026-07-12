@@ -1,0 +1,77 @@
+name: Android APK
+
+# Builds the debug APK on every push to master and pins it to the rolling
+# "latest" release, so the newest build is always at the same download URL:
+# https://github.com/raduandreigorcea/FamCart/releases/latest
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write # create/update the release and its APK asset
+
+jobs:
+  apk:
+    name: Build and release APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      # Vite quietly bakes `undefined` into the bundle when an env var is
+      # missing, which would ship a broken app — fail loudly instead.
+      - name: Check build secrets
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          CLERK_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$CLERK_KEY" ]; then
+            echo "Missing repo secrets: set VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY, VITE_SUPABASE_ANON_KEY, VITE_CLERK_PUBLISHABLE_KEY and VITE_ONESIGNAL_APP_ID under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: Build web app
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_ONESIGNAL_APP_ID: ${{ secrets.VITE_ONESIGNAL_APP_ID }}
+        run: npm run build
+
+      - run: npx cap sync android
+
+      - name: Build APK
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew assembleDebug
+
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk FamCart.apk
+
+      - name: Update "latest" release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: FamCart — latest build
+          body: |
+            Newest FamCart Android app, built automatically from `master`.
+
+            **Install:** download `FamCart.apk` on your phone and open it.
+            Updating over an existing install keeps your data.
+
+            Commit: ${{ github.sha }}
+          files: FamCart.apk
+          make_latest: true
