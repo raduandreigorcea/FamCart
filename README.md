@@ -1,39 +1,29 @@
-# FamCart
+<p align="center">
+  <img src="public/icons/pwa-192.png" alt="FamCart logo" width="96" />
+</p>
 
-Shared family shopping list app built with Vue 3, Clerk auth, and Supabase.
+<h1 align="center">FamCart</h1>
 
-## Live updates
+<p align="center"><b>One shopping list for the whole family — always in sync.</b></p>
 
-FamCart supports WebSockets via Supabase Realtime so every family member sees list and member updates immediately.
+Ever bought milk on the way home, only to find your partner already got some an hour ago? FamCart fixes that. It's a shared grocery list that every member of your family sees and edits together, live: when someone adds, checks off, or buys an item, everyone's screen updates in the same second.
 
-## Android APK
+## What it does
 
-`npm run build:apk` builds the web app, syncs it into the Capacitor Android
-project, and compiles a debug APK (requires Android Studio for its SDK/JDK).
-The output path is printed at the end:
-`android/app/build/outputs/apk/debug/app-debug.apk` — copy it to a phone and
-open it to install.
+- 🛒 **One live list per family.** Add an item on your phone, and it appears on everyone else's instantly — no refresh, no "did you get my message?".
 
-## Push notifications
+- 👨‍👩‍👧‍👦 **Easy to join.** Start a family, share a short invite code, done. The family owner decides who can manage the list and its members.
 
-Push is delivered by OneSignal on both the web app (Web SDK v16, worker under
-`/onesignal/`) and the Android app (`@onesignal/capacitor-plugin`). The
-account-menu toggle opts the device in/out and ties it to the Clerk user id
-via `OneSignal.login`; the `push-on-item-insert` edge function notifies family
-members through OneSignal's REST API when someone adds an item, even with the
-app closed. One-time setup per environment:
+- ✅ **Check, then buy.** Tick items off as you find them in the store, then slide to confirm your checkout. Bought items move into a purchase history, neatly grouped by shopping trip — so "didn't we just buy this?" always has an answer.
 
-1. Create an app at onesignal.com. Activate the **Web** platform (site URL =
-   where FamCart is hosted) and, for the Android app, the **Google Android**
-   platform (upload the Firebase service-account JSON there).
-2. Client env: set `VITE_ONESIGNAL_APP_ID=<app id>` (no id = toggle stays
-   local-only, nothing breaks).
-3. Function secrets, from the dashboard's Keys & IDs page:
-   `supabase secrets set ONESIGNAL_APP_ID=... ONESIGNAL_REST_API_KEY=... PUSH_WEBHOOK_SECRET=<random string>`
-4. Deploy: `supabase functions deploy push-on-item-insert`
-5. In the Supabase dashboard, create two Database Webhooks — one on
-   `shopping_list_items` / INSERT ("X added Milk") and one on
-   `purchase_history` / INSERT ("X bought Milk and 2 more") — both calling the
-   `push-on-item-insert` function URL with an HTTP header
-   `x-webhook-secret: <the same random string>`.
+- 🔔 **Notifications that matter.** Get a heads-up when someone adds something ("Radu added Milk") or finishes shopping ("Radu bought Milk, Eggs and 2 more") — even with the app closed. Never while you're looking at the app, and easy to switch off entirely.
 
+- 📴 **Works offline.** No signal in the supermarket basement? Keep adding and checking items — everything syncs up the moment you're back online.
+
+- 🧠 **Small niceties.** Products get a fitting emoji automatically, duplicates merge into one item with a higher quantity, and the whole app comes in light, dark, or follow-your-system themes.
+
+- 📱 **Use it anywhere.** Works in any browser, installs to your home screen like a real app, and ships as a native Android app too.
+
+## Why it exists
+
+Family group chats are terrible shopping lists. Messages scroll away, nobody knows what's already been bought, and the one time you don't check, you come home with the third jar of pickles this week. FamCart is the fix: one place, one list, everyone on the same page — literally.
