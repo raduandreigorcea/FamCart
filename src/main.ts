@@ -5,10 +5,15 @@ import './style.css'
 import App from './App.vue'
 import router from './router'
 import { startConnectivity } from './lib/connectivity'
+import { initPushNotifications } from './lib/pushNotifications'
 
 // Begin tracking real connectivity as early as possible so the router's first
 // navigation can make a trustworthy offline/online decision.
 startConnectivity()
+
+// OneSignal push: loads the web SDK (or initializes the native plugin) when a
+// VITE_ONESIGNAL_APP_ID is configured; a no-op otherwise.
+initPushNotifications()
 
 const savedTheme = localStorage.getItem('famcart-theme')
 const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches

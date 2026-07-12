@@ -16,17 +16,24 @@ open it to install.
 
 ## Push notifications
 
-The account-menu notification toggle subscribes the browser to Web Push; the
-`push-on-item-insert` edge function notifies family members when someone adds
-an item, even with the app closed. One-time setup per environment:
+Push is delivered by OneSignal on both the web app (Web SDK v16, worker under
+`/onesignal/`) and the Android app (`@onesignal/capacitor-plugin`). The
+account-menu toggle opts the device in/out and ties it to the Clerk user id
+via `OneSignal.login`; the `push-on-item-insert` edge function notifies family
+members through OneSignal's REST API when someone adds an item, even with the
+app closed. One-time setup per environment:
 
-1. Generate VAPID keys: `npx web-push generate-vapid-keys`
-2. Client env: set `VITE_VAPID_PUBLIC_KEY=<public key>` (no key = toggle stays
+1. Create an app at onesignal.com. Activate the **Web** platform (site URL =
+   where FamCart is hosted) and, for the Android app, the **Google Android**
+   platform (upload the Firebase service-account JSON there).
+2. Client env: set `VITE_ONESIGNAL_APP_ID=<app id>` (no id = toggle stays
    local-only, nothing breaks).
-3. Function secrets:
-   `supabase secrets set VAPID_PUBLIC_KEY=... VAPID_PRIVATE_KEY=... VAPID_SUBJECT=mailto:you@example.com PUSH_WEBHOOK_SECRET=<random string>`
+3. Function secrets, from the dashboard's Keys & IDs page:
+   `supabase secrets set ONESIGNAL_APP_ID=... ONESIGNAL_REST_API_KEY=... PUSH_WEBHOOK_SECRET=<random string>`
 4. Deploy: `supabase functions deploy push-on-item-insert`
-5. In the Supabase dashboard, create a Database Webhook on
-   `shopping_list_items` / INSERT calling the `push-on-item-insert` function
-   URL, with an HTTP header `x-webhook-secret: <the same random string>`.
+5. In the Supabase dashboard, create two Database Webhooks — one on
+   `shopping_list_items` / INSERT ("X added Milk") and one on
+   `purchase_history` / INSERT ("X bought Milk and 2 more") — both calling the
+   `push-on-item-insert` function URL with an HTTP header
+   `x-webhook-secret: <the same random string>`.
 

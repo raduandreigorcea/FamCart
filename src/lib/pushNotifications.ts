@@ -1,38 +1,43 @@
-// Push client. Two delivery backends, chosen at runtime:
-//   • Native Capacitor app (Android/iOS) → Firebase Cloud Messaging device token,
-//     stored in device_push_tokens (migration 017).
-//   • Web browser / PWA → Web Push subscription, stored in push_subscriptions
-//     (migration 016).
-// Both are fanned out by the push-on-item-insert edge function. Everything
-// degrades gracefully: without support or config the toggle still saves the
-// local preference and nothing else happens.
+// Push client backed by OneSignal. Two SDKs, chosen at runtime:
+//   • Native Capacitor app (Android/iOS) → @onesignal/capacitor-plugin.
+//   • Web browser / PWA → OneSignal Web SDK v16, loaded from their CDN by
+//     initPushNotifications(); commands go through the window.OneSignalDeferred
+//     queue so they work no matter when the script finishes loading.
+// Devices are keyed to users via OneSignal.login(<Clerk user id>), and the
+// push-on-item-insert edge function targets those external ids through the
+// OneSignal REST API. Everything degrades gracefully: without support or
+// config the toggle still saves the local preference and nothing else happens.
 
 import { Capacitor } from '@capacitor/core'
 
-interface Db {
-  from(table: string): any
-  rpc(fn: string, args?: Record<string, unknown>): any
+// Minimal slice of the v16 web SDK surface this module touches.
+interface OneSignalWebSdk {
+  init(options: Record<string, unknown>): Promise<void>
+  login(externalId: string): Promise<void>
+  logout(): Promise<void>
+  User: { PushSubscription: { optIn(): Promise<void>; optOut(): Promise<void> } }
+  Notifications: {
+    addEventListener(
+      event: 'foregroundWillDisplay',
+      listener: (event: { preventDefault(): void }) => void,
+    ): void
+  }
 }
 
-export interface PushSubscriptionRow {
-  user_id: string
-  endpoint: string
-  p256dh: string
-  auth: string
-}
+type DeferredQueue = Array<(sdk: OneSignalWebSdk) => void>
 
-const TABLE = 'push_subscriptions'
-const DEVICE_TABLE = 'device_push_tokens'
-// Remembers the FCM token this install last registered, so disable can delete
-// the right row (the plugin doesn't hand the token back on demand).
-const FCM_TOKEN_KEY = 'famcart-fcm-token'
+const WEB_SDK_URL = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js'
+// Registered under its own scope so it coexists with the root-scope PWA
+// service worker (src/sw.js); the push subscription lives on this one.
+const WORKER_PATH = 'onesignal/OneSignalSDKWorker.js'
+const WORKER_SCOPE = '/onesignal/'
 
-export function getVapidPublicKey(): string {
-  return (import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined) ?? ''
+export function getOneSignalAppId(): string {
+  return (import.meta.env.VITE_ONESIGNAL_APP_ID as string | undefined) ?? ''
 }
 
 export function isPushSupported(): boolean {
-  // Native app: FCM works regardless of the WebView's Web Push support.
+  // Native app: OneSignal uses FCM directly, regardless of WebView support.
   if (Capacitor.isNativePlatform()) return true
   return (
     typeof window !== 'undefined' &&
@@ -42,27 +47,62 @@ export function isPushSupported(): boolean {
   )
 }
 
-// VAPID public keys travel base64url-encoded; PushManager wants the raw bytes.
-export function urlBase64ToUint8Array(base64Url: string): Uint8Array<ArrayBuffer> {
-  const padding = '='.repeat((4 - (base64Url.length % 4)) % 4)
-  const base64 = (base64Url + padding).replace(/-/g, '+').replace(/_/g, '/')
-  const raw = atob(base64)
-  const output = new Uint8Array(raw.length)
-  for (let i = 0; i < raw.length; i++) output[i] = raw.charCodeAt(i)
-  return output
+function deferredQueue(): DeferredQueue {
+  const w = window as unknown as { OneSignalDeferred?: DeferredQueue }
+  w.OneSignalDeferred = w.OneSignalDeferred ?? []
+  return w.OneSignalDeferred
 }
 
-// Flatten a PushSubscriptionJSON into the push_subscriptions row shape.
-// Returns null when the browser produced an unusable subscription.
-export function toSubscriptionRow(
-  userId: string,
-  subscription: PushSubscriptionJSON,
-): PushSubscriptionRow | null {
-  const endpoint = subscription.endpoint
-  const p256dh = subscription.keys?.p256dh
-  const auth = subscription.keys?.auth
-  if (!userId || !endpoint || !p256dh || !auth) return null
-  return { user_id: userId, endpoint, p256dh, auth }
+// Resolve the loaded web SDK, or null if it hasn't loaded within the cap —
+// the CDN script may never arrive (offline, blocked); the toggle must not hang.
+function webSdk(timeoutMs = 15000): Promise<OneSignalWebSdk | null> {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (value: OneSignalWebSdk | null) => {
+      if (settled) return
+      settled = true
+      resolve(value)
+    }
+    deferredQueue().push((sdk) => finish(sdk))
+    setTimeout(() => finish(null), timeoutMs)
+  })
+}
+
+// Call once at app startup (main.ts). Loads/initializes the right SDK; a
+// missing app id means push is unconfigured and this becomes a no-op.
+export function initPushNotifications(): void {
+  const appId = getOneSignalAppId()
+  if (!appId) return
+
+  if (Capacitor.isNativePlatform()) {
+    void import('@onesignal/capacitor-plugin').then(({ default: OneSignal }) => {
+      void OneSignal.initialize(appId)
+      // The list is already live in front of an open app (Supabase Realtime);
+      // a banner over it is noise. Suppress while the app is foregrounded.
+      OneSignal.Notifications.addEventListener('foregroundWillDisplay', (event) => {
+        event.preventDefault()
+      })
+    })
+    return
+  }
+
+  if (!isPushSupported()) return
+  deferredQueue().push((sdk) => {
+    void sdk.init({
+      appId,
+      serviceWorkerParam: { scope: WORKER_SCOPE },
+      serviceWorkerPath: WORKER_PATH,
+      allowLocalhostAsSecureOrigin: true,
+    })
+    // Same reason as the native branch: no banners over a visible live list.
+    sdk.Notifications.addEventListener('foregroundWillDisplay', (event) => {
+      event.preventDefault()
+    })
+  })
+  const script = document.createElement('script')
+  script.src = WEB_SDK_URL
+  script.defer = true
+  document.head.appendChild(script)
 }
 
 export type EnablePushResult =
@@ -72,158 +112,83 @@ export type EnablePushResult =
   | 'permission-denied'
   | 'error'
 
-interface ListenerHandle {
-  remove: () => void
-}
-
-// Register with FCM and resolve the device token, or null if the OS denied
-// permission (handled by the caller) or registration failed / timed out.
-async function requestFcmToken(): Promise<{ token: string | null; denied: boolean }> {
-  const { PushNotifications } = await import('@capacitor/push-notifications')
-
-  let perm = await PushNotifications.checkPermissions()
-  if (perm.receive === 'prompt' || perm.receive === 'prompt-with-rationale') {
-    perm = await PushNotifications.requestPermissions()
-  }
-  if (perm.receive !== 'granted') return { token: null, denied: true }
-
-  const token = await new Promise<string | null>((resolve) => {
-    let settled = false
-    let regHandle: ListenerHandle | undefined
-    let errHandle: ListenerHandle | undefined
-    const finish = (value: string | null) => {
-      if (settled) return
-      settled = true
-      regHandle?.remove()
-      errHandle?.remove()
-      resolve(value)
-    }
-    PushNotifications.addListener('registration', (t: { value: string }) => finish(t.value)).then(
-      (h: ListenerHandle) => {
-        regHandle = h
-        if (settled) h.remove()
-      },
-    )
-    PushNotifications.addListener('registrationError', () => finish(null)).then(
-      (h: ListenerHandle) => {
-        errHandle = h
-        if (settled) h.remove()
-      },
-    )
-    void PushNotifications.register()
-    // The registration event normally arrives in well under a second; cap the
-    // wait so the toggle can't hang if it never does.
-    setTimeout(() => finish(null), 15000)
-  })
-
-  return { token, denied: false }
-}
-
-async function enableNativePush(db: Db): Promise<EnablePushResult> {
+async function enableNativePush(userId: string): Promise<EnablePushResult> {
+  const appId = getOneSignalAppId()
+  if (!appId) return 'not-configured'
   try {
-    const { token, denied } = await requestFcmToken()
-    if (denied) return 'permission-denied'
-    if (!token) return 'error'
-
-    const { error } = await db.rpc('claim_device_push_token', {
-      _token: token,
-      _platform: Capacitor.getPlatform(),
-    })
-    if (error) return 'error'
-
-    try {
-      localStorage.setItem(FCM_TOKEN_KEY, token)
-    } catch {
-      // Storage disabled — disable() falls back to a no-op; the row is pruned
-      // by the sender on its first failed push instead.
-    }
+    const { default: OneSignal } = await import('@onesignal/capacitor-plugin')
+    // Idempotent (the plugin no-ops repeat calls); doing it here instead of
+    // trusting the startup init closes the gap where login() reaches a
+    // not-yet-initialized native SDK — which throws and takes the app down.
+    await OneSignal.initialize(appId)
+    await OneSignal.login(userId)
+    const accepted = await OneSignal.Notifications.requestPermission(true)
+    if (!accepted) return 'permission-denied'
+    await OneSignal.User.pushSubscription.optIn()
     return 'subscribed'
   } catch {
     return 'error'
   }
 }
 
-async function enableWebPush(db: Db, userId: string): Promise<EnablePushResult> {
-  const vapidKey = getVapidPublicKey()
-  if (!vapidKey) return 'not-configured'
-
-  const permission = await Notification.requestPermission()
-  if (permission !== 'granted') return 'permission-denied'
-
+async function enableWebPush(userId: string): Promise<EnablePushResult> {
+  if (!getOneSignalAppId()) return 'not-configured'
+  const sdk = await webSdk()
+  if (!sdk) return 'error'
   try {
-    // getRegistration resolves immediately; `.ready` would hang forever in dev,
-    // where the service worker is not registered at all.
-    const registration = await navigator.serviceWorker.getRegistration()
-    if (!registration) return 'unsupported'
-
-    const subscription =
-      (await registration.pushManager.getSubscription()) ??
-      (await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidKey),
-      }))
-
-    const row = toSubscriptionRow(userId, subscription.toJSON())
-    if (!row) return 'error'
-    // Definer RPC (migration 016): endpoints are unique per browser profile, and
-    // claiming one left behind by a previously signed-in account is an update
-    // RLS could never allow — the takeover lives in the scoped function.
-    const { error } = await db.rpc('claim_push_subscription', {
-      _endpoint: row.endpoint,
-      _p256dh: row.p256dh,
-      _auth: row.auth,
-    })
-    return error ? 'error' : 'subscribed'
+    await sdk.login(userId)
+    // optIn shows the browser permission prompt when it hasn't been granted.
+    await sdk.User.PushSubscription.optIn()
   } catch {
-    return 'error'
+    return Notification.permission === 'denied' ? 'permission-denied' : 'error'
   }
+  return Notification.permission === 'granted' ? 'subscribed' : 'permission-denied'
 }
 
-export async function enablePushNotifications(db: Db, userId: string): Promise<EnablePushResult> {
+export async function enablePushNotifications(userId: string): Promise<EnablePushResult> {
+  if (!userId) return 'error'
   if (!isPushSupported()) return 'unsupported'
-  if (Capacitor.isNativePlatform()) return enableNativePush(db)
-  return enableWebPush(db, userId)
+  if (Capacitor.isNativePlatform()) return enableNativePush(userId)
+  return enableWebPush(userId)
 }
 
-async function disableNativePush(db: Db): Promise<void> {
+export async function disablePushNotifications(): Promise<void> {
   try {
-    let token: string | null = null
-    try {
-      token = localStorage.getItem(FCM_TOKEN_KEY)
-    } catch {
-      token = null
+    if (Capacitor.isNativePlatform()) {
+      const appId = getOneSignalAppId()
+      if (!appId) return
+      const { default: OneSignal } = await import('@onesignal/capacitor-plugin')
+      // Same init-before-use guard as enableNativePush: the native SDK throws
+      // (crashing the app) when touched before initialize.
+      await OneSignal.initialize(appId)
+      await OneSignal.User.pushSubscription.optOut()
+      return
     }
-    if (token) {
-      await db.from(DEVICE_TABLE).delete().eq('token', token)
-      try {
-        localStorage.removeItem(FCM_TOKEN_KEY)
-      } catch {
-        // Best-effort.
-      }
-    }
-    const { PushNotifications } = await import('@capacitor/push-notifications')
-    await PushNotifications.removeAllListeners()
+    if (!isPushSupported() || !getOneSignalAppId()) return
+    // Short cap: if the SDK never loaded there is no subscription to turn off.
+    const sdk = await webSdk(3000)
+    await sdk?.User.PushSubscription.optOut()
   } catch {
-    // Best-effort: a stale token stops delivering once the sender prunes it on
-    // its first UNREGISTERED/NOT_FOUND response.
+    // Best-effort: opting out again next time is harmless.
   }
 }
 
-async function disableWebPush(db: Db): Promise<void> {
+// Detach this device from the account on sign-out, so pushes for the old
+// account stop following a shared device.
+export async function logoutPushUser(): Promise<void> {
   try {
-    const registration = await navigator.serviceWorker.getRegistration()
-    const subscription = await registration?.pushManager.getSubscription()
-    if (!subscription) return
-    await db.from(TABLE).delete().eq('endpoint', subscription.endpoint)
-    await subscription.unsubscribe()
+    const appId = getOneSignalAppId()
+    if (!appId) return
+    if (Capacitor.isNativePlatform()) {
+      const { default: OneSignal } = await import('@onesignal/capacitor-plugin')
+      await OneSignal.initialize(appId)
+      await OneSignal.logout()
+      return
+    }
+    if (!isPushSupported()) return
+    const sdk = await webSdk(3000)
+    await sdk?.logout()
   } catch {
-    // Best-effort: a leaked subscription stops delivering after the sender
-    // prunes the endpoint on its first expired push.
+    // Best-effort.
   }
-}
-
-export async function disablePushNotifications(db: Db): Promise<void> {
-  if (Capacitor.isNativePlatform()) return disableNativePush(db)
-  if (!isPushSupported()) return
-  return disableWebPush(db)
 }

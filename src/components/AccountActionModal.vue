@@ -4,7 +4,6 @@ import { useAuth } from '@clerk/vue'
 import ModalCloseButton from './ModalCloseButton.vue'
 import ErrorModal from './ErrorModal.vue'
 import userRoundIconRaw from '../assets/user-round.svg?raw'
-import { useSupabase } from '../supabase'
 import { enablePushNotifications, disablePushNotifications } from '../lib/pushNotifications'
 
 const props = defineProps({
@@ -21,7 +20,6 @@ const props = defineProps({
 const emit = defineEmits(['close', 'edit-account', 'sign-out', 'manage-family', 'invite-members'])
 
 const { userId } = useAuth()
-const db = useSupabase()
 
 const themeMode = ref('system')
 const notificationMode = ref('on')
@@ -84,17 +82,17 @@ async function applyNotifications(mode) {
   notificationHint.value = ''
 
   if (mode === 'off') {
-    await disablePushNotifications(db)
+    await disablePushNotifications()
     return
   }
 
   if (!userId.value) return
-  const result = await enablePushNotifications(db, userId.value)
+  const result = await enablePushNotifications(userId.value)
   if (result === 'permission-denied') {
     // The browser said no — reflect reality instead of a toggle that lies.
     notificationMode.value = 'off'
     localStorage.setItem('famcart-notifications', 'off')
-    notificationHint.value = 'Notifications are blocked in your browser settings.'
+    notificationHint.value = 'Notifications are blocked for FamCart in your device or browser settings.'
   } else if (result === 'error') {
     notificationMode.value = 'off'
     localStorage.setItem('famcart-notifications', 'off')

@@ -21,9 +21,10 @@ export default defineConfig({
   plugins: [
     vue(),
     VitePWA({
-      // Custom SW (src/sw.js): precaching plus the Web Push handlers that
-      // generateSW cannot express. skipWaiting/clientsClaim in the SW mirror
-      // the autoUpdate behavior.
+      // Custom SW (src/sw.js): precaching that generateSW used to emit.
+      // skipWaiting/clientsClaim in the SW mirror the autoUpdate behavior.
+      // Push lives on OneSignal's own worker (public/onesignal/), outside
+      // this plugin entirely.
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.js',
@@ -50,6 +51,9 @@ export default defineConfig({
         // Precache the app shell + brand assets so the list opens offline; the
         // navigation fallback lives in src/sw.js (NavigationRoute).
         globPatterns: ['**/*.{js,css,html,svg,png,webp,ico,woff2}'],
+        // OneSignal's worker must be fetched fresh by the browser's SW
+        // machinery, never served from the app-shell precache.
+        globIgnores: ['onesignal/**'],
       },
     }),
     uploadSourceMaps &&

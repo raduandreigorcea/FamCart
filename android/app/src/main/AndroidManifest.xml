@@ -24,6 +24,12 @@
 
         </activity>
 
+        <!-- Tints OneSignal notifications (icon + app name row) FamCart green;
+             the small icon itself is ic_stat_onesignal_default in drawable-*. -->
+        <meta-data
+            android:name="com.onesignal.NotificationAccentColor.DEFAULT"
+            android:value="FF4D8C65" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

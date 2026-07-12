@@ -8,6 +8,7 @@ import { getUserDisplayName, getUserInitial, getUserPrimaryEmail } from '../lib/
 import { forgetUser } from '../lib/session'
 import { clearFamilySnapshot } from '../lib/familyCache'
 import { clearOfflineQueue } from '../lib/offlineQueue'
+import { logoutPushUser } from '../lib/pushNotifications'
 
 // The settings modal is by far the heaviest part of the topbar; load its chunk
 // only when someone actually opens it.
@@ -92,6 +93,9 @@ async function handleSignOut() {
     forgetUser(localStorage)
     clearFamilySnapshot(localStorage)
     clearOfflineQueue(localStorage)
+    // Unlink this device in OneSignal so the next account's pushes don't land
+    // on top of the old one's. Best-effort; sign-out must not wait on the CDN.
+    void logoutPushUser()
     await clerk.value?.signOut({ redirectUrl: `${window.location.origin}/login` })
     accountMenuOpen.value = false
   } catch (error) {
