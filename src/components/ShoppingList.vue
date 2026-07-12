@@ -82,8 +82,8 @@ function finishCheckout(ids) {
 // track to trigger it. Below the completion threshold the thumb snaps back.
 // Keyboard users are not made to simulate a drag: Enter/Space on the focused
 // thumb (a click with detail 0) checks out directly.
-const THUMB_SIZE = 46 // px; keep in sync with .buy-bar__thumb
-const THUMB_INSET = 4 // px gap between thumb and track edge
+const THUMB_SIZE = 51 // px; bar height minus its borders; keep in sync with .buy-bar__thumb
+const THUMB_INSET = 0 // px gap between thumb and track edge; the thumb sits flush
 const COMPLETE_AT = 0.85 // fraction of the travel that counts as done
 
 const barEl = ref(null)
@@ -138,10 +138,9 @@ function onThumbClick(e) {
 }
 
 const thumbStyle = computed(() => ({ transform: `translateX(${dragX.value}px)` }))
-// The green trail extends one inset past the thumb's leading edge, so the
-// white thumb always rides on green with an even margin on every side (ending
-// it flush with the thumb left the right side without a green rim). At full
-// travel this is exactly the bar's width; success pins it there.
+// The green trail ends flush with the thumb's leading edge: the full-height
+// thumb caps the trail like the rounded nose of one pill. At full travel this
+// is exactly the bar's inner width; success pins it there.
 const fillWidth = computed(() => THUMB_INSET * 2 + THUMB_SIZE + dragX.value)
 const fillStyle = computed(() => ({
   width: buttonSuccess.value ? '100%' : `${fillWidth.value}px`,
@@ -393,18 +392,21 @@ const labelText = computed(() =>
   background: var(--bg-surface);
   border: 1.5px solid var(--border-main);
   color: var(--color-primary);
-  box-shadow: var(--elevation-primary, 0 10px 24px rgba(0, 0, 0, 0.22));
+  box-shadow: var(--elevation-primary);
   overflow: hidden; /* fill and thumb stay inside the pill */
 }
 
-/* Green trail the thumb leaves behind as it crosses the white track. */
+/* Green trail the thumb leaves behind as it crosses the white track. A tint
+   of the thumb's green (mixed toward the surface so it tracks the theme) —
+   light enough that the solid knob reads as a distinct button riding on its
+   own trail, dark enough that the inverse (white) label stays readable. */
 .buy-bar__fill {
   position: absolute;
   left: 0;
   top: 0;
   bottom: 0;
   border-radius: var(--radius-pill);
-  background: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 80%, var(--bg-surface));
   pointer-events: none;
   transition: width 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -432,18 +434,20 @@ const labelText = computed(() =>
   transition: clip-path 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* The thumb is the same green as the trail, so the two merge into one shape —
-   a circle at rest, stretching into a pill as it's dragged — instead of
-   reading as a bullseye of rings. It must be painted (not transparent): it
-   sits above the labels, so a solid thumb blots out text it crosses; a
-   transparent one let the letters show through inside the knob. */
+/* The thumb keeps the full-strength green so it stands out as the grabbable
+   knob against the lighter trail behind it. It must be painted (not
+   transparent): it sits above the labels, so a solid thumb blots out text it
+   crosses; a transparent one let the letters show through inside the knob. */
 .buy-bar__thumb {
   position: absolute;
-  left: 4px;
-  top: calc(50% - 23px); /* centered regardless of the track border */
+  /* Flush against the track's inner edges: absolute positioning is relative
+     to the padding box (inside the 1.5px border), so 0/0 nests the circle
+     right into the pill's rounded end with no gap. */
+  left: 0;
+  top: 0;
   z-index: 2;
-  width: 46px; /* keep in sync with THUMB_SIZE */
-  height: 46px;
+  width: 51px; /* keep in sync with THUMB_SIZE */
+  height: 51px;
   border: none;
   border-radius: 50%;
   background: var(--color-primary);
