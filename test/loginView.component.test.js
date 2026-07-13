@@ -15,6 +15,10 @@ const mocks = vi.hoisted(() => ({
   create: async () => ({}),
   isSignedIn: null,
   routerReplace: () => {},
+  isNative: false,
+  startNativeOAuth: vi.fn(),
+  setActive: vi.fn(),
+  authenticateWithRedirect: vi.fn(),
 }))
 
 vi.mock('@clerk/vue', async () => {
@@ -25,13 +29,23 @@ vi.mock('@clerk/vue', async () => {
         create: (...args) => mocks.create(...args),
         prepareFirstFactor: async () => {},
         attemptFirstFactor: async () => ({ status: 'complete' }),
-        authenticateWithRedirect: async () => {},
+        authenticateWithRedirect: (...args) => mocks.authenticateWithRedirect(...args),
       }),
       isLoaded: ref(true),
+      setActive: ref((...args) => mocks.setActive(...args)),
     }),
+    useSignUp: () => ({ signUp: ref({}) }),
     useAuth: () => ({ isSignedIn: mocks.isSignedIn }),
   }
 })
+
+vi.mock('@capacitor/core', () => ({
+  Capacitor: { isNativePlatform: () => mocks.isNative },
+}))
+
+vi.mock('../src/lib/nativeOAuth', () => ({
+  startNativeOAuth: (...args) => mocks.startNativeOAuth(...args),
+}))
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: (...args) => mocks.routerReplace(...args) }),
@@ -58,6 +72,10 @@ function clerkError(code, message) {
 beforeEach(() => {
   mocks.isSignedIn = ref(false)
   mocks.routerReplace = vi.fn()
+  mocks.isNative = false
+  mocks.startNativeOAuth.mockReset()
+  mocks.setActive.mockReset()
+  mocks.authenticateWithRedirect.mockReset()
 })
 
 afterEach(() => {
@@ -117,5 +135,64 @@ describe('LoginView error routing', () => {
     await flushPromises()
 
     expect(mocks.routerReplace).toHaveBeenCalledWith('/')
+  })
+})
+
+// The native app must never run OAuth inside the WebView: the buttons hand the
+// flow to the system browser (startNativeOAuth) and only activate the session
+// the callback delivered. The web redirect path stays untouched.
+describe('LoginView native OAuth wiring', () => {
+  async function clickGoogle(wrapper) {
+    await wrapper.find('.oauth-btn').trigger('click')
+    await flushPromises()
+  }
+
+  it('activates the returned session instead of redirecting the WebView', async () => {
+    mocks.isNative = true
+    mocks.startNativeOAuth.mockResolvedValue('sess_native_1')
+    const wrapper = mountLogin()
+    await clickGoogle(wrapper)
+
+    expect(mocks.startNativeOAuth).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'oauth_google',
+    )
+    expect(mocks.setActive).toHaveBeenCalledWith({ session: 'sess_native_1' })
+    expect(mocks.authenticateWithRedirect).not.toHaveBeenCalled()
+  })
+
+  it('quietly re-arms the buttons when the user closes the browser', async () => {
+    mocks.isNative = true
+    mocks.startNativeOAuth.mockResolvedValue(null)
+    const wrapper = mountLogin()
+    await clickGoogle(wrapper)
+
+    expect(mocks.setActive).not.toHaveBeenCalled()
+    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('')
+    // A second attempt must not be swallowed by a stuck loading flag.
+    await clickGoogle(wrapper)
+    expect(mocks.startNativeOAuth).toHaveBeenCalledTimes(2)
+  })
+
+  it('routes native OAuth failures into the error dialog', async () => {
+    mocks.isNative = true
+    mocks.startNativeOAuth.mockRejectedValue(
+      clerkError('oauth_access_denied', 'Access denied.'),
+    )
+    const wrapper = mountLogin()
+    await clickGoogle(wrapper)
+
+    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('Access denied.')
+    expect(mocks.setActive).not.toHaveBeenCalled()
+  })
+
+  it('keeps the web redirect flow in browsers', async () => {
+    mocks.isNative = false
+    const wrapper = mountLogin()
+    await clickGoogle(wrapper)
+
+    expect(mocks.authenticateWithRedirect).toHaveBeenCalled()
+    expect(mocks.startNativeOAuth).not.toHaveBeenCalled()
   })
 })

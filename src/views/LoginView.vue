@@ -1,7 +1,9 @@
 <script setup>
-import { useAuth, useSignIn } from '@clerk/vue'
+import { useAuth, useSignIn, useSignUp } from '@clerk/vue'
+import { Capacitor } from '@capacitor/core'
 import { ref, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { startNativeOAuth } from '../lib/nativeOAuth'
 import InputRow from '../components/InputRow.vue'
 import ErrorModal from '../components/ErrorModal.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
@@ -9,7 +11,8 @@ import AppCard from '../components/AppCard.vue'
 import BackButton from '../components/BackButton.vue'
 import { isOfflineError } from '../lib/offlineQueue'
 
-const { signIn, isLoaded: signInLoaded } = useSignIn()
+const { signIn, isLoaded: signInLoaded, setActive } = useSignIn()
+const { signUp } = useSignUp()
 const { isSignedIn } = useAuth()
 const router = useRouter()
 
@@ -74,6 +77,26 @@ async function signInWithOAuth(providerId) {
     if (!signInLoaded.value || loadingProvider.value) return
     error.value = ''
     loadingProvider.value = providerId
+
+    // Native app: the WebView cannot run OAuth (Google refuses embedded
+    // browsers), so the round-trip happens in the system browser and returns
+    // through the famcart:// deep link. A null session id means the user
+    // closed the browser — quietly re-arm the buttons.
+    if (Capacitor.isNativePlatform()) {
+        try {
+            const sessionId = await startNativeOAuth(signIn.value, signUp.value, providerId)
+            if (sessionId) {
+                await setActive.value({ session: sessionId })
+                goToApp()
+                return
+            }
+        } catch (e) {
+            handleSignInError(e, 'OAuth sign-in failed.')
+        }
+        loadingProvider.value = null
+        return
+    }
+
     try {
         await signIn.value.authenticateWithRedirect({
             strategy: providerId,

@@ -22,6 +22,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- OAuth return leg: Clerk redirects the system browser to
+                 famcart://sso-callback, which re-opens this activity
+                 (singleTask, so the running instance receives it as an
+                 appUrlOpen event instead of a relaunch). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="famcart" android:host="sso-callback" />
+            </intent-filter>
+
         </activity>
 
         <!-- Tints OneSignal notifications (icon + app name row) FamCart green;
