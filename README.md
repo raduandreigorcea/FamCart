@@ -27,3 +27,7 @@ Ever bought milk on the way home, only to find your partner already got some an 
 ## Why it exists
 
 Family group chats are terrible shopping lists. Messages scroll away, nobody knows what's already been bought, and the one time you don't check, you come home with the third jar of pickles this week. FamCart is the fix: one place, one list, everyone on the same page — literally.
+
+## License
+
+FamCart is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE.md): you're welcome to read the code, learn from it, and use it for personal, hobby, or educational purposes — but any commercial use is not permitted.
