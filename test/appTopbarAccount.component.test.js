@@ -27,7 +27,10 @@ vi.mock('../src/supabase', () => ({
   }),
 }))
 
-vi.mock('../src/lib/pushNotifications', () => ({
+vi.mock('../src/lib/pushNotifications', async (importOriginal) => ({
+  // Keep the real localStorage-backed preference helpers; only the SDK-touching
+  // functions need stubbing.
+  ...(await importOriginal()),
   enablePushNotifications: vi.fn(),
   disablePushNotifications: vi.fn(),
 }))

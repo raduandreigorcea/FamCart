@@ -1,0 +1,167 @@
+<script setup>
+// One-time greeting shown after login for users who never decided on
+// notifications. Explains the benefit up front so the browser/OS permission
+// prompt that follows an accept doesn't arrive cold.
+defineProps({
+  open: { type: Boolean, default: false },
+})
+
+const emit = defineEmits(['accept', 'decline'])
+</script>
+
+<template>
+  <Transition name="notify-fade">
+    <div v-if="open" class="notify-overlay" @click.self="emit('decline')">
+      <div class="notify-dialog" role="alertdialog" aria-modal="true" aria-labelledby="notify-prompt-title">
+        <div class="notify-dialog__icon-wrap">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="notify-dialog__icon">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+
+        <div class="notify-dialog__body">
+          <h4 id="notify-prompt-title" class="notify-dialog__title">Turn on notifications?</h4>
+          <p class="notify-dialog__message">
+            Know the moment someone in your family adds something to the
+            list or checks items off, so nothing gets forgotten at the store.
+          </p>
+        </div>
+
+        <div class="notify-dialog__actions">
+          <button class="notify-btn notify-btn--decline" type="button" @click="emit('decline')">Not now</button>
+          <button class="notify-btn notify-btn--accept" type="button" @click="emit('accept')">Turn on</button>
+        </div>
+      </div>
+    </div>
+  </Transition>
+</template>
+
+<style scoped>
+.notify-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-dark-strong);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+  padding: calc(var(--space-4) + var(--safe-top)) var(--space-4) calc(var(--space-4) + var(--safe-bottom));
+}
+
+.notify-dialog {
+  width: 100%;
+  max-width: 400px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-dialog);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 42%, var(--border-main));
+  box-shadow: var(--elevation-dialog);
+  padding: var(--space-7) var(--space-7) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  text-align: center;
+  animation: notifyScaleIn 0.26s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.notify-dialog__icon-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--bg-surface));
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.notify-dialog__icon {
+  width: 26px;
+  height: 26px;
+}
+
+.notify-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.notify-dialog__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.notify-dialog__message {
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.notify-dialog__actions {
+  display: flex;
+  gap: 0.65rem;
+  width: 100%;
+  margin-top: 0.25rem;
+}
+
+.notify-btn {
+  flex: 1;
+  border-radius: var(--radius-md);
+  padding: 0.65rem var(--space-4);
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.notify-btn--decline {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border: 1px solid var(--bg-hover);
+}
+
+.notify-btn--decline:hover {
+  background: var(--border-light);
+}
+
+.notify-btn--accept {
+  background: var(--color-primary);
+  color: var(--text-inverse);
+  box-shadow: var(--elevation-primary);
+}
+
+.notify-btn--accept:hover {
+  background: color-mix(in srgb, var(--color-primary) 85%, var(--text-primary));
+  transform: translateY(-1px);
+}
+
+.notify-fade-enter-active,
+.notify-fade-leave-active {
+  transition: opacity 0.22s ease;
+}
+
+.notify-fade-enter-from,
+.notify-fade-leave-to {
+  opacity: 0;
+}
+
+@keyframes notifyScaleIn {
+  from {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+</style>

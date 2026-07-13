@@ -4,7 +4,12 @@ import { useAuth } from '@clerk/vue'
 import ModalCloseButton from './ModalCloseButton.vue'
 import ErrorModal from './ErrorModal.vue'
 import userRoundIconRaw from '../assets/user-round.svg?raw'
-import { enablePushNotifications, disablePushNotifications } from '../lib/pushNotifications'
+import {
+  enablePushNotifications,
+  disablePushNotifications,
+  getNotificationPreference,
+  setNotificationPreference,
+} from '../lib/pushNotifications'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -36,12 +41,10 @@ function syncPreferencesFromStorage() {
     applyResolvedTheme('system')
   }
 
-  const savedNotifications = localStorage.getItem('famcart-notifications')
-  if (savedNotifications === 'off') {
-    notificationMode.value = 'off'
-  } else {
-    notificationMode.value = 'on'
-  }
+  // Only an explicit opt-in shows On. An unset preference means the user was
+  // never asked (or never answered) — showing On there would claim a push
+  // subscription that doesn't exist.
+  notificationMode.value = getNotificationPreference(localStorage) === 'on' ? 'on' : 'off'
 }
 
 function applyResolvedTheme(mode) {
@@ -78,7 +81,7 @@ function applyTheme(mode) {
 
 async function applyNotifications(mode) {
   notificationMode.value = mode
-  localStorage.setItem('famcart-notifications', mode)
+  setNotificationPreference(localStorage, mode)
   notificationHint.value = ''
 
   if (mode === 'off') {
@@ -91,11 +94,11 @@ async function applyNotifications(mode) {
   if (result === 'permission-denied') {
     // The browser said no — reflect reality instead of a toggle that lies.
     notificationMode.value = 'off'
-    localStorage.setItem('famcart-notifications', 'off')
+    setNotificationPreference(localStorage, 'off')
     notificationHint.value = 'Notifications are blocked for FamCart in your device or browser settings.'
   } else if (result === 'error') {
     notificationMode.value = 'off'
-    localStorage.setItem('famcart-notifications', 'off')
+    setNotificationPreference(localStorage, 'off')
     notificationHint.value = 'Could not enable notifications. Please try again.'
   }
   // 'unsupported' / 'not-configured': push is unavailable in this environment;

@@ -36,6 +36,26 @@ export function getOneSignalAppId(): string {
   return (import.meta.env.VITE_ONESIGNAL_APP_ID as string | undefined) ?? ''
 }
 
+// The saved preference doubles as "has this user ever decided": null means the
+// login prompt hasn't been answered yet, which is exactly what HomeView keys on.
+export type NotificationPreference = 'on' | 'off'
+
+const PREFERENCE_KEY = 'famcart-notifications'
+
+export function getNotificationPreference(
+  storage: Pick<Storage, 'getItem'>,
+): NotificationPreference | null {
+  const value = storage.getItem(PREFERENCE_KEY)
+  return value === 'on' || value === 'off' ? value : null
+}
+
+export function setNotificationPreference(
+  storage: Pick<Storage, 'setItem'>,
+  mode: NotificationPreference,
+): void {
+  storage.setItem(PREFERENCE_KEY, mode)
+}
+
 export function isPushSupported(): boolean {
   // Native app: OneSignal uses FCM directly, regardless of WebView support.
   if (Capacitor.isNativePlatform()) return true

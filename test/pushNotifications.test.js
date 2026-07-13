@@ -6,6 +6,8 @@ import {
   isPushSupported,
   enablePushNotifications,
   disablePushNotifications,
+  getNotificationPreference,
+  setNotificationPreference,
 } from '../src/lib/pushNotifications'
 
 function fakeSdk({ permission = 'granted' } = {}) {
@@ -117,5 +119,31 @@ describe('disable', () => {
     vi.stubEnv('VITE_ONESIGNAL_APP_ID', '')
     stubPushCapableBrowser()
     await expect(disablePushNotifications()).resolves.toBeUndefined()
+  })
+})
+
+describe('notification preference', () => {
+  function fakeStorage(initial = {}) {
+    const data = { ...initial }
+    return {
+      getItem: (key) => (key in data ? data[key] : null),
+      setItem: (key, value) => { data[key] = value },
+    }
+  }
+
+  it('reports null when the user has never decided', () => {
+    expect(getNotificationPreference(fakeStorage())).toBe(null)
+  })
+
+  it('round-trips an explicit decision', () => {
+    const storage = fakeStorage()
+    setNotificationPreference(storage, 'on')
+    expect(getNotificationPreference(storage)).toBe('on')
+    setNotificationPreference(storage, 'off')
+    expect(getNotificationPreference(storage)).toBe('off')
+  })
+
+  it('treats a corrupted stored value as undecided', () => {
+    expect(getNotificationPreference(fakeStorage({ 'famcart-notifications': 'maybe' }))).toBe(null)
   })
 })

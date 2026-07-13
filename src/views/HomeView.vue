@@ -6,6 +6,7 @@ import { useSupabase } from '../supabase'
 import AppTopbar from '../components/AppTopbar.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import ErrorModal from '../components/ErrorModal.vue'
+import NotificationPromptModal from '../components/NotificationPromptModal.vue'
 import ShoppingList from '../components/ShoppingList.vue'
 import AddItemForm from '../components/AddItemForm.vue'
 import { useFamilyRealtime } from '../lib/familyRealtime'
@@ -20,6 +21,13 @@ import { loadFamilySnapshot, saveFamilySnapshot, clearFamilySnapshot } from '../
 import { enqueueOfflineMutation, flushOfflineQueue, hasQueuedOfflineMutations, isOfflineError } from '../lib/offlineQueue'
 import { isCurrentlyOffline, onReconnect } from '../lib/connectivity'
 import { rememberUser, getRememberedUser } from '../lib/session'
+import {
+  enablePushNotifications,
+  getNotificationPreference,
+  setNotificationPreference,
+  getOneSignalAppId,
+  isPushSupported,
+} from '../lib/pushNotifications'
 
 const { userId, isLoaded, getToken } = useAuth()
 const { user } = useUser()
@@ -43,6 +51,8 @@ const newQty = ref(1)
 const loadError = ref('')
 const addError = ref('')
 const limitReachedPopupOpen = ref(false)
+const notificationPromptOpen = ref(false)
+const notificationError = ref('')
 const adding = ref(false)
 const hasInitialized = ref(false)
 const ITEM_NAME_MAX_LENGTH = 120
@@ -211,6 +221,39 @@ async function initializeHome() {
   await setupRealtimeSubscriptions()
   hasInitialized.value = true
   persistSnapshot()
+  maybePromptForNotifications()
+}
+
+// First-login greeting: users who never answered the notifications question get
+// asked once, right after their list is up. An unset preference is the signal —
+// both prompt buttons store a decision, so it never re-appears.
+function maybePromptForNotifications() {
+  if (!userId.value) return
+  if (getNotificationPreference(localStorage)) return
+  // No point asking where accepting could do nothing: unsupported browser,
+  // push not configured, or offline (the OneSignal subscription needs the
+  // network). Leaving the preference unset re-asks on the next login instead.
+  if (!isPushSupported() || !getOneSignalAppId() || isOffline()) return
+  notificationPromptOpen.value = true
+}
+
+async function acceptNotifications() {
+  notificationPromptOpen.value = false
+  setNotificationPreference(localStorage, 'on')
+  const result = await enablePushNotifications(userId.value)
+  if (result === 'permission-denied') {
+    // The browser said no — reflect reality instead of a preference that lies.
+    setNotificationPreference(localStorage, 'off')
+    notificationError.value = 'Notifications are blocked for FamCart in your device or browser settings.'
+  } else if (result === 'error') {
+    setNotificationPreference(localStorage, 'off')
+    notificationError.value = 'Could not enable notifications. You can try again from Account Settings.'
+  }
+}
+
+function declineNotifications() {
+  notificationPromptOpen.value = false
+  setNotificationPreference(localStorage, 'off')
 }
 
 // Paint the last known state immediately (stale-while-revalidate): a returning
@@ -723,8 +766,15 @@ async function deleteItem(item) {
       @cancel="closeLimitReachedPopup"
     />
 
+    <NotificationPromptModal
+      :open="notificationPromptOpen"
+      @accept="acceptNotifications"
+      @decline="declineNotifications"
+    />
+
     <ErrorModal :message="loadError" @dismiss="loadError = ''" />
     <ErrorModal :message="addError" @dismiss="addError = ''" />
+    <ErrorModal title="Notifications" :message="notificationError" @dismiss="notificationError = ''" />
   </div>
 </template>
 
