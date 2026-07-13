@@ -61,11 +61,21 @@ jobs:
       - name: Rename APK
         run: cp android/app/build/outputs/apk/debug/app-debug.apk FamCart.apk
 
-      - name: Update "latest" release
+      # Editing a release in place keeps its original publish date, so the
+      # releases page would claim the build is old forever. Delete and
+      # re-publish: the shown date becomes the build time, and the "latest"
+      # tag moves to the commit that was actually built. The || true covers
+      # the first run, when there is nothing to delete yet.
+      - name: Delete previous "latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete latest --cleanup-tag --yes || true
+
+      - name: Publish "latest" release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: FamCart — latest build
+          name: FamCart - latest build
           body: |
             Newest FamCart Android app, built automatically from `master`.
 
