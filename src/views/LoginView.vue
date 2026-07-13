@@ -2,7 +2,7 @@
 import { useAuth, useClerk, useSignIn, useSignUp } from '@clerk/vue'
 import { Capacitor } from '@capacitor/core'
 import * as Sentry from '@sentry/vue'
-import { ref, nextTick, watch } from 'vue'
+import { ref, nextTick, toRaw, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { startNativeOAuth } from '../lib/nativeOAuth'
 import InputRow from '../components/InputRow.vue'
@@ -88,10 +88,19 @@ async function signInWithOAuth(providerId) {
         try {
             const sessionId = await startNativeOAuth(signIn.value, signUp.value, providerId)
             if (sessionId) {
-                // Activate via the Clerk instance, not useSignIn()'s setActive:
-                // that one is a detached method whose `this` becomes the Vue
-                // ref wrapper, crashing on Clerk's private class fields.
-                await clerk.value.setActive({ session: sessionId })
+                // Reaching here means the session already exists server-side
+                // (the attempt completed in the external browser); activating
+                // it is client bookkeeping. If Clerk's wrapper still trips
+                // over it, don't strand a signed-in user on the login screen:
+                // the full reload in goToApp() re-reads the session anyway —
+                // a cold restart demonstrably comes back logged in.
+                try {
+                    // toRaw + calling on the instance: both the Vue proxy and
+                    // a detached method crash on Clerk's private class fields.
+                    await toRaw(clerk.value).setActive({ session: sessionId })
+                } catch (activationError) {
+                    Sentry.captureException(activationError)
+                }
                 goToApp()
                 return
             }

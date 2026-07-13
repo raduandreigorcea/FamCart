@@ -1,5 +1,6 @@
 import { App, type URLOpenListenerEvent } from '@capacitor/app'
 import { Browser } from '@capacitor/browser'
+import { toRaw } from 'vue'
 
 // The deep link that actually re-enters the app. Must stay in sync with the
 // famcart://sso-callback intent filter in android/app/src/main/
@@ -47,10 +48,17 @@ export interface NativeOAuthSignUp {
 // browser without finishing. Anything else (Clerk errors, an attempt that
 // comes back in a state we cannot finish) throws.
 export async function startNativeOAuth(
-  signIn: NativeOAuthSignIn,
-  signUp: NativeOAuthSignUp,
+  proxiedSignIn: NativeOAuthSignIn,
+  proxiedSignUp: NativeOAuthSignUp,
   strategy: string,
 ): Promise<string | null> {
+  // @clerk/vue stores Clerk's resources in a deep ref, so callers hold
+  // reactive Proxies. Clerk's classes use native private fields, and any
+  // method invoked with a Proxy as `this` dies with "cannot read private
+  // member #…" — unwrap to the real instances before touching them.
+  const signIn = toRaw(proxiedSignIn)
+  const signUp = toRaw(proxiedSignUp)
+
   await signIn.create({ strategy, redirectUrl: NATIVE_SSO_BOUNCE_URL })
 
   const verificationUrl =

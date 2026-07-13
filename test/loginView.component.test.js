@@ -162,6 +162,21 @@ describe('LoginView native OAuth wiring', () => {
     expect(mocks.authenticateWithRedirect).not.toHaveBeenCalled()
   })
 
+  it('still enters the app when session activation throws client-side', async () => {
+    // The session exists server-side once startNativeOAuth returns an id;
+    // a client-side activation crash must not strand the user on the login
+    // screen (the full reload re-reads the session from the server).
+    mocks.isNative = true
+    mocks.startNativeOAuth.mockResolvedValue('sess_native_2')
+    mocks.setActive.mockRejectedValue(
+      new TypeError('Cannot read private member #q'),
+    )
+    const wrapper = mountLogin()
+    await clickGoogle(wrapper)
+
+    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('')
+  })
+
   it('quietly re-arms the buttons when the user closes the browser', async () => {
     mocks.isNative = true
     mocks.startNativeOAuth.mockResolvedValue(null)
