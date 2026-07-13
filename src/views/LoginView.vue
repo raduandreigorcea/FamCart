@@ -1,6 +1,7 @@
 <script setup>
-import { useAuth, useSignIn, useSignUp } from '@clerk/vue'
+import { useAuth, useClerk, useSignIn, useSignUp } from '@clerk/vue'
 import { Capacitor } from '@capacitor/core'
+import * as Sentry from '@sentry/vue'
 import { ref, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { startNativeOAuth } from '../lib/nativeOAuth'
@@ -11,7 +12,8 @@ import AppCard from '../components/AppCard.vue'
 import BackButton from '../components/BackButton.vue'
 import { isOfflineError } from '../lib/offlineQueue'
 
-const { signIn, isLoaded: signInLoaded, setActive } = useSignIn()
+const clerk = useClerk()
+const { signIn, isLoaded: signInLoaded } = useSignIn()
 const { signUp } = useSignUp()
 const { isSignedIn } = useAuth()
 const router = useRouter()
@@ -86,13 +88,19 @@ async function signInWithOAuth(providerId) {
         try {
             const sessionId = await startNativeOAuth(signIn.value, signUp.value, providerId)
             if (sessionId) {
-                await setActive.value({ session: sessionId })
+                // Activate via the Clerk instance, not useSignIn()'s setActive:
+                // that one is a detached method whose `this` becomes the Vue
+                // ref wrapper, crashing on Clerk's private class fields.
+                await clerk.value.setActive({ session: sessionId })
                 goToApp()
                 return
             }
         } catch (e) {
-            // Non-Clerk errors from the native flow carry their diagnosis in
-            // the message (which state the attempt got stuck in) — show it.
+            // Native OAuth failures are unexpected by definition (user
+            // cancellation resolves null instead) — worth a Sentry event
+            // (no-op without a DSN). The dialog shows the diagnosis the
+            // error carries: which state the attempt got stuck in.
+            Sentry.captureException(e)
             handleSignInError(e, e?.message || 'OAuth sign-in failed.')
         }
         loadingProvider.value = null

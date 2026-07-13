@@ -32,9 +32,9 @@ vi.mock('@clerk/vue', async () => {
         authenticateWithRedirect: (...args) => mocks.authenticateWithRedirect(...args),
       }),
       isLoaded: ref(true),
-      setActive: ref((...args) => mocks.setActive(...args)),
     }),
     useSignUp: () => ({ signUp: ref({}) }),
+    useClerk: () => ref({ setActive: (...args) => mocks.setActive(...args) }),
     useAuth: () => ({ isSignedIn: mocks.isSignedIn }),
   }
 })
