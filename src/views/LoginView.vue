@@ -91,7 +91,9 @@ async function signInWithOAuth(providerId) {
                 return
             }
         } catch (e) {
-            handleSignInError(e, 'OAuth sign-in failed.')
+            // Non-Clerk errors from the native flow carry their diagnosis in
+            // the message (which state the attempt got stuck in) — show it.
+            handleSignInError(e, e?.message || 'OAuth sign-in failed.')
         }
         loadingProvider.value = null
         return

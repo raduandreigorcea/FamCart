@@ -82,7 +82,15 @@ export async function startNativeOAuth(
     if (signUp.status === 'complete') return signUp.createdSessionId
   }
 
-  throw new Error('OAuth sign-in did not complete.')
+  // The exact stuck state is the difference between "allowlist the redirect
+  // URL in Clerk" and a bug here — name it instead of a generic failure.
+  throw new Error(
+    'OAuth sign-in did not complete ' +
+      `(attempt: ${signIn.status ?? 'unknown'}, ` +
+      `verification: ${signIn.firstFactorVerification.status ?? 'unknown'}, ` +
+      `sign-up: ${signUp.status ?? 'none'}, ` +
+      `nonce: ${rotatingTokenNonce ? 'present' : 'missing'}).`,
+  )
 }
 
 // Opens the Custom Tab and waits for whichever comes first: the deep-link
