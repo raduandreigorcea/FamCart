@@ -254,6 +254,16 @@ const memberCount = computed(() => props.memberProfiles.length)
   z-index: 10;
 }
 
+/* Desktop: keep the bar full-width but align its content with the centered
+   dashboard column, so the family name and buttons don't hug the far corners
+   of a wide screen. 100% is the bar's own width, which matches the base the
+   column is centered against. */
+@media (min-width: 900px) {
+  .topbar {
+    padding-inline: max(1.25rem, calc((100% - var(--desktop-column)) / 2));
+  }
+}
+
 .topbar-left {
   display: flex;
   align-items: center;

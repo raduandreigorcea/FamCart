@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   db: null,
   routerReplace: () => {},
   enablePush: vi.fn(),
+  isDesktop: false,
 }))
 
 vi.mock('../src/supabase', () => ({
@@ -55,6 +56,7 @@ vi.mock('../src/lib/pushNotifications', async (importOriginal) => ({
   ...(await importOriginal()),
   isPushSupported: () => true,
   getOneSignalAppId: () => 'app-test',
+  isDesktopBrowser: () => mocks.isDesktop,
   enablePushNotifications: (...args) => mocks.enablePush(...args),
   disablePushNotifications: vi.fn(),
 }))
@@ -104,6 +106,7 @@ beforeEach(() => {
   __setOnlineForTest(true)
   mocks.enablePush.mockReset()
   mocks.enablePush.mockResolvedValue('subscribed')
+  mocks.isDesktop = false
 })
 
 afterEach(() => {
@@ -117,6 +120,14 @@ describe('first-login notification prompt', () => {
     const wrapper = await mountHome()
     expect(prompt(wrapper).props('open')).toBe(true)
     // Just showing the prompt records nothing — only an answer does.
+    expect(getNotificationPreference(localStorage)).toBe(null)
+  })
+
+  it('stays silent in desktop browsers, leaving the decision for a phone', async () => {
+    mocks.isDesktop = true
+    const wrapper = await mountHome()
+    expect(prompt(wrapper).props('open')).toBe(false)
+    // Unset preference: the same account is still greeted on a mobile device.
     expect(getNotificationPreference(localStorage)).toBe(null)
   })
 

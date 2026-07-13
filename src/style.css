@@ -84,6 +84,10 @@
   --space-8: 2rem;
 
   /* Shared sizing */
+  /* One content column, shared by the topbar and the dashboard so their
+     edges line up on wide screens. Applied behind identical 900px media
+     queries (media queries can't read custom properties). */
+  --desktop-column: 720px;
   --size-control-sm: 32px;
   --size-control-md: 40px;
   --size-control-lg: 52px;

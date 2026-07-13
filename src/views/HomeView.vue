@@ -26,6 +26,7 @@ import {
   getNotificationPreference,
   setNotificationPreference,
   getOneSignalAppId,
+  isDesktopBrowser,
   isPushSupported,
 } from '../lib/pushNotifications'
 
@@ -234,6 +235,9 @@ function maybePromptForNotifications() {
   // push not configured, or offline (the OneSignal subscription needs the
   // network). Leaving the preference unset re-asks on the next login instead.
   if (!isPushSupported() || !getOneSignalAppId() || isOffline()) return
+  // Desktop browsers never get greeted with a permission ask; the preference
+  // stays unset so the same account is still asked on a phone later.
+  if (isDesktopBrowser()) return
   notificationPromptOpen.value = true
 }
 
@@ -798,6 +802,18 @@ async function deleteItem(item) {
 .dashboard-content {
   width: 100%;
   max-width: 480px;
+}
+
+/* Desktop: a phone-width strip looks lost on a big screen. Widen to the shared
+   column and add air under the bar; past that, item rows get too long to scan. */
+@media (min-width: 900px) {
+  .dashboard-main {
+    padding-top: calc(72px + 2.5rem + var(--safe-top));
+  }
+
+  .dashboard-content {
+    max-width: var(--desktop-column);
+  }
 }
 </style>
 

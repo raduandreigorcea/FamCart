@@ -67,6 +67,21 @@ export function isPushSupported(): boolean {
   )
 }
 
+// Pushes matter on devices that leave the desk: a desktop tab is either open
+// (the list is already live via Realtime) or closed with the user away from
+// the machine, so greeting desktop users with a permission prompt is noise.
+// Coarse primary pointer separates phones/tablets from desktops — including
+// touch-screen laptops, whose primary pointer is still the mouse/trackpad.
+// Desktop users can still opt in from Account Settings.
+export function isDesktopBrowser(): boolean {
+  if (Capacitor.isNativePlatform()) return false
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    !window.matchMedia('(pointer: coarse)').matches
+  )
+}
+
 function deferredQueue(): DeferredQueue {
   const w = window as unknown as { OneSignalDeferred?: DeferredQueue }
   w.OneSignalDeferred = w.OneSignalDeferred ?? []
