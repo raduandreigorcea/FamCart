@@ -13,11 +13,13 @@
 --   5. The invite code is checked by the database at join time: a direct
 --      membership insert fails even with a known family uuid (the removed-
 --      member-rejoin vector), and join_family_with_code() is the only way in.
+--   6. The product catalog is readable by any signed-in user but writable
+--      only by the service role (the seed script).
 --
 -- Tests run inside a transaction that is rolled back, so they leave no data behind.
 
 begin;
-select plan(11);
+select plan(13);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 insert into public.families (id, name, invite_code, created_by) values
@@ -37,6 +39,10 @@ insert into public.shopping_list_items (id, family_id, name, added_by, checked) 
 update public.families
 set max_items_per_member = 1
 where id = '00000000-0000-0000-0000-0000000000a1';
+
+-- One catalog row, seeded the way scripts/seed-products.mjs would.
+insert into public.product_catalog (name, maker, search_text)
+values ('Apa Plata 2L', 'Dorna', 'apa plata 2l dorna');
 
 -- ── Act as user_a (authenticated role + JWT sub claim) ───────────────────────
 set local role authenticated;
@@ -143,6 +149,23 @@ select is(
   (select count(*)::int from public.join_family_with_code('ZZZZZZZ2', 'User A', null)),
   0,
   'join RPC returns nothing for an unknown code'
+);
+
+-- ── 6. The product catalog is read-only for clients ──────────────────────────
+
+select is(
+  (select count(*)::int from public.product_catalog
+   where name = 'Apa Plata 2L' and maker = 'Dorna'),
+  1,
+  'signed-in users can read the product catalog'
+);
+
+select throws_ok(
+  $$ insert into public.product_catalog (name, maker, search_text)
+     values ('forged product', 'nobody', 'forged product nobody') $$,
+  '42501',
+  null,
+  'clients cannot insert into the product catalog'
 );
 
 select * from finish();

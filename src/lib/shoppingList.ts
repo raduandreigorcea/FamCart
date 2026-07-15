@@ -7,6 +7,7 @@ export interface ShoppingItem {
   checked: boolean
   quantity?: number
   added_by?: string
+  maker?: string | null
 }
 
 // Normalize a name for matching: trimmed and lowercased, so "Milk", "milk " and
@@ -31,16 +32,24 @@ export function sumCheckedQuantities(items: ShoppingItem[]): number {
     .reduce((sum, i) => sum + (Number(i.quantity) || 1), 0)
 }
 
-// First unchecked item whose name matches `name` (case/whitespace-insensitive),
-// optionally excluding one id. Returns undefined if none match.
+// First unchecked item whose name AND maker match (case/whitespace-insensitive),
+// optionally excluding one id. Returns undefined if none match. The maker is
+// part of the merge key — "Lapte 3.5% 1L" from Napolact and from LaDorna are
+// different products — mirroring the DB's unique active-item index
+// (migration 023). A null/absent maker only matches other maker-less items.
 export function findActiveItemByName(
   items: ShoppingItem[],
   name: string,
-  { excludeId }: { excludeId?: string } = {},
+  { excludeId, maker }: { excludeId?: string; maker?: string | null } = {},
 ): ShoppingItem | undefined {
   const key = normalizeItemName(name)
+  const makerKey = normalizeItemName(maker)
   return items.find(
-    (i) => !i.checked && i.id !== excludeId && normalizeItemName(i.name) === key,
+    (i) =>
+      !i.checked &&
+      i.id !== excludeId &&
+      normalizeItemName(i.name) === key &&
+      normalizeItemName(i.maker) === makerKey,
   )
 }
 

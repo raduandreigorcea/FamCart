@@ -15,6 +15,7 @@ import {
   countActiveItemsByMember,
   sortItemsForDisplay,
 } from '../lib/shoppingList'
+import { normalizeSearchText, escapeIlikePattern } from '../lib/productSearch'
 import { getUserDisplayName, getUserPrimaryEmail } from '../lib/userIdentity'
 import { cleanAuthCallbackUrl } from '../lib/authCallbackUrl'
 import { loadFamilySnapshot, saveFamilySnapshot, clearFamilySnapshot } from '../lib/familyCache'
@@ -49,6 +50,10 @@ const familyItemLimit = ref(50)
 const familyMembers = ref([])
 const newItem = ref('')
 const newQty = ref(1)
+// Product-catalog matches for what's being typed, and the suggestion the user
+// picked (its maker is stored on the item and shown as a subtitle).
+const suggestions = ref([])
+const selectedProduct = ref(null)
 const loadError = ref('')
 const addError = ref('')
 const limitReachedPopupOpen = ref(false)
@@ -109,7 +114,60 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('online', handleBackOnline)
   if (stopReconnect) stopReconnect()
+  if (suggestTimer) clearTimeout(suggestTimer)
 })
+
+// ── Product suggestions ───────────────────────────────────────────────────────
+// Typing queries the read-only product catalog (debounced) and offers matches;
+// picking one fills the input with the product name and remembers its maker.
+// Best-effort: any failure just means no dropdown, never an error surface.
+let suggestTimer = null
+let suggestRequestId = 0
+const SUGGEST_MIN_CHARS = 2
+const SUGGEST_LIMIT = 6
+const SUGGEST_DEBOUNCE_MS = 200
+
+watch(newItem, (value) => {
+  const query = value.trim()
+  // Editing away from a picked suggestion drops its maker; retyping the exact
+  // product name without re-picking keeps it (same product, same subtitle).
+  if (selectedProduct.value && query !== selectedProduct.value.name) {
+    selectedProduct.value = null
+  }
+  if (suggestTimer) clearTimeout(suggestTimer)
+  if (query.length < SUGGEST_MIN_CHARS || selectedProduct.value) {
+    suggestions.value = []
+    return
+  }
+  suggestTimer = setTimeout(() => void fetchSuggestions(query), SUGGEST_DEBOUNCE_MS)
+})
+
+async function fetchSuggestions(query) {
+  if (isOffline()) return
+  const requestId = ++suggestRequestId
+  try {
+    const pattern = `%${escapeIlikePattern(normalizeSearchText(query))}%`
+    const { data, error } = await db
+      .from('product_catalog')
+      .select('name, maker')
+      .ilike('search_text', pattern)
+      .order('name')
+      .limit(SUGGEST_LIMIT)
+    // Stale responses (a newer keystroke queried already) and late ones (the
+    // input was cleared or a product picked meanwhile) must not reopen the list.
+    if (error || requestId !== suggestRequestId) return
+    if (selectedProduct.value || newItem.value.trim().length < SUGGEST_MIN_CHARS) return
+    suggestions.value = data || []
+  } catch {
+    // Suggestions are a convenience; a failed lookup changes nothing.
+  }
+}
+
+function selectSuggestion(product) {
+  selectedProduct.value = product
+  newItem.value = product.name
+  suggestions.value = []
+}
 
 // Single-flight flush of the offline queue. Every list refetch funnels through
 // this first (see loadItems), so a reload triggered by realtime/watchdog on
@@ -395,11 +453,14 @@ async function addItem() {
   addError.value = ''
 
   const quantity = newQty.value
+  // The maker only comes from a picked catalog suggestion (the newItem watcher
+  // clears the pick as soon as the text stops matching it).
+  const maker = selectedProduct.value?.maker ?? null
 
-  // If an unchecked item with the same name already exists, bump its quantity
-  // instead of adding a duplicate row. Checked (already-bought) items are left
-  // alone so re-adding them starts a fresh active item.
-  const existing = findActiveItemByName(items.value, name)
+  // If an unchecked item for the same product (name + maker) already exists,
+  // bump its quantity instead of adding a duplicate row. Checked (already-
+  // bought) items are left alone so re-adding them starts a fresh active item.
+  const existing = findActiveItemByName(items.value, name, { maker })
   if (existing) {
     newItem.value = ''
     newQty.value = 1
@@ -450,6 +511,7 @@ async function addItem() {
     id,
     family_id: familyId.value,
     name,
+    maker,
     quantity,
     added_by: effectiveUserId.value,
     added_by_name: creatorName,
@@ -475,10 +537,10 @@ async function addItem() {
     .single()
 
   if (error) {
-    // Lost a race: the DB already has an unchecked item with this name (our local
-    // check missed it). Fold this quantity into that row instead of erroring.
+    // Lost a race: the DB already has an unchecked item for this product (our
+    // local check missed it). Fold this quantity into that row instead of erroring.
     if (error.code === '23505') {
-      await incrementActiveItemByName(name, quantity, id)
+      await incrementActiveItemByName(name, maker, quantity, id)
       return
     }
     // Network failure (WebView reported online but the write never left): keep
@@ -493,6 +555,9 @@ async function addItem() {
       addError.value = error.message ?? 'Failed to add item.'
       newItem.value = name
       newQty.value = quantity
+      // Keep the catalog pick across the retry (the watcher sees the restored
+      // text matching it and leaves it in place).
+      selectedProduct.value = maker ? { name, maker } : null
     }
     return
   }
@@ -503,19 +568,19 @@ async function addItem() {
   if (index !== -1) items.value[index] = data
 }
 
-// Increment the existing active row with this name (used when a concurrent add
-// beat us to it). Looks locally first, then fetches to reconcile stale state.
-async function incrementActiveItemByName(name, quantity, optimisticId) {
+// Increment the existing active row for this product (used when a concurrent
+// add beat us to it). Looks locally first, then fetches to reconcile stale state.
+async function incrementActiveItemByName(name, maker, quantity, optimisticId) {
   items.value = items.value.filter((i) => i.id !== optimisticId)
 
-  let target = findActiveItemByName(items.value, name)
+  let target = findActiveItemByName(items.value, name, { maker })
   if (!target) {
     const { data } = await db
       .from('shopping_list_items')
       .select('*')
       .eq('family_id', familyId.value)
       .eq('checked', false)
-    target = findActiveItemByName(data || [], name)
+    target = findActiveItemByName(data || [], name, { maker })
     if (target && !items.value.some((i) => i.id === target.id)) items.value.push(target)
   }
   if (!target) {
@@ -548,7 +613,10 @@ async function toggleItem(item) {
   // fold this one into it instead of leaving two active rows — same merge rule
   // as adding.
   if (!nextChecked) {
-    const target = findActiveItemByName(items.value, item.name, { excludeId: item.id })
+    const target = findActiveItemByName(items.value, item.name, {
+      excludeId: item.id,
+      maker: item.maker,
+    })
     if (target) {
       await mergeItemInto(item, target)
       return
@@ -579,14 +647,20 @@ async function toggleItem(item) {
     // Unique-violation while unchecking: an active same-name row appeared (race).
     // Merge into it rather than surfacing an error.
     if (!nextChecked && error.code === '23505') {
-      let target = findActiveItemByName(items.value, item.name, { excludeId: item.id })
+      let target = findActiveItemByName(items.value, item.name, {
+        excludeId: item.id,
+        maker: item.maker,
+      })
       if (!target) {
         const { data } = await db
           .from('shopping_list_items')
           .select('*')
           .eq('family_id', familyId.value)
           .eq('checked', false)
-        target = findActiveItemByName(data || [], item.name, { excludeId: item.id })
+        target = findActiveItemByName(data || [], item.name, {
+          excludeId: item.id,
+          maker: item.maker,
+        })
         if (target && !items.value.some((i) => i.id === target.id)) items.value.push(target)
       }
       if (target) {
@@ -745,7 +819,9 @@ async function deleteItem(item) {
           v-model:quantity="newQty"
           :adding="adding"
           :max-length="ITEM_NAME_MAX_LENGTH"
+          :suggestions="suggestions"
           @submit="addItem"
+          @select="selectSuggestion"
         />
 
         <ShoppingList
