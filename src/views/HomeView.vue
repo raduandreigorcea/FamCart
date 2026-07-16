@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { useSupabase } from '../supabase'
 import AppTopbar from '../components/AppTopbar.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
+import CustomProductModal from '../components/CustomProductModal.vue'
 import ErrorModal from '../components/ErrorModal.vue'
 import NotificationPromptModal from '../components/NotificationPromptModal.vue'
 import ShoppingList from '../components/ShoppingList.vue'
@@ -15,6 +16,12 @@ import {
   countActiveItemsByMember,
   sortItemsForDisplay,
 } from '../lib/shoppingList'
+import {
+  normalizeSearchText,
+  escapeIlikePattern,
+  buildFamilyProductStats,
+  rankSuggestions,
+} from '../lib/productSearch'
 import { getUserDisplayName, getUserPrimaryEmail } from '../lib/userIdentity'
 import { cleanAuthCallbackUrl } from '../lib/authCallbackUrl'
 import { loadFamilySnapshot, saveFamilySnapshot, clearFamilySnapshot } from '../lib/familyCache'
@@ -49,8 +56,17 @@ const familyItemLimit = ref(50)
 const familyMembers = ref([])
 const newItem = ref('')
 const newQty = ref(1)
+// Product-catalog matches for what's being typed, and the suggestion the user
+// picked (its maker is stored on the item and shown as a subtitle).
+const suggestions = ref([])
+const suggestionsLoading = ref(false)
+const selectedProduct = ref(null)
+// What this family actually buys, folded from purchase_history — the primary
+// ranking signal for suggestions (see rankSuggestions).
+const familyProductStats = ref(new Map())
 const loadError = ref('')
 const addError = ref('')
+const customProductOpen = ref(false)
 const limitReachedPopupOpen = ref(false)
 const notificationPromptOpen = ref(false)
 const notificationError = ref('')
@@ -109,7 +125,142 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('online', handleBackOnline)
   if (stopReconnect) stopReconnect()
+  if (suggestTimer) clearTimeout(suggestTimer)
 })
+
+// ── Product suggestions ───────────────────────────────────────────────────────
+// Typing queries the read-only product catalog (debounced) and offers matches;
+// picking one fills the input with the product name and remembers its maker.
+// Best-effort: any failure just means no dropdown, never an error surface.
+//
+// The catalog is the only source of suggestions; this family's history only
+// decides their order. History is not a catalog — it holds whatever anyone typed
+// into the list, so a lazy "apa" entry would otherwise be offered as a product,
+// outrank every real one, and entrench itself by being picked again.
+//
+// So the catalog is queried for a candidate pool wider than the six shown, and
+// the final order is decided locally against familyProductStats.
+let suggestTimer = null
+let suggestRequestId = 0
+const SUGGEST_MIN_CHARS = 2
+const SUGGEST_LIMIT = 6
+const SUGGEST_POOL = 50
+// Long enough to mean "stopped typing" on a phone. Thumb-typing runs ~300-400ms
+// per character, so a shorter pause than this elapses between ordinary
+// keystrokes and every character would cost its own request.
+const SUGGEST_DEBOUNCE_MS = 300
+
+watch(newItem, (value) => {
+  const query = value.trim()
+  // Editing away from a picked suggestion drops its maker; retyping the exact
+  // product name without re-picking keeps it (same product, same subtitle).
+  if (selectedProduct.value && query !== selectedProduct.value.name) {
+    selectedProduct.value = null
+  }
+  if (suggestTimer) clearTimeout(suggestTimer)
+  if (query.length < SUGGEST_MIN_CHARS || selectedProduct.value) {
+    suggestions.value = []
+    suggestionsLoading.value = false
+    return
+  }
+  // The last query's matches are not this query's answers, so drop them and show
+  // the skeleton from the first keystroke — across the debounce as well as the
+  // request, since both are time the user spends waiting. Without this the
+  // dropdown would offer "Can't find it?" while the search is still running.
+  suggestions.value = []
+  suggestionsLoading.value = true
+  suggestTimer = setTimeout(() => void fetchSuggestions(query), SUGGEST_DEBOUNCE_MS)
+})
+
+async function fetchSuggestions(query) {
+  if (isOffline()) {
+    suggestionsLoading.value = false
+    return
+  }
+  const requestId = ++suggestRequestId
+  try {
+    const pattern = `%${escapeIlikePattern(normalizeSearchText(query))}%`
+    const { data, error } = await db
+      .from('product_catalog')
+      .select('name, maker, popularity')
+      .ilike('search_text', pattern)
+      // Popularity decides which matches make the pool, then rankSuggestions
+      // reorders it around this family. Ordering here (rather than only locally)
+      // is what keeps the pool cap from cutting off globally-popular products.
+      .order('popularity', { ascending: false })
+      .order('name')
+      .limit(SUGGEST_POOL)
+    // Stale response: a newer keystroke queried already, and that request owns
+    // the dropdown now — including when its skeleton stops.
+    if (requestId !== suggestRequestId) return
+    // Late response: the input was cleared or a product picked meanwhile, so
+    // these matches must not reopen the list.
+    if (error || selectedProduct.value || newItem.value.trim().length < SUGGEST_MIN_CHARS) return
+    suggestions.value = rankSuggestions(data || [], familyProductStats.value, SUGGEST_LIMIT)
+  } catch {
+    // Suggestions are a convenience; a failed lookup changes nothing.
+  } finally {
+    // Only the newest request may stop the skeleton. A superseded one returning
+    // early must leave it spinning for the request that replaced it, or the
+    // dropdown would flash "Can't find it?" mid-search.
+    if (requestId === suggestRequestId) suggestionsLoading.value = false
+  }
+}
+
+// Fold this family's recent purchases into the ranking signal. Best-effort: on
+// failure suggestions just fall back to the global catalog order. Retention
+// (migration 019) already caps history at 60 checkouts / 30 days, so this is a
+// small, naturally-recent window and can be fetched whole.
+async function loadFamilyProductStats() {
+  if (!familyId.value || isOffline()) return
+  try {
+    const { data, error } = await db
+      .from('purchase_history')
+      .select('name, maker, purchased_at')
+      .eq('family_id', familyId.value)
+    if (error) return
+    familyProductStats.value = buildFamilyProductStats(data || [])
+  } catch {
+    // No stats just means suggestions rank globally, which is the old behaviour.
+  }
+}
+
+// Picking a suggestion adds it outright rather than filling the input: the pick
+// already says exactly which product was meant, so a second confirming tap is
+// just friction. The typed text is dropped by addItem clearing the input.
+function selectSuggestion(product) {
+  suggestions.value = []
+  void addItem(product)
+}
+
+// The escape hatch, offered as soon as the query is long enough to have been
+// searched for — including when nothing matched, which is when it matters most.
+const canAddCustomProduct = computed(() => newItem.value.trim().length >= SUGGEST_MIN_CHARS)
+
+function openCustomProduct() {
+  suggestions.value = []
+  customProductOpen.value = true
+}
+
+// A custom product joins the list through exactly the same path as a catalog
+// pick — it is simply a product the catalog does not have. Nothing is written
+// to product_catalog: it is global and client-read-only (migration 022), and
+// letting one family's spelling leak into everyone's suggestions is the junk
+// problem the ranking rules already avoid. bumpProductPopularity no-ops for it.
+function addCustomProduct(product) {
+  customProductOpen.value = false
+  void addItem(product)
+}
+
+// Record that a catalog product was added, so it ranks higher in future
+// suggestions. Best-effort and global: fire-and-forget, never blocks or errors
+// the add, and skipped offline (the counter is not part of the offline queue).
+function bumpProductPopularity(product) {
+  if (!product || isOffline()) return
+  void db
+    .rpc('bump_product_popularity', { p_name: product.name, p_maker: product.maker ?? null })
+    .then(() => {}, () => {})
+}
 
 // Single-flight flush of the offline queue. Every list refetch funnels through
 // this first (see loadItems), so a reload triggered by realtime/watchdog on
@@ -219,6 +370,9 @@ async function initializeHome() {
   await flushOfflineQueue(localStorage, effectiveUserId.value, db)
   await loadFamilyHeader()
   await loadItems()
+  // Not awaited: the list should paint without waiting on a ranking signal.
+  // Until it lands, suggestions simply rank by the global catalog order.
+  void loadFamilyProductStats()
   await setupRealtimeSubscriptions()
   hasInitialized.value = true
   persistSnapshot()
@@ -341,6 +495,10 @@ async function refreshMembershipOrRedirect() {
     familyId.value = membership.family_id
     await loadFamilyHeader()
     await loadItems()
+    // Stats are family-scoped: drop the old family's before loading the new
+    // family's, so suggestions can never rank by a family we just left.
+    familyProductStats.value = new Map()
+    void loadFamilyProductStats()
     await setupRealtimeSubscriptions()
   }
 }
@@ -385,8 +543,11 @@ async function loadItems() {
   items.value = sortItemsForDisplay([...uncheckedRes.data, ...checkedRes.data])
 }
 
-async function addItem() {
-  const name = newItem.value.trim()
+// `product` is set when a suggestion was tapped, and that product is then the
+// whole intent — name and maker both come from it, not from the input. A plain
+// form submit passes nothing and adds whatever was typed.
+async function addItem(product = null) {
+  const name = (product?.name ?? newItem.value).trim()
   if (!name || adding.value) return
   if (name.length > ITEM_NAME_MAX_LENGTH) {
     addError.value = `Item name must be ${ITEM_NAME_MAX_LENGTH} characters or fewer.`
@@ -395,11 +556,17 @@ async function addItem() {
   addError.value = ''
 
   const quantity = newQty.value
+  // The maker only ever comes from a catalog product: either the one just
+  // tapped, or one restored after a failed add (the newItem watcher clears that
+  // as soon as the text stops matching it). Keep the whole product too, so a
+  // successful add can bump its popularity.
+  const picked = product ?? selectedProduct.value
+  const maker = picked?.maker ?? null
 
-  // If an unchecked item with the same name already exists, bump its quantity
-  // instead of adding a duplicate row. Checked (already-bought) items are left
-  // alone so re-adding them starts a fresh active item.
-  const existing = findActiveItemByName(items.value, name)
+  // If an unchecked item for the same product (name + maker) already exists,
+  // bump its quantity instead of adding a duplicate row. Checked (already-
+  // bought) items are left alone so re-adding them starts a fresh active item.
+  const existing = findActiveItemByName(items.value, name, { maker })
   if (existing) {
     newItem.value = ''
     newQty.value = 1
@@ -422,7 +589,9 @@ async function addItem() {
       if (deferIfOffline(error, { kind: 'update', id: existing.id, patch: { quantity: existing.quantity } })) return
       existing.quantity = previousQty // rollback
       addError.value = error.message ?? 'Could not update that item.'
+      return
     }
+    bumpProductPopularity(picked)
     return
   }
 
@@ -450,6 +619,7 @@ async function addItem() {
     id,
     family_id: familyId.value,
     name,
+    maker,
     quantity,
     added_by: effectiveUserId.value,
     added_by_name: creatorName,
@@ -475,10 +645,10 @@ async function addItem() {
     .single()
 
   if (error) {
-    // Lost a race: the DB already has an unchecked item with this name (our local
-    // check missed it). Fold this quantity into that row instead of erroring.
+    // Lost a race: the DB already has an unchecked item for this product (our
+    // local check missed it). Fold this quantity into that row instead of erroring.
     if (error.code === '23505') {
-      await incrementActiveItemByName(name, quantity, id)
+      await incrementActiveItemByName(name, maker, quantity, id)
       return
     }
     // Network failure (WebView reported online but the write never left): keep
@@ -493,6 +663,9 @@ async function addItem() {
       addError.value = error.message ?? 'Failed to add item.'
       newItem.value = name
       newQty.value = quantity
+      // Keep the catalog pick across the retry (the watcher sees the restored
+      // text matching it and leaves it in place).
+      selectedProduct.value = maker ? { name, maker } : null
     }
     return
   }
@@ -501,21 +674,23 @@ async function addItem() {
   // remount; the realtime INSERT echo dedupes on this same id and is a no-op.
   const index = items.value.findIndex((i) => i.id === id)
   if (index !== -1) items.value[index] = data
+
+  bumpProductPopularity(picked)
 }
 
-// Increment the existing active row with this name (used when a concurrent add
-// beat us to it). Looks locally first, then fetches to reconcile stale state.
-async function incrementActiveItemByName(name, quantity, optimisticId) {
+// Increment the existing active row for this product (used when a concurrent
+// add beat us to it). Looks locally first, then fetches to reconcile stale state.
+async function incrementActiveItemByName(name, maker, quantity, optimisticId) {
   items.value = items.value.filter((i) => i.id !== optimisticId)
 
-  let target = findActiveItemByName(items.value, name)
+  let target = findActiveItemByName(items.value, name, { maker })
   if (!target) {
     const { data } = await db
       .from('shopping_list_items')
       .select('*')
       .eq('family_id', familyId.value)
       .eq('checked', false)
-    target = findActiveItemByName(data || [], name)
+    target = findActiveItemByName(data || [], name, { maker })
     if (target && !items.value.some((i) => i.id === target.id)) items.value.push(target)
   }
   if (!target) {
@@ -548,7 +723,10 @@ async function toggleItem(item) {
   // fold this one into it instead of leaving two active rows — same merge rule
   // as adding.
   if (!nextChecked) {
-    const target = findActiveItemByName(items.value, item.name, { excludeId: item.id })
+    const target = findActiveItemByName(items.value, item.name, {
+      excludeId: item.id,
+      maker: item.maker,
+    })
     if (target) {
       await mergeItemInto(item, target)
       return
@@ -579,14 +757,20 @@ async function toggleItem(item) {
     // Unique-violation while unchecking: an active same-name row appeared (race).
     // Merge into it rather than surfacing an error.
     if (!nextChecked && error.code === '23505') {
-      let target = findActiveItemByName(items.value, item.name, { excludeId: item.id })
+      let target = findActiveItemByName(items.value, item.name, {
+        excludeId: item.id,
+        maker: item.maker,
+      })
       if (!target) {
         const { data } = await db
           .from('shopping_list_items')
           .select('*')
           .eq('family_id', familyId.value)
           .eq('checked', false)
-        target = findActiveItemByName(data || [], item.name, { excludeId: item.id })
+        target = findActiveItemByName(data || [], item.name, {
+          excludeId: item.id,
+          maker: item.maker,
+        })
         if (target && !items.value.some((i) => i.id === target.id)) items.value.push(target)
       }
       if (target) {
@@ -694,7 +878,12 @@ async function checkoutItems(ids) {
     }
     items.value = snapshot
     loadError.value = error.message ?? 'Could not complete the checkout.'
+    return
   }
+
+  // The checkout just became history, which is the ranking signal — fold it in
+  // so what was bought ranks higher on the very next keystroke.
+  void loadFamilyProductStats()
 }
 
 async function deleteItem(item) {
@@ -745,7 +934,12 @@ async function deleteItem(item) {
           v-model:quantity="newQty"
           :adding="adding"
           :max-length="ITEM_NAME_MAX_LENGTH"
+          :suggestions="suggestions"
+          :suggestions-loading="suggestionsLoading"
+          :can-add-custom="canAddCustomProduct"
           @submit="addItem"
+          @select="selectSuggestion"
+          @add-custom="openCustomProduct"
         />
 
         <ShoppingList
@@ -768,6 +962,14 @@ async function deleteItem(item) {
       :show-cancel="false"
       @confirm="closeLimitReachedPopup"
       @cancel="closeLimitReachedPopup"
+    />
+
+    <CustomProductModal
+      :open="customProductOpen"
+      :initial-name="newItem"
+      :name-max-length="ITEM_NAME_MAX_LENGTH"
+      @submit="addCustomProduct"
+      @cancel="customProductOpen = false"
     />
 
     <NotificationPromptModal

@@ -127,6 +127,18 @@ describe('findActiveItemByName', () => {
     ]
     expect(findActiveItemByName(items, 'milk')?.id).toBe('a')
   })
+
+  it('treats the maker as part of the match key', () => {
+    const items = [
+      item({ id: 'a', name: 'Lapte 3.5% 1L', maker: 'Napolact' }),
+      item({ id: 'b', name: 'Lapte 3.5% 1L', maker: 'LaDorna' }),
+      item({ id: 'c', name: 'Lapte 3.5% 1L' }),
+    ]
+    expect(findActiveItemByName(items, 'lapte 3.5% 1l', { maker: ' napolact ' })?.id).toBe('a')
+    expect(findActiveItemByName(items, 'Lapte 3.5% 1L', { maker: 'LaDorna' })?.id).toBe('b')
+    expect(findActiveItemByName(items, 'Lapte 3.5% 1L')?.id).toBe('c')
+    expect(findActiveItemByName(items, 'Lapte 3.5% 1L', { maker: 'Zuzu' })).toBeUndefined()
+  })
 })
 
 describe('countActiveItemsByMember', () => {
