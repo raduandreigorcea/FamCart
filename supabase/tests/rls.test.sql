@@ -19,7 +19,7 @@
 -- Tests run inside a transaction that is rolled back, so they leave no data behind.
 
 begin;
-select plan(13);
+select plan(16);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 insert into public.families (id, name, invite_code, created_by) values
@@ -166,6 +166,35 @@ select throws_ok(
   '42501',
   null,
   'clients cannot insert into the product catalog'
+);
+
+-- A client cannot bump popularity by writing the table directly...
+select throws_ok(
+  $$ update public.product_catalog set add_count = add_count + 100
+     where name = 'Apa Plata 2L' $$,
+  '42501',
+  null,
+  'clients cannot update the product catalog directly'
+);
+
+-- ...only through the RPC, which counts exactly one add and lifts popularity.
+select public.bump_product_popularity('Apa Plata 2L', 'Dorna');
+
+select is(
+  (select popularity from public.product_catalog
+   where name = 'Apa Plata 2L' and maker = 'Dorna'),
+  1,
+  'bump_product_popularity increments popularity by one'
+);
+
+-- The maker is part of the match: a wrong maker bumps nothing.
+select public.bump_product_popularity('Apa Plata 2L', 'Wrong Maker');
+
+select is(
+  (select popularity from public.product_catalog
+   where name = 'Apa Plata 2L' and maker = 'Dorna'),
+  1,
+  'bump_product_popularity ignores a product whose maker does not match'
 );
 
 select * from finish();
