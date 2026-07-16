@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import HomeView from '../src/views/HomeView.vue'
 import AddItemForm from '../src/components/AddItemForm.vue'
+import CustomProductModal from '../src/components/CustomProductModal.vue'
 import ShoppingList from '../src/components/ShoppingList.vue'
 import ConfirmModal from '../src/components/ConfirmModal.vue'
 import ErrorModal from '../src/components/ErrorModal.vue'
@@ -177,6 +178,201 @@ describe('cached snapshot', () => {
     expect(list.props('items')[0].id).toBe('cached-1')
     // Hydration must end the skeleton state even though no fetch completed.
     expect(list.props('loading')).toBe(false)
+  })
+})
+
+// Tapping a suggestion is a complete statement of intent — which product, which
+// maker — so it adds straight away instead of filling the input and waiting for
+// a confirming tap.
+describe('picking a suggestion', () => {
+  async function pick(wrapper, product, { typed = '', quantity = 1 } = {}) {
+    const form = wrapper.findComponent(AddItemForm)
+    form.vm.$emit('update:name', typed)
+    form.vm.$emit('update:quantity', quantity)
+    await wrapper.vm.$nextTick()
+    form.vm.$emit('select', product)
+    await flushPromises()
+  }
+
+  it('adds the product immediately instead of putting it in the input', async () => {
+    const wrapper = await mountHome()
+    mocks.db.handlers['shopping_list_items.insert'] = (q) => ({
+      data: { ...q.payload, checked: false, created_at: '2026-02-02T00:00:00.000Z' },
+      error: null,
+    })
+
+    await pick(wrapper, { name: 'Apa Plata 2L', maker: 'Dorna' }, { typed: 'apa' })
+
+    const items = listedItems(wrapper)
+    expect(items).toHaveLength(1)
+    expect(items[0].name).toBe('Apa Plata 2L')
+    // The maker comes from the pick, not from what was typed.
+    expect(items[0].maker).toBe('Dorna')
+    // The half-typed "apa" is gone rather than left behind or added as an item.
+    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('')
+  })
+
+  it('adds the picked product, not the text already in the input', async () => {
+    const wrapper = await mountHome()
+    const inserted = []
+    mocks.db.handlers['shopping_list_items.insert'] = (q) => {
+      inserted.push(q.payload)
+      return { data: { ...q.payload, checked: false, created_at: '2026-02-02T00:00:00.000Z' }, error: null }
+    }
+
+    await pick(wrapper, { name: 'Lapte 3.5% 1L', maker: 'Napolact' }, { typed: 'lap' })
+
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0].name).toBe('Lapte 3.5% 1L')
+  })
+
+  it('keeps the quantity chosen on the form', async () => {
+    const wrapper = await mountHome()
+    mocks.db.handlers['shopping_list_items.insert'] = (q) => ({
+      data: { ...q.payload, checked: false, created_at: '2026-02-02T00:00:00.000Z' },
+      error: null,
+    })
+
+    await pick(wrapper, { name: 'Banane 1kg', maker: null }, { typed: 'ban', quantity: 3 })
+
+    expect(listedItems(wrapper)[0].quantity).toBe(3)
+  })
+
+  it('merges into the existing active row instead of duplicating it', async () => {
+    const existing = makeItem({ id: 'item-1', name: 'Apa Plata 2L', maker: 'Dorna', quantity: 1 })
+    const wrapper = await mountHome({ items: [existing] })
+    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
+
+    await pick(wrapper, { name: 'Apa Plata 2L', maker: 'Dorna' }, { typed: 'apa' })
+
+    const items = listedItems(wrapper)
+    expect(items).toHaveLength(1)
+    expect(items[0].quantity).toBe(2)
+  })
+
+  it('restores the product into the form when the add fails', async () => {
+    const wrapper = await mountHome()
+    mocks.db.handlers['shopping_list_items.insert'] = () => ({
+      data: null,
+      error: { message: 'boom' },
+    })
+
+    await pick(wrapper, { name: 'Apa Plata 2L', maker: 'Dorna' }, { typed: 'apa' })
+
+    // Nothing added, and the full product name (not the typed "apa") is put back
+    // so the add can simply be retried.
+    expect(listedItems(wrapper)).toHaveLength(0)
+    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('Apa Plata 2L')
+  })
+})
+
+// The way out when the catalog has nothing: describe the product yourself. It
+// lands on the list like any other add — and never in product_catalog, which is
+// global and read-only to clients.
+describe('adding a custom product', () => {
+  it('offers the escape hatch once the query is long enough to have been searched', async () => {
+    const wrapper = await mountHome()
+    const form = wrapper.findComponent(AddItemForm)
+
+    expect(form.props('canAddCustom')).toBe(false)
+
+    form.vm.$emit('update:name', 'a')
+    await wrapper.vm.$nextTick()
+    expect(form.props('canAddCustom')).toBe(false)
+
+    form.vm.$emit('update:name', 'Branza de burduf')
+    await wrapper.vm.$nextTick()
+    expect(form.props('canAddCustom')).toBe(true)
+  })
+
+  it('opens the modal prefilled with what was typed', async () => {
+    const wrapper = await mountHome()
+    const form = wrapper.findComponent(AddItemForm)
+    form.vm.$emit('update:name', 'Branza de burduf')
+    await wrapper.vm.$nextTick()
+
+    form.vm.$emit('add-custom')
+    await wrapper.vm.$nextTick()
+
+    const modal = wrapper.findComponent(CustomProductModal)
+    expect(modal.props('open')).toBe(true)
+    expect(modal.props('initialName')).toBe('Branza de burduf')
+  })
+
+  it('adds the described product with its maker attached', async () => {
+    const wrapper = await mountHome()
+    const inserted = []
+    mocks.db.handlers['shopping_list_items.insert'] = (q) => {
+      inserted.push(q.payload)
+      return { data: { ...q.payload, checked: false, created_at: '2026-02-02T00:00:00.000Z' }, error: null }
+    }
+
+    const form = wrapper.findComponent(AddItemForm)
+    form.vm.$emit('update:name', 'Branza')
+    await wrapper.vm.$nextTick()
+    form.vm.$emit('add-custom')
+    await wrapper.vm.$nextTick()
+
+    wrapper.findComponent(CustomProductModal).vm.$emit('submit', {
+      name: 'Branza de burduf',
+      maker: 'Piata Obor',
+    })
+    await flushPromises()
+
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0].name).toBe('Branza de burduf')
+    // A maker on a hand-typed item is only reachable through this modal.
+    expect(inserted[0].maker).toBe('Piata Obor')
+
+    const items = listedItems(wrapper)
+    expect(items).toHaveLength(1)
+    expect(items[0].maker).toBe('Piata Obor')
+    // The modal closed and the half-typed text is gone.
+    expect(wrapper.findComponent(CustomProductModal).props('open')).toBe(false)
+    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('')
+  })
+
+  it('never writes the described product into the shared catalog', async () => {
+    const wrapper = await mountHome()
+    mocks.db.handlers['shopping_list_items.insert'] = (q) => ({
+      data: { ...q.payload, checked: false, created_at: '2026-02-02T00:00:00.000Z' },
+      error: null,
+    })
+
+    const form = wrapper.findComponent(AddItemForm)
+    form.vm.$emit('update:name', 'Branza')
+    await wrapper.vm.$nextTick()
+    form.vm.$emit('add-custom')
+    await wrapper.vm.$nextTick()
+    wrapper.findComponent(CustomProductModal).vm.$emit('submit', {
+      name: 'Branza de burduf',
+      maker: 'Piata Obor',
+    })
+    await flushPromises()
+
+    // The add really happened...
+    expect(mocks.db.calls.some((c) => c.table === 'shopping_list_items' && c.op === 'insert')).toBe(true)
+    // ...and still nothing but reads touched the catalog. product_catalog is
+    // global and client-read-only by RLS (migration 022); one family's spelling
+    // must never leak into every other family's suggestions.
+    expect(mocks.db.calls.filter((c) => c.table === 'product_catalog' && c.op !== 'select')).toEqual([])
+  })
+
+  it('closes without adding anything when cancelled', async () => {
+    const wrapper = await mountHome()
+    const form = wrapper.findComponent(AddItemForm)
+    form.vm.$emit('update:name', 'Branza')
+    await wrapper.vm.$nextTick()
+    form.vm.$emit('add-custom')
+    await wrapper.vm.$nextTick()
+
+    wrapper.findComponent(CustomProductModal).vm.$emit('cancel')
+    await flushPromises()
+
+    expect(wrapper.findComponent(CustomProductModal).props('open')).toBe(false)
+    expect(listedItems(wrapper)).toHaveLength(0)
+    // The typed text survives a cancel: nothing happened, so nothing is lost.
+    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('Branza')
   })
 })
 

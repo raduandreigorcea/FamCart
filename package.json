@@ -8,6 +8,7 @@
     "build": "vite build",
     "build:apk": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-apk.ps1",
     "preview": "vite preview",
+    "seed:products": "node scripts/seed-products.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"

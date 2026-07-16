@@ -43,7 +43,7 @@ async function loadHistory() {
   error.value = ''
   const { data, error: fetchError } = await db
     .from('purchase_history')
-    .select('id, name, quantity, checkout_id, purchased_by, purchased_at, added_by_name, added_by_image_url')
+    .select('id, name, maker, quantity, checkout_id, purchased_by, purchased_at, added_by_name, added_by_image_url')
     .eq('family_id', props.familyId)
     // Rows in one checkout share a single purchased_at, and Postgres returns
     // tied rows in no particular order — without tiebreakers every open could
@@ -159,8 +159,11 @@ function formatTime(iso) {
 
                 <ul class="history-list">
                   <li v-for="entry in checkout.items" :key="entry.id" class="history-row">
-                    <span class="history-emoji" aria-hidden="true">{{ getProductEmoji(entry.name, '') }}</span>
-                    <span class="history-name">{{ entry.name }}</span>
+                    <span class="history-emoji" aria-hidden="true">{{ getProductEmoji(entry.name, entry.maker || '') }}</span>
+                    <span class="history-text">
+                      <span class="history-name">{{ entry.name }}</span>
+                      <span v-if="entry.maker" class="history-maker">{{ entry.maker }}</span>
+                    </span>
                     <span v-if="entry.quantity > 1" class="history-qty">x{{ entry.quantity }}</span>
                     <img
                       v-if="entry.added_by_image_url"
@@ -415,12 +418,27 @@ function formatTime(iso) {
   border: 1px solid color-mix(in srgb, var(--color-primary) 22%, var(--bg-surface));
 }
 
-.history-name {
+.history-text {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.history-name {
   font-size: 0.9rem;
   font-weight: 600;
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-maker {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  line-height: 1.25;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -43,8 +43,11 @@ function handleDelete() {
         </svg>
       </span>
     </button>
-    <span class="item-emoji" aria-hidden="true">{{ getProductEmoji(item.name, item.brand || '') }}</span>
-    <span class="item-name">{{ item.name }}</span>
+    <span class="item-emoji" aria-hidden="true">{{ getProductEmoji(item.name, item.maker || '') }}</span>
+    <span class="item-text">
+      <span class="item-name">{{ item.name }}</span>
+      <span v-if="item.maker" class="item-maker">{{ item.maker }}</span>
+    </span>
     <span v-if="item.quantity > 1" class="item-qty">x{{ item.quantity }}</span>
     <img
       v-if="item.added_by_image_url"
@@ -228,12 +231,29 @@ function handleDelete() {
   font-weight: 700;
 }
 
-.item-name {
+.item-text {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.item-name {
   font-size: 0.95rem;
   color: var(--text-primary);
   line-height: 1.4;
   word-break: break-word;
+}
+
+.item-maker {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  line-height: 1.25;
+}
+
+.item--checked .item-maker {
+  color: var(--text-disabled);
 }
 
 .item-qty {
