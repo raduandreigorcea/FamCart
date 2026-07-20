@@ -26,6 +26,9 @@ export interface UseFamilyRealtimeOptions {
   loadFamilyHeader: () => Promise<void>
   refreshMembershipOrRedirect: () => Promise<void>
   onFamilyDeleted: () => void
+  // True while the given item id has a local write in flight; its realtime echo
+  // must not be overwritten by an unrelated concurrent update.
+  hasPendingWrite?: (id: string) => boolean
 }
 
 // Owns the realtime lifecycle for the family dashboard: the three Postgres
@@ -45,6 +48,7 @@ export function useFamilyRealtime({
   loadFamilyHeader,
   refreshMembershipOrRedirect,
   onFamilyDeleted,
+  hasPendingWrite,
 }: UseFamilyRealtimeOptions) {
   const realtimeHealthy = ref(false)
   const reconnectInProgress = ref(false)
@@ -229,9 +233,15 @@ export function useFamilyRealtime({
           (payload) => {
             console.log('listChannel event received:', payload)
             const newRecord = payload.new as ShoppingItemRow
+            // A row mid local write owns its state until that write's own echo
+            // lands; a concurrent update must not revert the optimistic value.
+            if (hasPendingWrite?.(newRecord.id)) return
             const idx = items.value.findIndex((i) => i.id === newRecord.id)
             if (idx !== -1) {
               items.value[idx] = { ...items.value[idx], ...newRecord }
+              // checked/checked_at may have changed (another member ticked it),
+              // so re-sort to move the row into the right section and position.
+              items.value = sortItemsForDisplay(items.value)
             } else {
               void loadItems()
             }

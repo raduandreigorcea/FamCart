@@ -184,4 +184,28 @@ describe('sortItemsForDisplay', () => {
     expect(sorted.map((i) => i.id)).toEqual(['a', 'b'])
     expect(items.map((i) => i.id)).toEqual(['b', 'a'])
   })
+
+  it('orders checked items by check time descending, newest on top', () => {
+    const items = [
+      item({ id: 'x', checked: true, checked_at: '2026-07-10T10:00:00Z' }),
+      item({ id: 'z', checked: true, checked_at: '2026-07-10T12:00:00Z' }),
+      item({ id: 'y', checked: true, checked_at: '2026-07-10T11:00:00Z' }),
+    ]
+    expect(sortItemsForDisplay(items).map((i) => i.id)).toEqual(['z', 'y', 'x'])
+  })
+
+  it('keeps unchecked (oldest first) ahead of checked (newest checked first)', () => {
+    const items = [
+      item({ id: 'checked-old', checked: true, checked_at: '2026-07-10T10:00:00Z' }),
+      item({ id: 'active-new', created_at: '2026-07-10T11:00:00Z' }),
+      item({ id: 'checked-new', checked: true, checked_at: '2026-07-10T12:00:00Z' }),
+      item({ id: 'active-old', created_at: '2026-07-10T09:00:00Z' }),
+    ]
+    expect(sortItemsForDisplay(items).map((i) => i.id)).toEqual([
+      'active-old',
+      'active-new',
+      'checked-new',
+      'checked-old',
+    ])
+  })
 })

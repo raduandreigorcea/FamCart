@@ -332,7 +332,7 @@ describe('adding a custom product', () => {
     expect(wrapper.findComponent(AddItemForm).props('name')).toBe('')
   })
 
-  it('never writes the described product into the shared catalog', async () => {
+  it('reaches the catalog only through the RPC, never the table directly', async () => {
     const wrapper = await mountHome()
     mocks.db.handlers['shopping_list_items.insert'] = (q) => ({
       data: { ...q.payload, checked: false, created_at: '2026-02-02T00:00:00.000Z' },
@@ -352,9 +352,11 @@ describe('adding a custom product', () => {
 
     // The add really happened...
     expect(mocks.db.calls.some((c) => c.table === 'shopping_list_items' && c.op === 'insert')).toBe(true)
-    // ...and still nothing but reads touched the catalog. product_catalog is
-    // global and client-read-only by RLS (migration 022); one family's spelling
-    // must never leak into every other family's suggestions.
+    // ...and the catalog itself saw nothing but reads. Contributing goes through
+    // add_custom_product (see homeViewCustomProduct.component.test.js), which is
+    // what scopes the product to this family and checks membership. RLS grants
+    // SELECT and nothing else (migration 022), so a direct write here would be
+    // rejected by the database anyway — this catches it at the source instead.
     expect(mocks.db.calls.filter((c) => c.table === 'product_catalog' && c.op !== 'select')).toEqual([])
   })
 
@@ -526,6 +528,101 @@ describe('toggleItem', () => {
     expect(items.find((i) => i.id === 'item-b').quantity).toBe(3)
     expect(items.find((i) => i.id === 'item-a')).toBeTruthy()
     expect(wrapper.findComponent(ErrorModal).props('message')).toBe('delete failed')
+  })
+
+  it('moves a newly checked item to the top of the checked section', async () => {
+    const older = makeItem({ id: 'older', name: 'Milk', checked: true, checked_at: '2026-01-01T00:00:00.000Z' })
+    const active = makeItem({ id: 'active', name: 'Bread', checked: false })
+    const wrapper = await mountHome({ items: [active, older] })
+    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
+
+    wrapper.findComponent(ShoppingList).vm.$emit('toggle', listedItems(wrapper).find((i) => i.id === 'active'))
+    await flushPromises()
+
+    // Bread was just checked (now), so it sits above the older checked Milk.
+    const checkedOrder = listedItems(wrapper).filter((i) => i.checked).map((i) => i.id)
+    expect(checkedOrder).toEqual(['active', 'older'])
+  })
+
+  it('shows the limit popup (not a raw error) when unchecking would exceed the cap', async () => {
+    const item = makeItem({ id: 'item-1', name: 'Milk', checked: true, checked_at: '2026-01-01T00:00:00.000Z' })
+    const wrapper = await mountHome({ items: [item] })
+    // The DB trigger (migration 010) now rejects an uncheck that breaks the cap.
+    mocks.db.handlers['shopping_list_items.update'] = () => ({
+      data: null,
+      error: { message: 'You reached your limit of 50 active items.', detail: 'member_active_item_limit_exceeded' },
+    })
+
+    wrapper.findComponent(ShoppingList).vm.$emit('toggle', listedItems(wrapper)[0])
+    await flushPromises()
+
+    // Rolled back to checked, friendly popup instead of an error modal.
+    expect(listedItems(wrapper)[0].checked).toBe(true)
+    expect(wrapper.findComponent(ConfirmModal).props('open')).toBe(true)
+    expect(wrapper.findComponent(ErrorModal).props('message')).toBeFalsy()
+  })
+
+  // Regression: the same tap that checks an item also wakes a reconnect/refetch.
+  // While the checked=true write is still in flight, that refetch reads the
+  // server's pre-write row (still unchecked) and used to overwrite the flip,
+  // bouncing the item straight back to the active list. The in-flight write must
+  // hold its ground.
+  it('keeps a just-checked item checked when a refetch races the in-flight write', async () => {
+    const server = [makeItem({ id: 'item-1', name: 'Milk', checked: false })]
+    const wrapper = await mountHome({ items: server })
+
+    // Refetches now hand back clones, so the view's optimistic flip cannot leak
+    // into the "server" state the next select reads back — the real client/server
+    // split this bug lives in.
+    mocks.db.handlers['shopping_list_items.select'] = (q) => ({
+      data: server.filter((i) => i.checked === q.filters.checked).map((i) => ({ ...i })),
+      error: null,
+    })
+    goOnline()
+    await flushPromises()
+
+    // The checked=true write never lands (stays in flight), so the server row
+    // stays unchecked — exactly the race window.
+    let resolveUpdate
+    mocks.db.handlers['shopping_list_items.update'] = () =>
+      new Promise((resolve) => {
+        resolveUpdate = () => resolve({ data: null, error: null })
+      })
+
+    wrapper.findComponent(ShoppingList).vm.$emit('toggle', listedItems(wrapper).find((i) => i.id === 'item-1'))
+    await flushPromises()
+    expect(listedItems(wrapper).find((i) => i.id === 'item-1').checked).toBe(true)
+
+    // A background refetch fires mid-write, as a reconnect/focus/watchdog would.
+    // Without the guard this reverts the item to the server's unchecked row.
+    window.dispatchEvent(new Event('online'))
+    await flushPromises()
+    expect(listedItems(wrapper).find((i) => i.id === 'item-1').checked).toBe(true)
+
+    resolveUpdate()
+    await flushPromises()
+  })
+})
+
+describe('list ordering', () => {
+  // Regression: the optimistic row is appended with a client-clock created_at,
+  // then the server echo swaps in the authoritative created_at. Without a re-sort
+  // the row keeps its append position until some later background refetch suddenly
+  // moves it — items appearing to "change rows on their own". The echo must settle
+  // the canonical order right away.
+  it('re-sorts a newly added item into created_at order once the server row lands', async () => {
+    const existing = makeItem({ id: 'item-late', name: 'Zucchini', created_at: '2026-01-02T00:00:00.000Z' })
+    const wrapper = await mountHome({ items: [existing] })
+    // The server stamps the new row EARLIER than the existing one, so canonical
+    // order puts it first — not at the append position.
+    mocks.db.handlers['shopping_list_items.insert'] = (q) => ({
+      data: { ...q.payload, checked: false, created_at: '2026-01-01T00:00:00.000Z' },
+      error: null,
+    })
+
+    await submitAdd(wrapper, 'Apple')
+
+    expect(listedItems(wrapper).map((i) => i.name)).toEqual(['Apple', 'Zucchini'])
   })
 })
 

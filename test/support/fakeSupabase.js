@@ -45,6 +45,14 @@ export function createFakeDb() {
         query.filters[column] = value
         return query
       },
+      is(column, value) {
+        query.filters[`is:${column}`] = value
+        return query
+      },
+      or(expression) {
+        query.filters.or = expression
+        return query
+      },
       ilike(column, pattern) {
         query.filters[`ilike:${column}`] = pattern
         return query

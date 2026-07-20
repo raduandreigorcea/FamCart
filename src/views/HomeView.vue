@@ -48,6 +48,13 @@ const db = useSupabase()
 const effectiveUserId = computed(() => userId.value || getRememberedUser(localStorage))
 
 const items = ref([])
+// Ids of items with an online write in flight (a toggle, so far). A background
+// refetch — reconnect, focus, watchdog — reads the server's pre-write value, so
+// loadItems keeps the local optimistic row for these ids instead of clobbering
+// the change with a row the write hasn't reached yet. Not reactive: it only
+// gates loadItems, which reads it synchronously. Offline writes go through the
+// queue (ensureQueueFlushed) and need no entry here.
+const pendingItemWrites = new Set()
 const familyId = ref(null)
 const familyName = ref('')
 const familyInviteCode = ref('')
@@ -86,6 +93,9 @@ const { setupRealtimeSubscriptions, cleanupRealtimeSubscriptions } = useFamilyRe
   loadFamilyHeader,
   refreshMembershipOrRedirect,
   onFamilyDeleted: () => router.replace('/family-setup'),
+  // A realtime UPDATE must not clobber a row whose own write is still in flight
+  // (its authoritative echo is still coming) — same guard as loadItems.
+  hasPendingWrite: (id) => pendingItemWrites.has(id),
 })
 
 // Initial load: nothing fetched yet and no error to show instead. Items arriving
@@ -180,10 +190,19 @@ async function fetchSuggestions(query) {
   const requestId = ++suggestRequestId
   try {
     const pattern = `%${escapeIlikePattern(normalizeSearchText(query))}%`
-    const { data, error } = await db
+    let pool = db
       .from('product_catalog')
       .select('name, maker, popularity')
       .ilike('search_text', pattern)
+    // Scope to the global catalog plus THIS family's own contributions. RLS
+    // already blocks other families' rows, but a user in more than one family
+    // would otherwise see (and, via recordProductAdd, bump) the products they
+    // contributed elsewhere while shopping here. familyId is a server-issued
+    // uuid, never typed input, so it is safe to interpolate into the filter.
+    pool = familyId.value
+      ? pool.or(`family_id.is.null,family_id.eq.${familyId.value}`)
+      : pool.is('family_id', null)
+    const { data, error } = await pool
       // Popularity decides which matches make the pool, then rankSuggestions
       // reorders it around this family. Ordering here (rather than only locally)
       // is what keeps the pool cap from cutting off globally-popular products.
@@ -243,23 +262,37 @@ function openCustomProduct() {
 }
 
 // A custom product joins the list through exactly the same path as a catalog
-// pick — it is simply a product the catalog does not have. Nothing is written
-// to product_catalog: it is global and client-read-only (migration 022), and
-// letting one family's spelling leak into everyone's suggestions is the junk
-// problem the ranking rules already avoid. bumpProductPopularity no-ops for it.
+// pick — it is simply a product the catalog does not have yet. The tag rides
+// along so recordProductAdd knows to contribute it rather than bump it; it is
+// dropped before the insert, which builds its row from named fields only.
 function addCustomProduct(product) {
   customProductOpen.value = false
-  void addItem(product)
+  void addItem({ ...product, custom: true })
 }
 
-// Record that a catalog product was added, so it ranks higher in future
-// suggestions. Best-effort and global: fire-and-forget, never blocks or errors
-// the add, and skipped offline (the counter is not part of the offline queue).
-function bumpProductPopularity(product) {
+// Record that a product was added, so it ranks higher in future suggestions.
+// A catalog product just gets its popularity bumped. A custom one is contributed
+// to the catalog scoped to this family — suggested back to them straight away,
+// and promoted to a global suggestion only once enough other families have added
+// the same product (migration 022), so one family's spelling cannot leak into
+// everyone else's dropdown.
+//
+// Best-effort either way: fire-and-forget, never blocks or errors the add, and
+// skipped offline (neither is part of the offline queue).
+function recordProductAdd(product) {
   if (!product || isOffline()) return
-  void db
-    .rpc('bump_product_popularity', { p_name: product.name, p_maker: product.maker ?? null })
-    .then(() => {}, () => {})
+  const call = product.custom
+    ? db.rpc('add_custom_product', {
+        p_family_id: familyId.value,
+        p_name: product.name,
+        p_maker: product.maker ?? null,
+      })
+    : db.rpc('bump_product_popularity', {
+        p_name: product.name,
+        p_maker: product.maker ?? null,
+        p_family_id: familyId.value,
+      })
+  void call.then(() => {}, () => {})
 }
 
 // Single-flight flush of the offline queue. Every list refetch funnels through
@@ -522,7 +555,9 @@ async function loadItems() {
       .select('*')
       .eq('family_id', familyId.value)
       .eq('checked', true)
-      .order('created_at', { ascending: false })
+      // Most recently checked first, so the 30-row cap keeps the latest ticks;
+      // sortItemsForDisplay orders the merged list the same way.
+      .order('checked_at', { ascending: false, nullsFirst: false })
       .limit(30)
   ])
 
@@ -540,7 +575,19 @@ async function loadItems() {
   // ordered things differently, rows would visibly swap on the next background
   // sync (focus, reconnect, watchdog) — sorting every rebuild the same way is
   // what keeps the list still.
-  items.value = sortItemsForDisplay([...uncheckedRes.data, ...checkedRes.data])
+  const fresh = [...uncheckedRes.data, ...checkedRes.data]
+  if (pendingItemWrites.size) {
+    // A write is in flight for some rows: keep the local optimistic version of
+    // those, so this refetch can't momentarily revert a just-checked item to the
+    // server's pre-write state (the "check bounces back" bug). Re-sorting below
+    // moves the kept row into its correct checked/active section.
+    const localById = new Map(items.value.map((i) => [i.id, i]))
+    for (let i = 0; i < fresh.length; i++) {
+      const local = pendingItemWrites.has(fresh[i].id) && localById.get(fresh[i].id)
+      if (local) fresh[i] = local
+    }
+  }
+  items.value = sortItemsForDisplay(fresh)
 }
 
 // `product` is set when a suggestion was tapped, and that product is then the
@@ -556,10 +603,11 @@ async function addItem(product = null) {
   addError.value = ''
 
   const quantity = newQty.value
-  // The maker only ever comes from a catalog product: either the one just
-  // tapped, or one restored after a failed add (the newItem watcher clears that
-  // as soon as the text stops matching it). Keep the whole product too, so a
-  // successful add can bump its popularity.
+  // The maker comes from a product rather than the typed text: the catalog
+  // product just tapped, one restored after a failed add (the newItem watcher
+  // clears that as soon as the text stops matching it), or a custom one from the
+  // "Add your own" modal. Keep the whole product too, so a successful add can
+  // record itself against the catalog.
   const picked = product ?? selectedProduct.value
   const maker = picked?.maker ?? null
 
@@ -591,7 +639,7 @@ async function addItem(product = null) {
       addError.value = error.message ?? 'Could not update that item.'
       return
     }
-    bumpProductPopularity(picked)
+    recordProductAdd(picked)
     return
   }
 
@@ -648,7 +696,9 @@ async function addItem(product = null) {
     // Lost a race: the DB already has an unchecked item for this product (our
     // local check missed it). Fold this quantity into that row instead of erroring.
     if (error.code === '23505') {
-      await incrementActiveItemByName(name, maker, quantity, id)
+      // The quantity still landed (folded into the existing row), so record the
+      // add against the catalog just as the direct-insert path does.
+      if (await incrementActiveItemByName(name, maker, quantity, id)) recordProductAdd(picked)
       return
     }
     // Network failure (WebView reported online but the write never left): keep
@@ -664,8 +714,13 @@ async function addItem(product = null) {
       newItem.value = name
       newQty.value = quantity
       // Keep the catalog pick across the retry (the watcher sees the restored
-      // text matching it and leaves it in place).
-      selectedProduct.value = maker ? { name, maker } : null
+      // text matching it and leaves it in place). Preserve the custom tag too, so
+      // a retried "Add your own" item is still contributed rather than bumped.
+      selectedProduct.value = picked?.custom
+        ? { name, maker, custom: true }
+        : maker
+          ? { name, maker }
+          : null
     }
     return
   }
@@ -673,13 +728,22 @@ async function addItem(product = null) {
   // Refresh the row with server-authoritative fields. The id is unchanged, so no
   // remount; the realtime INSERT echo dedupes on this same id and is a no-op.
   const index = items.value.findIndex((i) => i.id === id)
-  if (index !== -1) items.value[index] = data
+  if (index !== -1) {
+    items.value[index] = data
+    // The server's created_at replaces the optimistic client timestamp — a
+    // different sort key. Re-sort now so the row settles into its canonical spot
+    // immediately, instead of sitting at the append position until the next
+    // background sync abruptly moves it (the "rows jump on their own" bug).
+    items.value = sortItemsForDisplay(items.value)
+  }
 
-  bumpProductPopularity(picked)
+  recordProductAdd(picked)
 }
 
 // Increment the existing active row for this product (used when a concurrent
 // add beat us to it). Looks locally first, then fetches to reconcile stale state.
+// Returns whether the quantity actually landed, so the caller knows whether to
+// record the add against the catalog (a deferred offline update counts).
 async function incrementActiveItemByName(name, maker, quantity, optimisticId) {
   items.value = items.value.filter((i) => i.id !== optimisticId)
 
@@ -691,11 +755,15 @@ async function incrementActiveItemByName(name, maker, quantity, optimisticId) {
       .eq('family_id', familyId.value)
       .eq('checked', false)
     target = findActiveItemByName(data || [], name, { maker })
-    if (target && !items.value.some((i) => i.id === target.id)) items.value.push(target)
+    if (target && !items.value.some((i) => i.id === target.id)) {
+      // Place the fetched row by its (server) created_at, not on the end, or the
+      // next refetch would move it there.
+      items.value = sortItemsForDisplay([...items.value, target])
+    }
   }
   if (!target) {
     addError.value = 'Could not add that item.'
-    return
+    return false
   }
 
   const previousQty = Number(target.quantity) || 1
@@ -705,10 +773,12 @@ async function incrementActiveItemByName(name, maker, quantity, optimisticId) {
     .update({ quantity: target.quantity })
     .eq('id', target.id)
   if (error) {
-    if (deferIfOffline(error, { kind: 'update', id: target.id, patch: { quantity: target.quantity } })) return
+    if (deferIfOffline(error, { kind: 'update', id: target.id, patch: { quantity: target.quantity } })) return true
     target.quantity = previousQty
     addError.value = error.message ?? 'Could not update that item.'
+    return false
   }
+  return true
 }
 
 function closeLimitReachedPopup() {
@@ -717,6 +787,7 @@ function closeLimitReachedPopup() {
 
 async function toggleItem(item) {
   const previous = item.checked
+  const previousCheckedAt = item.checked_at ?? null
   const nextChecked = !previous
 
   // Unchecking: if another unchecked item with the same name already exists,
@@ -733,52 +804,78 @@ async function toggleItem(item) {
     }
   }
 
-  // Optimistic: flip immediately, roll back if the write fails.
+  // Optimistic: flip immediately, roll back if the write fails. Mirror checked_at
+  // so a checked item jumps to the top of the checked section right away (newest
+  // tick first), and clear it on uncheck; re-sort so it lands there now. The DB
+  // trigger (migration 024) is the authority on the stored value, so we only send
+  // `checked` — the server stamps the time itself.
   item.checked = nextChecked
+  item.checked_at = nextChecked ? new Date().toISOString() : null
+  items.value = sortItemsForDisplay(items.value)
+  const patch = { checked: nextChecked }
 
   if (isOffline()) {
     enqueueOfflineMutation(localStorage, effectiveUserId.value, {
       kind: 'update',
       id: item.id,
-      patch: { checked: nextChecked },
+      patch,
     })
     return
   }
 
-  const { error } = await db
-    .from('shopping_list_items')
-    .update({ checked: nextChecked })
-    .eq('id', item.id)
+  // Track the in-flight write so a background refetch that races it (reconnect,
+  // focus, watchdog) keeps this flip rather than reading back the server's
+  // pre-write value — see loadItems and pendingItemWrites.
+  pendingItemWrites.add(item.id)
+  try {
+    const { error } = await db
+      .from('shopping_list_items')
+      .update(patch)
+      .eq('id', item.id)
 
-  if (error) {
-    // Keep the flip and queue it when the failure is just lost connectivity.
-    if (deferIfOffline(error, { kind: 'update', id: item.id, patch: { checked: nextChecked } })) return
-    item.checked = previous
-    // Unique-violation while unchecking: an active same-name row appeared (race).
-    // Merge into it rather than surfacing an error.
-    if (!nextChecked && error.code === '23505') {
-      let target = findActiveItemByName(items.value, item.name, {
-        excludeId: item.id,
-        maker: item.maker,
-      })
-      if (!target) {
-        const { data } = await db
-          .from('shopping_list_items')
-          .select('*')
-          .eq('family_id', familyId.value)
-          .eq('checked', false)
-        target = findActiveItemByName(data || [], item.name, {
+    if (error) {
+      // Keep the flip and queue it when the failure is just lost connectivity.
+      if (deferIfOffline(error, { kind: 'update', id: item.id, patch })) return
+      item.checked = previous
+      item.checked_at = previousCheckedAt
+      items.value = sortItemsForDisplay(items.value)
+      // Unchecking would push the member over the active-item cap (migration 010
+      // now enforces it on uncheck too): show the same friendly popup as adding.
+      if (error.message?.includes('member_active_item_limit_exceeded')
+        || error.message?.includes('limit of')) {
+        limitReachedPopupOpen.value = true
+        return
+      }
+      // Unique-violation while unchecking: an active same-name row appeared (race).
+      // Merge into it rather than surfacing an error.
+      if (!nextChecked && error.code === '23505') {
+        let target = findActiveItemByName(items.value, item.name, {
           excludeId: item.id,
           maker: item.maker,
         })
-        if (target && !items.value.some((i) => i.id === target.id)) items.value.push(target)
+        if (!target) {
+          const { data } = await db
+            .from('shopping_list_items')
+            .select('*')
+            .eq('family_id', familyId.value)
+            .eq('checked', false)
+          target = findActiveItemByName(data || [], item.name, {
+            excludeId: item.id,
+            maker: item.maker,
+          })
+          if (target && !items.value.some((i) => i.id === target.id)) {
+            items.value = sortItemsForDisplay([...items.value, target])
+          }
+        }
+        if (target) {
+          await mergeItemInto(item, target)
+          return
+        }
       }
-      if (target) {
-        await mergeItemInto(item, target)
-        return
-      }
+      loadError.value = error.message ?? 'Could not update that item.'
     }
-    loadError.value = error.message ?? 'Could not update that item.'
+  } finally {
+    pendingItemWrites.delete(item.id)
   }
 }
 

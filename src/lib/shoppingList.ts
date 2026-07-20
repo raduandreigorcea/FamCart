@@ -5,6 +5,7 @@ export interface ShoppingItem {
   id: string
   name: string
   checked: boolean
+  checked_at?: string | null
   quantity?: number
   added_by?: string
   maker?: string | null
@@ -59,18 +60,29 @@ export function countActiveItemsByMember(items: ShoppingItem[], userId: string):
   return items.filter((i) => !i.checked && i.added_by === userId).length
 }
 
-// The one canonical display order: creation time ascending, id as tiebreaker.
-// Every path that rebuilds the list array (fetch, realtime insert) must use
-// this order. Postgres returns equal-timestamp rows in whatever order it
-// likes, and a fetch that disagrees with what a local action produced makes
-// rows visibly swap on the next background sync — the id tiebreak and the
-// single shared order make every rebuild land identically.
-export function sortItemsForDisplay<T extends ShoppingItem & { created_at?: unknown }>(
-  items: T[],
-): T[] {
+// The one canonical display order, shared by every path that rebuilds the array
+// (fetch, realtime, local mutation) so a refetch can never disagree with a local
+// action and swap rows on the next background sync:
+//   - unchecked items: creation time ascending (oldest first), then id;
+//   - checked items: check time descending (most recently checked on top), then
+//     id — so the "to buy" section reads newest-first.
+// Unchecked sort ahead of checked to keep the array totally ordered; the list
+// renders the two as separate sections regardless. Timestamps use a stable id
+// tiebreak because Postgres returns equal-timestamp rows in an arbitrary order.
+export function sortItemsForDisplay<
+  T extends ShoppingItem & { created_at?: unknown; checked_at?: unknown },
+>(items: T[]): T[] {
+  const time = (v: unknown) => new Date(String(v ?? '')).getTime() || 0
   return [...items].sort((a, b) => {
-    const ta = new Date(String(a.created_at ?? '')).getTime() || 0
-    const tb = new Date(String(b.created_at ?? '')).getTime() || 0
+    if (a.checked !== b.checked) return a.checked ? 1 : -1
+    if (a.checked) {
+      const ca = time(a.checked_at)
+      const cb = time(b.checked_at)
+      if (ca !== cb) return cb - ca
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+    }
+    const ta = time(a.created_at)
+    const tb = time(b.created_at)
     if (ta !== tb) return ta - tb
     return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
   })

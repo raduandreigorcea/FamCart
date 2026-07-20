@@ -59,6 +59,14 @@ create policy "authenticated users can create a family"
   on public.families for insert
   with check (created_by = requesting_user_id());
 
+-- ...but only one. A unique index rather than a policy check, so two concurrent
+-- inserts cannot both slip past it. Deleting a family frees the slot, and joining
+-- another family (family_members) is unaffected: this caps ownership, not
+-- membership. A product rule in its own right, and a complement to the
+-- contributed_by promotion gate in the product catalog (migration 022).
+create unique index if not exists families_one_per_owner
+  on public.families (created_by);
+
 -- ─── RLS policies: family_members ─────────────────────────────────────────────
 
 -- Users can read their own memberships

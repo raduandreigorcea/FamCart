@@ -79,7 +79,15 @@ async function createFamily() {
       .select('id')
       .single()
 
-    if (familyErr) throw familyErr
+    // A user may own only one family (migration 001). The unique index rejects a
+    // second with a 23505; turn that one case into a message that explains it
+    // rather than leaking the raw constraint text.
+    if (familyErr) {
+      if (familyErr.message?.includes('families_one_per_owner')) {
+        throw new Error('You can only own one family. Leave or delete your current one before creating another.')
+      }
+      throw familyErr
+    }
 
     const { error: memberErr } = await db
       .from('family_members')
