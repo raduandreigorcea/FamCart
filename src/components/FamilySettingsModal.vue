@@ -2252,14 +2252,15 @@ async function deleteFamily() {
 }
 
 /* Animations & Transitions */
+/* Opacity only: a vertical translate would push these min-height:100% panels
+   past the bottom of their overflow-y:auto scroll container for the length of
+   the animation, flashing a scrollbar on open and on every tab switch. */
 @keyframes panelFadeIn {
   from {
     opacity: 0;
-    transform: translateY(6px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -2291,6 +2292,14 @@ async function deleteFamily() {
 
 .modal-fade-enter-active .settings-modal {
   animation: modalScaleIn 0.18s cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
+}
+
+/* While the modal scales in, subpixel rounding on the scaled content can tip
+   these scroll containers a fraction past their box and flash a scrollbar. Clip
+   them for the ~0.18s of the entrance; scrolling resumes right after. */
+.modal-fade-enter-active .settings-content-wrapper,
+.modal-fade-enter-active .tab-panel--overlay {
+  overflow: hidden;
 }
 
 .modal-fade-leave-active .settings-modal {
