@@ -499,6 +499,13 @@ function formatTime(iso) {
   animation: modalScaleIn 0.18s cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
 }
 
+/* While the modal scales in, subpixel rounding on the scaled content can tip the
+   scroll body a fraction past its box and flash a scrollbar. Clip it for the
+   ~0.18s of the entrance; scrolling resumes right after. */
+.modal-fade-enter-active .history-modal__body {
+  overflow: hidden;
+}
+
 @keyframes modalScaleIn {
   from {
     transform: scale(0.96);
