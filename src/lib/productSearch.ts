@@ -20,7 +20,7 @@
 export interface ProductSuggestion {
   name: string
   maker: string | null
-  // Global cross-family score from product_catalog (migration 024).
+  // Global cross-family score from product_catalog (migration 022).
   popularity?: number
 }
 

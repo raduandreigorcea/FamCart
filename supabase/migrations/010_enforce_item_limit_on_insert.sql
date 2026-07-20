@@ -26,6 +26,14 @@ begin
     return new;
   end if;
 
+  -- On UPDATE, only enforce when the row is newly becoming active (an uncheck).
+  -- A row that was already active being updated for some other reason (e.g. a
+  -- quantity change) is already counted below, so enforcing here would reject it
+  -- the moment the family sits exactly at the cap.
+  if tg_op = 'UPDATE' and coalesce(old.checked, false) = false then
+    return new;
+  end if;
+
   select coalesce(f.max_items_per_member, 50)
     into member_limit
   from public.families f
@@ -55,7 +63,9 @@ $$;
 
 drop trigger if exists trg_enforce_member_active_item_limit on public.shopping_list_items;
 
+-- INSERT and UPDATE: unchecking an item makes it active again, which must count
+-- against the cap the same way adding one does.
 create trigger trg_enforce_member_active_item_limit
-before insert on public.shopping_list_items
+before insert or update on public.shopping_list_items
 for each row
 execute function public.enforce_member_active_item_limit();

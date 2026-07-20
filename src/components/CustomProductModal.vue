@@ -1,9 +1,9 @@
 <script setup>
-// Add a product the catalog doesn't have. The catalog is global and read-only to
-// clients by design (migration 022), so this never writes to it — it only builds
-// a product for the caller to add to their own list. That is also the only way
-// to give a hand-typed item a maker, which otherwise arrives solely from a
-// catalog pick.
+// Add a product the catalog doesn't have. This only builds the product and hands
+// it to the caller; contributing it to the catalog is HomeView's job, via the
+// add_custom_product RPC (migration 022) once the add itself succeeds. This is
+// also the only way to give a hand-typed item a maker, which otherwise arrives
+// solely from a catalog pick.
 import { ref, computed, watch, nextTick } from 'vue'
 
 const props = defineProps({
@@ -62,7 +62,8 @@ function submit() {
         <div class="custom-product-dialog__body">
           <h4 id="custom-product-title" class="custom-product-dialog__title">Add your own</h4>
           <p class="custom-product-dialog__message">
-            Describe it and it goes straight on your list.
+            Describe it and it goes straight on your list — we'll suggest it to
+            your family next time.
           </p>
         </div>
 
