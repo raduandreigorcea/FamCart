@@ -63,8 +63,8 @@ vi.mock('../src/lib/pushNotifications', async (importOriginal) => ({
 
 function setDefaultHandlers(db) {
   db.handlers['family_members.select'] = (q) =>
-    q.wantSingle === 'maybe'
-      ? { data: { family_id: 'fam-1' }, error: null }
+    q.filters.user_id
+      ? { data: [{ family_id: 'fam-1', families: { id: 'fam-1', name: 'Fam' } }], error: null }
       : {
           data: [{ user_id: 'user-1', display_name: 'Test User', image_url: null, role: 'moderator' }],
           error: null,

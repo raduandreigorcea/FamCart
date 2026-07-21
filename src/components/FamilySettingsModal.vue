@@ -1,7 +1,6 @@
 <script setup>
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useAuth } from '@clerk/vue'
-import { useRouter } from 'vue-router'
 import { useSupabase } from '../supabase'
 import ConfirmModal from './ConfirmModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
@@ -42,11 +41,10 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['close', 'refresh-family', 'family-deleted'])
+const emit = defineEmits(['close', 'refresh-family', 'family-deleted', 'family-left'])
 const FAMILY_NAME_MAX_LENGTH = 25
 
 const { userId } = useAuth()
-const router = useRouter()
 const db = useSupabase()
 
 const activeTab = ref('overview')
@@ -187,8 +185,9 @@ async function leaveFamily() {
     .eq('user_id', userId.value)
     .then(({ error }) => {
       if (!error) {
-        emit('refresh-family')
-        router.replace('/family-setup')
+        // Leave HomeView to move to another family (or setup if none remain).
+        emit('close')
+        emit('family-left')
       } else {
         console.error('Error leaving family:', error)
       }
@@ -386,9 +385,9 @@ async function deleteFamily() {
       .delete()
       .eq('id', props.familyId)
     if (!error) {
+      // HomeView reconciles: switch to another family, or setup if none remain.
       emit('close')
       emit('family-deleted')
-      router.replace('/family-setup')
     }
   } finally {
     deletingFamily.value = false
