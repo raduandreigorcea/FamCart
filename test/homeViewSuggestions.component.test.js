@@ -53,8 +53,8 @@ async function mountHome() {
   mocks.db = createFakeDb()
   mocks.routerReplace = vi.fn()
   mocks.db.handlers['family_members.select'] = (q) =>
-    q.wantSingle === 'maybe'
-      ? { data: { family_id: 'fam-1' }, error: null }
+    q.filters.user_id
+      ? { data: [{ family_id: 'fam-1', families: { id: 'fam-1', name: 'Fam' } }], error: null }
       : { data: [{ user_id: 'user-1', display_name: 'Test User', image_url: null, role: 'moderator' }], error: null }
   mocks.db.handlers['families.select'] = () => ({
     data: { name: 'Fam', invite_code: 'ABCDEFGH', created_by: 'user-1', max_items_per_member: 50 },
