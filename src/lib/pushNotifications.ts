@@ -123,12 +123,18 @@ export function initPushNotifications(): void {
 
   if (!isPushSupported()) return
   deferredQueue().push((sdk) => {
-    void sdk.init({
-      appId,
-      serviceWorkerParam: { scope: WORKER_SCOPE },
-      serviceWorkerPath: WORKER_PATH,
-      allowLocalhostAsSecureOrigin: true,
-    })
+    // init() rejects when the OneSignal app has no web-push configuration
+    // ("App not configured for web push", code 2) — a project-config state, not
+    // a runtime fault. Swallow it so it doesn't surface as an unhandled
+    // rejection; push simply stays off until the app is configured.
+    sdk
+      .init({
+        appId,
+        serviceWorkerParam: { scope: WORKER_SCOPE },
+        serviceWorkerPath: WORKER_PATH,
+        allowLocalhostAsSecureOrigin: true,
+      })
+      .catch(() => {})
     // Same reason as the native branch: no banners over a visible live list.
     sdk.Notifications.addEventListener('foregroundWillDisplay', (event) => {
       event.preventDefault()
