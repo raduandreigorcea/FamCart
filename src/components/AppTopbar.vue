@@ -255,7 +255,11 @@ const memberCount = computed(() => props.memberProfiles.length)
             <span class="family-switcher-item-name">{{ fam.name || 'Family' }}</span>
             <span v-if="fam.id === familyId" class="family-switcher-check" aria-hidden="true" v-html="checkRaw"></span>
           </button>
-          <div class="family-switcher-divider" aria-hidden="true"></div>
+          <div
+            class="family-switcher-divider"
+            :class="{ 'family-switcher-divider--cap': !canAddFamily }"
+            aria-hidden="true"
+          ></div>
           <button
             v-if="canAddFamily"
             class="family-switcher-add"
@@ -585,6 +589,24 @@ const memberCount = computed(() => props.memberProfiles.length)
   font-size: 0.78rem;
   line-height: 1.4;
   color: var(--text-secondary);
+}
+
+/* The caret only earns its space on desktop; on mobile the tappable name is
+   affordance enough, so drop it there. */
+@media (max-width: 899.98px) {
+  .family-switcher-caret {
+    display: none;
+  }
+}
+
+/* The cap note only earns its space on mobile. On desktop the absent "add"
+   action already reads as "you're at the max", so hide the note there — and its
+   divider with it, so nothing dangles below the family list. */
+@media (min-width: 900px) {
+  .family-switcher-cap-note,
+  .family-switcher-divider--cap {
+    display: none;
+  }
 }
 
 .switcher-fade-enter-active,
