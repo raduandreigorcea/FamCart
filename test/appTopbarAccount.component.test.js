@@ -103,3 +103,66 @@ describe('AppTopbar account identity offline', () => {
     expect(modal.props('email')).toBe('clerk@example.com')
   })
 })
+
+describe('AppTopbar family switcher', () => {
+  const families = [
+    { id: 'fam-1', name: 'Home' },
+    { id: 'fam-2', name: 'Parents' },
+  ]
+
+  it('lists the families, marks the active one, and emits a switch on click', async () => {
+    const wrapper = mountTopbar({
+      familyId: 'fam-1',
+      familyName: 'Home',
+      families,
+      memberProfiles: profiles,
+      currentUserId: 'u_self',
+    })
+
+    await wrapper.find('.family-switcher-btn').trigger('click')
+
+    // The menu is teleported to <body>.
+    const items = [...document.body.querySelectorAll('.family-switcher-item')]
+    expect(items.map((i) => i.textContent.replace('✓', '').trim())).toEqual(['Home', 'Parents'])
+    expect(document.body.querySelector('.family-switcher-item--active').textContent).toContain('Home')
+
+    items.find((i) => i.textContent.includes('Parents')).click()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('switch-family')?.[0]).toEqual(['fam-2'])
+  })
+
+  it('offers join/create under the cap and emits add-family', async () => {
+    const wrapper = mountTopbar({
+      familyId: 'fam-1',
+      familyName: 'Home',
+      families,
+      memberProfiles: profiles,
+      currentUserId: 'u_self',
+    })
+
+    await wrapper.find('.family-switcher-btn').trigger('click')
+    const add = document.body.querySelector('.family-switcher-add')
+    expect(add).toBeTruthy()
+    add.click()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('add-family')).toBeTruthy()
+  })
+
+  it('hides join/create at the cap of three families', async () => {
+    const three = [
+      { id: 'a', name: 'A' },
+      { id: 'b', name: 'B' },
+      { id: 'c', name: 'C' },
+    ]
+    const wrapper = mountTopbar({
+      familyId: 'a',
+      familyName: 'A',
+      families: three,
+      memberProfiles: profiles,
+      currentUserId: 'u_self',
+    })
+
+    await wrapper.find('.family-switcher-btn').trigger('click')
+    expect(document.body.querySelector('.family-switcher-add')).toBeNull()
+  })
+})

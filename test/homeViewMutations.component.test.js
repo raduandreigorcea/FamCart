@@ -10,6 +10,7 @@ import HomeView from '../src/views/HomeView.vue'
 import AddItemForm from '../src/components/AddItemForm.vue'
 import CustomProductModal from '../src/components/CustomProductModal.vue'
 import ShoppingList from '../src/components/ShoppingList.vue'
+import AppTopbar from '../src/components/AppTopbar.vue'
 import ConfirmModal from '../src/components/ConfirmModal.vue'
 import ErrorModal from '../src/components/ErrorModal.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
@@ -71,8 +72,8 @@ function makeItem(overrides = {}) {
 
 function setDefaultHandlers(db, { items = [], maxItemsPerMember = 50 } = {}) {
   db.handlers['family_members.select'] = (q) =>
-    q.wantSingle === 'maybe'
-      ? { data: { family_id: 'fam-1' }, error: null }
+    q.filters.user_id
+      ? { data: [{ family_id: 'fam-1', families: { id: 'fam-1', name: 'Fam' } }], error: null }
       : {
           data: [{ user_id: 'user-1', display_name: 'Test User', image_url: null, role: 'moderator' }],
           error: null,
@@ -626,6 +627,50 @@ describe('list ordering', () => {
   })
 })
 
+describe('multiple families', () => {
+  it('loads every family and switches the active one from the topbar', async () => {
+    mocks.db = createFakeDb()
+    mocks.routerReplace = vi.fn()
+    mocks.db.handlers['family_members.select'] = (q) =>
+      q.filters.user_id
+        ? {
+            data: [
+              { family_id: 'fam-1', families: { id: 'fam-1', name: 'Home' } },
+              { family_id: 'fam-2', families: { id: 'fam-2', name: 'Parents' } },
+            ],
+            error: null,
+          }
+        : { data: [{ user_id: 'user-1', display_name: 'Me', image_url: null, role: 'moderator' }], error: null }
+    mocks.db.handlers['families.select'] = (q) => ({
+      data: {
+        name: q.filters.id === 'fam-2' ? 'Parents' : 'Home',
+        invite_code: 'ABCDEFGH',
+        created_by: 'user-1',
+        max_items_per_member: 50,
+      },
+      error: null,
+    })
+    mocks.db.handlers['shopping_list_items.select'] = () => ({ data: [], error: null })
+    mocks.db.handlers['purchase_history.select'] = () => ({ data: [], error: null })
+
+    const wrapper = trackMount(HomeView, { shallow: true })
+    await flushPromises()
+    await flushPromises()
+
+    const topbar = wrapper.findComponent(AppTopbar)
+    // Both families reach the switcher, name-ordered, with the first active.
+    expect(topbar.props('families').map((f) => f.name)).toEqual(['Home', 'Parents'])
+    expect(topbar.props('familyName')).toBe('Home')
+
+    topbar.vm.$emit('switch-family', 'fam-2')
+    await flushPromises()
+
+    // The active family (name + id) reloads to the chosen one.
+    expect(topbar.props('familyId')).toBe('fam-2')
+    expect(topbar.props('familyName')).toBe('Parents')
+  })
+})
+
 describe('deleteItem', () => {
   it('restores the row at its original position when the delete fails', async () => {
     const first = makeItem({ id: 'item-1', name: 'Milk' })
@@ -809,8 +854,8 @@ describe('network failure while reported online', () => {
     mocks.routerReplace = vi.fn()
     // Membership and header resolve, but the items fetch dies at the network.
     mocks.db.handlers['family_members.select'] = (q) =>
-      q.wantSingle === 'maybe'
-        ? { data: { family_id: 'fam-1' }, error: null }
+      q.filters.user_id
+        ? { data: [{ family_id: 'fam-1', families: { id: 'fam-1', name: 'Fam' } }], error: null }
         : { data: [{ user_id: 'user-1', display_name: 'Me', image_url: null, role: 'moderator' }], error: null }
     mocks.db.handlers['families.select'] = () => ({
       data: { name: 'Fam', invite_code: 'ABCDEFGH', created_by: 'user-1', max_items_per_member: 50 },

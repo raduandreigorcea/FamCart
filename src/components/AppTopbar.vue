@@ -4,6 +4,8 @@ import { useClerk, useUser } from '@clerk/vue'
 import AccountActionModal from './AccountActionModal.vue'
 import MemberAvatarStack from './MemberAvatarStack.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
+import chevronLeftRaw from '../assets/chevron-left.svg?raw'
+import checkRaw from '../assets/check.svg?raw'
 import { getUserDisplayName, getUserInitial, getUserPrimaryEmail } from '../lib/userIdentity'
 import { forgetUser } from '../lib/session'
 import { clearFamilySnapshot } from '../lib/familyCache'
@@ -19,7 +21,12 @@ const PurchaseHistoryModal = defineAsyncComponent(() => import('./PurchaseHistor
 const props = defineProps({
   familyId: { type: String, default: '' },
   familyName: { type: String, default: '' },
+  // Every family the user belongs to ({ id, name }); the switcher lists them.
+  families: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
+  // True mid family-switch: the name is already known, but the roster isn't yet,
+  // so the member count and avatars show a skeleton instead of a stale/empty one.
+  membersLoading: { type: Boolean, default: false },
   inviteCode: { type: String, default: '' },
   familyItemLimit: { type: Number, default: 50 },
   ownerUserId: { type: String, default: '' },
@@ -30,7 +37,35 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['refresh-family', 'family-deleted'])
+const emit = defineEmits([
+  'refresh-family',
+  'family-deleted',
+  'family-left',
+  'switch-family',
+  'add-family',
+])
+
+// Keep in step with the DB cap (migration 025): at the cap there is nowhere to
+// add another, so the switcher hides the join/create action.
+const MAX_FAMILIES = 3
+
+const switcherOpen = ref(false)
+const canAddFamily = computed(() => props.families.length < MAX_FAMILIES)
+
+function toggleSwitcher() {
+  switcherOpen.value = !switcherOpen.value
+}
+function closeSwitcher() {
+  switcherOpen.value = false
+}
+function selectFamily(id) {
+  closeSwitcher()
+  if (id !== props.familyId) emit('switch-family', id)
+}
+function addFamily() {
+  closeSwitcher()
+  emit('add-family')
+}
 
 const clerk = useClerk()
 const { user } = useUser()
@@ -133,15 +168,29 @@ const memberCount = computed(() => props.memberProfiles.length)
   <header class="topbar">
     <div class="topbar-left">
       <template v-if="familyName">
-        <div class="family-meta">
+        <button
+          class="family-switcher-btn"
+          type="button"
+          aria-haspopup="menu"
+          :aria-expanded="switcherOpen"
+          aria-label="Switch family"
+          @click="toggleSwitcher"
+        >
+          <span
+            class="family-switcher-caret"
+            :class="{ 'family-switcher-caret--open': switcherOpen }"
+            aria-hidden="true"
+            v-html="chevronLeftRaw"
+          ></span>
           <div class="family-info">
             <p class="family-name">{{ familyName }}</p>
             <div class="family-subrow">
-              <span class="family-members-count">{{ memberCount }} members</span>
+              <SkeletonBlock v-if="membersLoading" width="4.5rem" height="0.7rem" />
+              <span v-else class="family-members-count">{{ memberCount }} members</span>
             </div>
           </div>
-          <MemberAvatarStack :members="memberProfiles" />
-        </div>
+          <MemberAvatarStack :members="memberProfiles" :loading="membersLoading" />
+        </button>
       </template>
       <template v-else-if="loading">
         <div class="family-meta" aria-hidden="true">
@@ -185,6 +234,46 @@ const memberCount = computed(() => props.memberProfiles.length)
     </div>
   </header>
 
+  <!-- Family switcher: teleported so the topbar's overflow:hidden (which
+       ellipsizes the name) can't clip it. The transparent overlay catches
+       outside clicks to dismiss. -->
+  <Teleport to="body">
+    <Transition name="switcher-fade">
+      <div v-if="switcherOpen" class="family-switcher-overlay" @click.self="closeSwitcher">
+        <div class="family-switcher-menu" role="menu">
+          <p class="family-switcher-heading">Your families</p>
+          <button
+            v-for="fam in families"
+            :key="fam.id"
+            class="family-switcher-item"
+            :class="{ 'family-switcher-item--active': fam.id === familyId }"
+            type="button"
+            role="menuitemradio"
+            :aria-checked="fam.id === familyId"
+            @click="selectFamily(fam.id)"
+          >
+            <span class="family-switcher-item-name">{{ fam.name || 'Family' }}</span>
+            <span v-if="fam.id === familyId" class="family-switcher-check" aria-hidden="true" v-html="checkRaw"></span>
+          </button>
+          <div class="family-switcher-divider" aria-hidden="true"></div>
+          <button
+            v-if="canAddFamily"
+            class="family-switcher-add"
+            type="button"
+            role="menuitem"
+            @click="addFamily"
+          >
+            <span class="family-switcher-add-plus" aria-hidden="true">+</span>
+            Join or create a family
+          </button>
+          <p v-else class="family-switcher-cap-note">
+            You're in the maximum of {{ MAX_FAMILIES }} families. Leave one to join or create another.
+          </p>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
   <PurchaseHistoryModal
     v-if="historyEverOpened"
     :open="historyOpen"
@@ -207,6 +296,7 @@ const memberCount = computed(() => props.memberProfiles.length)
     @close="settingsOpen = false"
     @refresh-family="emit('refresh-family')"
     @family-deleted="emit('family-deleted')"
+    @family-left="emit('family-left')"
   />
 
   <AccountActionModal
@@ -299,8 +389,10 @@ const memberCount = computed(() => props.memberProfiles.length)
   letter-spacing: -0.01em;
   color: var(--ui-text-strong);
   /* A long family name must never shove the settings/account buttons off the
-     edge: cap it to the available width and ellipsize the overflow. */
+     edge: cap it to the available width and ellipsize the overflow. min-width:0
+     lets it shrink inside the switcher's flex row so the caret stays visible. */
   max-width: 100%;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -314,7 +406,10 @@ const memberCount = computed(() => props.memberProfiles.length)
 .family-subrow {
   margin-top: 0.2rem;
   display: flex;
-  align-items: baseline;
+  /* Pin the row height and center its contents so the shorter member-count
+     skeleton can't collapse the row and bounce the family name above it. */
+  align-items: center;
+  min-height: 1rem;
 }
 
 .family-members-count {
@@ -323,6 +418,183 @@ const memberCount = computed(() => props.memberProfiles.length)
   letter-spacing: -0.01em;
   color: var(--ui-text-muted);
   font-family: inherit;
+}
+
+/* ─── Family switcher ─────────────────────────────────────────────────────── */
+.family-switcher-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  /* Real padding on every side so the hover fill has room. No negative margins:
+     .topbar-left has overflow:hidden and would clip them, which is exactly why
+     the hover looked like it had no padding. */
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.family-switcher-btn:hover {
+  background: var(--bg-hover);
+}
+
+.family-switcher-caret {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ui-text-muted);
+  /* chevron-left renders as "‹"; rotate it to a down-caret so it reads as a
+     dropdown, and up while the switcher is open. */
+  transform: rotate(-90deg);
+  transition: transform 0.2s ease;
+}
+
+.family-switcher-caret--open {
+  transform: rotate(90deg);
+}
+
+.family-switcher-caret :deep(svg) {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  stroke-width: 2.25;
+  fill: none;
+}
+
+.family-switcher-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.family-switcher-menu {
+  position: fixed;
+  top: calc(var(--safe-top) + 58px);
+  left: max(1.25rem, calc((100vw - var(--desktop-column)) / 2));
+  min-width: 224px;
+  max-width: calc(100vw - 2.5rem);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-main);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-modal);
+  padding: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.family-switcher-heading {
+  margin: 0.2rem 0.5rem 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.family-switcher-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  padding: 0.55rem 0.6rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.family-switcher-item:hover {
+  background: var(--bg-hover);
+}
+
+.family-switcher-item--active {
+  color: var(--color-primary);
+}
+
+.family-switcher-item-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.family-switcher-check {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  color: var(--color-primary);
+}
+
+.family-switcher-check :deep(svg) {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  fill: none;
+}
+
+.family-switcher-divider {
+  height: 1px;
+  background: var(--border-light);
+  margin: 0.25rem 0.35rem;
+}
+
+.family-switcher-add {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-primary);
+  padding: 0.6rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+}
+
+.family-switcher-add:hover {
+  background: var(--bg-hover);
+}
+
+.family-switcher-add-plus {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.family-switcher-cap-note {
+  margin: 0;
+  padding: 0.5rem 0.6rem 0.35rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.switcher-fade-enter-active,
+.switcher-fade-leave-active {
+  transition: opacity 0.14s ease;
+}
+
+.switcher-fade-enter-from,
+.switcher-fade-leave-to {
+  opacity: 0;
 }
 
 .topbar-actions {
