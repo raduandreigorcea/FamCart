@@ -24,7 +24,14 @@ import {
 } from '../lib/productSearch'
 import { getUserDisplayName, getUserPrimaryEmail } from '../lib/userIdentity'
 import { cleanAuthCallbackUrl } from '../lib/authCallbackUrl'
-import { loadFamilySnapshot, saveFamilySnapshot, clearFamilySnapshot } from '../lib/familyCache'
+import {
+  loadFamilySnapshot,
+  saveFamilySnapshot,
+  clearFamilySnapshot,
+  loadActiveFamilyId,
+  saveActiveFamilyId,
+  clearActiveFamilyId,
+} from '../lib/familyCache'
 import { enqueueOfflineMutation, flushOfflineQueue, hasQueuedOfflineMutations, isOfflineError } from '../lib/offlineQueue'
 import { isCurrentlyOffline, onReconnect } from '../lib/connectivity'
 import { rememberUser, getRememberedUser } from '../lib/session'
@@ -48,6 +55,9 @@ const db = useSupabase()
 const effectiveUserId = computed(() => userId.value || getRememberedUser(localStorage))
 
 const items = ref([])
+// Every family the user belongs to ({ id, name }), for the topbar switcher.
+// familyId below is whichever one is currently active.
+const families = ref([])
 // Ids of items with an online write in flight (a toggle, so far). A background
 // refetch — reconnect, focus, watchdog — reads the server's pre-write value, so
 // loadItems keeps the local optimistic row for these ids instead of clobbering
@@ -79,6 +89,10 @@ const notificationPromptOpen = ref(false)
 const notificationError = ref('')
 const adding = ref(false)
 const hasInitialized = ref(false)
+// True while switchFamily is tearing down the old family and loading the new one.
+// Drives the skeleton (instead of the "no items" empty state) so a switch never
+// flashes the new family as empty.
+const switchingFamily = ref(false)
 const ITEM_NAME_MAX_LENGTH = 120
 
 // Realtime sync (channels, reconnects, watchdog) lives in the composable; it
@@ -92,7 +106,7 @@ const { setupRealtimeSubscriptions, cleanupRealtimeSubscriptions } = useFamilyRe
   loadItems,
   loadFamilyHeader,
   refreshMembershipOrRedirect,
-  onFamilyDeleted: () => router.replace('/family-setup'),
+  onFamilyDeleted: () => void reconcileActiveFamily(),
   // A realtime UPDATE must not clobber a row whose own write is still in flight
   // (its authoritative echo is still coming) — same guard as loadItems.
   hasPendingWrite: (id) => pendingItemWrites.has(id),
@@ -101,6 +115,8 @@ const { setupRealtimeSubscriptions, cleanupRealtimeSubscriptions } = useFamilyRe
 // Initial load: nothing fetched yet and no error to show instead. Items arriving
 // (realtime or fetch) end the skeleton early even before hasInitialized flips.
 const initialLoading = computed(() => !hasInitialized.value && !items.value.length && !loadError.value)
+// The skeleton shows on the first-ever load and while switching families.
+const listLoading = computed(() => initialLoading.value || switchingFamily.value)
 
 // Mutations check this at call time: on a definite offline signal they queue
 // the write instead of hitting the network. Mid-flight failures on a flaky
@@ -367,13 +383,9 @@ async function initializeHome() {
   sanitizeAuthCallbackUrl()
   hydrateFromCachedSnapshot()
 
-  // Fetch the user's family only after Clerk has finished loading.
-  const { data: membership, error: mErr } = await db
-    .from('family_members')
-    .select('family_id')
-    .eq('user_id', userId.value)
-    .limit(1)
-    .maybeSingle()
+  // Fetch every family the user belongs to (the switcher lists them), only once
+  // Clerk has finished loading.
+  const { error: mErr } = await loadFamilies()
 
   if (mErr) {
     // Offline with a cached snapshot already painted: run from local state and
@@ -391,13 +403,19 @@ async function initializeHome() {
     return
   }
 
-  if (!membership?.family_id) {
+  if (!families.value.length) {
     clearFamilySnapshot(localStorage)
+    clearActiveFamilyId(localStorage)
     router.replace('/family-setup')
     return
   }
 
-  familyId.value = membership.family_id
+  // Restore the last active family if it is still one we belong to, else default
+  // to the first; persist the choice so it survives reloads.
+  const storedActiveId = loadActiveFamilyId(localStorage, userId.value)
+  const activeFamily = families.value.find((f) => f.id === storedActiveId) || families.value[0]
+  familyId.value = activeFamily.id
+  saveActiveFamilyId(localStorage, userId.value, activeFamily.id)
   // Writes queued during a previous offline session land before the first
   // fetch, so the list below already reflects them. No-op when the queue is empty.
   await flushOfflineQueue(localStorage, effectiveUserId.value, db)
@@ -505,35 +523,78 @@ async function loadFamilyHeader() {
   }
 }
 
-async function refreshMembershipOrRedirect() {
-  const { data: membership, error } = await db
+// Every family the user belongs to, with names for the switcher. Only refreshes
+// the roster; the active family is chosen by the caller.
+async function loadFamilies() {
+  const { data, error } = await db
     .from('family_members')
-    .select('family_id')
+    .select('family_id, families(id, name)')
     .eq('user_id', userId.value)
-    .limit(1)
-    .maybeSingle()
+  if (error) return { error }
+  families.value = (data || [])
+    .map((row) => ({ id: row.family_id, name: row.families?.name ?? '' }))
+    // Stable, name-ordered so the switcher never reshuffles between loads.
+    .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+  return { error: null }
+}
 
-  // A failed lookup (network drop, transient server error) must not be read as
-  // "no membership" and eject the user to setup — leave them where they are.
-  if (error) return
-
-  if (!membership?.family_id) {
-    cleanupRealtimeSubscriptions()
-    clearFamilySnapshot(localStorage)
-    router.replace('/family-setup')
-    return
-  }
-
-  if (membership.family_id !== familyId.value) {
-    familyId.value = membership.family_id
+// Switch which family is active: persist the choice, tear down the old realtime
+// channels, and reload everything scoped to the new family.
+async function switchFamily(id) {
+  if (!id || id === familyId.value) return
+  if (!families.value.some((f) => f.id === id)) return
+  switchingFamily.value = true
+  familyId.value = id
+  saveActiveFamilyId(localStorage, userId.value, id)
+  cleanupRealtimeSubscriptions()
+  // Drop the old family's data so none of it flashes under the new name.
+  items.value = []
+  familyMembers.value = []
+  familyProductStats.value = new Map()
+  loadError.value = ''
+  // Show the new name straight away (we already know it from the switcher list);
+  // only the roster is unknown until loadFamilyHeader returns, so that's all the
+  // topbar skeletons.
+  const next = families.value.find((f) => f.id === id)
+  if (next) familyName.value = next.name
+  try {
     await loadFamilyHeader()
     await loadItems()
-    // Stats are family-scoped: drop the old family's before loading the new
-    // family's, so suggestions can never rank by a family we just left.
-    familyProductStats.value = new Map()
     void loadFamilyProductStats()
     await setupRealtimeSubscriptions()
+  } finally {
+    switchingFamily.value = false
   }
+}
+
+// The switcher's "add" action: the setup page handles join/create, and the guard
+// allows it while under the family cap.
+function openAddFamily() {
+  router.push({ name: 'family-setup', query: { add: '1' } })
+}
+
+// The active family vanished (deleted, left, or we were removed): move to another
+// family we still belong to, or fall back to setup when none remain.
+async function reconcileActiveFamily() {
+  const { error } = await loadFamilies()
+  // A failed lookup (network drop, transient server error) must not be read as
+  // "no membership" and eject the user — leave them where they are.
+  if (error) return
+  if (families.value.some((f) => f.id === familyId.value)) return
+  if (families.value.length) {
+    await switchFamily(families.value[0].id)
+    return
+  }
+  cleanupRealtimeSubscriptions()
+  clearFamilySnapshot(localStorage)
+  clearActiveFamilyId(localStorage)
+  router.replace('/family-setup')
+}
+
+// Called when a member-removal realtime event lands: if it was us being removed
+// from the active family, reconcile moves us on.
+async function refreshMembershipOrRedirect() {
+  await reconcileActiveFamily()
 }
 
 
@@ -1013,13 +1074,19 @@ async function deleteItem(item) {
     <AppTopbar
       :family-id="familyId || ''"
       :family-name="familyName"
+      :families="families"
       :loading="initialLoading"
+      :members-loading="switchingFamily"
       :invite-code="familyInviteCode"
       :family-item-limit="familyItemLimit"
       :owner-user-id="familyOwnerId"
       :member-profiles="familyMembers"
       :current-user-id="effectiveUserId"
       @refresh-family="loadFamilyHeader"
+      @switch-family="switchFamily"
+      @add-family="openAddFamily"
+      @family-deleted="reconcileActiveFamily"
+      @family-left="reconcileActiveFamily"
     />
 
     <main class="dashboard-main">
@@ -1041,8 +1108,8 @@ async function deleteItem(item) {
 
         <ShoppingList
           :items="items"
-          :loading="initialLoading"
-          :show-empty="hasInitialized && !items.length && !loadError"
+          :loading="listLoading"
+          :show-empty="hasInitialized && !items.length && !loadError && !switchingFamily"
           @toggle="toggleItem"
           @delete="deleteItem"
           @checkout="checkoutItems"

@@ -1,8 +1,9 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useAuth, useUser } from '@clerk/vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useSupabase } from '../supabase'
+import { saveActiveFamilyId } from '../lib/familyCache'
 import AppTopbar from '../components/AppTopbar.vue'
 import InputRow from '../components/InputRow.vue'
 import ErrorModal from '../components/ErrorModal.vue'
@@ -17,7 +18,36 @@ const OFFLINE_MESSAGE = 'You appear to be offline. Check your connection and try
 const { userId } = useAuth()
 const { user } = useUser()
 const router = useRouter()
+const route = useRoute()
 const db = useSupabase()
+
+// Reached from the switcher's "add" action while the user already has families
+// (vs. a brand-new user with none): offer a way back to their list.
+const isAddingFamily = computed(() => route.query.add === '1')
+
+// Owning is capped at one family (migration 001). Someone adding a family while
+// they already own one can only join, so the create option is hidden. A brand-new
+// user (not adding) always sees it.
+const ownsFamily = ref(false)
+// Only known after the async check below. Until then, in add mode we don't yet
+// know whether create is allowed, so we withhold the create option rather than
+// flash it and yank it away for an owner.
+const ownershipChecked = ref(false)
+const showCreate = computed(() => !isAddingFamily.value || (ownershipChecked.value && !ownsFamily.value))
+onMounted(async () => {
+  if (!isAddingFamily.value || !userId.value) return
+  try {
+    const { data } = await db
+      .from('families')
+      .select('id')
+      .eq('created_by', userId.value)
+      .limit(1)
+      .maybeSingle()
+    ownsFamily.value = !!data
+  } finally {
+    ownershipChecked.value = true
+  }
+})
 
 const mode = ref(null) // null | 'create' | 'join'
 const familyName = ref('')
@@ -99,8 +129,21 @@ async function createFamily() {
         image_url: imageUrl,
       })
 
-    if (memberErr) throw memberErr
+    if (memberErr) {
+      // The family row was created but the membership was rejected (e.g. the
+      // membership cap, migration 025). Remove the orphan so it can't linger
+      // with no members, then explain the one case the user can act on.
+      await db.from('families').delete().eq('id', family.id)
+      // The sentinel is raised as the exception DETAIL, which supabase-js exposes
+      // on error.details, not error.message.
+      if ((memberErr.details ?? memberErr.message ?? '').includes('family_membership_limit_exceeded')) {
+        throw new Error('You can be part of at most 3 families. Leave one before creating another.')
+      }
+      throw memberErr
+    }
 
+    // Make the new family the active one so HomeView opens straight to it.
+    saveActiveFamilyId(localStorage, userId.value, family.id)
     router.replace('/')
   } catch (e) {
     error.value = isOfflineError(e) ? OFFLINE_MESSAGE : (e.message ?? 'Failed to create family.')
@@ -136,12 +179,21 @@ async function joinFamily() {
       })
       .maybeSingle()
 
-    if (joinErr) throw joinErr
+    if (joinErr) {
+      // The sentinel is raised as the exception DETAIL (error.details), not message.
+      if ((joinErr.details ?? joinErr.message ?? '').includes('family_membership_limit_exceeded')) {
+        error.value = 'You can be part of at most 3 families. Leave one before joining another.'
+        return
+      }
+      throw joinErr
+    }
     if (!family) {
       error.value = 'No family found with that invite code.'
       return
     }
 
+    // Make the joined family the active one so HomeView opens straight to it.
+    saveActiveFamilyId(localStorage, userId.value, family.id)
     router.replace('/')
   } catch (e) {
     error.value = isOfflineError(e) ? OFFLINE_MESSAGE : (e.message ?? 'Failed to join family.')
@@ -162,13 +214,24 @@ async function joinFamily() {
 
         <!-- Picker -->
         <template v-if="!mode">
+          <div v-if="isAddingFamily" class="setup-back">
+            <BackButton @click="router.replace('/')" />
+          </div>
           <div class="card-header">
-            <p class="card-eyebrow">Welcome aboard 👋</p>
-            <h2 class="heading">Set up your <span class="heading--accent">family</span></h2>
-            <p class="sub">Create a shared grocery list for your family, or join one using an invite code.</p>
+            <p class="card-eyebrow">{{ isAddingFamily ? 'Add a family' : 'Welcome aboard 👋' }}</p>
+            <h2 class="heading">
+              <template v-if="isAddingFamily">Add another <span class="heading--accent">family</span></template>
+              <template v-else>Set up your <span class="heading--accent">family</span></template>
+            </h2>
+            <p class="sub">
+              {{ isAddingFamily
+                ? 'Join another family with their invite code' + (showCreate ? ', or create a new one.' : '.')
+                : 'Create a shared grocery list for your family, or join one using an invite code.' }}
+            </p>
           </div>
           <div class="choice-row">
             <ChoiceButton
+              v-if="showCreate"
               icon="🏠"
               label="Create a family"
               description="Start fresh and get a shareable invite code"
@@ -185,6 +248,9 @@ async function joinFamily() {
 
         <!-- Create form -->
         <template v-else-if="mode === 'create'">
+          <div class="setup-back">
+            <BackButton @click="mode = null; error = ''" />
+          </div>
           <div class="card-header">
             <p class="card-eyebrow">New family</p>
             <h2 class="heading">What's your family name?</h2>
@@ -195,11 +261,13 @@ async function joinFamily() {
             <p class="field-counter" :class="{ 'field-counter--danger': familyNameOverLimit }">
               {{ familyNameLength }}/{{ FAMILY_NAME_MAX_LENGTH }}
             </p>          </form>
-          <BackButton @click="mode = null; error = ''" />
         </template>
 
         <!-- Join form -->
         <template v-else-if="mode === 'join'">
+          <div class="setup-back">
+            <BackButton @click="mode = null; error = ''" />
+          </div>
           <div class="card-header">
             <p class="card-eyebrow">Join a family</p>
             <h2 class="heading">Enter your invite code</h2>
@@ -207,7 +275,6 @@ async function joinFamily() {
           </div>
           <form @submit.prevent="joinFamily" class="input-form">
             <InputRow v-model="inviteCode" placeholder="e.g. AB3K7XYZ" maxlength="8" :loading="loading" :uppercase="true" required autofocus />          </form>
-          <BackButton @click="mode = null; error = ''" />
         </template>
 
       </AppCard>
@@ -280,6 +347,13 @@ async function joinFamily() {
   color: var(--text-secondary);
   margin: 0;
   line-height: 1.55;
+}
+
+/* ── Back to families ────────────────────────────────────── */
+.setup-back {
+  /* Pull the button up so its own padding lines it up with the card edge,
+     then leave clear space before the heading below. */
+  margin: -0.35rem 0 0.85rem -0.4rem;
 }
 
 /* ── Choice list ─────────────────────────────────────────── */

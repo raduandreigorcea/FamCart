@@ -68,12 +68,24 @@ function waitForClerkLoad(isClerkLoaded: () => boolean): Promise<void> {
   })
 }
 
-async function hasFamilyMembership(getToken: ReturnType<typeof useAuth>['getToken']) {
+// A user can belong to at most this many families (migration 025). At the cap,
+// the setup page has nothing to offer and redirects home; under it, the page is
+// reachable so a user can join or create another family.
+const FAMILY_MEMBERSHIP_CAP = 3
+
+async function isAtFamilyCap(
+  getToken: ReturnType<typeof useAuth>['getToken'],
+  userId: ReturnType<typeof useAuth>['userId'],
+) {
   try {
     const token = await getToken.value({ template: 'supabase' })
-    if (!token) return false
+    if (!token || !userId.value) return false
+    // Count only THIS user's memberships. RLS lets a member see every co-member
+    // of their families, so without the user_id filter this would count other
+    // people too and falsely report the cap once your families hold 3+ members.
     const resp = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/family_members?select=family_id&limit=1`,
+      `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/family_members` +
+        `?select=family_id&user_id=eq.${encodeURIComponent(userId.value)}&limit=${FAMILY_MEMBERSHIP_CAP}`,
       {
         headers: {
           apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
@@ -83,14 +95,14 @@ async function hasFamilyMembership(getToken: ReturnType<typeof useAuth>['getToke
     )
     if (!resp.ok) return false
     const data = await resp.json()
-    return Array.isArray(data) && data.length > 0
+    return Array.isArray(data) && data.length >= FAMILY_MEMBERSHIP_CAP
   } catch {
     return false
   }
 }
 
 router.beforeEach(async (to) => {
-  const { isLoaded, isSignedIn, getToken } = useAuth()
+  const { isLoaded, isSignedIn, getToken, userId } = useAuth()
 
   // Decide connectivity first. Offline, Clerk can never verify the session, so
   // we must NOT wait on it (that 10s wait was the blank screen). A cold start
@@ -126,12 +138,13 @@ router.beforeEach(async (to) => {
     return { name: 'home' }
   }
 
-  // Only the setup page needs a membership check in the guard: a user who
-  // already has a family must not create or join a second one. Every other
-  // view resolves membership itself (HomeView redirects to setup when there
-  // is none), so ordinary navigations skip this network round-trip.
+  // Only the setup page needs a membership check in the guard: a user already at
+  // the family cap has nowhere to add one, so send them home. Under the cap the
+  // page stays reachable (a fresh user with none, or someone adding another).
+  // Every other view resolves membership itself (HomeView redirects to setup
+  // when there is none), so ordinary navigations skip this round-trip.
   if (to.name === 'family-setup' && isSignedIn.value) {
-    if (await hasFamilyMembership(getToken)) {
+    if (await isAtFamilyCap(getToken, userId)) {
       return { name: 'home' }
     }
   }

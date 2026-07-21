@@ -79,3 +79,37 @@ export function clearFamilySnapshot(storage: Storage): void {
     // Storage disabled — nothing to clear.
   }
 }
+
+// Which of a user's families is currently active, so the choice survives reloads.
+// Keyed to the user so switching accounts on one browser never carries over. The
+// stored id is only a hint: HomeView uses it only if it still matches a live
+// membership, otherwise it falls back to the first family.
+const ACTIVE_FAMILY_KEY = 'famcart-active-family'
+
+export function loadActiveFamilyId(storage: Storage, userId: string): string | null {
+  try {
+    const raw = storage.getItem(ACTIVE_FAMILY_KEY)
+    if (!raw) return null
+    const stored = JSON.parse(raw) as { userId?: string; familyId?: string }
+    if (stored.userId !== userId) return null
+    return stored.familyId || null
+  } catch {
+    return null
+  }
+}
+
+export function saveActiveFamilyId(storage: Storage, userId: string, familyId: string): void {
+  try {
+    storage.setItem(ACTIVE_FAMILY_KEY, JSON.stringify({ userId, familyId }))
+  } catch {
+    // Storage disabled — the active family just won't persist across reloads.
+  }
+}
+
+export function clearActiveFamilyId(storage: Storage): void {
+  try {
+    storage.removeItem(ACTIVE_FAMILY_KEY)
+  } catch {
+    // Storage disabled — nothing to clear.
+  }
+}
