@@ -54,21 +54,6 @@ function decreaseQty() {
   <form class="add-form" @submit.prevent="emit('submit')">
     <div class="add-row">
       <div class="qty-picker" aria-label="Item quantity">
-        <div class="qty-value-wrap" aria-live="polite">
-          <Transition :name="qtyDirection === 'up' ? 'qty-slide-up' : 'qty-slide-down'" mode="out-in">
-            <span :key="quantity" class="qty-value">{{ quantity }}</span>
-          </Transition>
-        </div>
-        <div class="qty-buttons">
-        <button
-          type="button"
-          class="qty-btn"
-          @click="increaseQty"
-          :disabled="quantity >= 99 || adding"
-          aria-label="Increase quantity"
-        >
-          <span class="qty-icon qty-icon--plus"></span>
-        </button>
         <button
           type="button"
           class="qty-btn"
@@ -78,7 +63,20 @@ function decreaseQty() {
         >
           <span class="qty-icon qty-icon--minus"></span>
         </button>
+        <div class="qty-value-wrap" aria-live="polite">
+          <Transition :name="qtyDirection === 'up' ? 'qty-slide-up' : 'qty-slide-down'" mode="out-in">
+            <span :key="quantity" class="qty-value">{{ quantity }}</span>
+          </Transition>
         </div>
+        <button
+          type="button"
+          class="qty-btn"
+          @click="increaseQty"
+          :disabled="quantity >= 99 || adding"
+          aria-label="Increase quantity"
+        >
+          <span class="qty-icon qty-icon--plus"></span>
+        </button>
       </div>
       <input
         v-model="name"
@@ -327,41 +325,38 @@ function decreaseQty() {
 
 .qty-picker {
   display: inline-flex;
-  flex-direction: row;
   align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
+  gap: 0.1rem;
   border-right: var(--border-width-thin) solid var(--border-main);
-  padding: 0.2rem 0.5rem;
-  margin-right: 0.2rem;
-}
-
-.qty-buttons {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.15rem;
+  padding: 0.3rem 0.5rem 0.3rem 0.4rem;
+  margin-right: 0.1rem;
 }
 
 .qty-btn {
-  width: 24px;
-  height: 24px;
-  border: var(--border-width-thin) solid var(--border-main);
-  background: var(--bg-surface);
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
   color: var(--text-secondary);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   line-height: 1;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.qty-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--color-primary);
 }
 
 .qty-icon {
   width: var(--size-icon-sm);
   height: var(--size-icon-sm);
-  background-color: var(--text-secondary);
+  background-color: currentColor;
 }
 
 .qty-icon--plus {
@@ -375,13 +370,13 @@ function decreaseQty() {
 }
 
 .qty-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.3;
   cursor: not-allowed;
 }
 
 .qty-value-wrap {
-  min-width: 1.8rem;
-  height: 1.1rem;
+  min-width: 1.4rem;
+  height: 1.3rem;
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -389,11 +384,12 @@ function decreaseQty() {
 }
 
 .qty-value {
-  min-width: 1.6rem;
+  min-width: 1.4rem;
   text-align: center;
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   font-weight: var(--weight-bold);
   color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
 }
 
 .qty-slide-up-enter-active,

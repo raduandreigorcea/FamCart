@@ -174,8 +174,9 @@ const labelText = computed(() =>
 </script>
 
 <template>
-  <div class="list-meta" v-if="items.length">
-    {{ leftCount }} left
+  <div class="list-meta" v-if="uncheckedItems.length">
+    <span class="list-meta__label">To buy</span>
+    <span class="list-meta__count">{{ leftCount }} left</span>
   </div>
 
   <!-- Skeleton rows while the first fetch is in flight -->
@@ -222,9 +223,11 @@ const labelText = computed(() =>
   <!-- Keeps the last checked row clear of the fixed buy bar. -->
   <div v-if="checkedItems.length && !loading" class="buy-bar-spacer" aria-hidden="true"></div>
 
-  <p v-if="showEmpty" class="empty-state">
-    Nothing here yet. Add your first item above!
-  </p>
+  <div v-if="showEmpty" class="empty-state">
+    <span class="empty-state__art" aria-hidden="true">🧺</span>
+    <p class="empty-state__title">Your list is empty</p>
+    <p class="empty-state__text">Add your first item above — it shows up for the whole family right away.</p>
+  </div>
 
   <!-- Floating checkout slider: appears whenever something is checked. -->
   <Transition name="buybar">
@@ -269,14 +272,29 @@ const labelText = computed(() =>
 </template>
 
 <style scoped>
-/* Meta */
+/* Meta — a header for the active section, mirroring the "Checked" label below. */
 .list-meta {
-  text-align: right;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   margin-top: 0.15rem;
-  margin-bottom: 0.9rem;
-  font-size: var(--text-sm);
+  margin-bottom: 0.6rem;
+  padding: 0 0.15rem;
+}
+
+.list-meta__label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-disabled);
+}
+
+.list-meta__count {
+  font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
   color: var(--text-disabled);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Mirrors ShoppingListItem's .item card so rows swap in without layout shift */
@@ -369,10 +387,38 @@ const labelText = computed(() =>
 
 /* Empty state */
 .empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
-  font-size: var(--text-base);
-  color: var(--text-disabled);
-  margin: 2.5rem 0;
+  margin: 3rem auto 0;
+  max-width: 20rem;
+}
+
+.empty-state__art {
+  width: 4rem;
+  height: 4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  border-radius: var(--radius-2xl);
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
+  border: var(--border-width-thin) solid color-mix(in srgb, var(--color-primary) 18%, transparent);
+  margin-bottom: var(--space-4);
+}
+
+.empty-state__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-extrabold);
+  color: var(--text-primary);
+}
+
+.empty-state__text {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
   line-height: 1.5;
 }
 
