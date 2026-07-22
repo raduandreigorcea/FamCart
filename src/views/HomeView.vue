@@ -578,6 +578,14 @@ async function loadFamilyHeader() {
   }
 }
 
+// A family setting changed (name, item limit, emoji): refresh the active family's
+// header and the switcher list together, so a new name or emoji shows up in the
+// switcher right away rather than only after the next reload.
+async function refreshFamilyAfterSettingsChange() {
+  await loadFamilyHeader()
+  await loadFamilies()
+}
+
 // Every family the user belongs to, with names for the switcher. Only refreshes
 // the roster; the active family is chosen by the caller.
 async function loadFamilies() {
@@ -1177,7 +1185,7 @@ async function deleteItem(item) {
       :owner-user-id="familyOwnerId"
       :member-profiles="familyMembers"
       :current-user-id="effectiveUserId"
-      @refresh-family="loadFamilyHeader"
+      @refresh-family="refreshFamilyAfterSettingsChange"
       @switch-family="switchFamily"
       @add-family="openAddFamily"
       @family-deleted="reconcileActiveFamily"
