@@ -11,6 +11,7 @@ import NotificationPromptModal from '../src/components/NotificationPromptModal.v
 import ErrorModal from '../src/components/ErrorModal.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
 import { getNotificationPreference, setNotificationPreference } from '../src/lib/pushNotifications'
+import { markTourSeen } from '../src/lib/onboarding'
 import { __setOnlineForTest } from '../src/lib/connectivity'
 
 const mocks = vi.hoisted(() => ({
@@ -82,6 +83,9 @@ async function mountHome() {
   mocks.db = createFakeDb()
   mocks.routerReplace = vi.fn()
   setDefaultHandlers(mocks.db)
+  // These tests are about the notifications prompt, which follows the one-time
+  // onboarding tour. Mark the tour seen so it doesn't intercept the first run.
+  markTourSeen(localStorage)
   const wrapper = mount(HomeView, { shallow: true })
   mountedWrappers.push(wrapper)
   await flushPromises()
