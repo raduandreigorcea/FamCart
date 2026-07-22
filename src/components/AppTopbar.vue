@@ -2,7 +2,6 @@
 import { computed, defineAsyncComponent, ref } from 'vue'
 import { useClerk, useUser } from '@clerk/vue'
 import AccountActionModal from './AccountActionModal.vue'
-import MemberAvatarStack from './MemberAvatarStack.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import chevronLeftRaw from '../assets/chevron-left.svg?raw'
 import checkRaw from '../assets/check.svg?raw'
@@ -162,6 +161,23 @@ const userInitial = computed(() => {
 })
 
 const memberCount = computed(() => props.memberProfiles.length)
+
+// A stable identity colour + initial for each family, so the switcher reads as a
+// set of distinct households rather than a row of look-alike text. The hue is a
+// simple hash of the name, so the same family always gets the same colour.
+function familyHue(name) {
+  let hash = 0
+  const text = name || ''
+  for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) % 360
+  return hash
+}
+function familyColor(name) {
+  return `hsl(${familyHue(name)} 48% 45%)`
+}
+function familyInitial(name) {
+  const trimmed = (name || '').trim()
+  return trimmed ? trimmed[0].toUpperCase() : '#'
+}
 </script>
 
 <template>
@@ -186,10 +202,9 @@ const memberCount = computed(() => props.memberProfiles.length)
             <p class="family-name">{{ familyName }}</p>
             <div class="family-subrow">
               <SkeletonBlock v-if="membersLoading" width="4.5rem" height="0.7rem" />
-              <span v-else class="family-members-count">{{ memberCount }} members</span>
+              <span v-else class="family-members-count">{{ memberCount }} {{ memberCount === 1 ? 'member' : 'members' }}</span>
             </div>
           </div>
-          <MemberAvatarStack :members="memberProfiles" :loading="membersLoading" />
         </button>
       </template>
       <template v-else-if="loading">
@@ -200,7 +215,6 @@ const memberCount = computed(() => props.memberProfiles.length)
               <SkeletonBlock width="4.5rem" height="0.7rem" />
             </div>
           </div>
-          <MemberAvatarStack loading />
         </div>
       </template>
       <template v-else>
@@ -252,6 +266,11 @@ const memberCount = computed(() => props.memberProfiles.length)
             :aria-checked="fam.id === familyId"
             @click="selectFamily(fam.id)"
           >
+            <span
+              class="family-monogram"
+              :style="{ background: familyColor(fam.name) }"
+              aria-hidden="true"
+            >{{ familyInitial(fam.name) }}</span>
             <span class="family-switcher-item-name">{{ fam.name || 'Family' }}</span>
             <span v-if="fam.id === familyId" class="family-switcher-check" aria-hidden="true" v-html="checkRaw"></span>
           </button>
@@ -267,7 +286,7 @@ const memberCount = computed(() => props.memberProfiles.length)
             role="menuitem"
             @click="addFamily"
           >
-            <span class="family-switcher-add-plus" aria-hidden="true">+</span>
+            <span class="family-switcher-add-tile" aria-hidden="true">+</span>
             Join or create a family
           </button>
           <p v-else class="family-switcher-cap-note">
@@ -481,44 +500,44 @@ const memberCount = computed(() => props.memberProfiles.length)
 
 .family-switcher-menu {
   position: fixed;
-  top: calc(var(--safe-top) + 58px);
+  top: calc(var(--safe-top) + 60px);
   left: max(1.25rem, calc((100vw - var(--desktop-column)) / 2));
-  min-width: 224px;
+  min-width: 280px;
   max-width: calc(100vw - 2.5rem);
   background: var(--bg-surface);
   border: var(--border-width-thin) solid var(--border-main);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-2xl);
   box-shadow: var(--elevation-modal);
-  padding: 0.35rem;
+  padding: var(--space-2);
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: 2px;
 }
 
 .family-switcher-heading {
-  margin: 0.2rem 0.5rem 0.35rem;
+  margin: var(--space-2) var(--space-3) var(--space-1);
   font-size: var(--text-2xs);
   font-weight: var(--weight-extrabold);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-secondary);
+  letter-spacing: 0.08em;
+  color: var(--text-disabled);
 }
 
 .family-switcher-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--space-3);
   width: 100%;
-  border: none;
+  border: var(--border-width-thin) solid transparent;
   background: transparent;
   color: var(--text-primary);
-  padding: 0.55rem 0.6rem;
-  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  border-radius: var(--radius-lg);
   font-size: var(--text-base);
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-bold);
   cursor: pointer;
   text-align: left;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
 .family-switcher-item:hover {
@@ -526,14 +545,37 @@ const memberCount = computed(() => props.memberProfiles.length)
 }
 
 .family-switcher-item--active {
-  color: var(--color-primary);
+  background: var(--color-primary-bg);
+  border-color: color-mix(in srgb, var(--color-primary) 32%, transparent);
+}
+
+/* A stable identity tile per household, so families read as distinct at a
+   glance rather than as identical text rows. */
+.family-monogram {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: var(--text-md);
+  font-weight: var(--weight-extrabold);
+  letter-spacing: -0.01em;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 
 .family-switcher-item-name {
   min-width: 0;
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.family-switcher-item--active .family-switcher-item-name {
+  color: var(--color-primary-text);
 }
 
 .family-switcher-check {
@@ -555,32 +597,44 @@ const memberCount = computed(() => props.memberProfiles.length)
 .family-switcher-divider {
   height: 1px;
   background: var(--border-light);
-  margin: 0.25rem 0.35rem;
+  margin: var(--space-1) var(--space-2);
 }
 
 .family-switcher-add {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: var(--space-3);
   width: 100%;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-lg);
   background: transparent;
-  color: var(--color-primary);
-  padding: 0.6rem;
+  color: var(--text-primary);
+  padding: var(--space-2);
   font-size: var(--text-base);
   font-weight: var(--weight-bold);
   cursor: pointer;
   text-align: left;
+  transition: background var(--transition-fast);
 }
 
 .family-switcher-add:hover {
   background: var(--bg-hover);
 }
 
-.family-switcher-add-plus {
-  font-size: var(--text-lg);
+.family-switcher-add-tile {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-regular);
   line-height: 1;
+  color: var(--color-primary);
+  background: var(--color-primary-bg);
+  border: var(--border-width-base) dashed color-mix(in srgb, var(--color-primary) 40%, transparent);
 }
 
 .family-switcher-cap-note {
