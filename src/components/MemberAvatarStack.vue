@@ -6,17 +6,17 @@ const props = defineProps({
   members: { type: Array, default: () => [] },
   maxVisible: { type: Number, default: 4 },
   loading: { type: Boolean, default: false },
+  // strict caps hard at maxVisible (5 members → 4 avatars + "+1"). The default
+  // lenient mode shows up to maxVisible + 1, since collapsing a single extra to
+  // "+1" saves no room and just looks odd.
+  strict: { type: Boolean, default: false },
 })
 
-// Collapsing to "+1" hides one avatar to show a "+1" bubble in its place — it
-// saves no room and just looks odd. So only collapse when it actually hides two
-// or more: up to maxVisible + 1 members all render; beyond that we show
-// maxVisible avatars and roll the rest into "+n".
-const visibleMembers = computed(() =>
-  props.members.length <= props.maxVisible + 1
-    ? props.members
-    : props.members.slice(0, props.maxVisible),
-)
+const visibleMembers = computed(() => {
+  const cap = props.maxVisible
+  const overflowAt = props.strict ? cap : cap + 1
+  return props.members.length <= overflowAt ? props.members : props.members.slice(0, cap)
+})
 const extraMembers = computed(() => Math.max(0, props.members.length - visibleMembers.value.length))
 </script>
 

@@ -2,7 +2,9 @@
 import { computed, defineAsyncComponent, ref } from 'vue'
 import { useClerk, useUser } from '@clerk/vue'
 import AccountActionModal from './AccountActionModal.vue'
+import MemberAvatarStack from './MemberAvatarStack.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
+import { sortMembersForSwitcher } from '../lib/memberRoles'
 import chevronLeftRaw from '../assets/chevron-left.svg?raw'
 import checkRaw from '../assets/check.svg?raw'
 import plusRaw from '../assets/plus.svg?raw'
@@ -189,6 +191,11 @@ function familyInitial(name) {
   const trimmed = (name || '').trim()
   return trimmed ? trimmed[0].toUpperCase() : '#'
 }
+
+// Members for a family's switcher stack, ordered you → owner → moderators → rest.
+function orderedFamilyMembers(fam) {
+  return sortMembersForSwitcher(fam.members || [], fam.ownerId || '', props.currentUserId)
+}
 </script>
 
 <template>
@@ -277,7 +284,15 @@ function familyInitial(name) {
             :aria-checked="fam.id === familyId"
             @click="selectFamily(fam.id)"
           >
+            <MemberAvatarStack
+              v-if="fam.members && fam.members.length"
+              class="family-switcher-avatars"
+              :members="orderedFamilyMembers(fam)"
+              :max-visible="4"
+              strict
+            />
             <span
+              v-else
               class="family-monogram"
               :style="{ background: familyColor(fam.name) }"
               aria-hidden="true"
@@ -576,6 +591,22 @@ function familyInitial(name) {
   font-weight: var(--weight-extrabold);
   letter-spacing: 0;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+/* Each family's members, shown as a small stack in place of the monogram. */
+.family-switcher-avatars {
+  flex-shrink: 0;
+}
+
+.family-switcher-avatars :deep(.member-avatar) {
+  width: 26px;
+  height: 26px;
+  margin-left: -8px;
+  border-color: var(--bg-surface);
+}
+
+.family-switcher-item--active .family-switcher-avatars :deep(.member-avatar) {
+  border-color: var(--bg-hover);
 }
 
 .family-switcher-item-name {
