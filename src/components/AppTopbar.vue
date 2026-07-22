@@ -32,6 +32,7 @@ const props = defineProps({
   membersLoading: { type: Boolean, default: false },
   inviteCode: { type: String, default: '' },
   familyItemLimit: { type: Number, default: 50 },
+  familyEmoji: { type: String, default: '' },
   ownerUserId: { type: String, default: '' },
   currentUserId: { type: String, default: '' },
   memberProfiles: {
@@ -299,8 +300,9 @@ function orderedFamilyMembers(fam) {
             :aria-checked="fam.id === familyId"
             @click="selectFamily(fam.id)"
           >
+            <span v-if="fam.emoji" class="family-emoji-tile" aria-hidden="true">{{ fam.emoji }}</span>
             <FamilyAvatar
-              v-if="orderedFamilyMembers(fam).length"
+              v-else-if="orderedFamilyMembers(fam).length"
               :members="orderedFamilyMembers(fam)"
               :size="28"
             />
@@ -353,6 +355,7 @@ function orderedFamilyMembers(fam) {
     :family-name="familyName"
     :invite-code="inviteCode"
     :family-item-limit="familyItemLimit"
+    :family-emoji="familyEmoji"
     :owner-user-id="ownerUserId"
     :member-profiles="memberProfiles"
     @close="settingsOpen = false"
@@ -604,6 +607,21 @@ function orderedFamilyMembers(fam) {
   font-weight: var(--weight-extrabold);
   letter-spacing: 0;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+/* The owner's chosen emoji, shown in place of the member composite. */
+.family-emoji-tile {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  line-height: 1;
+  background: var(--bg-hover);
+  border: var(--border-width-thin) solid var(--border-light);
 }
 
 .family-switcher-item-name {
