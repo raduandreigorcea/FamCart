@@ -31,7 +31,6 @@ interface ItemRecord {
   name: string
   quantity: number | null
   added_by: string
-  added_by_name: string | null
 }
 
 interface PurchaseRecord {
@@ -61,13 +60,23 @@ function itemLabel(name: string, quantity: number | null): string {
   return qty > 1 ? `${name} ×${qty}` : name
 }
 
-// Family members minus the actor. Returns display names too, so checkout
-// messages can name the buyer (history rows only store their user id).
+// Family member ids for a family. Names live in profiles now, resolved
+// separately by fetchDisplayName when a message needs to name the actor.
 async function fetchMembers(familyId: string) {
   return await supabase
     .from('family_members')
-    .select('user_id, display_name')
+    .select('user_id')
     .eq('family_id', familyId)
+}
+
+// The actor's display name from their profile row; 'Someone' if it is missing.
+async function fetchDisplayName(userId: string): Promise<string> {
+  const { data } = await supabase
+    .from('profiles')
+    .select('display_name')
+    .eq('user_id', userId)
+    .maybeSingle()
+  return data?.display_name || 'Someone'
 }
 
 async function sendPush(options: {
@@ -119,7 +128,7 @@ async function handleItemAdded(item: ItemRecord): Promise<Response> {
     .filter((id) => id !== item.added_by)
   if (!recipientIds.length) return Response.json({ sent: 0 })
 
-  const who = item.added_by_name || 'Someone'
+  const who = await fetchDisplayName(item.added_by)
   return sendPush({
     recipientIds,
     body: `${who} added ${itemLabel(item.name, item.quantity)}`,
@@ -147,8 +156,7 @@ async function handleCheckout(purchase: PurchaseRecord): Promise<Response> {
     .filter((id) => id !== purchase.purchased_by)
   if (!recipientIds.length || !items?.length) return Response.json({ sent: 0 })
 
-  const who =
-    (members ?? []).find((m) => m.user_id === purchase.purchased_by)?.display_name || 'Someone'
+  const who = await fetchDisplayName(purchase.purchased_by)
   const labels = items.map((i) => itemLabel(i.name, i.quantity))
   let bought: string
   if (labels.length === 1) bought = labels[0]

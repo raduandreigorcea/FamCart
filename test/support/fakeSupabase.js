@@ -32,6 +32,12 @@ export function createFakeDb() {
         query.payload = payload
         return query
       },
+      upsert(payload, options) {
+        query.op = 'upsert'
+        query.payload = payload
+        query.options = options
+        return query
+      },
       update(payload) {
         query.op = 'update'
         query.payload = payload
