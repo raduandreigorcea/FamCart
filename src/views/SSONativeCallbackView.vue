@@ -53,15 +53,15 @@ onMounted(() => {
 
 .sso-native-title {
   margin: 0;
-  font-size: 1.15rem;
-  font-weight: 800;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-extrabold);
   letter-spacing: -0.01em;
   color: var(--text-primary);
 }
 
 .sso-native-text {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--text-base);
   color: var(--text-secondary);
 }
 
@@ -74,8 +74,8 @@ onMounted(() => {
   border-radius: var(--radius-lg);
   background: var(--color-primary);
   color: var(--text-inverse);
-  font-weight: 700;
-  font-size: 0.9rem;
+  font-weight: var(--weight-bold);
+  font-size: var(--text-base);
   text-decoration: none;
   box-shadow: var(--elevation-primary);
 }

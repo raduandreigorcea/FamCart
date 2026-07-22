@@ -66,7 +66,7 @@ defineEmits(['update:modelValue'])
 
 .input-row input::placeholder {
   color: var(--text-disabled);
-  font-weight: 400;
+  font-weight: var(--weight-regular);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -74,7 +74,7 @@ defineEmits(['update:modelValue'])
 .input--uppercase {
   text-transform: uppercase;
   letter-spacing: 0.14em;
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 
 .submit-btn {

@@ -107,15 +107,15 @@ onBeforeUnmount(() => {
 
 .offline-title {
   margin: 0;
-  font-size: 1.3rem;
-  font-weight: 800;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-extrabold);
   letter-spacing: -0.02em;
   color: var(--text-primary);
 }
 
 .offline-text {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--text-base);
   line-height: 1.5;
   color: var(--text-secondary);
 }
@@ -131,11 +131,11 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-xl);
   background: var(--color-primary);
   color: var(--text-inverse);
-  font-size: 0.9rem;
-  font-weight: 700;
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
   cursor: pointer;
   box-shadow: var(--elevation-primary);
-  transition: transform 0.1s ease, opacity 0.15s ease;
+  transition: transform 0.1s ease, opacity var(--transition-fast) ease;
 }
 
 .offline-retry:active:not(:disabled) {
@@ -150,8 +150,8 @@ onBeforeUnmount(() => {
 .offline-hint {
   margin: 0.15rem 0 0;
   max-width: 18rem;
-  font-size: 0.82rem;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
   line-height: 1.45;
   color: var(--danger-text);
 }
@@ -171,7 +171,7 @@ onBeforeUnmount(() => {
 .offline-retry-spinner {
   width: 18px;
   height: 18px;
-  border: 2px solid color-mix(in srgb, var(--text-inverse) 45%, transparent);
+  border: var(--border-width-thick) solid color-mix(in srgb, var(--text-inverse) 45%, transparent);
   border-top-color: var(--text-inverse);
   border-radius: 50%;
   animation: offline-spin 0.7s linear infinite;

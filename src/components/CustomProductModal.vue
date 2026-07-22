@@ -127,7 +127,7 @@ function submit() {
   max-width: 400px;
   background: var(--bg-surface);
   border-radius: var(--radius-dialog);
-  border: 1px solid var(--border-main);
+  border: var(--border-width-thin) solid var(--border-main);
   box-shadow: var(--elevation-dialog);
   padding: var(--space-7) var(--space-7) var(--space-6);
   display: flex;
@@ -168,15 +168,15 @@ function submit() {
 
 .custom-product-dialog__title {
   margin: 0;
-  font-size: 1.05rem;
-  font-weight: 800;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-extrabold);
   color: var(--text-primary);
   letter-spacing: -0.02em;
 }
 
 .custom-product-dialog__message {
   margin: 0;
-  font-size: 0.84rem;
+  font-size: var(--text-sm);
   color: var(--text-secondary);
   line-height: 1.5;
 }
@@ -199,14 +199,14 @@ function submit() {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.72rem;
-  font-weight: 700;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
   color: var(--text-secondary);
   letter-spacing: 0.01em;
 }
 
 .custom-product-optional {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text-disabled);
   text-transform: lowercase;
   letter-spacing: 0;
@@ -216,13 +216,13 @@ function submit() {
   width: 100%;
   padding: 0.7rem 0.85rem;
   background: var(--bg-surface);
-  border: 1.5px solid var(--border-main);
+  border: var(--border-width-base) solid var(--border-main);
   border-radius: var(--radius-lg);
   font-family: inherit;
-  font-size: 0.92rem;
+  font-size: var(--text-md);
   color: var(--text-primary);
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color var(--transition-fast);
 }
 
 .custom-product-field input:focus {
@@ -244,18 +244,18 @@ function submit() {
   flex: 1;
   border-radius: var(--radius-md);
   padding: 0.65rem var(--space-4);
-  font-size: 0.86rem;
-  font-weight: 700;
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
   cursor: pointer;
   border: none;
   font-family: inherit;
-  transition: all 0.2s ease;
+  transition: all var(--transition-base) ease;
 }
 
 .custom-product-btn--cancel {
   background: var(--bg-hover);
   color: var(--text-primary);
-  border: 1px solid var(--bg-hover);
+  border: var(--border-width-thin) solid var(--bg-hover);
 }
 
 .custom-product-btn--cancel:hover {
@@ -280,7 +280,7 @@ function submit() {
 
 .custom-product-fade-enter-active,
 .custom-product-fade-leave-active {
-  transition: opacity 0.22s ease;
+  transition: opacity var(--transition-base) ease;
 }
 
 .custom-product-fade-enter-from,

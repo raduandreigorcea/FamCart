@@ -56,7 +56,7 @@ const extraMembers = computed(() => Math.max(0, props.members.length - visibleMe
   height: 30px;
   border-radius: var(--radius-pill);
   object-fit: cover;
-  border: 1.5px solid var(--bg-surface);
+  border: var(--border-width-base) solid var(--bg-surface);
   margin-left: -9px;
   background: var(--bg-hover);
 }
@@ -70,8 +70,8 @@ const extraMembers = computed(() => Math.max(0, props.members.length - visibleMe
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.72rem;
-  font-weight: 700;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
   color: var(--ui-text-muted, var(--text-secondary));
 }
 

@@ -274,8 +274,8 @@ const labelText = computed(() =>
   text-align: right;
   margin-top: 0.15rem;
   margin-bottom: 0.9rem;
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
   color: var(--text-disabled);
 }
 
@@ -287,7 +287,7 @@ const labelText = computed(() =>
   background: var(--bg-surface);
   border-radius: var(--radius-xl);
   padding: 0.875rem 0.875rem 0.875rem 0.75rem;
-  border: 1.5px solid var(--border-main);
+  border: var(--border-width-base) solid var(--border-main);
 }
 
 .skeleton-item__name {
@@ -321,7 +321,7 @@ const labelText = computed(() =>
 
 .unchecked-leave-active,
 .checked-leave-active {
-  transition: opacity 0.24s ease, transform 0.24s ease;
+  transition: opacity var(--transition-base) ease, transform var(--transition-base) ease;
   position: absolute;
   width: 100%;
   pointer-events: none;
@@ -350,7 +350,7 @@ const labelText = computed(() =>
 
 .section-fade-enter-active,
 .section-fade-leave-active {
-  transition: opacity 0.18s ease;
+  transition: opacity var(--transition-base) ease;
 }
 
 .section-fade-enter-from,
@@ -360,8 +360,8 @@ const labelText = computed(() =>
 
 .section-label {
   margin: 1rem 0 0.45rem;
-  font-size: 0.78rem;
-  font-weight: 700;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-disabled);
@@ -370,7 +370,7 @@ const labelText = computed(() =>
 /* Empty state */
 .empty-state {
   text-align: center;
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   color: var(--text-disabled);
   margin: 2.5rem 0;
   line-height: 1.5;
@@ -405,7 +405,7 @@ const labelText = computed(() =>
   justify-content: center;
   border-radius: var(--radius-pill);
   background: var(--bg-surface);
-  border: 1.5px solid var(--border-main);
+  border: var(--border-width-base) solid var(--border-main);
   color: var(--color-primary);
   box-shadow: var(--elevation-primary);
   overflow: hidden; /* fill and thumb stay inside the pill */
@@ -423,7 +423,7 @@ const labelText = computed(() =>
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--color-primary) 80%, var(--bg-surface));
   pointer-events: none;
-  transition: width 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: width var(--transition-slow) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .buy-bar__label {
@@ -431,8 +431,8 @@ const labelText = computed(() =>
   z-index: 1;
   /* Keep the hint clear of the thumb's resting spot. */
   padding: 0 3.4rem;
-  font-size: 0.95rem;
-  font-weight: 800;
+  font-size: var(--text-md);
+  font-weight: var(--weight-extrabold);
   letter-spacing: -0.01em;
   pointer-events: none;
 }
@@ -446,7 +446,7 @@ const labelText = computed(() =>
   align-items: center;
   justify-content: center;
   color: var(--text-inverse);
-  transition: clip-path 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: clip-path var(--transition-slow) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* The thumb keeps the full-strength green so it stands out as the grabbable
@@ -473,7 +473,7 @@ const labelText = computed(() =>
   cursor: grab;
   /* The drag owns the gesture; don't let touch scroll the page instead. */
   touch-action: none;
-  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform var(--transition-slow) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .buy-bar__thumb:disabled {
@@ -483,7 +483,7 @@ const labelText = computed(() =>
 /* The thumb is invisible, so keyboard focus draws its own ring on the green
    disc beneath. */
 .buy-bar__thumb:focus-visible {
-  outline: 2px solid var(--text-inverse);
+  outline: var(--border-width-thick) solid var(--text-inverse);
   outline-offset: -4px;
 }
 
@@ -504,7 +504,7 @@ const labelText = computed(() =>
   width: 22px;
   height: 22px;
   flex-shrink: 0;
-  transition: transform 0.15s ease;
+  transition: transform var(--transition-fast) ease;
 }
 
 /* Slight tactile swell while the finger is on it. */
@@ -518,7 +518,7 @@ const labelText = computed(() =>
   inset: 0;
   width: 100%;
   height: 100%;
-  transition: opacity 0.24s ease, transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: opacity var(--transition-base) ease, transform var(--transition-slow) cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 /* Cart is the resting state; on success it lifts away and the check drops in. */
@@ -544,11 +544,11 @@ const labelText = computed(() =>
 
 /* Bar slide-in/out */
 .buybar-enter-active {
-  transition: opacity 0.22s ease, transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity var(--transition-base) ease, transform var(--transition-slow) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .buybar-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity var(--transition-base) ease, transform var(--transition-base) ease;
 }
 
 .buybar-enter-from,

@@ -340,7 +340,7 @@ const memberCount = computed(() => props.memberProfiles.length)
   padding: var(--safe-top) 1.25rem 0;
   height: calc(72px + var(--safe-top));
   background: var(--ui-bg);
-  border-bottom: 1px solid var(--ui-border);
+  border-bottom: var(--border-width-thin) solid var(--ui-border);
   position: fixed;
   top: 0;
   left: 0;
@@ -388,8 +388,8 @@ const memberCount = computed(() => props.memberProfiles.length)
 .family-name {
   margin: 0;
   font-family: inherit;
-  font-size: 0.95rem;
-  font-weight: 700;
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
   letter-spacing: -0.01em;
   color: var(--ui-text-strong);
   /* A long family name must never shove the settings/account buttons off the
@@ -417,8 +417,8 @@ const memberCount = computed(() => props.memberProfiles.length)
 }
 
 .family-members-count {
-  font-size: 0.82rem;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
   letter-spacing: -0.01em;
   color: var(--ui-text-muted);
   font-family: inherit;
@@ -439,7 +439,7 @@ const memberCount = computed(() => props.memberProfiles.length)
   border-radius: var(--radius-lg);
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s;
+  transition: background var(--transition-fast);
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -458,7 +458,7 @@ const memberCount = computed(() => props.memberProfiles.length)
   /* chevron-left renders as "‹"; rotate it to a down-caret so it reads as a
      dropdown, and up while the switcher is open. */
   transform: rotate(-90deg);
-  transition: transform 0.2s ease;
+  transition: transform var(--transition-base) ease;
 }
 
 .family-switcher-caret--open {
@@ -486,7 +486,7 @@ const memberCount = computed(() => props.memberProfiles.length)
   min-width: 224px;
   max-width: calc(100vw - 2.5rem);
   background: var(--bg-surface);
-  border: 1px solid var(--border-main);
+  border: var(--border-width-thin) solid var(--border-main);
   border-radius: var(--radius-lg);
   box-shadow: var(--elevation-modal);
   padding: 0.35rem;
@@ -497,8 +497,8 @@ const memberCount = computed(() => props.memberProfiles.length)
 
 .family-switcher-heading {
   margin: 0.2rem 0.5rem 0.35rem;
-  font-size: 0.68rem;
-  font-weight: 800;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-extrabold);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-secondary);
@@ -515,8 +515,8 @@ const memberCount = computed(() => props.memberProfiles.length)
   color: var(--text-primary);
   padding: 0.55rem 0.6rem;
   border-radius: var(--radius-sm);
-  font-size: 0.9rem;
-  font-weight: 600;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
   cursor: pointer;
   text-align: left;
 }
@@ -568,8 +568,8 @@ const memberCount = computed(() => props.memberProfiles.length)
   background: transparent;
   color: var(--color-primary);
   padding: 0.6rem;
-  font-size: 0.85rem;
-  font-weight: 700;
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
   cursor: pointer;
   text-align: left;
 }
@@ -579,14 +579,14 @@ const memberCount = computed(() => props.memberProfiles.length)
 }
 
 .family-switcher-add-plus {
-  font-size: 1.1rem;
+  font-size: var(--text-lg);
   line-height: 1;
 }
 
 .family-switcher-cap-note {
   margin: 0;
   padding: 0.5rem 0.6rem 0.35rem;
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   line-height: 1.4;
   color: var(--text-secondary);
 }
@@ -611,7 +611,7 @@ const memberCount = computed(() => props.memberProfiles.length)
 
 .switcher-fade-enter-active,
 .switcher-fade-leave-active {
-  transition: opacity 0.14s ease;
+  transition: opacity var(--transition-fast) ease;
 }
 
 .switcher-fade-enter-from,
@@ -631,7 +631,7 @@ const memberCount = computed(() => props.memberProfiles.length)
   width: var(--size-control-md);
   height: var(--size-control-md);
   border-radius: var(--radius-pill);
-  border: 2px solid var(--ui-border);
+  border: var(--border-width-thick) solid var(--ui-border);
   background: var(--bg-hover);
   color: var(--ui-text-muted);
   cursor: pointer;
@@ -639,7 +639,7 @@ const memberCount = computed(() => props.memberProfiles.length)
   align-items: center;
   justify-content: center;
   padding: 0;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .topbar-icon-btn:hover {
@@ -676,7 +676,7 @@ const memberCount = computed(() => props.memberProfiles.length)
   width: var(--size-control-md);
   height: var(--size-control-md);
   border-radius: var(--radius-pill);
-  border: 2px solid var(--ui-border);
+  border: var(--border-width-thick) solid var(--ui-border);
   background: var(--bg-hover);
   padding: 0;
   cursor: pointer;
@@ -684,7 +684,7 @@ const memberCount = computed(() => props.memberProfiles.length)
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   flex-shrink: 0;
 }
 
@@ -701,8 +701,8 @@ const memberCount = computed(() => props.memberProfiles.length)
 }
 
 .user-avatar-fallback {
-  font-size: 0.85rem;
-  font-weight: 700;
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
   color: var(--ui-text-muted);
 }
 </style>
