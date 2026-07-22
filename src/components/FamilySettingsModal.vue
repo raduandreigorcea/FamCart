@@ -1459,8 +1459,17 @@ async function deleteFamily() {
 }
 
 .pref-card__value--emoji {
-  font-size: 1.4rem;
+  font-size: 1.35rem;
   line-height: 1;
+  /* Square, not the wide number-badge shape it inherits from .pref-card__value. */
+  width: 2.4rem;
+  height: 2.4rem;
+  min-width: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
 }
 
 /* Info Box */
