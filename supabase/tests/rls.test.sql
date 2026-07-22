@@ -35,6 +35,17 @@ insert into public.families (id, name, invite_code, created_by) values
   ('00000000-0000-0000-0000-0000000000b1', 'Family B', 'BBBBBBB2', 'user_b'),
   ('00000000-0000-0000-0000-0000000000c1', 'Family C', 'CCCCCCC2', 'user_c');
 
+-- Every family_members row now references a profiles row (migration 026's FK),
+-- so each test account needs a profile before its membership is seeded below.
+insert into public.profiles (user_id, display_name) values
+  ('user_a', 'User A'),
+  ('user_b', 'User B'),
+  ('user_c', 'User C'),
+  ('user_d', 'User D'),
+  ('user_e', 'User E'),
+  ('user_f', 'User F'),
+  ('attacker', 'Attacker');
+
 insert into public.family_members (family_id, user_id, role) values
   ('00000000-0000-0000-0000-0000000000a1', 'user_a', 'moderator'),
   ('00000000-0000-0000-0000-0000000000b1', 'user_b', 'moderator'),
