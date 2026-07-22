@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import AppButton from './AppButton.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -21,10 +22,10 @@ const resolvedTone = computed(() => {
   return props.danger ? 'danger' : 'warning'
 })
 
-const confirmButtonClass = computed(() => {
-  if (resolvedTone.value === 'danger') return 'confirm-btn--danger'
-  if (resolvedTone.value === 'warning') return 'confirm-btn--warning'
-  return 'confirm-btn--primary'
+const confirmVariant = computed(() => {
+  if (resolvedTone.value === 'danger') return 'danger'
+  if (resolvedTone.value === 'warning') return 'warning'
+  return 'primary'
 })
 
 const emit = defineEmits(['confirm', 'cancel'])
@@ -54,13 +55,8 @@ const emit = defineEmits(['confirm', 'cancel'])
         </div>
 
         <div class="confirm-dialog__actions" :class="{ 'confirm-dialog__actions--single': !showCancel }">
-          <button v-if="showCancel" class="confirm-btn confirm-btn--cancel" type="button" @click="emit('cancel')">{{ cancelText }}</button>
-          <button
-            class="confirm-btn"
-            :class="confirmButtonClass"
-            type="button"
-            @click="emit('confirm')"
-          >{{ confirmText }}</button>
+          <AppButton v-if="showCancel" variant="secondary" block @click="emit('cancel')">{{ cancelText }}</AppButton>
+          <AppButton :variant="confirmVariant" :block="showCancel" @click="emit('confirm')">{{ confirmText }}</AppButton>
         </div>
       </div>
     </div>
@@ -169,64 +165,10 @@ const emit = defineEmits(['confirm', 'cancel'])
   margin-top: 0.25rem;
 }
 
-.confirm-dialog__actions--single .confirm-btn {
+.confirm-dialog__actions--single .app-btn {
   flex: 0 0 auto;
   min-width: 120px;
   margin: 0 auto;
-}
-
-.confirm-btn {
-  flex: 1;
-  border-radius: var(--radius-md);
-  padding: 0.65rem var(--space-4);
-  font-size: var(--text-base);
-  font-weight: var(--weight-bold);
-  cursor: pointer;
-  border: none;
-  transition: all var(--transition-base) ease;
-}
-
-.confirm-btn--cancel {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-  border: var(--border-width-thin) solid var(--bg-hover);
-}
-
-.confirm-btn--cancel:hover {
-  background: var(--border-light);
-}
-
-.confirm-btn--primary {
-  background: var(--color-primary);
-  color: var(--text-inverse);
-  box-shadow: var(--elevation-primary);
-}
-
-.confirm-btn--primary:hover {
-  background: color-mix(in srgb, var(--color-primary) 85%, var(--text-primary));
-  transform: translateY(-1px);
-}
-
-.confirm-btn--warning {
-  background: var(--warning-bg);
-  color: var(--warning-text);
-  border: var(--border-width-thin) solid var(--warning-border);
-}
-
-.confirm-btn--warning:hover {
-  background: color-mix(in srgb, var(--warning-bg) 82%, var(--warning-border));
-  transform: translateY(-1px);
-}
-
-.confirm-btn--danger {
-  background: var(--danger-solid);
-  color: var(--text-inverse);
-  box-shadow: var(--elevation-danger);
-}
-
-.confirm-btn--danger:hover {
-  background: var(--danger-solid-hover);
-  transform: translateY(-1px);
 }
 
 /* Transitions */
