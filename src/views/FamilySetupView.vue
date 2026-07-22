@@ -4,6 +4,8 @@ import { useAuth, useUser } from '@clerk/vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSupabase } from '../supabase'
 import { saveActiveFamilyId } from '../lib/familyCache'
+import { deriveProfileFields } from '../lib/userIdentity'
+import { upsertOwnProfile } from '../lib/profile'
 import AppTopbar from '../components/AppTopbar.vue'
 import InputRow from '../components/InputRow.vue'
 import ErrorModal from '../components/ErrorModal.vue'
@@ -97,11 +99,11 @@ async function createFamily() {
   loading.value = true
   try {
     const code = randomInviteCode()
-    const displayName = user.value?.fullName
-      || user.value?.firstName
-      || user.value?.emailAddresses?.[0]?.emailAddress
-      || 'Member'
-    const imageUrl = user.value?.imageUrl || null
+
+    // Establish the profile first: the membership insert below references it
+    // (FK), and this is where the creator's Clerk name/avatar lands.
+    const { error: profileErr } = await upsertOwnProfile(db, userId.value, user.value)
+    if (profileErr) throw profileErr
 
     const { data: family, error: familyErr } = await db
       .from('families')
@@ -125,8 +127,6 @@ async function createFamily() {
         family_id: family.id,
         user_id: userId.value,
         role: 'moderator',
-        display_name: displayName,
-        image_url: imageUrl,
       })
 
     if (memberErr) {
@@ -162,20 +162,17 @@ async function joinFamily() {
       error.value = 'Invite code must be 8 characters using A-Z and 2-9.'
       return
     }
-    const displayName = user.value?.fullName
-      || user.value?.firstName
-      || user.value?.emailAddresses?.[0]?.emailAddress
-      || 'Member'
-    const imageUrl = user.value?.imageUrl || null
+    const { display_name, image_url } = deriveProfileFields(user.value)
 
-    // The RPC checks the code and inserts the membership in one server-side
-    // step; a direct family_members insert would be rejected by RLS, so the
-    // code is a real credential (rotating it locks out removed members).
+    // The RPC checks the code, upserts the joiner's profile, and inserts the
+    // membership in one server-side step; a direct family_members insert would
+    // be rejected by RLS, so the code is a real credential (rotating it locks
+    // out removed members).
     const { data: family, error: joinErr } = await db
       .rpc('join_family_with_code', {
         p_code: code,
-        p_display_name: displayName,
-        p_image_url: imageUrl,
+        p_display_name: display_name,
+        p_image_url: image_url,
       })
       .maybeSingle()
 

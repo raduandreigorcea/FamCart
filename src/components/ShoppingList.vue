@@ -9,9 +9,20 @@ import { sumActiveQuantities, sumCheckedQuantities } from '../lib/shoppingList'
 // stay with the parent, which owns the items.
 const props = defineProps({
   items: { type: Array, default: () => [] },
+  // Map<user_id, { display_name, image_url }> — the family roster, used to
+  // resolve each row's author avatar/name from item.added_by at render time.
+  memberProfiles: { type: Map, default: () => new Map() },
   loading: { type: Boolean, default: false },
   showEmpty: { type: Boolean, default: false },
 })
+
+function avatarUrl(item) {
+  return props.memberProfiles.get(item.added_by)?.image_url || null
+}
+
+function avatarName(item) {
+  return props.memberProfiles.get(item.added_by)?.display_name || 'Member'
+}
 
 const emit = defineEmits(['toggle', 'delete', 'checkout'])
 
@@ -183,6 +194,8 @@ const labelText = computed(() =>
       v-for="item in uncheckedItems"
       :key="item.id"
       :item="item"
+      :avatar-url="avatarUrl(item)"
+      :avatar-name="avatarName(item)"
       @toggle="$emit('toggle', $event)"
       @delete="$emit('delete', $event)"
     />
@@ -197,6 +210,8 @@ const labelText = computed(() =>
       v-for="(item, idx) in checkedItems"
       :key="item.id"
       :item="item"
+      :avatar-url="avatarUrl(item)"
+      :avatar-name="avatarName(item)"
       :draining="isDraining(item.id)"
       :drain-index="idx"
       @toggle="$emit('toggle', $event)"

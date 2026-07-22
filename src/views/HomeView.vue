@@ -22,7 +22,7 @@ import {
   buildFamilyProductStats,
   rankSuggestions,
 } from '../lib/productSearch'
-import { getUserDisplayName, getUserPrimaryEmail } from '../lib/userIdentity'
+import { upsertOwnProfile } from '../lib/profile'
 import { cleanAuthCallbackUrl } from '../lib/authCallbackUrl'
 import {
   loadFamilySnapshot,
@@ -71,6 +71,11 @@ const familyInviteCode = ref('')
 const familyOwnerId = ref('')
 const familyItemLimit = ref(50)
 const familyMembers = ref([])
+// Roster keyed by user id, so a list row can resolve its author's live avatar
+// from added_by (the row no longer carries a copied name/photo).
+const memberProfileMap = computed(
+  () => new Map(familyMembers.value.map((m) => [m.user_id, m])),
+)
 const newItem = ref('')
 const newQty = ref(1)
 // Product-catalog matches for what's being typed, and the suggestion the user
@@ -380,6 +385,10 @@ async function initializeHome() {
 
   // Confirmed signed in: remember this user so a later offline open can boot.
   rememberUser(localStorage, userId.value)
+  // Keep our profile row (name + Clerk avatar) current, so a changed photo shows
+  // up across every family. Best-effort and non-blocking: boot must not wait on
+  // it, and the next load reconciles if it fails.
+  void upsertOwnProfile(db, userId.value, user.value)
   sanitizeAuthCallbackUrl()
   hydrateFromCachedSnapshot()
 
@@ -508,7 +517,9 @@ function sanitizeAuthCallbackUrl() {
 async function loadFamilyHeader() {
   const [{ data: family, error: familyErr }, { data: members, error: membersErr }] = await Promise.all([
     db.from('families').select('name, invite_code, created_by, max_items_per_member').eq('id', familyId.value).single(),
-    db.from('family_members').select('user_id, display_name, image_url, role').eq('family_id', familyId.value),
+    // Name/avatar live in profiles now; embed them so the roster keeps the same
+    // { user_id, display_name, image_url, role } shape every consumer expects.
+    db.from('family_members').select('user_id, role, profiles(display_name, image_url)').eq('family_id', familyId.value),
   ])
 
   if (!familyErr && family) {
@@ -519,7 +530,12 @@ async function loadFamilyHeader() {
   }
 
   if (!membersErr && Array.isArray(members)) {
-    familyMembers.value = members
+    familyMembers.value = members.map((m) => ({
+      user_id: m.user_id,
+      role: m.role,
+      display_name: m.profiles?.display_name || m.user_id,
+      image_url: m.profiles?.image_url || null,
+    }))
   }
 }
 
@@ -712,9 +728,6 @@ async function addItem(product = null) {
     limitReachedPopupOpen.value = true
     return
   }
-  const creatorName = getUserDisplayName(user.value) || getUserPrimaryEmail(user.value) || 'Unknown'
-  const creatorImageUrl = user.value?.imageUrl || null
-
   // Optimistic: show the item instantly and clear the form. The per-member cap
   // is enforced authoritatively by the DB trigger (migration 010), so we don't
   // pre-count here — a rejection rolls the row back below.
@@ -731,8 +744,6 @@ async function addItem(product = null) {
     maker,
     quantity,
     added_by: effectiveUserId.value,
-    added_by_name: creatorName,
-    added_by_image_url: creatorImageUrl,
   }
   items.value.push({
     ...row,
@@ -1108,6 +1119,7 @@ async function deleteItem(item) {
 
         <ShoppingList
           :items="items"
+          :member-profiles="memberProfileMap"
           :loading="listLoading"
           :show-empty="hasInitialized && !items.length && !loadError && !switchingFamily"
           @toggle="toggleItem"
