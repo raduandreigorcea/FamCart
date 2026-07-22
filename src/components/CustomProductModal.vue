@@ -5,6 +5,7 @@
 // also the only way to give a hand-typed item a maker, which otherwise arrives
 // solely from a catalog pick.
 import { ref, computed, watch, nextTick } from 'vue'
+import AppButton from './AppButton.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -95,12 +96,8 @@ function submit() {
           </label>
 
           <div class="custom-product-dialog__actions">
-            <button class="custom-product-btn custom-product-btn--cancel" type="button" @click="emit('cancel')">
-              Cancel
-            </button>
-            <button class="custom-product-btn custom-product-btn--primary" type="submit" :disabled="!canSubmit">
-              Add to list
-            </button>
+            <AppButton variant="secondary" block type="button" @click="emit('cancel')">Cancel</AppButton>
+            <AppButton variant="primary" block type="submit" :disabled="!canSubmit">Add to list</AppButton>
           </div>
         </form>
       </div>
@@ -238,44 +235,6 @@ function submit() {
   gap: 0.65rem;
   width: 100%;
   margin-top: 0.25rem;
-}
-
-.custom-product-btn {
-  flex: 1;
-  border-radius: var(--radius-md);
-  padding: 0.65rem var(--space-4);
-  font-size: var(--text-base);
-  font-weight: var(--weight-bold);
-  cursor: pointer;
-  border: none;
-  font-family: inherit;
-  transition: all var(--transition-base) ease;
-}
-
-.custom-product-btn--cancel {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-  border: var(--border-width-thin) solid var(--bg-hover);
-}
-
-.custom-product-btn--cancel:hover {
-  background: var(--border-light);
-}
-
-.custom-product-btn--primary {
-  background: var(--color-primary);
-  color: var(--text-inverse);
-  box-shadow: var(--elevation-primary);
-}
-
-.custom-product-btn--primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--color-primary) 85%, var(--text-primary));
-  transform: translateY(-1px);
-}
-
-.custom-product-btn--primary:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 
 .custom-product-fade-enter-active,
