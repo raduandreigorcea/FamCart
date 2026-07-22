@@ -296,7 +296,11 @@ function familyInitial(name) {
             role="menuitem"
             @click="addFamily"
           >
-            <span class="family-switcher-add-tile" aria-hidden="true">+</span>
+            <span class="family-switcher-add-tile" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M10 5v10M5 10h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </span>
             Join or create a family
           </button>
           <p v-else class="family-switcher-cap-note">
@@ -637,12 +641,15 @@ function familyInitial(name) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--text-lg);
-  font-weight: var(--weight-regular);
-  line-height: 1;
   color: var(--text-disabled);
   background: var(--bg-hover);
   border: var(--border-width-thin) dashed var(--border-dark);
+}
+
+.family-switcher-add-tile svg {
+  width: 15px;
+  height: 15px;
+  display: block;
 }
 
 .family-switcher-add:hover .family-switcher-add-tile {
