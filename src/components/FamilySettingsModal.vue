@@ -59,6 +59,7 @@ const savingItemLimit = ref(false)
 const itemLimitSaved = ref(false)
 const emojiValue = ref('')
 const savingEmoji = ref(false)
+const emojiSaved = ref(false)
 // Curated household/family emoji for the picker.
 const FAMILY_EMOJIS = [
   '🏠', '🏡', '🛒', '🧺', '🍎', '🥕', '🍞', '🥑', '🍕',
@@ -257,22 +258,27 @@ async function saveItemLimit() {
   }
 }
 
-async function selectFamilyEmoji(emoji) {
+// Pick is local; the Save button below commits it (like the name and item limit).
+function pickEmoji(emoji) {
+  if (savingEmoji.value) return
+  // Tapping the current selection clears it (back to no emoji).
+  emojiValue.value = emojiValue.value === emoji ? '' : emoji
+}
+
+async function saveEmoji() {
   if (!isOwner.value || !props.familyId || savingEmoji.value) return
-  // Tapping the current emoji clears it (back to no emoji).
-  const next = emojiValue.value === emoji ? null : emoji
-  const previous = emojiValue.value
-  emojiValue.value = next || '' // optimistic
   savingEmoji.value = true
   try {
     const { error } = await db
       .from('families')
-      .update({ emoji: next })
+      .update({ emoji: emojiValue.value || null })
       .eq('id', props.familyId)
-    if (error) {
-      emojiValue.value = previous // rollback (e.g. the column isn't migrated yet)
-    } else {
+    if (!error) {
       emit('refresh-family')
+      emojiSaved.value = true
+      setTimeout(() => {
+        emojiSaved.value = false
+      }, 2000)
     }
   } finally {
     savingEmoji.value = false
@@ -638,11 +644,28 @@ async function deleteFamily() {
                         type="button"
                         class="emoji-option"
                         :class="{ 'emoji-option--active': emojiValue === e }"
-                        :disabled="savingEmoji"
                         :aria-pressed="emojiValue === e"
                         :aria-label="`Use ${e} for this family`"
-                        @click="selectFamilyEmoji(e)"
+                        @click="pickEmoji(e)"
                       >{{ e }}</button>
+                    </div>
+
+                    <div class="card-item__form">
+                      <div class="input-action-group input-action-group--end">
+                        <button
+                          class="panel-save-btn"
+                          type="button"
+                          :disabled="savingEmoji"
+                          @click="saveEmoji"
+                        >
+                          <span v-if="savingEmoji" class="btn-spinner"></span>
+                          <span v-else-if="emojiSaved" class="success-state animate-pop">
+                            <span class="success-icon-wrap" v-html="checkIcon"></span>
+                            Saved
+                          </span>
+                          <span v-else>Save</span>
+                        </button>
+                      </div>
                     </div>
                   </section>
 
