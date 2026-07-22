@@ -10,6 +10,7 @@ import ErrorModal from '../components/ErrorModal.vue'
 import NotificationPromptModal from '../components/NotificationPromptModal.vue'
 import ShoppingList from '../components/ShoppingList.vue'
 import AddItemForm from '../components/AddItemForm.vue'
+import OnboardingTour from '../components/OnboardingTour.vue'
 import { useFamilyRealtime } from '../lib/familyRealtime'
 import {
   findActiveItemByName,
@@ -35,6 +36,7 @@ import {
 import { enqueueOfflineMutation, flushOfflineQueue, hasQueuedOfflineMutations, isOfflineError } from '../lib/offlineQueue'
 import { isCurrentlyOffline, onReconnect } from '../lib/connectivity'
 import { rememberUser, getRememberedUser } from '../lib/session'
+import { hasSeenTour, markTourSeen } from '../lib/onboarding'
 import {
   enablePushNotifications,
   getNotificationPreference,
@@ -92,6 +94,9 @@ const customProductOpen = ref(false)
 const limitReachedPopupOpen = ref(false)
 const notificationPromptOpen = ref(false)
 const notificationError = ref('')
+// One-time first-run tour (add / swipe / invite). Shown once per device before
+// the notifications ask, so a new user learns the gestures first.
+const onboardingTourOpen = ref(false)
 const adding = ref(false)
 const hasInitialized = ref(false)
 // True while switchFamily is tearing down the old family and loading the new one.
@@ -436,6 +441,24 @@ async function initializeHome() {
   await setupRealtimeSubscriptions()
   hasInitialized.value = true
   persistSnapshot()
+  maybeStartOnboarding()
+}
+
+// First run: teach the gestures with the tour, then (once it's dismissed) fall
+// through to the notifications ask. A returning user who's already seen the tour
+// skips straight to the notifications check.
+function maybeStartOnboarding() {
+  if (!userId.value) return
+  if (!hasSeenTour(localStorage)) {
+    onboardingTourOpen.value = true
+    return
+  }
+  maybePromptForNotifications()
+}
+
+function closeOnboardingTour() {
+  onboardingTourOpen.value = false
+  markTourSeen(localStorage)
   maybePromptForNotifications()
 }
 
@@ -1146,6 +1169,12 @@ async function deleteItem(item) {
       :name-max-length="ITEM_NAME_MAX_LENGTH"
       @submit="addCustomProduct"
       @cancel="customProductOpen = false"
+    />
+
+    <OnboardingTour
+      :open="onboardingTourOpen"
+      :invite-code="familyInviteCode"
+      @close="closeOnboardingTour"
     />
 
     <NotificationPromptModal

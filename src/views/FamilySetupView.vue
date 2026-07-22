@@ -10,6 +10,7 @@ import AppTopbar from '../components/AppTopbar.vue'
 import InputRow from '../components/InputRow.vue'
 import ErrorModal from '../components/ErrorModal.vue'
 import AppCard from '../components/AppCard.vue'
+import AppButton from '../components/AppButton.vue'
 import ChoiceButton from '../components/ChoiceButton.vue'
 import BackButton from '../components/BackButton.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
@@ -50,6 +51,11 @@ onMounted(async () => {
     ownershipChecked.value = true
   }
 })
+
+// Brand-new users open on a warm welcome before the create/join picker; someone
+// adding a family from the switcher already knows the app, so they skip it.
+const welcomed = ref(false)
+const showWelcome = computed(() => !welcomed.value && !isAddingFamily.value)
 
 const mode = ref(null) // null | 'create' | 'join'
 const familyName = ref('')
@@ -209,8 +215,44 @@ async function joinFamily() {
     <main class="setup-main">
       <AppCard>
 
+        <!-- Welcome (brand-new users only) -->
+        <template v-if="showWelcome">
+          <div class="welcome-hero" aria-hidden="true">
+            <div class="wl-card">
+              <div class="wl-row">
+                <span class="wl-emoji">🥑</span>
+                <span class="wl-line"></span>
+                <span class="wl-dot"></span>
+              </div>
+              <div class="wl-row wl-row--done">
+                <span class="wl-emoji">🥛</span>
+                <span class="wl-line wl-line--done"></span>
+                <span class="wl-dot wl-dot--done">✓</span>
+              </div>
+              <div class="wl-row">
+                <span class="wl-emoji">🍞</span>
+                <span class="wl-line wl-line--short"></span>
+                <span class="wl-dot"></span>
+              </div>
+            </div>
+            <div class="wl-people">
+              <span class="wl-person wl-person--a">🧑</span>
+              <span class="wl-person wl-person--b">👩</span>
+            </div>
+          </div>
+          <div class="card-header card-header--welcome">
+            <p class="card-eyebrow">Welcome to FamCart 🛒</p>
+            <h2 class="heading">The list your whole <span class="heading--accent">family</span> shares</h2>
+            <p class="sub">
+              Everyone adds, everyone checks off — and it updates for the whole
+              family the moment it happens, so nothing gets forgotten at the store.
+            </p>
+          </div>
+          <AppButton variant="primary" block @click="welcomed = true">Get started</AppButton>
+        </template>
+
         <!-- Picker -->
-        <template v-if="!mode">
+        <template v-else-if="!mode">
           <div v-if="isAddingFamily" class="setup-back">
             <BackButton @click="router.replace('/')" />
           </div>
@@ -310,6 +352,123 @@ async function joinFamily() {
   padding: 2rem 1rem;
   padding-top: calc(56px + 2rem + var(--safe-top));
   padding-bottom: calc(2rem + var(--safe-bottom));
+}
+
+/* ── Welcome hero ────────────────────────────────────────── */
+/* The hero is the thesis: a shared list with one item already ticked off, and
+   two people beside it — FamCart in a single glance. */
+.welcome-hero {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  margin: 0.25rem 0 1.75rem;
+}
+
+.wl-card {
+  width: 100%;
+  max-width: 260px;
+  background: var(--bg-main);
+  border: var(--border-width-thin) solid var(--border-main);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--elevation-card);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.wl-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.wl-emoji {
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-lg);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
+  border: var(--border-width-thin) solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+
+.wl-line {
+  flex: 1;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--border-main);
+}
+
+.wl-line--short { max-width: 60%; }
+
+.wl-line--done {
+  background: var(--border-light);
+  position: relative;
+}
+
+.wl-line--done::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--text-disabled);
+  opacity: 0.6;
+}
+
+.wl-dot {
+  flex-shrink: 0;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 50%;
+  border: var(--border-width-base) solid var(--border-dark);
+}
+
+.wl-dot--done {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--text-inverse);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-extrabold);
+}
+
+.wl-people {
+  position: absolute;
+  right: -0.35rem;
+  bottom: -0.5rem;
+  display: flex;
+}
+
+.wl-person {
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-lg);
+  background: var(--bg-surface);
+  border: var(--border-width-thick) solid var(--bg-surface);
+  box-shadow: var(--elevation-soft);
+}
+
+.wl-person--a { background: color-mix(in srgb, var(--color-primary) 22%, var(--bg-surface)); }
+.wl-person--b {
+  margin-left: -0.7rem;
+  background: color-mix(in srgb, var(--warning-bg) 70%, var(--bg-surface));
+}
+
+.card-header--welcome {
+  text-align: center;
+  margin-bottom: 1.5rem;
 }
 
 /* ── Card header ─────────────────────────────────────────── */
