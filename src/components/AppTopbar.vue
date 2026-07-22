@@ -198,9 +198,12 @@ function familyInitial(name) {
   return trimmed ? trimmed[0].toUpperCase() : '#'
 }
 
-// Members for a family's switcher stack, ordered you → owner → moderators → rest.
+// Members shown for a family in the switcher, ordered owner → moderators → rest.
+// Your own face is left out — you belong to every family you can switch to, so
+// seeing yourself on each row is noise, not identity.
 function orderedFamilyMembers(fam) {
   return sortMembersForSwitcher(fam.members || [], fam.ownerId || '', props.currentUserId)
+    .filter((m) => m.user_id !== props.currentUserId)
 }
 </script>
 
@@ -298,7 +301,7 @@ function orderedFamilyMembers(fam) {
             @click="selectFamily(fam.id)"
           >
             <FamilyAvatar
-              v-if="fam.members && fam.members.length"
+              v-if="orderedFamilyMembers(fam).length"
               :members="orderedFamilyMembers(fam)"
               :size="28"
             />
