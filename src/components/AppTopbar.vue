@@ -2,7 +2,6 @@
 import { computed, defineAsyncComponent, ref } from 'vue'
 import { useClerk, useUser } from '@clerk/vue'
 import AccountActionModal from './AccountActionModal.vue'
-import FamilyAvatar from './FamilyAvatar.vue'
 import MemberAvatarStack from './MemberAvatarStack.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { sortMembersForSwitcher } from '../lib/memberRoles'
@@ -172,40 +171,9 @@ const orderedActiveMembers = computed(() =>
   sortMembersForSwitcher(props.memberProfiles || [], props.ownerUserId, props.currentUserId),
 )
 
-// A stable identity colour + initial for each family, so the switcher reads as a
-// set of distinct households. A curated palette (rather than raw HSL, which drifts
-// into muddy olives) keeps every colour clean and legible with white text.
-const FAMILY_COLORS = [
-  '#d9533f', // warm red
-  '#e08a2e', // amber
-  '#3f9e6c', // green
-  '#2f9ea0', // teal
-  '#3d7fd6', // blue
-  '#6d5cd6', // indigo
-  '#a24fc0', // purple
-  '#d24f8c', // pink
-]
-function familyHash(name) {
-  let hash = 0
-  const text = name || ''
-  for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) & 0xffff
-  return hash
-}
-function familyColor(name) {
-  return FAMILY_COLORS[familyHash(name) % FAMILY_COLORS.length]
-}
-function familyInitial(name) {
-  const trimmed = (name || '').trim()
-  return trimmed ? trimmed[0].toUpperCase() : '#'
-}
-
-// Members shown for a family in the switcher, ordered owner → moderators → rest.
-// Your own face is left out — you belong to every family you can switch to, so
-// seeing yourself on each row is noise, not identity.
-function orderedFamilyMembers(fam) {
-  return sortMembersForSwitcher(fam.members || [], fam.ownerId || '', props.currentUserId)
-    .filter((m) => m.user_id !== props.currentUserId)
-}
+// Fallback for a family whose owner hasn't picked an emoji: the app's cart, so
+// every switcher row reads as one tidy tile.
+const DEFAULT_FAMILY_EMOJI = '🛒'
 </script>
 
 <template>
@@ -300,18 +268,7 @@ function orderedFamilyMembers(fam) {
             :aria-checked="fam.id === familyId"
             @click="selectFamily(fam.id)"
           >
-            <span v-if="fam.emoji" class="family-emoji-tile" aria-hidden="true">{{ fam.emoji }}</span>
-            <FamilyAvatar
-              v-else-if="orderedFamilyMembers(fam).length"
-              :members="orderedFamilyMembers(fam)"
-              :size="28"
-            />
-            <span
-              v-else
-              class="family-monogram"
-              :style="{ background: familyColor(fam.name) }"
-              aria-hidden="true"
-            >{{ familyInitial(fam.name) }}</span>
+            <span class="family-emoji-tile" aria-hidden="true">{{ fam.emoji || DEFAULT_FAMILY_EMOJI }}</span>
             <span class="family-switcher-item-name">{{ fam.name || 'Family' }}</span>
             <span v-if="fam.id === familyId" class="family-switcher-check" aria-hidden="true" v-html="checkRaw"></span>
           </button>
@@ -592,24 +549,7 @@ function orderedFamilyMembers(fam) {
   background: var(--bg-hover);
 }
 
-/* A stable identity tile per household, so families read as distinct at a
-   glance rather than as identical text rows. */
-.family-monogram {
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-md);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-extrabold);
-  letter-spacing: 0;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
-}
-
-/* The owner's chosen emoji, shown in place of the member composite. */
+/* Each family's emoji (the owner's pick, or the default cart). */
 .family-emoji-tile {
   flex-shrink: 0;
   width: 28px;
