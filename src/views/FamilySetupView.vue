@@ -165,7 +165,7 @@ async function joinFamily() {
   try {
     const code = inviteCode.value.trim().toUpperCase()
     if (!INVITE_CODE_REGEX.test(code)) {
-      error.value = 'Invite code must be 8 characters using A-Z and 2-9.'
+      error.value = 'Invite code must be 8 characters, letters and numbers only.'
       return
     }
     const { display_name, image_url } = deriveProfileFields(user.value)
@@ -244,7 +244,7 @@ async function joinFamily() {
             <p class="card-eyebrow">Welcome to FamCart 🛒</p>
             <h2 class="heading">The list your whole <span class="heading--accent">family</span> shares</h2>
             <p class="sub">
-              Everyone adds, everyone checks off — and it updates for the whole
+              Everyone adds, everyone checks off, and it all updates for the whole
               family the moment it happens, so nothing gets forgotten at the store.
             </p>
           </div>
@@ -310,7 +310,7 @@ async function joinFamily() {
           <div class="card-header">
             <p class="card-eyebrow">Join a family</p>
             <h2 class="heading">Enter your invite code</h2>
-            <p class="sub">Ask a family member for their 8-character code.</p>
+            <p class="sub">Ask a family member for their invite code.</p>
           </div>
           <form @submit.prevent="joinFamily" class="input-form">
             <InputRow v-model="inviteCode" placeholder="e.g. AB3K7XYZ" maxlength="8" :loading="loading" :uppercase="true" required autofocus />          </form>
