@@ -34,6 +34,7 @@ const props = defineProps({
   familyName: { type: String, default: '' },
   inviteCode: { type: String, default: '' },
   familyItemLimit: { type: Number, default: 50 },
+  familyEmoji: { type: String, default: '' },
   ownerUserId: { type: String, default: '' },
   memberProfiles: {
     type: Array,
@@ -56,6 +57,13 @@ const renameOverLimit = computed(() => renameLength.value > FAMILY_NAME_MAX_LENG
 const itemLimitValue = ref(50)
 const savingItemLimit = ref(false)
 const itemLimitSaved = ref(false)
+const emojiValue = ref('')
+const savingEmoji = ref(false)
+// Curated household/family emoji for the picker.
+const FAMILY_EMOJIS = [
+  '🏠', '🏡', '🛒', '🧺', '🍎', '🥕', '🍞', '🥑', '🍕',
+  '🍽️', '☕', '🐶', '🐱', '🌿', '🌟', '❤️', '🎉', '🔑',
+]
 const regenerating = ref(false)
 const codeRegenerated = ref(false)
 const memberActionPendingId = ref('')
@@ -72,6 +80,7 @@ watch(
     activeTab.value = props.initialTab || 'overview'
     renameValue.value = props.familyName || ''
     itemLimitValue.value = Math.min(50, Math.max(1, Number(props.familyItemLimit) || 50))
+    emojiValue.value = props.familyEmoji || ''
     closeMemberMenu()
   },
   { immediate: true },
@@ -245,6 +254,28 @@ async function saveItemLimit() {
     }
   } finally {
     savingItemLimit.value = false
+  }
+}
+
+async function selectFamilyEmoji(emoji) {
+  if (!isOwner.value || !props.familyId || savingEmoji.value) return
+  // Tapping the current emoji clears it (back to no emoji).
+  const next = emojiValue.value === emoji ? null : emoji
+  const previous = emojiValue.value
+  emojiValue.value = next || '' // optimistic
+  savingEmoji.value = true
+  try {
+    const { error } = await db
+      .from('families')
+      .update({ emoji: next })
+      .eq('id', props.familyId)
+    if (error) {
+      emojiValue.value = previous // rollback (e.g. the column isn't migrated yet)
+    } else {
+      emit('refresh-family')
+    }
+  } finally {
+    savingEmoji.value = false
   }
 }
 
@@ -587,6 +618,31 @@ async function deleteFamily() {
                           </p>
                         </div>
                       </div>
+                    </div>
+                  </section>
+
+                  <section v-if="isOwner" class="card-item pref-card">
+                    <div class="pref-card__head">
+                      <span class="pref-card__icon" v-html="squarePenIcon"></span>
+                      <div class="pref-card__meta">
+                        <h5>Family Emoji</h5>
+                        <p>Pick an emoji to represent your family in the switcher.</p>
+                      </div>
+                      <span v-if="emojiValue" class="pref-card__value pref-card__value--emoji">{{ emojiValue }}</span>
+                    </div>
+
+                    <div class="emoji-picker">
+                      <button
+                        v-for="e in FAMILY_EMOJIS"
+                        :key="e"
+                        type="button"
+                        class="emoji-option"
+                        :class="{ 'emoji-option--active': emojiValue === e }"
+                        :disabled="savingEmoji"
+                        :aria-pressed="emojiValue === e"
+                        :aria-label="`Use ${e} for this family`"
+                        @click="selectFamilyEmoji(e)"
+                      >{{ e }}</button>
                     </div>
                   </section>
 
@@ -1359,6 +1415,52 @@ async function deleteFamily() {
 .btn-icon {
   width: 15px;
   height: 15px;
+}
+
+/* Emoji picker */
+.emoji-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(2.5rem, 1fr));
+  gap: 0.4rem;
+  margin-top: 0.85rem;
+}
+
+.emoji-option {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  line-height: 1;
+  border: var(--border-width-thin) solid var(--border-main);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
+}
+
+.emoji-option:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: var(--bg-hover);
+}
+
+.emoji-option:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.emoji-option--active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-bg);
+  box-shadow: var(--focus-ring-primary);
+}
+
+.emoji-option:disabled {
+  cursor: default;
+}
+
+.pref-card__value--emoji {
+  font-size: 1.4rem;
+  line-height: 1;
 }
 
 /* Info Box */

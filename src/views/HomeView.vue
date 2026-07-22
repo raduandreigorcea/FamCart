@@ -72,6 +72,7 @@ const familyName = ref('')
 const familyInviteCode = ref('')
 const familyOwnerId = ref('')
 const familyItemLimit = ref(50)
+const familyEmoji = ref('')
 const familyMembers = ref([])
 // Roster keyed by user id, so a list row can resolve its author's live avatar
 // from added_by (the row no longer carries a copied name/photo).
@@ -508,6 +509,7 @@ function hydrateFromCachedSnapshot() {
   familyInviteCode.value = snapshot.familyInviteCode
   familyOwnerId.value = snapshot.familyOwnerId
   familyItemLimit.value = snapshot.familyItemLimit
+  familyEmoji.value = snapshot.familyEmoji || ''
   familyMembers.value = snapshot.familyMembers
   items.value = snapshot.items
 }
@@ -520,6 +522,7 @@ function persistSnapshot() {
     familyInviteCode: familyInviteCode.value,
     familyOwnerId: familyOwnerId.value,
     familyItemLimit: familyItemLimit.value,
+    familyEmoji: familyEmoji.value,
     familyMembers: familyMembers.value,
     items: items.value,
   })
@@ -528,7 +531,7 @@ function persistSnapshot() {
 // Keep the snapshot current as state changes (mutations, realtime events).
 // Guarded by hasInitialized inside persistSnapshot, so hydration itself and
 // partial init states are never written back.
-watch([items, familyMembers, familyName, familyInviteCode, familyItemLimit], persistSnapshot, {
+watch([items, familyMembers, familyName, familyInviteCode, familyItemLimit, familyEmoji], persistSnapshot, {
   deep: true,
 })
 
@@ -550,6 +553,19 @@ async function loadFamilyHeader() {
     familyInviteCode.value = family.invite_code || ''
     familyOwnerId.value = family.created_by || ''
     familyItemLimit.value = Math.min(50, Math.max(1, Number(family.max_items_per_member) || 50))
+  }
+
+  // Best-effort, on its own query: the emoji column may not be migrated yet, and
+  // a missing-column error here must not take the family header down with it.
+  try {
+    const { data: emojiRow, error: emojiErr } = await db
+      .from('families')
+      .select('emoji')
+      .eq('id', familyId.value)
+      .maybeSingle()
+    if (!emojiErr) familyEmoji.value = emojiRow?.emoji || ''
+  } catch {
+    // Column absent → the family simply has no emoji.
   }
 
   if (!membersErr && Array.isArray(members)) {
@@ -574,6 +590,7 @@ async function loadFamilies() {
     id: row.family_id,
     name: row.families?.name ?? '',
     ownerId: row.families?.created_by ?? '',
+    emoji: '',
     members: [],
   }))
 
@@ -601,6 +618,18 @@ async function loadFamilies() {
     }
   } catch {
     // Rosters are a nicety; the switcher still works without them.
+  }
+
+  // Best-effort family emoji (its column may be unmigrated), keyed by family id.
+  // RLS scopes families to this user, so one unfiltered select is enough.
+  try {
+    const { data: emojiRows, error: emojiErr } = await db.from('families').select('id, emoji')
+    if (!emojiErr && Array.isArray(emojiRows)) {
+      const emojiById = new Map(emojiRows.map((r) => [r.id, r.emoji || '']))
+      for (const fam of list) fam.emoji = emojiById.get(fam.id) || ''
+    }
+  } catch {
+    // Column absent → families just have no emoji.
   }
 
   // Stable, name-ordered so the switcher never reshuffles between loads.
@@ -1144,6 +1173,7 @@ async function deleteItem(item) {
       :members-loading="switchingFamily"
       :invite-code="familyInviteCode"
       :family-item-limit="familyItemLimit"
+      :family-emoji="familyEmoji"
       :owner-user-id="familyOwnerId"
       :member-profiles="familyMembers"
       :current-user-id="effectiveUserId"
