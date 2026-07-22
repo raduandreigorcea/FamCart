@@ -17,6 +17,16 @@ const props = defineProps({
     type: Number,
     default: 0,
   },
+  // Author avatar/name, resolved live from the family roster by item.added_by —
+  // the row itself no longer carries a copied name/photo.
+  avatarUrl: {
+    type: String,
+    default: null,
+  },
+  avatarName: {
+    type: String,
+    default: 'Member',
+  },
 })
 
 const emit = defineEmits(['toggle', 'delete'])
@@ -50,13 +60,13 @@ function handleDelete() {
     </span>
     <span v-if="item.quantity > 1" class="item-qty">x{{ item.quantity }}</span>
     <img
-      v-if="item.added_by_image_url"
-      :src="item.added_by_image_url"
-      :alt="(item.added_by_name || 'Member') + ' avatar'"
+      v-if="avatarUrl"
+      :src="avatarUrl"
+      :alt="avatarName + ' avatar'"
       class="item-avatar"
     />
-    <span v-else class="item-avatar item-avatar--fallback" :title="item.added_by_name || 'Member'">
-      {{ (item.added_by_name || '?').slice(0, 1).toUpperCase() }}
+    <span v-else class="item-avatar item-avatar--fallback" :title="avatarName">
+      {{ (avatarName || '?').slice(0, 1).toUpperCase() }}
     </span>
     <button class="item-delete" @click="handleDelete" aria-label="Delete">
       <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
