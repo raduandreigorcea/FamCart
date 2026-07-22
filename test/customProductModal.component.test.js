@@ -63,7 +63,7 @@ describe('CustomProductModal', () => {
 
   it('cannot be submitted without a product name', async () => {
     const wrapper = await openWith('   ')
-    expect(wrapper.find('.custom-product-btn--primary').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.app-btn--primary').attributes('disabled')).toBeDefined()
 
     await wrapper.find('form').trigger('submit')
     expect(wrapper.emitted('submit')).toBeUndefined()
@@ -91,7 +91,7 @@ describe('CustomProductModal', () => {
 
   it('cancels from the button and from a click outside the dialog', async () => {
     const wrapper = await openWith('Branza')
-    await wrapper.find('.custom-product-btn--cancel').trigger('click')
+    await wrapper.find('.app-btn--secondary').trigger('click')
     expect(wrapper.emitted('cancel')).toHaveLength(1)
 
     await wrapper.find('.custom-product-overlay').trigger('click')

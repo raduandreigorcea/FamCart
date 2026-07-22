@@ -2,6 +2,8 @@
 // One-time greeting shown after login for users who never decided on
 // notifications. Explains the benefit up front so the browser/OS permission
 // prompt that follows an accept doesn't arrive cold.
+import AppButton from './AppButton.vue'
+
 defineProps({
   open: { type: Boolean, default: false },
 })
@@ -29,8 +31,8 @@ const emit = defineEmits(['accept', 'decline'])
         </div>
 
         <div class="notify-dialog__actions">
-          <button class="notify-btn notify-btn--decline" type="button" @click="emit('decline')">Not now</button>
-          <button class="notify-btn notify-btn--accept" type="button" @click="emit('accept')">Turn on</button>
+          <AppButton variant="secondary" block @click="emit('decline')">Not now</AppButton>
+          <AppButton variant="primary" block @click="emit('accept')">Turn on</AppButton>
         </div>
       </div>
     </div>
@@ -110,38 +112,6 @@ const emit = defineEmits(['accept', 'decline'])
   gap: 0.65rem;
   width: 100%;
   margin-top: 0.25rem;
-}
-
-.notify-btn {
-  flex: 1;
-  border-radius: var(--radius-md);
-  padding: 0.65rem var(--space-4);
-  font-size: var(--text-base);
-  font-weight: var(--weight-bold);
-  cursor: pointer;
-  border: none;
-  transition: all var(--transition-base) ease;
-}
-
-.notify-btn--decline {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-  border: var(--border-width-thin) solid var(--bg-hover);
-}
-
-.notify-btn--decline:hover {
-  background: var(--border-light);
-}
-
-.notify-btn--accept {
-  background: var(--color-primary);
-  color: var(--text-inverse);
-  box-shadow: var(--elevation-primary);
-}
-
-.notify-btn--accept:hover {
-  background: color-mix(in srgb, var(--color-primary) 85%, var(--text-primary));
-  transform: translateY(-1px);
 }
 
 .notify-fade-enter-active,
