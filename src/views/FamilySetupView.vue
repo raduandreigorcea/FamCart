@@ -318,8 +318,8 @@ async function joinFamily() {
 }
 
 .card-eyebrow {
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--color-primary);
@@ -328,8 +328,8 @@ async function joinFamily() {
 
 .heading {
   font-family: inherit;
-  font-size: 1.45rem;
-  font-weight: 800;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-extrabold);
   color: var(--text-primary);
   margin: 0 0 0.5rem;
   line-height: 1.2;
@@ -340,7 +340,7 @@ async function joinFamily() {
 }
 
 .sub {
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   color: var(--text-secondary);
   margin: 0;
   line-height: 1.55;
@@ -371,12 +371,12 @@ async function joinFamily() {
 .field-counter {
   margin: -0.15rem 0 0;
   text-align: right;
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   color: var(--text-disabled);
 }
 
 .field-counter--danger {
   color: var(--danger-main);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 </style>

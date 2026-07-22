@@ -224,7 +224,7 @@ function formatTime(iso) {
   align-items: center;
   justify-content: space-between;
   padding: var(--space-5) var(--space-6);
-  border-bottom: 1px solid var(--bg-hover);
+  border-bottom: var(--border-width-thin) solid var(--bg-hover);
 }
 
 .history-modal__title-wrap {
@@ -262,17 +262,17 @@ function formatTime(iso) {
 
 .history-modal__header h3 {
   margin: 0;
-  font-size: 1.1rem;
-  font-weight: 800;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-extrabold);
   color: var(--text-primary);
   letter-spacing: -0.02em;
 }
 
 .history-modal__subtitle {
   margin: 0.1rem 0 0;
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   color: var(--text-secondary);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 .history-modal__body {
@@ -309,8 +309,8 @@ function formatTime(iso) {
   /* Symmetric padding: this box is what shows while pinned, so equal space
      above and below the text keeps the pinned label centered in its strip. */
   padding: 0.6rem 0;
-  font-size: 0.72rem;
-  font-weight: 700;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-disabled);
@@ -326,7 +326,7 @@ function formatTime(iso) {
 
 /* One checkout event: a buyer + time header over the items bought together. */
 .checkout {
-  border: 1px solid var(--bg-hover);
+  border: var(--border-width-thin) solid var(--bg-hover);
   border-radius: var(--radius-xl);
   padding: 0.6rem;
   background: var(--bg-surface);
@@ -348,7 +348,7 @@ function formatTime(iso) {
   height: 24px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid var(--border-main);
+  border: var(--border-width-thin) solid var(--border-main);
   flex-shrink: 0;
 }
 
@@ -358,13 +358,13 @@ function formatTime(iso) {
   justify-content: center;
   background: var(--bg-hover);
   color: var(--text-secondary);
-  font-size: 0.72rem;
-  font-weight: 700;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
 }
 
 .checkout__buyer {
-  font-size: 0.85rem;
-  font-weight: 700;
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
   color: var(--text-primary);
   min-width: 0;
   white-space: nowrap;
@@ -375,8 +375,8 @@ function formatTime(iso) {
 .checkout__time {
   margin-left: auto;
   flex-shrink: 0;
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
   color: var(--text-disabled);
   font-variant-numeric: tabular-nums;
 }
@@ -406,7 +406,7 @@ function formatTime(iso) {
 
 .history-emoji {
   flex-shrink: 0;
-  font-size: 1.05rem;
+  font-size: var(--text-lg);
   line-height: 1;
   display: inline-flex;
   align-items: center;
@@ -415,7 +415,7 @@ function formatTime(iso) {
   height: 2.05rem;
   border-radius: 0.65rem;
   background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
-  border: 1px solid color-mix(in srgb, var(--color-primary) 22%, var(--bg-surface));
+  border: var(--border-width-thin) solid color-mix(in srgb, var(--color-primary) 22%, var(--bg-surface));
 }
 
 .history-text {
@@ -426,8 +426,8 @@ function formatTime(iso) {
 }
 
 .history-name {
-  font-size: 0.9rem;
-  font-weight: 600;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -435,8 +435,8 @@ function formatTime(iso) {
 }
 
 .history-maker {
-  font-size: 0.7rem;
-  font-weight: 600;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
   color: var(--text-secondary);
   line-height: 1.25;
   white-space: nowrap;
@@ -446,11 +446,11 @@ function formatTime(iso) {
 
 .history-qty {
   flex-shrink: 0;
-  font-size: 0.74rem;
-  font-weight: 700;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
   color: var(--color-primary);
   background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
-  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, var(--bg-surface));
+  border: var(--border-width-thin) solid color-mix(in srgb, var(--color-primary) 28%, var(--bg-surface));
   border-radius: var(--radius-pill);
   padding: 0.12rem 0.42rem;
 }
@@ -463,7 +463,7 @@ function formatTime(iso) {
   height: 20px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid var(--border-main);
+  border: var(--border-width-thin) solid var(--border-main);
 }
 
 .history-adder--fallback {
@@ -472,13 +472,13 @@ function formatTime(iso) {
   justify-content: center;
   background: var(--bg-hover);
   color: var(--text-secondary);
-  font-size: 0.65rem;
-  font-weight: 700;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
 }
 
 .history-empty {
   text-align: center;
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   color: var(--text-disabled);
   line-height: 1.5;
   margin: 2.5rem 0;
@@ -487,7 +487,7 @@ function formatTime(iso) {
 /* Modal transitions (mirrors the other modals) */
 .modal-fade-enter-active,
 .modal-fade-leave-active {
-  transition: opacity 0.18s ease;
+  transition: opacity var(--transition-base) ease;
 }
 
 .modal-fade-enter-from,

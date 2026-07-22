@@ -331,8 +331,8 @@ function goBack() {
 
 .brand-name {
     font-family: inherit;
-    font-size: 2.1rem;
-    font-weight: 800;
+    font-size: var(--text-3xl);
+    font-weight: var(--weight-extrabold);
     letter-spacing: -0.02em;
     color: var(--text-primary);
     line-height: 1;
@@ -344,8 +344,8 @@ function goBack() {
 
 .brand-tagline {
     font-family: inherit;
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: var(--text-lg);
+    font-weight: var(--weight-semibold);
     color: var(--text-primary);
     margin: 0;
     line-height: 1.4;
@@ -353,7 +353,7 @@ function goBack() {
 
 .brand-tagline--accent {
     color: var(--color-primary);
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
 }
 
 /* Email form */
@@ -370,7 +370,7 @@ function goBack() {
 }
 
 .code-hint {
-    font-size: 0.85rem;
+    font-size: var(--text-base);
     color: var(--text-secondary);
     margin: 0;
     line-height: 1.4;
@@ -391,14 +391,14 @@ function goBack() {
     aspect-ratio: 1;
     text-align: center;
     font-family: inherit;
-    font-size: 1.4rem;
-    font-weight: 700;
-    border: 1.5px solid var(--border-main);
+    font-size: var(--text-xl);
+    font-weight: var(--weight-bold);
+    border: var(--border-width-base) solid var(--border-main);
     border-radius: var(--radius-lg);
     outline: none;
     color: var(--text-primary);
     background: var(--bg-surface);
-    transition: border-color 0.15s, background 0.15s;
+    transition: border-color var(--transition-fast), background var(--transition-fast);
     caret-color: transparent;
 }
 
@@ -421,7 +421,7 @@ function goBack() {
 .spinner {
     width: var(--size-icon-lg);
     height: var(--size-icon-lg);
-    border: 2px solid var(--spinner-stroke);
+    border: var(--border-width-thick) solid var(--spinner-stroke);
     border-top-color: var(--text-inverse);
     border-radius: 50%;
     animation: spin 0.7s linear infinite;
@@ -439,7 +439,7 @@ function goBack() {
     align-items: center;
     margin: 1.25rem 0;
     color: var(--text-disabled);
-    font-size: 0.75rem;
+    font-size: var(--text-xs);
     gap: 0.75rem;
 }
 
@@ -463,12 +463,12 @@ function goBack() {
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1.5px solid var(--border-main);
+    border: var(--border-width-base) solid var(--border-main);
     border-radius: var(--radius-xl);
     background: var(--bg-surface);
     color: var(--text-secondary);
     cursor: pointer;
-    transition: background 0.15s, border-color 0.15s;
+    transition: background var(--transition-fast), border-color var(--transition-fast);
     padding: 0;
 }
 
@@ -491,7 +491,7 @@ function goBack() {
 .oauth-spinner {
     width: 20px;
     height: 20px;
-    border: 2px solid color-mix(in srgb, var(--color-primary) 20%, var(--bg-surface));
+    border: var(--border-width-thick) solid color-mix(in srgb, var(--color-primary) 20%, var(--bg-surface));
     border-top-color: var(--color-primary);
     border-radius: 50%;
     animation: spin 0.7s linear infinite;

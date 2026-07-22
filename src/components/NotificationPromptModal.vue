@@ -56,7 +56,7 @@ const emit = defineEmits(['accept', 'decline'])
   max-width: 400px;
   background: var(--bg-surface);
   border-radius: var(--radius-dialog);
-  border: 1px solid color-mix(in srgb, var(--color-primary) 42%, var(--border-main));
+  border: var(--border-width-thin) solid color-mix(in srgb, var(--color-primary) 42%, var(--border-main));
   box-shadow: var(--elevation-dialog);
   padding: var(--space-7) var(--space-7) var(--space-6);
   display: flex;
@@ -92,15 +92,15 @@ const emit = defineEmits(['accept', 'decline'])
 
 .notify-dialog__title {
   margin: 0;
-  font-size: 1.05rem;
-  font-weight: 800;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-extrabold);
   color: var(--text-primary);
   letter-spacing: -0.02em;
 }
 
 .notify-dialog__message {
   margin: 0;
-  font-size: 0.84rem;
+  font-size: var(--text-sm);
   color: var(--text-secondary);
   line-height: 1.5;
 }
@@ -116,17 +116,17 @@ const emit = defineEmits(['accept', 'decline'])
   flex: 1;
   border-radius: var(--radius-md);
   padding: 0.65rem var(--space-4);
-  font-size: 0.86rem;
-  font-weight: 700;
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
   cursor: pointer;
   border: none;
-  transition: all 0.2s ease;
+  transition: all var(--transition-base) ease;
 }
 
 .notify-btn--decline {
   background: var(--bg-hover);
   color: var(--text-primary);
-  border: 1px solid var(--bg-hover);
+  border: var(--border-width-thin) solid var(--bg-hover);
 }
 
 .notify-btn--decline:hover {
@@ -146,7 +146,7 @@ const emit = defineEmits(['accept', 'decline'])
 
 .notify-fade-enter-active,
 .notify-fade-leave-active {
-  transition: opacity 0.22s ease;
+  transition: opacity var(--transition-base) ease;
 }
 
 .notify-fade-enter-from,

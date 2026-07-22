@@ -954,17 +954,17 @@ async function deleteFamily() {
 
 .settings-modal__header h3 {
   margin: 0;
-  font-size: 1.1rem;
-  font-weight: 800;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-extrabold);
   color: var(--ui-text-strong);
   letter-spacing: -0.02em;
 }
 
 .settings-modal__subtitle {
   margin: 0.1rem 0 0;
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   color: var(--ui-text-muted);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 
@@ -1016,11 +1016,11 @@ async function deleteFamily() {
   border: none;
   background: transparent;
   color: var(--ui-text-muted);
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
   cursor: pointer;
   text-align: left;
-  transition: background 0.25s cubic-bezier(0.4, 0, 0.2, 1), color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background var(--transition-slow) cubic-bezier(0.4, 0, 0.2, 1), color var(--transition-slow) cubic-bezier(0.4, 0, 0.2, 1);
   width: 100%;
 }
 
@@ -1156,12 +1156,12 @@ async function deleteFamily() {
 
 .tab-badge {
   margin-left: auto;
-  font-size: 0.7rem;
+  font-size: var(--text-2xs);
   background: var(--border-light);
   color: var(--text-secondary);
   padding: 0.15rem 0.4rem;
   border-radius: var(--radius-pill);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 
 .sidebar-tab-btn.active .tab-badge {
@@ -1209,11 +1209,11 @@ async function deleteFamily() {
 
 .panel-section-title {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--ui-text-muted);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 
 .panel-section-title.text-danger {
@@ -1222,7 +1222,7 @@ async function deleteFamily() {
 
 .panel-section-desc {
   margin: 0 0 0.25rem;
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   color: var(--ui-text-muted);
   line-height: 1.4;
 }
@@ -1233,7 +1233,7 @@ async function deleteFamily() {
 
 /* Overview Panel cards */
 .summary-card {
-  border: 1px solid var(--ui-border-soft);
+  border: var(--border-width-thin) solid var(--ui-border-soft);
   background: var(--bg-surface-alt);
   border-radius: var(--radius-lg);
   padding: var(--space-4);
@@ -1249,17 +1249,17 @@ async function deleteFamily() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 0.85rem;
+  font-size: var(--text-base);
 }
 
 .summary-label {
   color: var(--ui-text-muted);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 .summary-value {
   color: var(--ui-text-strong);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 
 .summary-value.highlight {
@@ -1273,7 +1273,7 @@ async function deleteFamily() {
   background: var(--bg-surface);
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-sm);
-  border: 1px solid var(--ui-border-soft);
+  border: var(--border-width-thin) solid var(--ui-border-soft);
 }
 
 .owner-avatar-mini {
@@ -1284,14 +1284,14 @@ async function deleteFamily() {
 }
 
 .owner-name {
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
   color: var(--ui-text-strong);
 }
 
 /* Invite card */
 .invite-card {
-  border: 1.5px dashed color-mix(in srgb, var(--color-primary) 35%, var(--border-light));
+  border: var(--border-width-base) dashed color-mix(in srgb, var(--color-primary) 35%, var(--border-light));
   background: color-mix(in srgb, var(--color-primary) 3%, var(--bg-surface));
   border-radius: var(--radius-lg);
   padding: var(--space-4);
@@ -1308,16 +1308,16 @@ async function deleteFamily() {
 }
 
 .invite-code-label {
-  font-size: 0.68rem;
+  font-size: var(--text-2xs);
   letter-spacing: 0.08em;
-  font-weight: 800;
+  font-weight: var(--weight-extrabold);
   color: var(--ui-text-muted);
 }
 
 .invite-code-value {
   font-family: 'SF Mono', Consolas, Monaco, 'Andale Mono', monospace;
-  font-size: 1.35rem;
-  font-weight: 800;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-extrabold);
   color: var(--ui-text-strong);
   letter-spacing: 0.05em;
 }
@@ -1331,10 +1331,10 @@ async function deleteFamily() {
   border: none;
   padding: 0.55rem 0.85rem;
   border-radius: var(--radius-md);
-  font-size: 0.8rem;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--transition-base) ease;
 }
 
 .invite-copy-btn:hover {
@@ -1346,7 +1346,7 @@ async function deleteFamily() {
 .invite-copy-btn--copied {
   background: var(--color-primary-bg);
   color: var(--color-primary-text);
-  border: 1px solid var(--color-primary-bg);
+  border: var(--border-width-thin) solid var(--color-primary-bg);
 }
 
 .invite-copy-btn--copied:hover {
@@ -1385,7 +1385,7 @@ async function deleteFamily() {
 
 .settings-note-text {
   margin: 0;
-  font-size: 0.76rem;
+  font-size: var(--text-xs);
   color: var(--ui-text-muted);
   line-height: 1.45;
 }
@@ -1418,14 +1418,14 @@ async function deleteFamily() {
 
 .pref-card__meta h5 {
   margin: 0;
-  font-size: 0.86rem;
-  font-weight: 800;
+  font-size: var(--text-base);
+  font-weight: var(--weight-extrabold);
   color: var(--ui-text-strong);
 }
 
 .pref-card__meta p {
   margin: 0.18rem 0 0;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   line-height: 1.45;
   color: var(--ui-text-muted);
 }
@@ -1450,11 +1450,11 @@ async function deleteFamily() {
 
 .pref-card__value {
   font-family: 'SF Mono', Consolas, Monaco, 'Andale Mono', monospace;
-  font-size: 0.88rem;
-  font-weight: 800;
+  font-size: var(--text-base);
+  font-weight: var(--weight-extrabold);
   color: var(--ui-text-strong);
   background: var(--bg-surface-alt);
-  border: 1px solid var(--ui-border-soft);
+  border: var(--border-width-thin) solid var(--ui-border-soft);
   border-radius: var(--radius-sm);
   padding: 0.22rem 0.5rem;
   min-width: 2.2rem;
@@ -1469,8 +1469,8 @@ async function deleteFamily() {
 }
 
 .pref-range-minmax {
-  font-size: 0.74rem;
-  font-weight: 700;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
   color: var(--ui-text-muted);
   min-width: 1rem;
   text-align: center;
@@ -1491,7 +1491,7 @@ async function deleteFamily() {
   height: 16px;
   border-radius: 50%;
   background: var(--color-primary);
-  border: 2px solid var(--bg-surface);
+  border: var(--border-width-thick) solid var(--bg-surface);
   box-shadow: var(--elevation-soft);
   cursor: pointer;
 }
@@ -1501,18 +1501,18 @@ async function deleteFamily() {
   height: 16px;
   border-radius: 50%;
   background: var(--color-primary);
-  border: 2px solid var(--bg-surface);
+  border: var(--border-width-thick) solid var(--bg-surface);
   box-shadow: var(--elevation-soft);
   cursor: pointer;
 }
 
 /* Form Settings (Preferences) */
 .card-item {
-  border: 1px solid var(--ui-border-soft);
+  border: var(--border-width-thin) solid var(--ui-border-soft);
   background: var(--bg-surface);
   border-radius: var(--radius-lg);
   padding: var(--space-4);
-  transition: all 0.2s ease;
+  transition: all var(--transition-base) ease;
 }
 
 .card-item:focus-within {
@@ -1527,8 +1527,8 @@ async function deleteFamily() {
 }
 
 .panel-label {
-  font-size: 0.82rem;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
   color: var(--ui-text-strong);
 }
 
@@ -1575,13 +1575,13 @@ async function deleteFamily() {
 
 .panel-input {
   width: 100%;
-  border: 1px solid var(--ui-border);
+  border: var(--border-width-thin) solid var(--ui-border);
   border-radius: var(--radius-md);
   padding: 0.55rem 0.75rem;
-  font-size: 0.88rem;
+  font-size: var(--text-base);
   background: var(--bg-surface);
   color: var(--ui-text-strong);
-  transition: all 0.2s ease;
+  transition: all var(--transition-base) ease;
 }
 
 .panel-input:focus {
@@ -1597,7 +1597,7 @@ async function deleteFamily() {
 .panel-counter {
   margin: 0.25rem 0 0;
   text-align: right;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--ui-text-muted);
 }
 
@@ -1614,19 +1614,19 @@ async function deleteFamily() {
 
 .panel-counter--danger {
   color: var(--danger-main);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 
 .panel-save-btn {
   background: var(--bg-hover);
   color: var(--ui-text-strong);
-  border: 1px solid var(--ui-border-soft);
+  border: var(--border-width-thin) solid var(--ui-border-soft);
   border-radius: var(--radius-md);
   padding: 0.55rem 1rem;
-  font-size: 0.82rem;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--transition-base) ease;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1666,14 +1666,14 @@ async function deleteFamily() {
 
 .card-item__info h5 {
   margin: 0 0 0.2rem 0;
-  font-size: 0.85rem;
-  font-weight: 700;
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
   color: var(--ui-text-strong);
 }
 
 .card-item__info p {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   color: var(--ui-text-muted);
   line-height: 1.45;
 }
@@ -1681,13 +1681,13 @@ async function deleteFamily() {
 .panel-action-btn {
   background: var(--bg-surface);
   color: var(--ui-text-strong);
-  border: 1px solid var(--ui-border);
+  border: var(--border-width-thin) solid var(--ui-border);
   border-radius: var(--radius-md);
   padding: 0.55rem 0.9rem;
-  font-size: 0.8rem;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--transition-base) ease;
   white-space: nowrap;
   display: flex;
   align-items: center;
@@ -1709,7 +1709,7 @@ async function deleteFamily() {
 .btn-spinner {
   width: 14px;
   height: 14px;
-  border: 2px solid transparent;
+  border: var(--border-width-thick) solid transparent;
   border-top-color: var(--ui-text-strong);
   border-radius: 50%;
   animation: btnSpin 0.6s linear infinite;
@@ -1734,7 +1734,7 @@ async function deleteFamily() {
   align-items: center;
   gap: 0.25rem;
   color: var(--color-primary-text);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 
 .inline-success-icon {
@@ -1761,7 +1761,7 @@ async function deleteFamily() {
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--ui-border-soft);
+  border-bottom: var(--border-width-thin) solid var(--ui-border-soft);
   gap: 1rem;
   position: relative;
   overflow: visible;
@@ -1787,7 +1787,7 @@ async function deleteFamily() {
   height: 32px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid var(--ui-border-soft);
+  border: var(--border-width-thin) solid var(--ui-border-soft);
   background: var(--bg-hover);
   flex-shrink: 0;
 }
@@ -1796,8 +1796,8 @@ async function deleteFamily() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.8rem;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
   color: var(--ui-text-muted);
 }
 
@@ -1808,8 +1808,8 @@ async function deleteFamily() {
 }
 
 .member-custom-name {
-  font-size: 0.88rem;
-  font-weight: 600;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
   color: var(--ui-text-strong);
   white-space: nowrap;
   overflow: hidden;
@@ -1817,9 +1817,9 @@ async function deleteFamily() {
 }
 
 .you-tag {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--color-primary);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   margin-left: 0.2rem;
 }
 
@@ -1833,8 +1833,8 @@ async function deleteFamily() {
 }
 
 .member-role-badge {
-  font-size: 0.68rem;
-  font-weight: 700;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
   /* Match the height of the ellipsis trigger sitting beside it. */
   min-height: 28px;
   padding: 0 0.55rem;
@@ -1847,7 +1847,7 @@ async function deleteFamily() {
 .role-owner {
   background: var(--warning-bg);
   color: var(--warning-text);
-  border: 1px solid var(--warning-border);
+  border: var(--border-width-thin) solid var(--warning-border);
 }
 
 .badge-icon {
@@ -1858,13 +1858,13 @@ async function deleteFamily() {
 .role-member {
   background: var(--bg-hover);
   color: var(--text-secondary);
-  border: 1px solid var(--border-light);
+  border: var(--border-width-thin) solid var(--border-light);
 }
 
 .role-moderator {
   background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
   color: var(--color-primary-text);
-  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, var(--bg-surface));
+  border: var(--border-width-thin) solid color-mix(in srgb, var(--color-primary) 28%, var(--bg-surface));
 }
 
 .member-actions-menu-wrap {
@@ -1878,7 +1878,7 @@ async function deleteFamily() {
 .member-actions-trigger {
   width: 28px;
   height: 28px;
-  border: 1px solid var(--ui-border-soft);
+  border: var(--border-width-thin) solid var(--ui-border-soft);
   background: var(--bg-surface);
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
@@ -1923,7 +1923,7 @@ async function deleteFamily() {
   z-index: 6100;
   min-width: 248px;
   padding: 0.25rem;
-  border: 1px solid color-mix(in srgb, var(--border-dark) 45%, var(--ui-border-soft));
+  border: var(--border-width-thin) solid color-mix(in srgb, var(--border-dark) 45%, var(--ui-border-soft));
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--bg-surface-alt) 88%, var(--border-light));
   box-shadow: 0 12px 28px var(--shadow-popover);
@@ -1984,13 +1984,13 @@ async function deleteFamily() {
 }
 
 .member-action-label {
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
 }
 
 .member-action-hint {
-  font-size: 0.7rem;
-  font-weight: 500;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
   color: var(--ui-text-muted);
   margin-top: 0.05rem;
 }
@@ -2005,7 +2005,7 @@ async function deleteFamily() {
   align-items: center;
   gap: 0.7rem;
   padding: 0 0.35rem 0.9rem;
-  border-bottom: 1px solid var(--ui-border-soft);
+  border-bottom: var(--border-width-thin) solid var(--ui-border-soft);
 }
 
 .member-sheet__avatar {
@@ -2013,7 +2013,7 @@ async function deleteFamily() {
   height: 40px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid var(--ui-border-soft);
+  border: var(--border-width-thin) solid var(--ui-border-soft);
   background: var(--bg-hover);
   flex-shrink: 0;
 }
@@ -2022,8 +2022,8 @@ async function deleteFamily() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.95rem;
-  font-weight: 700;
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
   color: var(--ui-text-muted);
 }
 
@@ -2034,8 +2034,8 @@ async function deleteFamily() {
 }
 
 .member-sheet__name {
-  font-size: 0.95rem;
-  font-weight: 700;
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
   color: var(--ui-text-strong);
   white-space: nowrap;
   overflow: hidden;
@@ -2043,9 +2043,9 @@ async function deleteFamily() {
 }
 
 .member-sheet__role {
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   color: var(--ui-text-muted);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 .member-sheet__actions {
@@ -2107,14 +2107,14 @@ async function deleteFamily() {
 }
 
 .member-sheet__action-label {
-  font-size: 0.92rem;
-  font-weight: 600;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
 }
 
 .member-sheet__action-hint {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--ui-text-muted);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   margin-top: 0.1rem;
 }
 
@@ -2122,12 +2122,12 @@ async function deleteFamily() {
   width: 100%;
   min-height: 52px;
   margin-top: 0.35rem;
-  border: 1px solid var(--ui-border-soft);
+  border: var(--border-width-thin) solid var(--ui-border-soft);
   background: var(--bg-surface-alt);
   border-radius: var(--radius-md);
   color: var(--ui-text-strong);
-  font-size: 0.9rem;
-  font-weight: 700;
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
   cursor: pointer;
 }
 
@@ -2144,7 +2144,7 @@ async function deleteFamily() {
   .member-role-badge {
     min-height: 32px;
     padding: 0 0.6rem;
-    font-size: 0.72rem;
+    font-size: var(--text-xs);
   }
 
   .member-actions-trigger {
@@ -2192,7 +2192,7 @@ async function deleteFamily() {
 
 .member-sheet-fade-enter-active,
 .member-sheet-fade-leave-active {
-  transition: opacity 0.18s ease;
+  transition: opacity var(--transition-base) ease;
 }
 
 .member-sheet-fade-enter-from,
@@ -2223,10 +2223,10 @@ async function deleteFamily() {
   border: none;
   border-radius: var(--radius-md);
   padding: 0.6rem 1.25rem;
-  font-size: 0.82rem;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--transition-base) ease;
   box-shadow: var(--elevation-danger-subtle);
   white-space: nowrap;
   display: flex;
@@ -2281,7 +2281,7 @@ async function deleteFamily() {
 /* Modal Transitions */
 .modal-fade-enter-active,
 .modal-fade-leave-active {
-  transition: opacity 0.18s ease;
+  transition: opacity var(--transition-base) ease;
 }
 
 .modal-fade-enter-from,
@@ -2360,7 +2360,7 @@ async function deleteFamily() {
     flex-direction: row;
     padding: 0.75rem;
     border-right: none;
-    border-bottom: 1px solid var(--ui-border-soft);
+    border-bottom: var(--border-width-thin) solid var(--ui-border-soft);
     overflow-x: auto;
     gap: 0.5rem;
     scrollbar-width: none;

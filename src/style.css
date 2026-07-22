@@ -119,7 +119,7 @@
   --text-sm: 0.8125rem;    /* 13px — secondary text */
   --text-base: 0.875rem;   /* 14px — dense UI text */
   --text-md: 0.9375rem;    /* 15px — body, inputs, buttons */
-  --text-lg: 1.0625rem;    /* 17px — emphasis, list titles */
+  --text-lg: 1rem;         /* 16px — emphasis, list titles */
   --text-xl: 1.375rem;     /* 22px — section headings */
   --text-2xl: 1.75rem;     /* 28px — large icons, compact hero */
   --text-3xl: 2.125rem;    /* 34px — display */

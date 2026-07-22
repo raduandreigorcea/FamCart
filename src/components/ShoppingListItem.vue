@@ -85,8 +85,8 @@ function handleDelete() {
   background: var(--bg-surface);
   border-radius: var(--radius-xl);
   padding: 0.875rem 0.875rem 0.875rem 0.75rem;
-  border: 1.5px solid var(--border-main);
-  transition: opacity 0.2s;
+  border: var(--border-width-base) solid var(--border-main);
+  transition: opacity var(--transition-base);
 }
 
 .item--checked {
@@ -143,7 +143,7 @@ function handleDelete() {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.18s ease;
+  transition: transform var(--transition-base) ease;
 }
 
 .check-circle {
@@ -154,10 +154,10 @@ function handleDelete() {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  border: 1.8px solid var(--border-dark);
+  border: var(--border-width-base) solid var(--border-dark);
   background: var(--bg-surface);
   color: var(--text-inverse);
-  transition: background 0.2s ease, border-color 0.2s ease, transform 0.18s ease;
+  transition: background var(--transition-base) ease, border-color var(--transition-base) ease, transform var(--transition-base) ease;
 }
 
 .check-circle::after {
@@ -165,10 +165,10 @@ function handleDelete() {
   position: absolute;
   inset: -4px;
   border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
+  border: var(--border-width-thick) solid color-mix(in srgb, var(--color-primary) 35%, transparent);
   opacity: 0;
   transform: scale(0.72);
-  transition: opacity 0.2s ease, transform 0.22s ease;
+  transition: opacity var(--transition-base) ease, transform var(--transition-base) ease;
 }
 
 .check-icon {
@@ -176,7 +176,7 @@ function handleDelete() {
   height: 14px;
   opacity: 0;
   transform: scale(0.6) rotate(-10deg);
-  transition: opacity 0.15s ease, transform 0.18s ease;
+  transition: opacity var(--transition-fast) ease, transform var(--transition-base) ease;
 }
 
 .item-check:hover .check-circle {
@@ -210,7 +210,7 @@ function handleDelete() {
 
 .item-emoji {
   flex-shrink: 0;
-  font-size: 1.05rem;
+  font-size: var(--text-lg);
   line-height: 1;
   display: inline-flex;
   align-items: center;
@@ -219,7 +219,7 @@ function handleDelete() {
   height: 2.05rem;
   border-radius: 0.65rem;
   background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
-  border: 1px solid color-mix(in srgb, var(--color-primary) 22%, var(--bg-surface));
+  border: var(--border-width-thin) solid color-mix(in srgb, var(--color-primary) 22%, var(--bg-surface));
 }
 
 .item-avatar {
@@ -228,7 +228,7 @@ function handleDelete() {
   border-radius: var(--radius-pill);
   object-fit: cover;
   flex-shrink: 0;
-  border: 1px solid var(--border-main);
+  border: var(--border-width-thin) solid var(--border-main);
 }
 
 .item-avatar--fallback {
@@ -237,8 +237,8 @@ function handleDelete() {
   justify-content: center;
   background: var(--bg-hover);
   color: var(--text-secondary);
-  font-size: 0.8rem;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
 }
 
 .item-text {
@@ -249,15 +249,15 @@ function handleDelete() {
 }
 
 .item-name {
-  font-size: 0.95rem;
+  font-size: var(--text-md);
   color: var(--text-primary);
   line-height: 1.4;
   word-break: break-word;
 }
 
 .item-maker {
-  font-size: 0.72rem;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
   color: var(--text-secondary);
   line-height: 1.25;
 }
@@ -268,11 +268,11 @@ function handleDelete() {
 
 .item-qty {
   flex-shrink: 0;
-  font-size: 0.78rem;
-  font-weight: 700;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
   color: var(--color-primary);
   background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
-  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, var(--bg-surface));
+  border: var(--border-width-thin) solid color-mix(in srgb, var(--color-primary) 28%, var(--bg-surface));
   border-radius: var(--radius-pill);
   padding: 0.15rem 0.45rem;
 }
@@ -289,7 +289,7 @@ function handleDelete() {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.15s;
+  transition: color var(--transition-fast);
   border-radius: var(--radius-xs);
 }
 
