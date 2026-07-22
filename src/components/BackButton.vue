@@ -19,12 +19,12 @@ defineEmits(['click'])
   background: none;
   border: none;
   color: var(--text-secondary);
-  font-size: 0.82rem;
+  font-size: var(--text-sm);
   font-family: inherit;
   cursor: pointer;
   padding: 0.45rem 0.65rem 0.45rem 0.4rem;
   border-radius: var(--radius-sm);
-  transition: color 0.15s, background 0.15s;
+  transition: color var(--transition-fast), background var(--transition-fast);
   margin-top: 0.25rem;
 }
 

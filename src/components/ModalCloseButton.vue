@@ -19,14 +19,14 @@ const emit = defineEmits(['click'])
   width: var(--size-control-sm);
   height: var(--size-control-sm);
   border-radius: var(--radius-pill);
-  border: 1px solid var(--border-light);
+  border: var(--border-width-thin) solid var(--border-light);
   background: var(--bg-surface-alt);
   cursor: pointer;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition: all var(--transition-base) var(--ease-standard);
   padding: 0;
 }
 
@@ -37,8 +37,8 @@ const emit = defineEmits(['click'])
 }
 
 .modal-close__icon {
-  width: 16px;
-  height: 16px;
+  width: var(--size-icon-md);
+  height: var(--size-icon-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;
