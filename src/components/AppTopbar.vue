@@ -236,7 +236,6 @@ function orderedFamilyMembers(fam) {
             :members="orderedActiveMembers"
             :loading="membersLoading"
             :max-visible="4"
-            strict
           />
         </button>
       </template>
