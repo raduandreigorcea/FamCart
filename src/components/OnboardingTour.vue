@@ -73,7 +73,9 @@ async function copyCode() {
   <Transition name="tour-fade">
     <div v-if="open" class="tour-overlay" role="dialog" aria-modal="true" aria-labelledby="tour-title">
       <div class="tour-card">
-        <button class="tour-skip" type="button" @click="finish">Skip</button>
+        <div class="tour-top">
+          <button class="tour-skip" type="button" @click="finish">Skip tour</button>
+        </div>
 
         <Transition :name="'tour-step'" mode="out-in">
           <div class="tour-step" :key="current.key">
@@ -91,15 +93,22 @@ async function copyCode() {
                 </div>
               </div>
 
-              <!-- Swipe -->
+              <!-- Swipe: green check zone · item · red remove zone -->
               <div v-else-if="current.key === 'swipe'" class="art-swipe">
-                <span class="art-swipe__side art-swipe__side--check">✓</span>
+                <span class="art-swipe__zone art-swipe__zone--check" aria-hidden="true">
+                  <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </span>
                 <div class="art-swipe__row">
                   <span class="art-swipe__emoji">🍞</span>
                   <span class="art-swipe__name">Bread</span>
-                  <span class="art-swipe__hand">👆</span>
                 </div>
-                <span class="art-swipe__side art-swipe__side--del">🗑</span>
+                <span class="art-swipe__zone art-swipe__zone--del" aria-hidden="true">
+                  <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M4 6h12M8 6V4.5A1.5 1.5 0 0 1 9.5 3h1A1.5 1.5 0 0 1 12 4.5V6m2 0v9a1.5 1.5 0 0 1-1.5 1.5h-5A1.5 1.5 0 0 1 6 15V6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </span>
               </div>
 
               <!-- Invite -->
@@ -171,8 +180,14 @@ async function copyCode() {
   border: var(--border-width-thin) solid var(--border-main);
   border-radius: var(--radius-4xl);
   box-shadow: var(--elevation-dialog);
-  padding: var(--space-7) var(--space-6) var(--space-6);
+  padding: var(--space-4) var(--space-6) var(--space-6);
   animation: tourRise 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tour-top {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-2);
 }
 
 @keyframes tourRise {
@@ -181,20 +196,23 @@ async function copyCode() {
 }
 
 .tour-skip {
-  position: absolute;
-  top: var(--space-4);
-  right: var(--space-4);
-  background: none;
-  border: none;
-  color: var(--text-disabled);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
+  background: var(--bg-hover);
+  border: var(--border-width-thin) solid var(--border-main);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.01em;
   cursor: pointer;
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.8rem;
+  border-radius: var(--radius-pill);
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
 
-.tour-skip:hover { color: var(--text-secondary); }
+.tour-skip:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-alt);
+  border-color: var(--border-dark);
+}
 
 .tour-step {
   display: flex;
@@ -241,37 +259,28 @@ async function copyCode() {
   padding: var(--space-1) var(--space-2); font-size: var(--text-xs); color: var(--text-secondary);
 }
 
-/* Swipe */
-.art-swipe { position: relative; width: 100%; max-width: 240px; display: flex; align-items: center; justify-content: center; }
-.art-swipe__side {
-  position: absolute; width: 2rem; height: 2rem; border-radius: var(--radius-md);
-  display: inline-flex; align-items: center; justify-content: center; color: #fff; font-size: var(--text-sm);
+/* Swipe: a static diagram — green check zone on the left, the item, red remove
+   zone on the right — so the two directions read at a glance without motion. */
+.art-swipe { display: flex; align-items: center; justify-content: center; gap: var(--space-3); width: 100%; }
+.art-swipe__zone {
+  flex-shrink: 0; width: 2.4rem; height: 2.4rem; border-radius: var(--radius-lg);
+  display: inline-flex; align-items: center; justify-content: center; color: #fff;
 }
-.art-swipe__side--check { left: 0; background: var(--color-primary); }
-.art-swipe__side--del { right: 0; background: var(--danger-solid); }
+.art-swipe__zone svg { width: 20px; height: 20px; }
+.art-swipe__zone--check { background: var(--color-primary); }
+.art-swipe__zone--del { background: var(--danger-solid); }
 .art-swipe__row {
-  position: relative; z-index: 1;
   display: flex; align-items: center; gap: var(--space-2);
   background: var(--bg-surface); border: var(--border-width-base) solid var(--border-main);
   border-radius: var(--radius-lg); padding: var(--space-2) var(--space-3);
-  width: 78%;
-  animation: swipeNudge 2.4s ease-in-out infinite;
+  box-shadow: var(--elevation-soft);
 }
 .art-swipe__emoji {
-  width: 1.7rem; height: 1.7rem; display: inline-flex; align-items: center; justify-content: center;
+  width: 1.6rem; height: 1.6rem; display: inline-flex; align-items: center; justify-content: center;
   border-radius: var(--radius-sm); background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
   font-size: var(--text-base);
 }
-.art-swipe__name { flex: 1; text-align: left; font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--text-primary); }
-.art-swipe__hand { font-size: var(--text-base); }
-@keyframes swipeNudge {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(26px); }
-  60% { transform: translateX(-26px); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .art-swipe__row { animation: none; }
-}
+.art-swipe__name { font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--text-primary); }
 
 /* Invite */
 .art-invite { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); }
