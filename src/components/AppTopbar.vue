@@ -163,16 +163,26 @@ const userInitial = computed(() => {
 const memberCount = computed(() => props.memberProfiles.length)
 
 // A stable identity colour + initial for each family, so the switcher reads as a
-// set of distinct households rather than a row of look-alike text. The hue is a
-// simple hash of the name, so the same family always gets the same colour.
-function familyHue(name) {
+// set of distinct households. A curated palette (rather than raw HSL, which drifts
+// into muddy olives) keeps every colour clean and legible with white text.
+const FAMILY_COLORS = [
+  '#d9533f', // warm red
+  '#e08a2e', // amber
+  '#3f9e6c', // green
+  '#2f9ea0', // teal
+  '#3d7fd6', // blue
+  '#6d5cd6', // indigo
+  '#a24fc0', // purple
+  '#d24f8c', // pink
+]
+function familyHash(name) {
   let hash = 0
   const text = name || ''
-  for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) % 360
+  for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) & 0xffff
   return hash
 }
 function familyColor(name) {
-  return `hsl(${familyHue(name)} 48% 45%)`
+  return FAMILY_COLORS[familyHash(name) % FAMILY_COLORS.length]
 }
 function familyInitial(name) {
   const trimmed = (name || '').trim()
@@ -544,26 +554,27 @@ function familyInitial(name) {
   background: var(--bg-hover);
 }
 
+/* Active row: a quiet neutral fill, not a green wash — the green check is the
+   only accent, so the monogram's own colour stays readable on top of it. */
 .family-switcher-item--active {
-  background: var(--color-primary-bg);
-  border-color: color-mix(in srgb, var(--color-primary) 32%, transparent);
+  background: var(--bg-hover);
 }
 
 /* A stable identity tile per household, so families read as distinct at a
    glance rather than as identical text rows. */
 .family-monogram {
   flex-shrink: 0;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: var(--text-md);
+  font-size: var(--text-base);
   font-weight: var(--weight-extrabold);
-  letter-spacing: -0.01em;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  letter-spacing: 0;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
 }
 
 .family-switcher-item-name {
@@ -572,16 +583,13 @@ function familyInitial(name) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.family-switcher-item--active .family-switcher-item-name {
-  color: var(--color-primary-text);
+  color: var(--text-primary);
 }
 
 .family-switcher-check {
   flex-shrink: 0;
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   display: inline-flex;
   color: var(--color-primary);
 }
@@ -623,18 +631,23 @@ function familyInitial(name) {
 
 .family-switcher-add-tile {
   flex-shrink: 0;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--text-xl);
+  font-size: var(--text-lg);
   font-weight: var(--weight-regular);
   line-height: 1;
+  color: var(--text-disabled);
+  background: var(--bg-hover);
+  border: var(--border-width-thin) dashed var(--border-dark);
+}
+
+.family-switcher-add:hover .family-switcher-add-tile {
   color: var(--color-primary);
-  background: var(--color-primary-bg);
-  border: var(--border-width-base) dashed color-mix(in srgb, var(--color-primary) 40%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary) 45%, transparent);
 }
 
 .family-switcher-cap-note {
