@@ -2,7 +2,7 @@
 import { computed, defineAsyncComponent, ref } from 'vue'
 import { useClerk, useUser } from '@clerk/vue'
 import AccountActionModal from './AccountActionModal.vue'
-import MemberAvatarStack from './MemberAvatarStack.vue'
+import FamilyAvatar from './FamilyAvatar.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { sortMembersForSwitcher } from '../lib/memberRoles'
 import chevronLeftRaw from '../assets/chevron-left.svg?raw'
@@ -165,6 +165,11 @@ const userInitial = computed(() => {
 
 const memberCount = computed(() => props.memberProfiles.length)
 
+// The active family's members, ordered for its composite avatar next to the name.
+const orderedActiveMembers = computed(() =>
+  sortMembersForSwitcher(props.memberProfiles || [], props.ownerUserId, props.currentUserId),
+)
+
 // A stable identity colour + initial for each family, so the switcher reads as a
 // set of distinct households. A curated palette (rather than raw HSL, which drifts
 // into muddy olives) keeps every colour clean and legible with white text.
@@ -210,12 +215,19 @@ function orderedFamilyMembers(fam) {
           aria-label="Switch family"
           @click="toggleSwitcher"
         >
+          <SkeletonBlock v-if="membersLoading" class="family-switcher-avatar" width="40px" height="40px" radius="var(--radius-md)" />
+          <FamilyAvatar
+            v-else-if="orderedActiveMembers.length"
+            class="family-switcher-avatar"
+            :members="orderedActiveMembers"
+            :size="40"
+          />
           <span
-            class="family-switcher-caret"
-            :class="{ 'family-switcher-caret--open': switcherOpen }"
+            v-else
+            class="family-monogram family-monogram--lead"
+            :style="{ background: familyColor(familyName) }"
             aria-hidden="true"
-            v-html="chevronLeftRaw"
-          ></span>
+          >{{ familyInitial(familyName) }}</span>
           <div class="family-info">
             <p class="family-name">{{ familyName }}</p>
             <div class="family-subrow">
@@ -223,10 +235,17 @@ function orderedFamilyMembers(fam) {
               <span v-else class="family-members-count">{{ memberCount }} {{ memberCount === 1 ? 'member' : 'members' }}</span>
             </div>
           </div>
+          <span
+            class="family-switcher-caret"
+            :class="{ 'family-switcher-caret--open': switcherOpen }"
+            aria-hidden="true"
+            v-html="chevronLeftRaw"
+          ></span>
         </button>
       </template>
       <template v-else-if="loading">
         <div class="family-meta" aria-hidden="true">
+          <SkeletonBlock class="family-switcher-avatar" width="40px" height="40px" radius="var(--radius-md)" />
           <div class="family-info">
             <SkeletonBlock width="7.5rem" height="1rem" />
             <div class="family-subrow">
@@ -284,12 +303,10 @@ function orderedFamilyMembers(fam) {
             :aria-checked="fam.id === familyId"
             @click="selectFamily(fam.id)"
           >
-            <MemberAvatarStack
+            <FamilyAvatar
               v-if="fam.members && fam.members.length"
-              class="family-switcher-avatars"
               :members="orderedFamilyMembers(fam)"
-              :max-visible="4"
-              strict
+              :size="34"
             />
             <span
               v-else
@@ -593,20 +610,15 @@ function orderedFamilyMembers(fam) {
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
 }
 
-/* Each family's members, shown as a small stack in place of the monogram. */
-.family-switcher-avatars {
+/* The composite family avatar (or its monogram fallback) leading the topbar. */
+.family-switcher-avatar {
   flex-shrink: 0;
 }
 
-.family-switcher-avatars :deep(.member-avatar) {
-  width: 26px;
-  height: 26px;
-  margin-left: -8px;
-  border-color: var(--bg-surface);
-}
-
-.family-switcher-item--active .family-switcher-avatars :deep(.member-avatar) {
-  border-color: var(--bg-hover);
+.family-monogram--lead {
+  width: 40px;
+  height: 40px;
+  font-size: var(--text-lg);
 }
 
 .family-switcher-item-name {
