@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, ref } from 'vue'
 import { useClerk, useUser } from '@clerk/vue'
 import AccountActionModal from './AccountActionModal.vue'
 import FamilyAvatar from './FamilyAvatar.vue'
+import MemberAvatarStack from './MemberAvatarStack.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { sortMembersForSwitcher } from '../lib/memberRoles'
 import chevronLeftRaw from '../assets/chevron-left.svg?raw'
@@ -215,19 +216,12 @@ function orderedFamilyMembers(fam) {
           aria-label="Switch family"
           @click="toggleSwitcher"
         >
-          <SkeletonBlock v-if="membersLoading" class="family-switcher-avatar" width="40px" height="40px" radius="var(--radius-md)" />
-          <FamilyAvatar
-            v-else-if="orderedActiveMembers.length"
-            class="family-switcher-avatar"
-            :members="orderedActiveMembers"
-            :size="40"
-          />
           <span
-            v-else
-            class="family-monogram family-monogram--lead"
-            :style="{ background: familyColor(familyName) }"
+            class="family-switcher-caret"
+            :class="{ 'family-switcher-caret--open': switcherOpen }"
             aria-hidden="true"
-          >{{ familyInitial(familyName) }}</span>
+            v-html="chevronLeftRaw"
+          ></span>
           <div class="family-info">
             <p class="family-name">{{ familyName }}</p>
             <div class="family-subrow">
@@ -235,23 +229,23 @@ function orderedFamilyMembers(fam) {
               <span v-else class="family-members-count">{{ memberCount }} {{ memberCount === 1 ? 'member' : 'members' }}</span>
             </div>
           </div>
-          <span
-            class="family-switcher-caret"
-            :class="{ 'family-switcher-caret--open': switcherOpen }"
-            aria-hidden="true"
-            v-html="chevronLeftRaw"
-          ></span>
+          <MemberAvatarStack
+            :members="orderedActiveMembers"
+            :loading="membersLoading"
+            :max-visible="4"
+            strict
+          />
         </button>
       </template>
       <template v-else-if="loading">
         <div class="family-meta" aria-hidden="true">
-          <SkeletonBlock class="family-switcher-avatar" width="40px" height="40px" radius="var(--radius-md)" />
           <div class="family-info">
             <SkeletonBlock width="7.5rem" height="1rem" />
             <div class="family-subrow">
               <SkeletonBlock width="4.5rem" height="0.7rem" />
             </div>
           </div>
+          <MemberAvatarStack loading />
         </div>
       </template>
       <template v-else>
@@ -306,7 +300,7 @@ function orderedFamilyMembers(fam) {
             <FamilyAvatar
               v-if="fam.members && fam.members.length"
               :members="orderedFamilyMembers(fam)"
-              :size="34"
+              :size="28"
             />
             <span
               v-else
@@ -597,28 +591,17 @@ function orderedFamilyMembers(fam) {
    glance rather than as identical text rows. */
 .family-monogram {
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: var(--radius-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   font-weight: var(--weight-extrabold);
   letter-spacing: 0;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
-}
-
-/* The composite family avatar (or its monogram fallback) leading the topbar. */
-.family-switcher-avatar {
-  flex-shrink: 0;
-}
-
-.family-monogram--lead {
-  width: 40px;
-  height: 40px;
-  font-size: var(--text-lg);
 }
 
 .family-switcher-item-name {
