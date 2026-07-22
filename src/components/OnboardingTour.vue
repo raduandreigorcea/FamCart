@@ -19,7 +19,7 @@ const steps = [
     key: 'add',
     emoji: '🛒',
     title: 'Add anything, together',
-    body: 'Type an item and add it — start typing and suggestions help you find the exact product fast.',
+    body: 'Type an item and add it. Start typing and suggestions help you find the exact product fast.',
   },
   {
     key: 'swipe',
@@ -31,7 +31,7 @@ const steps = [
     key: 'invite',
     emoji: '💌',
     title: 'Bring your family in',
-    body: 'Share your invite code so everyone shops from the same list — every change shows up for all of you instantly.',
+    body: 'Share your invite code so everyone shops from the same list. Every change shows up for all of you instantly.',
   },
 ]
 

@@ -226,7 +226,7 @@ const labelText = computed(() =>
   <div v-if="showEmpty" class="empty-state">
     <span class="empty-state__art" aria-hidden="true">🧺</span>
     <p class="empty-state__title">Your list is empty</p>
-    <p class="empty-state__text">Add your first item above — it shows up for the whole family right away.</p>
+    <p class="empty-state__text">Add your first item above and it shows up for the whole family right away.</p>
   </div>
 
   <!-- Floating checkout slider: appears whenever something is checked. -->
