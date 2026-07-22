@@ -41,10 +41,10 @@ defineEmits(['update:modelValue'])
 .input-row {
   display: flex;
   align-items: center;
-  border: 1.5px solid var(--border-main);
+  border: var(--border-width-base) solid var(--border-main);
   border-radius: var(--radius-xl);
   background: var(--bg-surface);
-  transition: border-color 0.15s;
+  transition: border-color var(--transition-fast);
   overflow: hidden;
 }
 
@@ -58,7 +58,7 @@ defineEmits(['update:modelValue'])
   border: none;
   background: transparent;
   font-family: inherit;
-  font-size: 0.95rem;
+  font-size: var(--text-md);
   color: var(--text-primary);
   outline: none;
   min-width: 0;
@@ -87,7 +87,7 @@ defineEmits(['update:modelValue'])
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: opacity var(--transition-fast);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -107,7 +107,7 @@ defineEmits(['update:modelValue'])
 .spinner {
   width: var(--size-icon-lg);
   height: var(--size-icon-lg);
-  border: 2px solid var(--spinner-stroke);
+  border: var(--border-width-thick) solid var(--spinner-stroke);
   border-top-color: var(--text-inverse);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
