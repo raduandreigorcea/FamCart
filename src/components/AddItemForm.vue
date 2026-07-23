@@ -423,8 +423,9 @@ function decreaseQty() {
   width: 42px;
   height: 42px;
   flex-shrink: 0;
+  /* Even on all four sides: the row has no padding of its own, so this margin
+     is the whole gap to its inner edge. */
   margin: 4px;
-  margin-right: 8px;
   background: var(--color-primary);
   color: var(--text-inverse);
   border: none;
