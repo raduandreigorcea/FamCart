@@ -9,6 +9,7 @@ import { upsertOwnProfile } from '../lib/profile'
 import AppTopbar from '../components/AppTopbar.vue'
 import InputRow from '../components/InputRow.vue'
 import ErrorModal from '../components/ErrorModal.vue'
+import checkIcon from '../assets/check.svg?raw'
 import AppCard from '../components/AppCard.vue'
 import AppButton from '../components/AppButton.vue'
 import ChoiceButton from '../components/ChoiceButton.vue'
@@ -227,7 +228,7 @@ async function joinFamily() {
               <div class="wl-row wl-row--done">
                 <span class="wl-emoji">🥛</span>
                 <span class="wl-line wl-line--done"></span>
-                <span class="wl-dot wl-dot--done">✓</span>
+                <span class="wl-dot wl-dot--done" v-html="checkIcon"></span>
               </div>
               <div class="wl-row">
                 <span class="wl-emoji">🍞</span>
@@ -436,8 +437,14 @@ async function joinFamily() {
   border-color: var(--color-primary);
   background: var(--color-primary);
   color: var(--text-inverse);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-extrabold);
+}
+/* The check asset rather than a "✓" glyph, which sits low in the dot. */
+.wl-dot--done :deep(svg) {
+  width: 0.72rem;
+  height: 0.72rem;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 3;
 }
 
 .wl-people {

@@ -1,4 +1,4 @@
-import { ref, readonly, type Ref } from 'vue'
+import { ref } from 'vue'
 import { Network } from '@capacitor/network'
 
 // Single source of truth for connectivity. On Android, @capacitor/network reads
@@ -102,10 +102,6 @@ export function isCurrentlyOffline(): boolean {
 export function onReconnect(handler: () => void): () => void {
   reconnectHandlers.add(handler)
   return () => reconnectHandlers.delete(handler)
-}
-
-export function useConnectivity(): { online: Readonly<Ref<boolean>> } {
-  return { online: readonly(online) }
 }
 
 // Test seam: drive the status directly without the plugin.
