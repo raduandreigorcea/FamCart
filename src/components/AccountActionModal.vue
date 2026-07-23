@@ -319,17 +319,17 @@ watch(
 
 .account-dialog__header h3 {
   margin: 0;
-  font-size: 1rem;
-  font-weight: 800;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-extrabold);
   letter-spacing: -0.02em;
   color: var(--text-primary);
 }
 
 .account-dialog__subtitle {
   margin: 0.1rem 0 0;
-  font-size: 0.76rem;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 .account-dialog__body {
@@ -357,7 +357,7 @@ watch(
   height: 52px;
   border-radius: var(--radius-pill);
   object-fit: cover;
-  border: 1.5px solid var(--bg-surface);
+  border: var(--border-width-base) solid var(--bg-surface);
   box-shadow: var(--elevation-soft);
   flex-shrink: 0;
 }
@@ -366,8 +366,8 @@ watch(
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 1rem;
-  font-weight: 800;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-extrabold);
   color: var(--color-primary);
   background: color-mix(in srgb, var(--color-primary) 16%, var(--bg-surface));
 }
@@ -378,8 +378,8 @@ watch(
 
 .account-user-card__identity h4 {
   margin: 0;
-  font-size: 0.96rem;
-  font-weight: 800;
+  font-size: var(--text-md);
+  font-weight: var(--weight-extrabold);
   color: var(--text-primary);
   letter-spacing: -0.02em;
   white-space: nowrap;
@@ -389,7 +389,7 @@ watch(
 
 .account-user-card__identity p {
   margin: 0.12rem 0 0;
-  font-size: 0.76rem;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -410,7 +410,7 @@ watch(
 
 .account-menu-item {
   width: 100%;
-  border: 1px solid var(--border-main);
+  border: var(--border-width-thin) solid var(--border-main);
   background: var(--bg-surface);
   border-radius: var(--radius-md);
   padding: 0.65rem 0.75rem;
@@ -420,7 +420,7 @@ watch(
   gap: 0.65rem;
   text-align: left;
   cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease;
+  transition: background var(--transition-base) ease, border-color var(--transition-base) ease;
 }
 
 .account-menu-item:hover:not(:disabled) {
@@ -434,8 +434,8 @@ watch(
 }
 
 .account-menu-item__label {
-  font-size: 0.84rem;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
   color: var(--text-primary);
 }
 
@@ -444,7 +444,7 @@ watch(
 }
 
 .account-menu-item__hint {
-  font-size: 0.74rem;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
 }
 
@@ -470,7 +470,7 @@ watch(
   grid-template-columns: repeat(3, 1fr);
   gap: 0.35rem;
   background: var(--bg-surface-alt);
-  border: 1px solid var(--border-main);
+  border: var(--border-width-thin) solid var(--border-main);
   border-radius: var(--radius-md);
   padding: 0.25rem;
 }
@@ -483,12 +483,12 @@ watch(
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 0.75rem;
-  font-weight: 700;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
   border-radius: var(--radius-sm);
   padding: 0.42rem 0.2rem;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast) ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -547,7 +547,7 @@ watch(
 .account-spinner {
   width: 14px;
   height: 14px;
-  border: 2px solid color-mix(in srgb, var(--text-inverse) 45%, transparent);
+  border: var(--border-width-thick) solid color-mix(in srgb, var(--text-inverse) 45%, transparent);
   border-top-color: var(--text-inverse);
   border-radius: 50%;
   display: inline-block;
@@ -562,7 +562,7 @@ watch(
 
 .modal-fade-enter-active,
 .modal-fade-leave-active {
-  transition: opacity 0.18s ease;
+  transition: opacity var(--transition-base) ease;
 }
 
 .modal-fade-enter-from,

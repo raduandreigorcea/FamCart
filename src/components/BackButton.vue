@@ -1,12 +1,12 @@
 <script setup>
+import chevronLeftIcon from '../assets/chevron-left.svg?raw'
+
 defineEmits(['click'])
 </script>
 
 <template>
   <button class="back-btn" type="button" @click="$emit('click')">
-    <svg class="back-btn__arrow" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
+    <span class="back-btn__arrow" aria-hidden="true" v-html="chevronLeftIcon"></span>
     <span>Back</span>
   </button>
 </template>
@@ -19,12 +19,12 @@ defineEmits(['click'])
   background: none;
   border: none;
   color: var(--text-secondary);
-  font-size: 0.82rem;
+  font-size: var(--text-sm);
   font-family: inherit;
   cursor: pointer;
   padding: 0.45rem 0.65rem 0.45rem 0.4rem;
   border-radius: var(--radius-sm);
-  transition: color 0.15s, background 0.15s;
+  transition: color var(--transition-fast), background var(--transition-fast);
   margin-top: 0.25rem;
 }
 
@@ -37,5 +37,15 @@ defineEmits(['click'])
   width: var(--size-icon-sm);
   height: var(--size-icon-sm);
   flex-shrink: 0;
+  display: inline-flex;
+}
+
+/* The asset ships at stroke-width 1 for a 24px box; weight it for this size. */
+.back-btn__arrow :deep(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2;
 }
 </style>

@@ -23,6 +23,7 @@ function makeSnapshot(overrides = {}) {
     familyInviteCode: 'ABCDEFGH',
     familyOwnerId: 'user-1',
     familyItemLimit: 50,
+    familyEmoji: '🏠',
     familyMembers: [{ user_id: 'user-1', display_name: 'Me', image_url: null, role: 'moderator' }],
     items: [{ id: 'i1', name: 'Milk', quantity: 2, checked: false, created_at: '2026-01-01T00:00:00.000Z' }],
     ...overrides,
@@ -34,6 +35,13 @@ describe('familyCache', () => {
     const storage = makeStorage()
     saveFamilySnapshot(storage, 'user-1', makeSnapshot())
     expect(loadFamilySnapshot(storage, 'user-1')).toEqual(makeSnapshot())
+  })
+
+  it('defaults a snapshot saved before the emoji existed to no emoji', () => {
+    const storage = makeStorage()
+    const { familyEmoji, ...withoutEmoji } = makeSnapshot()
+    saveFamilySnapshot(storage, 'user-1', withoutEmoji)
+    expect(loadFamilySnapshot(storage, 'user-1').familyEmoji).toBe('')
   })
 
   it('never returns another user\'s snapshot', () => {

@@ -62,25 +62,19 @@ export function countActiveItemsByMember(items: ShoppingItem[], userId: string):
 
 // The one canonical display order, shared by every path that rebuilds the array
 // (fetch, realtime, local mutation) so a refetch can never disagree with a local
-// action and swap rows on the next background sync:
-//   - unchecked items: creation time ascending (oldest first), then id;
-//   - checked items: check time descending (most recently checked on top), then
-//     id — so the "to buy" section reads newest-first.
-// Unchecked sort ahead of checked to keep the array totally ordered; the list
-// renders the two as separate sections regardless. Timestamps use a stable id
-// tiebreak because Postgres returns equal-timestamp rows in an arbitrary order.
+// action and swap rows on the next background sync: creation time ascending
+// (oldest first), then id. Timestamps use a stable id tiebreak because Postgres
+// returns equal-timestamp rows in an arbitrary order.
+//
+// `checked` is deliberately not part of the order. A row you tick keeps the spot
+// you found it in: ticking something used to sort it out from under your finger
+// and into a section at the bottom, which made a list you were working down
+// reshuffle itself under you.
 export function sortItemsForDisplay<
   T extends ShoppingItem & { created_at?: unknown; checked_at?: unknown },
 >(items: T[]): T[] {
   const time = (v: unknown) => new Date(String(v ?? '')).getTime() || 0
   return [...items].sort((a, b) => {
-    if (a.checked !== b.checked) return a.checked ? 1 : -1
-    if (a.checked) {
-      const ca = time(a.checked_at)
-      const cb = time(b.checked_at)
-      if (ca !== cb) return cb - ca
-      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
-    }
     const ta = time(a.created_at)
     const tb = time(b.created_at)
     if (ta !== tb) return ta - tb

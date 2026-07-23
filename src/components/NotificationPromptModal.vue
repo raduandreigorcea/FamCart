@@ -2,6 +2,9 @@
 // One-time greeting shown after login for users who never decided on
 // notifications. Explains the benefit up front so the browser/OS permission
 // prompt that follows an accept doesn't arrive cold.
+import AppButton from './AppButton.vue'
+import bellIcon from '../assets/bell.svg?raw'
+
 defineProps({
   open: { type: Boolean, default: false },
 })
@@ -14,10 +17,7 @@ const emit = defineEmits(['accept', 'decline'])
     <div v-if="open" class="notify-overlay" @click.self="emit('decline')">
       <div class="notify-dialog" role="alertdialog" aria-modal="true" aria-labelledby="notify-prompt-title">
         <div class="notify-dialog__icon-wrap">
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="notify-dialog__icon">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+          <span class="notify-dialog__icon" aria-hidden="true" v-html="bellIcon"></span>
         </div>
 
         <div class="notify-dialog__body">
@@ -29,8 +29,8 @@ const emit = defineEmits(['accept', 'decline'])
         </div>
 
         <div class="notify-dialog__actions">
-          <button class="notify-btn notify-btn--decline" type="button" @click="emit('decline')">Not now</button>
-          <button class="notify-btn notify-btn--accept" type="button" @click="emit('accept')">Turn on</button>
+          <AppButton variant="secondary" block @click="emit('decline')">Not now</AppButton>
+          <AppButton variant="primary" block @click="emit('accept')">Turn on</AppButton>
         </div>
       </div>
     </div>
@@ -56,7 +56,7 @@ const emit = defineEmits(['accept', 'decline'])
   max-width: 400px;
   background: var(--bg-surface);
   border-radius: var(--radius-dialog);
-  border: 1px solid color-mix(in srgb, var(--color-primary) 42%, var(--border-main));
+  border: var(--border-width-thin) solid color-mix(in srgb, var(--color-primary) 42%, var(--border-main));
   box-shadow: var(--elevation-dialog);
   padding: var(--space-7) var(--space-7) var(--space-6);
   display: flex;
@@ -82,6 +82,16 @@ const emit = defineEmits(['accept', 'decline'])
 .notify-dialog__icon {
   width: 26px;
   height: 26px;
+  display: inline-flex;
+}
+
+/* The asset ships at stroke-width 1 for a 24px box; weight it for this size. */
+.notify-dialog__icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2;
 }
 
 .notify-dialog__body {
@@ -92,15 +102,15 @@ const emit = defineEmits(['accept', 'decline'])
 
 .notify-dialog__title {
   margin: 0;
-  font-size: 1.05rem;
-  font-weight: 800;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-extrabold);
   color: var(--text-primary);
   letter-spacing: -0.02em;
 }
 
 .notify-dialog__message {
   margin: 0;
-  font-size: 0.84rem;
+  font-size: var(--text-sm);
   color: var(--text-secondary);
   line-height: 1.5;
 }
@@ -112,41 +122,9 @@ const emit = defineEmits(['accept', 'decline'])
   margin-top: 0.25rem;
 }
 
-.notify-btn {
-  flex: 1;
-  border-radius: var(--radius-md);
-  padding: 0.65rem var(--space-4);
-  font-size: 0.86rem;
-  font-weight: 700;
-  cursor: pointer;
-  border: none;
-  transition: all 0.2s ease;
-}
-
-.notify-btn--decline {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-  border: 1px solid var(--bg-hover);
-}
-
-.notify-btn--decline:hover {
-  background: var(--border-light);
-}
-
-.notify-btn--accept {
-  background: var(--color-primary);
-  color: var(--text-inverse);
-  box-shadow: var(--elevation-primary);
-}
-
-.notify-btn--accept:hover {
-  background: color-mix(in srgb, var(--color-primary) 85%, var(--text-primary));
-  transform: translateY(-1px);
-}
-
 .notify-fade-enter-active,
 .notify-fade-leave-active {
-  transition: opacity 0.22s ease;
+  transition: opacity var(--transition-base) ease;
 }
 
 .notify-fade-enter-from,

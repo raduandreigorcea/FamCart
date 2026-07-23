@@ -10,6 +10,7 @@ import ErrorModal from '../components/ErrorModal.vue'
 import NotificationPromptModal from '../components/NotificationPromptModal.vue'
 import ShoppingList from '../components/ShoppingList.vue'
 import AddItemForm from '../components/AddItemForm.vue'
+import OnboardingTour from '../components/OnboardingTour.vue'
 import { useFamilyRealtime } from '../lib/familyRealtime'
 import {
   findActiveItemByName,
@@ -35,6 +36,7 @@ import {
 import { enqueueOfflineMutation, flushOfflineQueue, hasQueuedOfflineMutations, isOfflineError } from '../lib/offlineQueue'
 import { isCurrentlyOffline, onReconnect } from '../lib/connectivity'
 import { rememberUser, getRememberedUser } from '../lib/session'
+import { hasSeenTour, markTourSeen } from '../lib/onboarding'
 import {
   enablePushNotifications,
   getNotificationPreference,
@@ -70,6 +72,7 @@ const familyName = ref('')
 const familyInviteCode = ref('')
 const familyOwnerId = ref('')
 const familyItemLimit = ref(50)
+const familyEmoji = ref('')
 const familyMembers = ref([])
 // Roster keyed by user id, so a list row can resolve its author's live avatar
 // from added_by (the row no longer carries a copied name/photo).
@@ -92,6 +95,9 @@ const customProductOpen = ref(false)
 const limitReachedPopupOpen = ref(false)
 const notificationPromptOpen = ref(false)
 const notificationError = ref('')
+// One-time first-run tour (add / swipe / invite). Shown once per device before
+// the notifications ask, so a new user learns the gestures first.
+const onboardingTourOpen = ref(false)
 const adding = ref(false)
 const hasInitialized = ref(false)
 // True while switchFamily is tearing down the old family and loading the new one.
@@ -117,9 +123,15 @@ const { setupRealtimeSubscriptions, cleanupRealtimeSubscriptions } = useFamilyRe
   hasPendingWrite: (id) => pendingItemWrites.has(id),
 })
 
-// Initial load: nothing fetched yet and no error to show instead. Items arriving
-// (realtime or fetch) end the skeleton early even before hasInitialized flips.
-const initialLoading = computed(() => !hasInitialized.value && !items.value.length && !loadError.value)
+// Set once a cached snapshot has been painted. The list on screen is then real
+// (an empty cached list is still an answer), so skeletons over it would be a lie.
+const paintedFromCache = ref(false)
+// Initial load: nothing painted or fetched yet, and no error to show instead.
+// Items arriving (realtime or fetch) end the skeleton early even before
+// hasInitialized flips.
+const initialLoading = computed(
+  () => !hasInitialized.value && !paintedFromCache.value && !items.value.length && !loadError.value,
+)
 // The skeleton shows on the first-ever load and while switching families.
 const listLoading = computed(() => initialLoading.value || switchingFamily.value)
 
@@ -369,19 +381,26 @@ watch([isLoaded, userId], () => {
 async function initializeHome() {
   if (hasInitialized.value) return
 
-  // Offline boot: Clerk can't verify the session without a network, but a
-  // remembered user with a cached snapshot can run entirely from local state.
-  // The router already vetted us here; paint the cache and let reconnection (or
-  // Clerk finishing to load) reconcile with the server.
+  // Clerk has not confirmed the session yet. A remembered user with a cached
+  // snapshot still gets painted right now rather than staring at skeletons for
+  // the whole Clerk warm-up: the router already vetted us here, and this is the
+  // stale half of stale-while-revalidate. Offline that paint is the entire boot,
+  // so we mark ourselves initialized and let reconnection reconcile; online it
+  // is just the first frame, and the watch above re-enters below once Clerk
+  // resolves.
   if (!isLoaded.value || !userId.value) {
     const uid = effectiveUserId.value
-    if (isOffline() && uid && loadFamilySnapshot(localStorage, uid)) {
+    if (uid && loadFamilySnapshot(localStorage, uid)) {
       sanitizeAuthCallbackUrl()
       hydrateFromCachedSnapshot()
-      hasInitialized.value = true
+      if (isOffline()) hasInitialized.value = true
     }
     return
   }
+
+  // Clerk resolved to someone other than the remembered user we painted for:
+  // that list belongs to the previous account, so drop it before going on.
+  if (hydratedUserId && hydratedUserId !== userId.value) discardCachedPaint()
 
   // Confirmed signed in: remember this user so a later offline open can boot.
   rememberUser(localStorage, userId.value)
@@ -436,6 +455,24 @@ async function initializeHome() {
   await setupRealtimeSubscriptions()
   hasInitialized.value = true
   persistSnapshot()
+  maybeStartOnboarding()
+}
+
+// First run: teach the gestures with the tour, then (once it's dismissed) fall
+// through to the notifications ask. A returning user who's already seen the tour
+// skips straight to the notifications check.
+function maybeStartOnboarding() {
+  if (!userId.value) return
+  if (!hasSeenTour(localStorage)) {
+    onboardingTourOpen.value = true
+    return
+  }
+  maybePromptForNotifications()
+}
+
+function closeOnboardingTour() {
+  onboardingTourOpen.value = false
+  markTourSeen(localStorage)
   maybePromptForNotifications()
 }
 
@@ -474,17 +511,38 @@ function declineNotifications() {
   setNotificationPreference(localStorage, 'off')
 }
 
+// Which user the painted cache belongs to. We paint before Clerk can confirm the
+// session, so if it then resolves to somebody else that paint is the wrong
+// person's list and has to be dropped.
+let hydratedUserId = ''
+
+// Throw away a cache painted for a different user than the one Clerk confirmed.
+function discardCachedPaint() {
+  hydratedUserId = ''
+  paintedFromCache.value = false
+  items.value = []
+  familyMembers.value = []
+  familyId.value = ''
+  familyName.value = ''
+  familyInviteCode.value = ''
+  familyOwnerId.value = ''
+  familyEmoji.value = ''
+}
+
 // Paint the last known state immediately (stale-while-revalidate): a returning
 // user sees their list instead of skeletons while the fresh fetches above run.
 function hydrateFromCachedSnapshot() {
   if (items.value.length) return
   const snapshot = loadFamilySnapshot(localStorage, effectiveUserId.value)
   if (!snapshot) return
+  hydratedUserId = effectiveUserId.value
+  paintedFromCache.value = true
   familyId.value = snapshot.familyId
   familyName.value = snapshot.familyName
   familyInviteCode.value = snapshot.familyInviteCode
   familyOwnerId.value = snapshot.familyOwnerId
   familyItemLimit.value = snapshot.familyItemLimit
+  familyEmoji.value = snapshot.familyEmoji || ''
   familyMembers.value = snapshot.familyMembers
   items.value = snapshot.items
 }
@@ -497,6 +555,7 @@ function persistSnapshot() {
     familyInviteCode: familyInviteCode.value,
     familyOwnerId: familyOwnerId.value,
     familyItemLimit: familyItemLimit.value,
+    familyEmoji: familyEmoji.value,
     familyMembers: familyMembers.value,
     items: items.value,
   })
@@ -505,7 +564,7 @@ function persistSnapshot() {
 // Keep the snapshot current as state changes (mutations, realtime events).
 // Guarded by hasInitialized inside persistSnapshot, so hydration itself and
 // partial init states are never written back.
-watch([items, familyMembers, familyName, familyInviteCode, familyItemLimit], persistSnapshot, {
+watch([items, familyMembers, familyName, familyInviteCode, familyItemLimit, familyEmoji], persistSnapshot, {
   deep: true,
 })
 
@@ -529,6 +588,19 @@ async function loadFamilyHeader() {
     familyItemLimit.value = Math.min(50, Math.max(1, Number(family.max_items_per_member) || 50))
   }
 
+  // Best-effort, on its own query: the emoji column may not be migrated yet, and
+  // a missing-column error here must not take the family header down with it.
+  try {
+    const { data: emojiRow, error: emojiErr } = await db
+      .from('families')
+      .select('emoji')
+      .eq('id', familyId.value)
+      .maybeSingle()
+    if (!emojiErr) familyEmoji.value = emojiRow?.emoji || ''
+  } catch {
+    // Column absent → the family simply has no emoji.
+  }
+
   if (!membersErr && Array.isArray(members)) {
     familyMembers.value = members.map((m) => ({
       user_id: m.user_id,
@@ -539,18 +611,45 @@ async function loadFamilyHeader() {
   }
 }
 
+// A family setting changed (name, item limit, emoji): refresh the active family's
+// header and the switcher list together, so a new name or emoji shows up in the
+// switcher right away rather than only after the next reload.
+async function refreshFamilyAfterSettingsChange() {
+  await loadFamilyHeader()
+  await loadFamilies()
+}
+
 // Every family the user belongs to, with names for the switcher. Only refreshes
 // the roster; the active family is chosen by the caller.
 async function loadFamilies() {
   const { data, error } = await db
     .from('family_members')
-    .select('family_id, families(id, name)')
+    .select('family_id, families(name)')
     .eq('user_id', userId.value)
   if (error) return { error }
-  families.value = (data || [])
-    .map((row) => ({ id: row.family_id, name: row.families?.name ?? '' }))
-    // Stable, name-ordered so the switcher never reshuffles between loads.
-    .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+  // The switcher renders an emoji tile, a name and a tick, so that is all a row
+  // carries. It used to fetch every family's full roster here to draw composite
+  // member avatars; those are gone, and so is the extra round trip.
+  const list = (data || []).map((row) => ({
+    id: row.family_id,
+    name: row.families?.name ?? '',
+    emoji: '',
+  }))
+
+  // Best-effort family emoji (its column may be unmigrated), keyed by family id.
+  // RLS scopes families to this user, so one unfiltered select is enough.
+  try {
+    const { data: emojiRows, error: emojiErr } = await db.from('families').select('id, emoji')
+    if (!emojiErr && Array.isArray(emojiRows)) {
+      const emojiById = new Map(emojiRows.map((r) => [r.id, r.emoji || '']))
+      for (const fam of list) fam.emoji = emojiById.get(fam.id) || ''
+    }
+  } catch {
+    // Column absent → families just have no emoji.
+  }
+
+  // Stable, name-ordered so the switcher never reshuffles between loads.
+  families.value = list.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
   return { error: null }
 }
 
@@ -576,11 +675,14 @@ async function switchFamily(id) {
   try {
     await loadFamilyHeader()
     await loadItems()
-    void loadFamilyProductStats()
-    await setupRealtimeSubscriptions()
   } finally {
+    // The rows are on screen, so the skeleton has nothing left to stand in for.
+    // Product stats and the realtime channel are background work; holding the
+    // placeholder up behind a websocket handshake just delays the real list.
     switchingFamily.value = false
   }
+  void loadFamilyProductStats()
+  await setupRealtimeSubscriptions()
 }
 
 // The switcher's "add" action: the setup page handles join/create, and the guard
@@ -632,8 +734,9 @@ async function loadItems() {
       .select('*')
       .eq('family_id', familyId.value)
       .eq('checked', true)
-      // Most recently checked first, so the 30-row cap keeps the latest ticks;
-      // sortItemsForDisplay orders the merged list the same way.
+      // Most recently checked first, so the 30-row cap keeps the latest ticks.
+      // This is a "which rows survive the cap" order, not a display order:
+      // sortItemsForDisplay puts the merged list back into creation order.
       .order('checked_at', { ascending: false, nullsFirst: false })
       .limit(30)
   ])
@@ -656,8 +759,8 @@ async function loadItems() {
   if (pendingItemWrites.size) {
     // A write is in flight for some rows: keep the local optimistic version of
     // those, so this refetch can't momentarily revert a just-checked item to the
-    // server's pre-write state (the "check bounces back" bug). Re-sorting below
-    // moves the kept row into its correct checked/active section.
+    // server's pre-write state (the "check bounces back" bug). The kept row
+    // sorts by creation time like every other, so its position is unaffected.
     const localById = new Map(items.value.map((i) => [i.id, i]))
     for (let i = 0; i < fresh.length; i++) {
       const local = pendingItemWrites.has(fresh[i].id) && localById.get(fresh[i].id)
@@ -876,14 +979,13 @@ async function toggleItem(item) {
     }
   }
 
-  // Optimistic: flip immediately, roll back if the write fails. Mirror checked_at
-  // so a checked item jumps to the top of the checked section right away (newest
-  // tick first), and clear it on uncheck; re-sort so it lands there now. The DB
-  // trigger (migration 024) is the authority on the stored value, so we only send
-  // `checked` — the server stamps the time itself.
+  // Optimistic: flip immediately, roll back if the write fails. checked_at is
+  // mirrored because the refetch's 30-row cap is taken on it, not because it
+  // affects position: display order is creation time, so a tick never moves the
+  // row. The DB trigger (migration 024) is the authority on the stored value, so
+  // we only send `checked` — the server stamps the time itself.
   item.checked = nextChecked
   item.checked_at = nextChecked ? new Date().toISOString() : null
-  items.value = sortItemsForDisplay(items.value)
   const patch = { checked: nextChecked }
 
   if (isOffline()) {
@@ -910,7 +1012,6 @@ async function toggleItem(item) {
       if (deferIfOffline(error, { kind: 'update', id: item.id, patch })) return
       item.checked = previous
       item.checked_at = previousCheckedAt
-      items.value = sortItemsForDisplay(items.value)
       // Unchecking would push the member over the active-item cap (migration 010
       // now enforces it on uncheck too): show the same friendly popup as adding.
       if (error.message?.includes('member_active_item_limit_exceeded')
@@ -1090,10 +1191,11 @@ async function deleteItem(item) {
       :members-loading="switchingFamily"
       :invite-code="familyInviteCode"
       :family-item-limit="familyItemLimit"
+      :family-emoji="familyEmoji"
       :owner-user-id="familyOwnerId"
       :member-profiles="familyMembers"
       :current-user-id="effectiveUserId"
-      @refresh-family="loadFamilyHeader"
+      @refresh-family="refreshFamilyAfterSettingsChange"
       @switch-family="switchFamily"
       @add-family="openAddFamily"
       @family-deleted="reconcileActiveFamily"
@@ -1146,6 +1248,12 @@ async function deleteItem(item) {
       :name-max-length="ITEM_NAME_MAX_LENGTH"
       @submit="addCustomProduct"
       @cancel="customProductOpen = false"
+    />
+
+    <OnboardingTour
+      :open="onboardingTourOpen"
+      :invite-code="familyInviteCode"
+      @close="closeOnboardingTour"
     />
 
     <NotificationPromptModal

@@ -4,8 +4,12 @@ import { useClerk, useUser } from '@clerk/vue'
 import AccountActionModal from './AccountActionModal.vue'
 import MemberAvatarStack from './MemberAvatarStack.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
+import { sortMembersForSwitcher } from '../lib/memberRoles'
+import { DEFAULT_FAMILY_EMOJI } from '../lib/familyEmoji'
+import { avatarSlotsForFamilyName } from '../lib/avatarStack'
 import chevronLeftRaw from '../assets/chevron-left.svg?raw'
 import checkRaw from '../assets/check.svg?raw'
+import plusRaw from '../assets/plus.svg?raw'
 import { getUserDisplayName, getUserInitial, getUserPrimaryEmail } from '../lib/userIdentity'
 import { forgetUser } from '../lib/session'
 import { clearFamilySnapshot } from '../lib/familyCache'
@@ -29,6 +33,7 @@ const props = defineProps({
   membersLoading: { type: Boolean, default: false },
   inviteCode: { type: String, default: '' },
   familyItemLimit: { type: Number, default: 50 },
+  familyEmoji: { type: String, default: '' },
   ownerUserId: { type: String, default: '' },
   currentUserId: { type: String, default: '' },
   memberProfiles: {
@@ -162,6 +167,14 @@ const userInitial = computed(() => {
 })
 
 const memberCount = computed(() => props.memberProfiles.length)
+
+// The active family's members, ordered for its composite avatar next to the name.
+const orderedActiveMembers = computed(() =>
+  sortMembersForSwitcher(props.memberProfiles || [], props.ownerUserId, props.currentUserId),
+)
+
+// The stack yields room to a long family name rather than crowding it.
+const avatarSlots = computed(() => avatarSlotsForFamilyName(props.familyName))
 </script>
 
 <template>
@@ -186,10 +199,14 @@ const memberCount = computed(() => props.memberProfiles.length)
             <p class="family-name">{{ familyName }}</p>
             <div class="family-subrow">
               <SkeletonBlock v-if="membersLoading" width="4.5rem" height="0.7rem" />
-              <span v-else class="family-members-count">{{ memberCount }} members</span>
+              <span v-else class="family-members-count">{{ memberCount }} {{ memberCount === 1 ? 'member' : 'members' }}</span>
             </div>
           </div>
-          <MemberAvatarStack :members="memberProfiles" :loading="membersLoading" />
+          <MemberAvatarStack
+            :members="orderedActiveMembers"
+            :loading="membersLoading"
+            :max-visible="avatarSlots"
+          />
         </button>
       </template>
       <template v-else-if="loading">
@@ -252,14 +269,11 @@ const memberCount = computed(() => props.memberProfiles.length)
             :aria-checked="fam.id === familyId"
             @click="selectFamily(fam.id)"
           >
+            <span class="family-emoji-tile" aria-hidden="true">{{ fam.emoji || DEFAULT_FAMILY_EMOJI }}</span>
             <span class="family-switcher-item-name">{{ fam.name || 'Family' }}</span>
             <span v-if="fam.id === familyId" class="family-switcher-check" aria-hidden="true" v-html="checkRaw"></span>
           </button>
-          <div
-            class="family-switcher-divider"
-            :class="{ 'family-switcher-divider--cap': !canAddFamily }"
-            aria-hidden="true"
-          ></div>
+          <div class="family-switcher-divider" aria-hidden="true"></div>
           <button
             v-if="canAddFamily"
             class="family-switcher-add"
@@ -267,7 +281,7 @@ const memberCount = computed(() => props.memberProfiles.length)
             role="menuitem"
             @click="addFamily"
           >
-            <span class="family-switcher-add-plus" aria-hidden="true">+</span>
+            <span class="family-switcher-add-tile" aria-hidden="true" v-html="plusRaw"></span>
             Join or create a family
           </button>
           <p v-else class="family-switcher-cap-note">
@@ -295,6 +309,7 @@ const memberCount = computed(() => props.memberProfiles.length)
     :family-name="familyName"
     :invite-code="inviteCode"
     :family-item-limit="familyItemLimit"
+    :family-emoji="familyEmoji"
     :owner-user-id="ownerUserId"
     :member-profiles="memberProfiles"
     @close="settingsOpen = false"
@@ -340,7 +355,7 @@ const memberCount = computed(() => props.memberProfiles.length)
   padding: var(--safe-top) 1.25rem 0;
   height: calc(72px + var(--safe-top));
   background: var(--ui-bg);
-  border-bottom: 1px solid var(--ui-border);
+  border-bottom: var(--border-width-thin) solid var(--ui-border);
   position: fixed;
   top: 0;
   left: 0;
@@ -388,8 +403,8 @@ const memberCount = computed(() => props.memberProfiles.length)
 .family-name {
   margin: 0;
   font-family: inherit;
-  font-size: 0.95rem;
-  font-weight: 700;
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
   letter-spacing: -0.01em;
   color: var(--ui-text-strong);
   /* A long family name must never shove the settings/account buttons off the
@@ -417,8 +432,8 @@ const memberCount = computed(() => props.memberProfiles.length)
 }
 
 .family-members-count {
-  font-size: 0.82rem;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
   letter-spacing: -0.01em;
   color: var(--ui-text-muted);
   font-family: inherit;
@@ -439,7 +454,7 @@ const memberCount = computed(() => props.memberProfiles.length)
   border-radius: var(--radius-lg);
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s;
+  transition: background var(--transition-fast);
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -458,7 +473,7 @@ const memberCount = computed(() => props.memberProfiles.length)
   /* chevron-left renders as "‹"; rotate it to a down-caret so it reads as a
      dropdown, and up while the switcher is open. */
   transform: rotate(-90deg);
-  transition: transform 0.2s ease;
+  transition: transform var(--transition-base) ease;
 }
 
 .family-switcher-caret--open {
@@ -481,65 +496,84 @@ const memberCount = computed(() => props.memberProfiles.length)
 
 .family-switcher-menu {
   position: fixed;
-  top: calc(var(--safe-top) + 58px);
+  top: calc(var(--safe-top) + 60px);
   left: max(1.25rem, calc((100vw - var(--desktop-column)) / 2));
-  min-width: 224px;
+  min-width: 280px;
   max-width: calc(100vw - 2.5rem);
   background: var(--bg-surface);
-  border: 1px solid var(--border-main);
-  border-radius: var(--radius-lg);
+  border: var(--border-width-thin) solid var(--border-main);
+  border-radius: var(--radius-2xl);
   box-shadow: var(--elevation-modal);
-  padding: 0.35rem;
+  padding: var(--space-2);
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: 2px;
 }
 
 .family-switcher-heading {
-  margin: 0.2rem 0.5rem 0.35rem;
-  font-size: 0.68rem;
-  font-weight: 800;
+  margin: var(--space-2) var(--space-3) var(--space-1);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-extrabold);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-secondary);
+  letter-spacing: 0.08em;
+  color: var(--text-disabled);
 }
 
 .family-switcher-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--space-3);
   width: 100%;
-  border: none;
+  border: var(--border-width-thin) solid transparent;
   background: transparent;
   color: var(--text-primary);
-  padding: 0.55rem 0.6rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.9rem;
-  font-weight: 600;
+  padding: var(--space-2);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
   cursor: pointer;
   text-align: left;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
 .family-switcher-item:hover {
   background: var(--bg-hover);
 }
 
+/* Active row: a quiet neutral fill, not a green wash — the green check is the
+   only accent, so the monogram's own colour stays readable on top of it. */
 .family-switcher-item--active {
-  color: var(--color-primary);
+  background: var(--bg-hover);
+}
+
+/* Each family's emoji (the owner's pick, or the default cart). */
+.family-emoji-tile {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  line-height: 1;
+  background: var(--bg-hover);
+  border: var(--border-width-thin) solid var(--border-light);
 }
 
 .family-switcher-item-name {
   min-width: 0;
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-primary);
 }
 
 .family-switcher-check {
   flex-shrink: 0;
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   display: inline-flex;
   color: var(--color-primary);
 }
@@ -555,38 +589,60 @@ const memberCount = computed(() => props.memberProfiles.length)
 .family-switcher-divider {
   height: 1px;
   background: var(--border-light);
-  margin: 0.25rem 0.35rem;
+  margin: var(--space-1) var(--space-2);
 }
 
 .family-switcher-add {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: var(--space-3);
   width: 100%;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-lg);
   background: transparent;
-  color: var(--color-primary);
-  padding: 0.6rem;
-  font-size: 0.85rem;
-  font-weight: 700;
+  color: var(--text-primary);
+  padding: var(--space-2);
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
   cursor: pointer;
   text-align: left;
+  transition: background var(--transition-fast);
 }
 
 .family-switcher-add:hover {
   background: var(--bg-hover);
 }
 
-.family-switcher-add-plus {
-  font-size: 1.1rem;
-  line-height: 1;
+.family-switcher-add-tile {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-disabled);
+  background: var(--bg-hover);
+  border: var(--border-width-thin) dashed var(--border-dark);
+}
+
+.family-switcher-add-tile :deep(svg) {
+  width: 15px;
+  height: 15px;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.family-switcher-add:hover .family-switcher-add-tile {
+  color: var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 45%, transparent);
 }
 
 .family-switcher-cap-note {
   margin: 0;
   padding: 0.5rem 0.6rem 0.35rem;
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   line-height: 1.4;
   color: var(--text-secondary);
 }
@@ -599,19 +655,9 @@ const memberCount = computed(() => props.memberProfiles.length)
   }
 }
 
-/* The cap note only earns its space on mobile. On desktop the absent "add"
-   action already reads as "you're at the max", so hide the note there — and its
-   divider with it, so nothing dangles below the family list. */
-@media (min-width: 900px) {
-  .family-switcher-cap-note,
-  .family-switcher-divider--cap {
-    display: none;
-  }
-}
-
 .switcher-fade-enter-active,
 .switcher-fade-leave-active {
-  transition: opacity 0.14s ease;
+  transition: opacity var(--transition-fast) ease;
 }
 
 .switcher-fade-enter-from,
@@ -631,7 +677,7 @@ const memberCount = computed(() => props.memberProfiles.length)
   width: var(--size-control-md);
   height: var(--size-control-md);
   border-radius: var(--radius-pill);
-  border: 2px solid var(--ui-border);
+  border: var(--border-width-thick) solid var(--ui-border);
   background: var(--bg-hover);
   color: var(--ui-text-muted);
   cursor: pointer;
@@ -639,7 +685,7 @@ const memberCount = computed(() => props.memberProfiles.length)
   align-items: center;
   justify-content: center;
   padding: 0;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .topbar-icon-btn:hover {
@@ -676,7 +722,7 @@ const memberCount = computed(() => props.memberProfiles.length)
   width: var(--size-control-md);
   height: var(--size-control-md);
   border-radius: var(--radius-pill);
-  border: 2px solid var(--ui-border);
+  border: var(--border-width-thick) solid var(--ui-border);
   background: var(--bg-hover);
   padding: 0;
   cursor: pointer;
@@ -684,7 +730,7 @@ const memberCount = computed(() => props.memberProfiles.length)
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   flex-shrink: 0;
 }
 
@@ -701,8 +747,8 @@ const memberCount = computed(() => props.memberProfiles.length)
 }
 
 .user-avatar-fallback {
-  font-size: 0.85rem;
-  font-weight: 700;
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
   color: var(--ui-text-muted);
 }
 </style>

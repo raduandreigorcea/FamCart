@@ -68,18 +68,21 @@ function waitForClerkLoad(isClerkLoaded: () => boolean): Promise<void> {
   })
 }
 
-// A user can belong to at most this many families (migration 025). At the cap,
-// the setup page has nothing to offer and redirects home; under it, the page is
-// reachable so a user can join or create another family.
+// A user can belong to at most this many families (migration 025).
 const FAMILY_MEMBERSHIP_CAP = 3
 
-async function isAtFamilyCap(
+// How many families this user belongs to, capped at the membership limit — enough
+// to answer both "brand-new user with none" and "already at the cap". On any error
+// we return 0 so the guard fails open: better to let a genuine new user reach setup
+// than to strand them, and a member who slips through only sees a page that can do
+// no harm.
+async function fetchMembershipCount(
   getToken: ReturnType<typeof useAuth>['getToken'],
   userId: ReturnType<typeof useAuth>['userId'],
-) {
+): Promise<number> {
   try {
     const token = await getToken.value({ template: 'supabase' })
-    if (!token || !userId.value) return false
+    if (!token || !userId.value) return 0
     // Count only THIS user's memberships. RLS lets a member see every co-member
     // of their families, so without the user_id filter this would count other
     // people too and falsely report the cap once your families hold 3+ members.
@@ -93,11 +96,11 @@ async function isAtFamilyCap(
         },
       },
     )
-    if (!resp.ok) return false
+    if (!resp.ok) return 0
     const data = await resp.json()
-    return Array.isArray(data) && data.length >= FAMILY_MEMBERSHIP_CAP
+    return Array.isArray(data) ? data.length : 0
   } catch {
-    return false
+    return 0
   }
 }
 
@@ -138,13 +141,17 @@ router.beforeEach(async (to) => {
     return { name: 'home' }
   }
 
-  // Only the setup page needs a membership check in the guard: a user already at
-  // the family cap has nowhere to add one, so send them home. Under the cap the
-  // page stays reachable (a fresh user with none, or someone adding another).
-  // Every other view resolves membership itself (HomeView redirects to setup
-  // when there is none), so ordinary navigations skip this round-trip.
+  // Guard the setup page by membership. A plain visit is meant only for a
+  // brand-new user with no family, so anyone already in one is sent home — the
+  // welcome/create flow isn't theirs to see again. `?add=1` (the switcher's "add
+  // a family" action) is the deliberate exception: it stays reachable until the
+  // user hits the cap, where there is nothing left to add. Other views resolve
+  // membership themselves (HomeView redirects to setup when there is none), so
+  // ordinary navigations skip this round-trip.
   if (to.name === 'family-setup' && isSignedIn.value) {
-    if (await isAtFamilyCap(getToken, userId)) {
+    const memberships = await fetchMembershipCount(getToken, userId)
+    const isAddingFamily = to.query.add === '1'
+    if (isAddingFamily ? memberships >= FAMILY_MEMBERSHIP_CAP : memberships >= 1) {
       return { name: 'home' }
     }
   }

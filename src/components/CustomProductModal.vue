@@ -5,6 +5,7 @@
 // also the only way to give a hand-typed item a maker, which otherwise arrives
 // solely from a catalog pick.
 import { ref, computed, watch, nextTick } from 'vue'
+import AppButton from './AppButton.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -62,7 +63,7 @@ function submit() {
         <div class="custom-product-dialog__body">
           <h4 id="custom-product-title" class="custom-product-dialog__title">Add your own</h4>
           <p class="custom-product-dialog__message">
-            Describe it and it goes straight on your list — we'll suggest it to
+            Describe it and it goes straight on your list. We'll suggest it to
             your family next time.
           </p>
         </div>
@@ -95,12 +96,8 @@ function submit() {
           </label>
 
           <div class="custom-product-dialog__actions">
-            <button class="custom-product-btn custom-product-btn--cancel" type="button" @click="emit('cancel')">
-              Cancel
-            </button>
-            <button class="custom-product-btn custom-product-btn--primary" type="submit" :disabled="!canSubmit">
-              Add to list
-            </button>
+            <AppButton variant="secondary" block type="button" @click="emit('cancel')">Cancel</AppButton>
+            <AppButton variant="primary" block type="submit" :disabled="!canSubmit">Add to list</AppButton>
           </div>
         </form>
       </div>
@@ -127,7 +124,7 @@ function submit() {
   max-width: 400px;
   background: var(--bg-surface);
   border-radius: var(--radius-dialog);
-  border: 1px solid var(--border-main);
+  border: var(--border-width-thin) solid var(--border-main);
   box-shadow: var(--elevation-dialog);
   padding: var(--space-7) var(--space-7) var(--space-6);
   display: flex;
@@ -168,15 +165,15 @@ function submit() {
 
 .custom-product-dialog__title {
   margin: 0;
-  font-size: 1.05rem;
-  font-weight: 800;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-extrabold);
   color: var(--text-primary);
   letter-spacing: -0.02em;
 }
 
 .custom-product-dialog__message {
   margin: 0;
-  font-size: 0.84rem;
+  font-size: var(--text-sm);
   color: var(--text-secondary);
   line-height: 1.5;
 }
@@ -199,14 +196,14 @@ function submit() {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.72rem;
-  font-weight: 700;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
   color: var(--text-secondary);
   letter-spacing: 0.01em;
 }
 
 .custom-product-optional {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text-disabled);
   text-transform: lowercase;
   letter-spacing: 0;
@@ -216,13 +213,13 @@ function submit() {
   width: 100%;
   padding: 0.7rem 0.85rem;
   background: var(--bg-surface);
-  border: 1.5px solid var(--border-main);
+  border: var(--border-width-base) solid var(--border-main);
   border-radius: var(--radius-lg);
   font-family: inherit;
-  font-size: 0.92rem;
+  font-size: var(--text-md);
   color: var(--text-primary);
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color var(--transition-fast);
 }
 
 .custom-product-field input:focus {
@@ -240,47 +237,9 @@ function submit() {
   margin-top: 0.25rem;
 }
 
-.custom-product-btn {
-  flex: 1;
-  border-radius: var(--radius-md);
-  padding: 0.65rem var(--space-4);
-  font-size: 0.86rem;
-  font-weight: 700;
-  cursor: pointer;
-  border: none;
-  font-family: inherit;
-  transition: all 0.2s ease;
-}
-
-.custom-product-btn--cancel {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-  border: 1px solid var(--bg-hover);
-}
-
-.custom-product-btn--cancel:hover {
-  background: var(--border-light);
-}
-
-.custom-product-btn--primary {
-  background: var(--color-primary);
-  color: var(--text-inverse);
-  box-shadow: var(--elevation-primary);
-}
-
-.custom-product-btn--primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--color-primary) 85%, var(--text-primary));
-  transform: translateY(-1px);
-}
-
-.custom-product-btn--primary:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
 .custom-product-fade-enter-active,
 .custom-product-fade-leave-active {
-  transition: opacity 0.22s ease;
+  transition: opacity var(--transition-base) ease;
 }
 
 .custom-product-fade-enter-from,

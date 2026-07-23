@@ -31,6 +31,23 @@ export function sortMembersForDisplay<T extends MemberLike>(
   })
 }
 
+// For the family switcher's avatar stacks: the current user first, then the
+// owner, then moderators, then everyone else. Stable within a rank, so members
+// keep their incoming order. (The roster display in settings uses
+// sortMembersForDisplay, which leads with the owner instead.)
+export function sortMembersForSwitcher<T extends MemberLike>(
+  members: T[],
+  ownerUserId: string,
+  currentUserId: string,
+): T[] {
+  const rank = (m: T): number => {
+    if (m.user_id === currentUserId) return 0
+    if (m.user_id === ownerUserId) return 1
+    return normalizeMemberRole(m.role) === 'moderator' ? 2 : 3
+  }
+  return [...members].sort((a, b) => rank(a) - rank(b))
+}
+
 export interface ManageContext {
   actorIsOwnerOrModerator: boolean
   ownerUserId: string

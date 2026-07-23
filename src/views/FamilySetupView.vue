@@ -9,7 +9,9 @@ import { upsertOwnProfile } from '../lib/profile'
 import AppTopbar from '../components/AppTopbar.vue'
 import InputRow from '../components/InputRow.vue'
 import ErrorModal from '../components/ErrorModal.vue'
+import checkIcon from '../assets/check.svg?raw'
 import AppCard from '../components/AppCard.vue'
+import AppButton from '../components/AppButton.vue'
 import ChoiceButton from '../components/ChoiceButton.vue'
 import BackButton from '../components/BackButton.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
@@ -50,6 +52,11 @@ onMounted(async () => {
     ownershipChecked.value = true
   }
 })
+
+// Brand-new users open on a warm welcome before the create/join picker; someone
+// adding a family from the switcher already knows the app, so they skip it.
+const welcomed = ref(false)
+const showWelcome = computed(() => !welcomed.value && !isAddingFamily.value)
 
 const mode = ref(null) // null | 'create' | 'join'
 const familyName = ref('')
@@ -159,7 +166,7 @@ async function joinFamily() {
   try {
     const code = inviteCode.value.trim().toUpperCase()
     if (!INVITE_CODE_REGEX.test(code)) {
-      error.value = 'Invite code must be 8 characters using A-Z and 2-9.'
+      error.value = 'Invite code must be 8 characters, letters and numbers only.'
       return
     }
     const { display_name, image_url } = deriveProfileFields(user.value)
@@ -209,8 +216,44 @@ async function joinFamily() {
     <main class="setup-main">
       <AppCard>
 
+        <!-- Welcome (brand-new users only) -->
+        <template v-if="showWelcome">
+          <div class="welcome-hero" aria-hidden="true">
+            <div class="wl-card">
+              <div class="wl-row">
+                <span class="wl-emoji">🥑</span>
+                <span class="wl-line"></span>
+                <span class="wl-dot"></span>
+              </div>
+              <div class="wl-row wl-row--done">
+                <span class="wl-emoji">🥛</span>
+                <span class="wl-line wl-line--done"></span>
+                <span class="wl-dot wl-dot--done" v-html="checkIcon"></span>
+              </div>
+              <div class="wl-row">
+                <span class="wl-emoji">🍞</span>
+                <span class="wl-line wl-line--short"></span>
+                <span class="wl-dot"></span>
+              </div>
+            </div>
+            <div class="wl-people">
+              <span class="wl-person wl-person--a">🧑</span>
+              <span class="wl-person wl-person--b">👩</span>
+            </div>
+          </div>
+          <div class="card-header card-header--welcome">
+            <p class="card-eyebrow">Welcome to FamCart 🛒</p>
+            <h2 class="heading">The list your whole <span class="heading--accent">family</span> shares</h2>
+            <p class="sub">
+              Everyone adds, everyone checks off, and it all updates for the whole
+              family the moment it happens, so nothing gets forgotten at the store.
+            </p>
+          </div>
+          <AppButton variant="primary" block @click="welcomed = true">Get started</AppButton>
+        </template>
+
         <!-- Picker -->
-        <template v-if="!mode">
+        <template v-else-if="!mode">
           <div v-if="isAddingFamily" class="setup-back">
             <BackButton @click="router.replace('/')" />
           </div>
@@ -268,7 +311,7 @@ async function joinFamily() {
           <div class="card-header">
             <p class="card-eyebrow">Join a family</p>
             <h2 class="heading">Enter your invite code</h2>
-            <p class="sub">Ask a family member for their 8-character code.</p>
+            <p class="sub">Ask a family member for their invite code.</p>
           </div>
           <form @submit.prevent="joinFamily" class="input-form">
             <InputRow v-model="inviteCode" placeholder="e.g. AB3K7XYZ" maxlength="8" :loading="loading" :uppercase="true" required autofocus />          </form>
@@ -312,14 +355,137 @@ async function joinFamily() {
   padding-bottom: calc(2rem + var(--safe-bottom));
 }
 
+/* ── Welcome hero ────────────────────────────────────────── */
+/* The hero is the thesis: a shared list with one item already ticked off, and
+   two people beside it — FamCart in a single glance. */
+.welcome-hero {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  margin: 0.25rem 0 1.75rem;
+}
+
+.wl-card {
+  width: 100%;
+  max-width: 260px;
+  background: var(--bg-main);
+  border: var(--border-width-thin) solid var(--border-main);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--elevation-card);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.wl-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.wl-emoji {
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-lg);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
+  border: var(--border-width-thin) solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+
+.wl-line {
+  flex: 1;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--border-main);
+}
+
+.wl-line--short { max-width: 60%; }
+
+.wl-line--done {
+  background: var(--border-light);
+  position: relative;
+}
+
+.wl-line--done::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--text-disabled);
+  opacity: 0.6;
+}
+
+.wl-dot {
+  flex-shrink: 0;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 50%;
+  border: var(--border-width-base) solid var(--border-dark);
+}
+
+.wl-dot--done {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--text-inverse);
+}
+/* The check asset rather than a "✓" glyph, which sits low in the dot. */
+.wl-dot--done :deep(svg) {
+  width: 0.72rem;
+  height: 0.72rem;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 3;
+}
+
+.wl-people {
+  position: absolute;
+  right: -0.35rem;
+  bottom: -0.5rem;
+  display: flex;
+}
+
+.wl-person {
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-lg);
+  background: var(--bg-surface);
+  border: var(--border-width-thick) solid var(--bg-surface);
+  box-shadow: var(--elevation-soft);
+}
+
+.wl-person--a { background: color-mix(in srgb, var(--color-primary) 22%, var(--bg-surface)); }
+.wl-person--b {
+  margin-left: -0.7rem;
+  background: color-mix(in srgb, var(--warning-bg) 70%, var(--bg-surface));
+}
+
+.card-header--welcome {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
 /* ── Card header ─────────────────────────────────────────── */
 .card-header {
   margin-bottom: 1.75rem;
 }
 
 .card-eyebrow {
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--color-primary);
@@ -328,8 +494,8 @@ async function joinFamily() {
 
 .heading {
   font-family: inherit;
-  font-size: 1.45rem;
-  font-weight: 800;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-extrabold);
   color: var(--text-primary);
   margin: 0 0 0.5rem;
   line-height: 1.2;
@@ -340,7 +506,7 @@ async function joinFamily() {
 }
 
 .sub {
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   color: var(--text-secondary);
   margin: 0;
   line-height: 1.55;
@@ -371,12 +537,12 @@ async function joinFamily() {
 .field-counter {
   margin: -0.15rem 0 0;
   text-align: right;
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   color: var(--text-disabled);
 }
 
 .field-counter--danger {
   color: var(--danger-main);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 </style>

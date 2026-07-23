@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   normalizeMemberRole,
   sortMembersForDisplay,
+  sortMembersForSwitcher,
   canManageMember,
   canPromoteToModerator,
   canDemoteFromModerator,
@@ -38,6 +39,29 @@ describe('sortMembersForDisplay', () => {
   it('does not mutate the input array', () => {
     const input = [member, owner]
     sortMembersForDisplay(input, 'owner')
+    expect(input[0]).toBe(member)
+  })
+})
+
+describe('sortMembersForSwitcher', () => {
+  const owner = { user_id: 'owner', role: 'moderator' }
+  const mod = { user_id: 'mod', role: 'moderator' }
+  const me = { user_id: 'me', role: 'member' }
+  const member = { user_id: 'plain', role: 'member' }
+
+  it('orders the current user first, then owner, then moderators, then members', () => {
+    const sorted = sortMembersForSwitcher([member, mod, owner, me], 'owner', 'me')
+    expect(sorted.map((m) => m.user_id)).toEqual(['me', 'owner', 'mod', 'plain'])
+  })
+
+  it('keeps the current user first even when they are the owner', () => {
+    const sorted = sortMembersForSwitcher([mod, member, me], 'me', 'me')
+    expect(sorted[0].user_id).toBe('me')
+  })
+
+  it('does not mutate the input array', () => {
+    const input = [member, me]
+    sortMembersForSwitcher(input, 'owner', 'me')
     expect(input[0]).toBe(member)
   })
 })
