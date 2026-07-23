@@ -3,6 +3,7 @@
 // notifications. Explains the benefit up front so the browser/OS permission
 // prompt that follows an accept doesn't arrive cold.
 import AppButton from './AppButton.vue'
+import bellIcon from '../assets/bell.svg?raw'
 
 defineProps({
   open: { type: Boolean, default: false },
@@ -16,10 +17,7 @@ const emit = defineEmits(['accept', 'decline'])
     <div v-if="open" class="notify-overlay" @click.self="emit('decline')">
       <div class="notify-dialog" role="alertdialog" aria-modal="true" aria-labelledby="notify-prompt-title">
         <div class="notify-dialog__icon-wrap">
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="notify-dialog__icon">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+          <span class="notify-dialog__icon" aria-hidden="true" v-html="bellIcon"></span>
         </div>
 
         <div class="notify-dialog__body">
@@ -84,6 +82,17 @@ const emit = defineEmits(['accept', 'decline'])
 .notify-dialog__icon {
   width: 26px;
   height: 26px;
+  display: inline-flex;
+}
+
+/* bell.svg ships with a hardcoded white stroke at width 1, which would vanish
+   against the light tinted circle. Drive both from here. */
+.notify-dialog__icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2;
 }
 
 .notify-dialog__body {

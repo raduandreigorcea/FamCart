@@ -3,6 +3,8 @@ import { computed, ref } from 'vue'
 import ShoppingListItem from './ShoppingListItem.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { sumActiveQuantities, sumCheckedQuantities } from '../lib/shoppingList'
+import cartIcon from '../assets/shopping-cart.svg?raw'
+import checkIcon from '../assets/check.svg?raw'
 
 // Presentational: renders the list with its move animations, the initial-load
 // skeleton, and the empty state. All mutations stay with the parent, which owns
@@ -245,14 +247,8 @@ const labelText = computed(() =>
           @click="onThumbClick"
         >
           <span class="buy-bar__icon" aria-hidden="true">
-            <svg class="buy-bar__cart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="8" cy="21" r="1" />
-              <circle cx="19" cy="21" r="1" />
-              <path d="M2.5 3h2l2.4 12.4a2 2 0 0 0 2 1.6h9.3a2 2 0 0 0 2-1.5L23 7H6" />
-            </svg>
-            <svg class="buy-bar__check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M20 6 9 17l-5-5" />
-            </svg>
+            <span class="buy-bar__cart" v-html="cartIcon"></span>
+            <span class="buy-bar__check" v-html="checkIcon"></span>
           </span>
         </button>
       </div>
@@ -519,7 +515,26 @@ const labelText = computed(() =>
   inset: 0;
   width: 100%;
   height: 100%;
+  display: block;
   transition: opacity var(--transition-base) ease, transform var(--transition-slow) cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Both assets ship at stroke-width 1, too fine for a 22px knob icon. */
+.buy-bar__cart :deep(svg),
+.buy-bar__check :deep(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  stroke: currentColor;
+  fill: none;
+}
+
+.buy-bar__cart :deep(svg) {
+  stroke-width: 2;
+}
+
+.buy-bar__check :deep(svg) {
+  stroke-width: 2.4;
 }
 
 /* Cart is the resting state; on success it lifts away and the check drops in. */
