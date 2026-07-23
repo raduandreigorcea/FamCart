@@ -24,8 +24,8 @@ describe('OnboardingTour', () => {
 
   it('walks the three steps and closes on the last', async () => {
     const wrapper = mount(OnboardingTour, { props: { open: true, inviteCode: 'ABCDEFGH' } })
-    // First step, no Back yet.
-    expect(wrapper.find('.tour-back').exists()).toBe(false)
+    // First step, no Back yet. Back is the shared BackButton, hence .back-btn.
+    expect(wrapper.find('.back-btn').exists()).toBe(false)
     expect(wrapper.find('.tour-next').text()).toBe('Next')
 
     await wrapper.find('.tour-next').trigger('click') // → swipe
@@ -36,6 +36,19 @@ describe('OnboardingTour', () => {
 
     await wrapper.find('.tour-next').trigger('click') // finish
     expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
+  it('steps back with the shared BackButton', async () => {
+    const wrapper = mount(OnboardingTour, { props: { open: true } })
+    await wrapper.find('.tour-next').trigger('click') // → swipe
+
+    const back = wrapper.find('.back-btn')
+    expect(back.exists()).toBe(true)
+    await back.trigger('click')
+
+    // Returned to the first step, so Back is gone again.
+    expect(wrapper.find('.back-btn').exists()).toBe(false)
+    expect(wrapper.emitted('close')).toBeUndefined()
   })
 
   it('can be skipped from any step', async () => {
