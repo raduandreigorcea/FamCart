@@ -123,9 +123,15 @@ const { setupRealtimeSubscriptions, cleanupRealtimeSubscriptions } = useFamilyRe
   hasPendingWrite: (id) => pendingItemWrites.has(id),
 })
 
-// Initial load: nothing fetched yet and no error to show instead. Items arriving
-// (realtime or fetch) end the skeleton early even before hasInitialized flips.
-const initialLoading = computed(() => !hasInitialized.value && !items.value.length && !loadError.value)
+// Set once a cached snapshot has been painted. The list on screen is then real
+// (an empty cached list is still an answer), so skeletons over it would be a lie.
+const paintedFromCache = ref(false)
+// Initial load: nothing painted or fetched yet, and no error to show instead.
+// Items arriving (realtime or fetch) end the skeleton early even before
+// hasInitialized flips.
+const initialLoading = computed(
+  () => !hasInitialized.value && !paintedFromCache.value && !items.value.length && !loadError.value,
+)
 // The skeleton shows on the first-ever load and while switching families.
 const listLoading = computed(() => initialLoading.value || switchingFamily.value)
 
@@ -375,19 +381,26 @@ watch([isLoaded, userId], () => {
 async function initializeHome() {
   if (hasInitialized.value) return
 
-  // Offline boot: Clerk can't verify the session without a network, but a
-  // remembered user with a cached snapshot can run entirely from local state.
-  // The router already vetted us here; paint the cache and let reconnection (or
-  // Clerk finishing to load) reconcile with the server.
+  // Clerk has not confirmed the session yet. A remembered user with a cached
+  // snapshot still gets painted right now rather than staring at skeletons for
+  // the whole Clerk warm-up: the router already vetted us here, and this is the
+  // stale half of stale-while-revalidate. Offline that paint is the entire boot,
+  // so we mark ourselves initialized and let reconnection reconcile; online it
+  // is just the first frame, and the watch above re-enters below once Clerk
+  // resolves.
   if (!isLoaded.value || !userId.value) {
     const uid = effectiveUserId.value
-    if (isOffline() && uid && loadFamilySnapshot(localStorage, uid)) {
+    if (uid && loadFamilySnapshot(localStorage, uid)) {
       sanitizeAuthCallbackUrl()
       hydrateFromCachedSnapshot()
-      hasInitialized.value = true
+      if (isOffline()) hasInitialized.value = true
     }
     return
   }
+
+  // Clerk resolved to someone other than the remembered user we painted for:
+  // that list belongs to the previous account, so drop it before going on.
+  if (hydratedUserId && hydratedUserId !== userId.value) discardCachedPaint()
 
   // Confirmed signed in: remember this user so a later offline open can boot.
   rememberUser(localStorage, userId.value)
@@ -498,12 +511,32 @@ function declineNotifications() {
   setNotificationPreference(localStorage, 'off')
 }
 
+// Which user the painted cache belongs to. We paint before Clerk can confirm the
+// session, so if it then resolves to somebody else that paint is the wrong
+// person's list and has to be dropped.
+let hydratedUserId = ''
+
+// Throw away a cache painted for a different user than the one Clerk confirmed.
+function discardCachedPaint() {
+  hydratedUserId = ''
+  paintedFromCache.value = false
+  items.value = []
+  familyMembers.value = []
+  familyId.value = ''
+  familyName.value = ''
+  familyInviteCode.value = ''
+  familyOwnerId.value = ''
+  familyEmoji.value = ''
+}
+
 // Paint the last known state immediately (stale-while-revalidate): a returning
 // user sees their list instead of skeletons while the fresh fetches above run.
 function hydrateFromCachedSnapshot() {
   if (items.value.length) return
   const snapshot = loadFamilySnapshot(localStorage, effectiveUserId.value)
   if (!snapshot) return
+  hydratedUserId = effectiveUserId.value
+  paintedFromCache.value = true
   familyId.value = snapshot.familyId
   familyName.value = snapshot.familyName
   familyInviteCode.value = snapshot.familyInviteCode
