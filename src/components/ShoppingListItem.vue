@@ -1,6 +1,8 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { getProductEmoji } from '../lib/productEmoji'
+import checkIcon from '../assets/check.svg?raw'
+import xIcon from '../assets/x.svg?raw'
 
 const props = defineProps({
   item: {
@@ -190,9 +192,7 @@ function onKeydown(event) {
       :style="{ '--pull': pullProgress }"
       aria-hidden="true"
     >
-      <svg class="item-action__icon" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <polyline points="2,7 6,11 12,3" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
+      <span class="item-action__icon" v-html="checkIcon"></span>
       <span class="item-action__label">{{ item.checked ? 'Uncheck' : 'Got it' }}</span>
     </div>
     <!-- Action revealed under a leftward swipe -->
@@ -204,9 +204,7 @@ function onKeydown(event) {
       aria-hidden="true"
     >
       <span class="item-action__label">Remove</span>
-      <svg class="item-action__icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M4 6h12M8 6V4.5A1.5 1.5 0 0 1 9.5 3h1A1.5 1.5 0 0 1 12 4.5V6m2 0v9a1.5 1.5 0 0 1-1.5 1.5h-5A1.5 1.5 0 0 1 6 15V6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
+      <span class="item-action__icon" v-html="xIcon"></span>
     </div>
 
     <div
@@ -297,7 +295,18 @@ function onKeydown(event) {
   width: 20px;
   height: 20px;
   flex-shrink: 0;
+  display: inline-flex;
   transform: scale(calc(0.72 + var(--pull, 0) * 0.28));
+}
+
+/* v-html content carries no scope attribute, hence :deep. The assets ship at
+   stroke-width 1 for a 24px box, which disappears at 20px on a solid panel. */
+.item-action__icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2.4;
 }
 
 .item-action--armed .item-action__icon {
