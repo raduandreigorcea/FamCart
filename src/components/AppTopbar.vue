@@ -6,6 +6,7 @@ import MemberAvatarStack from './MemberAvatarStack.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { sortMembersForSwitcher } from '../lib/memberRoles'
 import { DEFAULT_FAMILY_EMOJI } from '../lib/familyEmoji'
+import { avatarSlotsForFamilyName } from '../lib/avatarStack'
 import chevronLeftRaw from '../assets/chevron-left.svg?raw'
 import checkRaw from '../assets/check.svg?raw'
 import plusRaw from '../assets/plus.svg?raw'
@@ -171,6 +172,9 @@ const memberCount = computed(() => props.memberProfiles.length)
 const orderedActiveMembers = computed(() =>
   sortMembersForSwitcher(props.memberProfiles || [], props.ownerUserId, props.currentUserId),
 )
+
+// The stack yields room to a long family name rather than crowding it.
+const avatarSlots = computed(() => avatarSlotsForFamilyName(props.familyName))
 </script>
 
 <template>
@@ -201,7 +205,7 @@ const orderedActiveMembers = computed(() =>
           <MemberAvatarStack
             :members="orderedActiveMembers"
             :loading="membersLoading"
-            :max-visible="4"
+            :max-visible="avatarSlots"
           />
         </button>
       </template>
