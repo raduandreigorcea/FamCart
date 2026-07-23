@@ -27,6 +27,7 @@ import shoppingCartIcon from '../assets/shopping-cart.svg?raw'
 import ellipsisIcon from '../assets/ellipsis.svg?raw'
 import shieldIcon from '../assets/shield.svg?raw'
 import userRoundIcon from '../assets/user-round.svg?raw'
+import stickerIcon from '../assets/sticker.svg?raw'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -625,7 +626,7 @@ async function deleteFamily() {
 
                   <section v-if="isOwner" class="card-item pref-card">
                     <div class="pref-card__head">
-                      <span class="pref-card__icon" v-html="squarePenIcon"></span>
+                      <span class="pref-card__icon" v-html="stickerIcon"></span>
                       <div class="pref-card__meta">
                         <h5>Family Emoji</h5>
                         <p>Pick an emoji to represent your family in the switcher.</p>
