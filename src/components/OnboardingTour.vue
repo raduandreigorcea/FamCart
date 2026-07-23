@@ -3,6 +3,8 @@
 // gestures a new (or returning-after-the-redesign) user needs. Rendered by
 // HomeView over the real list; dismissing marks it seen.
 import { ref, computed, watch } from 'vue'
+import checkIcon from '../assets/check.svg?raw'
+import xIcon from '../assets/x.svg?raw'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -93,22 +95,16 @@ async function copyCode() {
                 </div>
               </div>
 
-              <!-- Swipe: green check zone · item · red remove zone -->
+              <!-- Swipe: green check zone · item · red remove zone. The icons come
+                   from the same assets ShoppingListItem uses, so what the tour
+                   teaches is what the gesture actually shows. -->
               <div v-else-if="current.key === 'swipe'" class="art-swipe">
-                <span class="art-swipe__zone art-swipe__zone--check" aria-hidden="true">
-                  <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </span>
+                <span class="art-swipe__zone art-swipe__zone--check" aria-hidden="true" v-html="checkIcon"></span>
                 <div class="art-swipe__row">
                   <span class="art-swipe__emoji">🍞</span>
                   <span class="art-swipe__name">Bread</span>
                 </div>
-                <span class="art-swipe__zone art-swipe__zone--del" aria-hidden="true">
-                  <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M4 6h12M8 6V4.5A1.5 1.5 0 0 1 9.5 3h1A1.5 1.5 0 0 1 12 4.5V6m2 0v9a1.5 1.5 0 0 1-1.5 1.5h-5A1.5 1.5 0 0 1 6 15V6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </span>
+                <span class="art-swipe__zone art-swipe__zone--del" aria-hidden="true" v-html="xIcon"></span>
               </div>
 
               <!-- Invite -->
@@ -266,7 +262,10 @@ async function copyCode() {
   flex-shrink: 0; width: 2.4rem; height: 2.4rem; border-radius: var(--radius-lg);
   display: inline-flex; align-items: center; justify-content: center; color: #fff;
 }
-.art-swipe__zone svg { width: 20px; height: 20px; }
+/* Same icons and weight the real swipe panels use, so the lesson matches. */
+.art-swipe__zone :deep(svg) {
+  width: 20px; height: 20px; stroke: currentColor; stroke-width: 2.4;
+}
 .art-swipe__zone--check { background: var(--color-primary); }
 .art-swipe__zone--del { background: var(--danger-solid); }
 .art-swipe__row {
