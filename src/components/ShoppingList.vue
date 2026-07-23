@@ -4,9 +4,9 @@ import ShoppingListItem from './ShoppingListItem.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { sumActiveQuantities, sumCheckedQuantities } from '../lib/shoppingList'
 
-// Presentational: renders the unchecked/checked sections with their move
-// animations, the initial-load skeleton, and the empty state. All mutations
-// stay with the parent, which owns the items.
+// Presentational: renders the list with its move animations, the initial-load
+// skeleton, and the empty state. All mutations stay with the parent, which owns
+// the items.
 const props = defineProps({
   items: { type: Array, default: () => [] },
   // Map<user_id, { display_name, image_url }> — the family roster, used to
@@ -50,6 +50,10 @@ const buying = ref(false)
 const buttonSuccess = ref(false)
 const drainingIds = ref([])
 const isDraining = (id) => drainingIds.value.includes(id)
+// Position among the draining rows, so they fall into the bar in a stagger.
+// Checked rows now sit wherever they were added, so the order comes from the
+// drain list rather than from a contiguous checked section.
+const drainIndex = (id) => Math.max(0, drainingIds.value.indexOf(id))
 
 function startCheckout() {
   if (buying.value || !checkedItems.value.length) return
@@ -189,32 +193,17 @@ const labelText = computed(() =>
     </li>
   </ul>
 
-  <!-- List -->
-  <TransitionGroup tag="ul" name="unchecked" class="item-list">
+  <!-- One list, in one order. Ticking a row restyles it in place instead of
+       moving it to a section at the bottom. -->
+  <TransitionGroup tag="ul" name="row" class="item-list">
     <ShoppingListItem
-      v-for="item in uncheckedItems"
-      :key="item.id"
-      :item="item"
-      :avatar-url="avatarUrl(item)"
-      :avatar-name="avatarName(item)"
-      @toggle="$emit('toggle', $event)"
-      @delete="$emit('delete', $event)"
-    />
-  </TransitionGroup>
-
-  <Transition name="section-fade">
-    <p v-if="checkedItems.length" class="section-label">Checked</p>
-  </Transition>
-
-  <TransitionGroup tag="ul" name="checked" class="item-list" :class="{ 'item-list--checked': checkedItems.length }">
-    <ShoppingListItem
-      v-for="(item, idx) in checkedItems"
+      v-for="item in items"
       :key="item.id"
       :item="item"
       :avatar-url="avatarUrl(item)"
       :avatar-name="avatarName(item)"
       :draining="isDraining(item.id)"
-      :drain-index="idx"
+      :drain-index="drainIndex(item.id)"
       @toggle="$emit('toggle', $event)"
       @delete="$emit('delete', $event)"
     />
@@ -322,23 +311,18 @@ const labelText = computed(() =>
   position: relative;
 }
 
-.item-list--checked {
-  margin-top: 0.4rem;
-}
-
-.unchecked-move,
-.checked-move {
+/* Rows still animate for the things that genuinely move them: something added,
+   removed, or checked out. Ticking is no longer one of those. */
+.row-move {
   transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
 }
 
-.unchecked-enter-active,
-.checked-enter-active {
+.row-enter-active {
   transition: opacity 0.32s ease, transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.unchecked-leave-active,
-.checked-leave-active {
+.row-leave-active {
   transition: opacity var(--transition-base) ease, transform var(--transition-base) ease;
   position: absolute;
   width: 100%;
@@ -346,43 +330,14 @@ const labelText = computed(() =>
   z-index: 2;
 }
 
-.unchecked-enter-from {
+.row-enter-from {
   opacity: 0;
   transform: translateY(-8px) scale(0.995);
 }
 
-.unchecked-leave-to {
+.row-leave-to {
   opacity: 0;
   transform: translateY(8px) scale(0.995);
-}
-
-.checked-enter-from {
-  opacity: 0;
-  transform: translateY(8px) scale(0.995);
-}
-
-.checked-leave-to {
-  opacity: 0;
-  transform: translateY(-8px) scale(0.995);
-}
-
-.section-fade-enter-active,
-.section-fade-leave-active {
-  transition: opacity var(--transition-base) ease;
-}
-
-.section-fade-enter-from,
-.section-fade-leave-to {
-  opacity: 0;
-}
-
-.section-label {
-  margin: 1rem 0 0.45rem;
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-disabled);
 }
 
 /* Empty state */
