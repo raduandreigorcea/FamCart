@@ -591,42 +591,17 @@ async function refreshFamilyAfterSettingsChange() {
 async function loadFamilies() {
   const { data, error } = await db
     .from('family_members')
-    .select('family_id, families(id, name, created_by)')
+    .select('family_id, families(name)')
     .eq('user_id', userId.value)
   if (error) return { error }
+  // The switcher renders an emoji tile, a name and a tick, so that is all a row
+  // carries. It used to fetch every family's full roster here to draw composite
+  // member avatars; those are gone, and so is the extra round trip.
   const list = (data || []).map((row) => ({
     id: row.family_id,
     name: row.families?.name ?? '',
-    ownerId: row.families?.created_by ?? '',
     emoji: '',
-    members: [],
   }))
-
-  // Best-effort rosters for the switcher's avatar stacks. RLS already scopes
-  // family_members to the families this user belongs to, so one unfiltered select
-  // returns exactly their co-members — no per-family round trip. A failure just
-  // means the switcher falls back to monograms.
-  try {
-    const { data: rosterRows } = await db
-      .from('family_members')
-      .select('family_id, user_id, role, profiles(display_name, image_url)')
-    if (Array.isArray(rosterRows)) {
-      const byFamily = new Map()
-      for (const m of rosterRows) {
-        const bucket = byFamily.get(m.family_id) || []
-        bucket.push({
-          user_id: m.user_id,
-          role: m.role,
-          display_name: m.profiles?.display_name || m.user_id,
-          image_url: m.profiles?.image_url || null,
-        })
-        byFamily.set(m.family_id, bucket)
-      }
-      for (const fam of list) fam.members = byFamily.get(fam.id) || []
-    }
-  } catch {
-    // Rosters are a nicety; the switcher still works without them.
-  }
 
   // Best-effort family emoji (its column may be unmigrated), keyed by family id.
   // RLS scopes families to this user, so one unfiltered select is enough.

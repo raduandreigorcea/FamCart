@@ -3,6 +3,7 @@
 // gestures a new (or returning-after-the-redesign) user needs. Rendered by
 // HomeView over the real list; dismissing marks it seen.
 import { ref, computed, watch } from 'vue'
+import addIcon from '../assets/add.svg?raw'
 import checkIcon from '../assets/check.svg?raw'
 import xIcon from '../assets/x.svg?raw'
 
@@ -87,7 +88,7 @@ async function copyCode() {
               <div v-if="current.key === 'add'" class="art-add">
                 <div class="art-addbar">
                   <span class="art-addbar__text">Avocados</span>
-                  <span class="art-addbar__btn">＋</span>
+                  <span class="art-addbar__btn" v-html="addIcon"></span>
                 </div>
                 <div class="art-suggest">
                   <span class="art-suggest__row"><span>🥑</span> Avocado</span>
@@ -240,10 +241,15 @@ async function copyCode() {
   border-radius: var(--radius-xl); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
   font-size: var(--text-sm); color: var(--text-primary); font-weight: var(--weight-semibold);
 }
+/* The real add button's icon, not a "＋" glyph: the fullwidth character has
+   uneven side bearings, so it never sat centred in the tile. */
 .art-addbar__btn {
   width: 1.7rem; height: 1.7rem; border-radius: var(--radius-md);
   background: var(--color-primary); color: var(--text-inverse);
-  display: inline-flex; align-items: center; justify-content: center; font-size: var(--text-md);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.art-addbar__btn :deep(svg) {
+  width: 0.85rem; height: 0.85rem; display: block; stroke: currentColor;
 }
 .art-suggest {
   background: var(--bg-surface); border: var(--border-width-thin) solid var(--border-main);
@@ -260,7 +266,7 @@ async function copyCode() {
 .art-swipe { display: flex; align-items: center; justify-content: center; gap: var(--space-3); width: 100%; }
 .art-swipe__zone {
   flex-shrink: 0; width: 2.4rem; height: 2.4rem; border-radius: var(--radius-lg);
-  display: inline-flex; align-items: center; justify-content: center; color: #fff;
+  display: inline-flex; align-items: center; justify-content: center; color: var(--text-inverse);
 }
 /* Same icons and weight the real swipe panels use, so the lesson matches. */
 .art-swipe__zone :deep(svg) {

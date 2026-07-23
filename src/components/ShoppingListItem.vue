@@ -261,7 +261,7 @@ function onKeydown(event) {
   align-items: center;
   gap: 0.5rem;
   padding: 0 1.25rem;
-  color: #fff;
+  color: var(--text-inverse);
   font-size: var(--text-sm);
   font-weight: var(--weight-bold);
 }
