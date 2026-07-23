@@ -100,7 +100,7 @@ onBeforeUnmount(() => {
 .offline-icon :deep(svg) {
   width: 28px;
   height: 28px;
-  /* The asset ships with a white stroke; drive it from the icon colour instead. */
+  /* The asset ships at stroke-width 1 for a 24px box; weight it for this size. */
   stroke: currentColor;
   stroke-width: 2;
 }
