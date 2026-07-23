@@ -239,8 +239,9 @@ export function useFamilyRealtime({
             const idx = items.value.findIndex((i) => i.id === newRecord.id)
             if (idx !== -1) {
               items.value[idx] = { ...items.value[idx], ...newRecord }
-              // checked/checked_at may have changed (another member ticked it),
-              // so re-sort to move the row into the right section and position.
+              // Re-assert the canonical order after the merge. A remote tick
+              // does not move the row (order is creation time), but the merged
+              // record is the authority on created_at.
               items.value = sortItemsForDisplay(items.value)
             } else {
               void loadItems()

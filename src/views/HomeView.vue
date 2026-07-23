@@ -723,8 +723,9 @@ async function loadItems() {
       .select('*')
       .eq('family_id', familyId.value)
       .eq('checked', true)
-      // Most recently checked first, so the 30-row cap keeps the latest ticks;
-      // sortItemsForDisplay orders the merged list the same way.
+      // Most recently checked first, so the 30-row cap keeps the latest ticks.
+      // This is a "which rows survive the cap" order, not a display order:
+      // sortItemsForDisplay puts the merged list back into creation order.
       .order('checked_at', { ascending: false, nullsFirst: false })
       .limit(30)
   ])
@@ -747,8 +748,8 @@ async function loadItems() {
   if (pendingItemWrites.size) {
     // A write is in flight for some rows: keep the local optimistic version of
     // those, so this refetch can't momentarily revert a just-checked item to the
-    // server's pre-write state (the "check bounces back" bug). Re-sorting below
-    // moves the kept row into its correct checked/active section.
+    // server's pre-write state (the "check bounces back" bug). The kept row
+    // sorts by creation time like every other, so its position is unaffected.
     const localById = new Map(items.value.map((i) => [i.id, i]))
     for (let i = 0; i < fresh.length; i++) {
       const local = pendingItemWrites.has(fresh[i].id) && localById.get(fresh[i].id)
@@ -967,14 +968,13 @@ async function toggleItem(item) {
     }
   }
 
-  // Optimistic: flip immediately, roll back if the write fails. Mirror checked_at
-  // so a checked item jumps to the top of the checked section right away (newest
-  // tick first), and clear it on uncheck; re-sort so it lands there now. The DB
-  // trigger (migration 024) is the authority on the stored value, so we only send
-  // `checked` — the server stamps the time itself.
+  // Optimistic: flip immediately, roll back if the write fails. checked_at is
+  // mirrored because the refetch's 30-row cap is taken on it, not because it
+  // affects position: display order is creation time, so a tick never moves the
+  // row. The DB trigger (migration 024) is the authority on the stored value, so
+  // we only send `checked` — the server stamps the time itself.
   item.checked = nextChecked
   item.checked_at = nextChecked ? new Date().toISOString() : null
-  items.value = sortItemsForDisplay(items.value)
   const patch = { checked: nextChecked }
 
   if (isOffline()) {
@@ -1001,7 +1001,6 @@ async function toggleItem(item) {
       if (deferIfOffline(error, { kind: 'update', id: item.id, patch })) return
       item.checked = previous
       item.checked_at = previousCheckedAt
-      items.value = sortItemsForDisplay(items.value)
       // Unchecking would push the member over the active-item cap (migration 010
       // now enforces it on uncheck too): show the same friendly popup as adding.
       if (error.message?.includes('member_active_item_limit_exceeded')
