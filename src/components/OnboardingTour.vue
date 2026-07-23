@@ -3,6 +3,7 @@
 // gestures a new (or returning-after-the-redesign) user needs. Rendered by
 // HomeView over the real list; dismissing marks it seen.
 import { ref, computed, watch } from 'vue'
+import BackButton from './BackButton.vue'
 import addIcon from '../assets/add.svg?raw'
 import checkIcon from '../assets/check.svg?raw'
 import xIcon from '../assets/x.svg?raw'
@@ -141,7 +142,7 @@ async function copyCode() {
         </div>
 
         <div class="tour-actions">
-          <button v-if="step > 0" class="tour-back" type="button" @click="back">Back</button>
+          <BackButton v-if="step > 0" @click="back" />
           <button class="tour-next" type="button" @click="next">
             {{ isLast ? 'Start shopping' : 'Next' }}
           </button>
@@ -326,19 +327,17 @@ async function copyCode() {
 
 /* ── Actions ── */
 .tour-actions { display: flex; align-items: center; gap: var(--space-3); }
-.tour-back {
-  flex-shrink: 0; background: none; border: none; cursor: pointer;
-  color: var(--text-secondary); font-size: var(--text-base); font-weight: var(--weight-bold);
-  padding: 0.65rem var(--space-3); border-radius: var(--radius-md);
-}
-.tour-back:hover { color: var(--text-primary); background: var(--bg-hover); }
+/* Shared BackButton. It carries a top margin for standalone use at the top of a
+   view; this row centres its items, so drop it and keep it from being squeezed. */
+.tour-actions :deep(.back-btn) { flex-shrink: 0; margin-top: 0; }
 .tour-next {
   flex: 1; background: var(--color-primary); color: var(--text-inverse); border: none;
   border-radius: var(--radius-md); padding: 0.75rem var(--space-4);
   font-size: var(--text-base); font-weight: var(--weight-bold); cursor: pointer;
-  box-shadow: var(--elevation-primary); transition: transform var(--transition-fast) ease;
+  box-shadow: var(--elevation-primary); transition: background var(--transition-fast) ease;
 }
-.tour-next:hover { transform: translateY(-1px); }
+/* Colour shift only — a lift here nudged the card's whole action row on hover. */
+.tour-next:hover { background: color-mix(in srgb, var(--color-primary) 85%, var(--text-primary)); }
 
 /* ── Transitions ── */
 .tour-fade-enter-active, .tour-fade-leave-active { transition: opacity var(--transition-base) ease; }
