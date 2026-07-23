@@ -144,8 +144,7 @@ const emit = defineEmits(['confirm', 'cancel'])
   display: inline-flex;
 }
 
-/* triangle-alert.svg ships with a hardcoded white stroke at width 1, which
-   would vanish against the light danger background. Drive both from here. */
+/* The assets ship at stroke-width 1 for a 24px box; weight it for this size. */
 .confirm-dialog__icon :deep(svg) {
   width: 100%;
   height: 100%;
