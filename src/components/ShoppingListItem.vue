@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { getProductEmoji } from '../lib/productEmoji'
 
 const props = defineProps({
@@ -37,16 +37,60 @@ const emit = defineEmits(['toggle', 'delete'])
 // to a shopping-list item. A short press with no travel is a tap, which also
 // toggles (the keyboard/mouse path). touch-action:pan-y on the face lets the
 // list scroll vertically while we own the horizontal drag.
-const TRIGGER = 72 // px of travel that commits the action on release
-const MAX_PULL = 132 // how far the row can be dragged, past which it resists
+//
+// Two rules keep the gesture from firing when you didn't mean it:
+//   1. Deleting asks for a longer pull than checking. A wrong check costs one
+//      tap to undo; a wrong delete costs the item.
+//   2. A shallow diagonal belongs to the scroller, not to us.
+// And the row tells you where it stands the whole way: the panel fills in as
+// you pull, then snaps to full colour, resists, and buzzes the moment letting
+// go would actually do something.
+const TRIGGER_CHECK = 72 // px of travel that commits a check/uncheck
+const TRIGGER_DELETE = 104 // deliberately further: deleting is not reversible
+const MAX_PULL = 150 // hard stop the row bottoms out against
+const AXIS_LOCK = 10 // px of travel before we decide swipe vs. scroll
+const AXIS_BIAS = 1.4 // how decisively sideways a swipe has to be
 
 const offset = ref(0) // current horizontal translation of the face
 const dragging = ref(false) // true only while actively tracking a horizontal drag
+const armed = ref(false) // pulled far enough that releasing now commits
 
 let pointerId = null
 let startX = 0
 let startY = 0
 let axis = null // 'x' once we've committed to a horizontal drag, 'y' for a scroll
+
+const triggerFor = (value) => (value > 0 ? TRIGGER_CHECK : TRIGGER_DELETE)
+
+// 0..1 toward the active side's commit distance. Drives the icon and label, so
+// the panel reads as a gauge filling up rather than a fixed backdrop.
+const pullProgress = computed(() => {
+  if (!offset.value) return 0
+  return Math.min(1, Math.abs(offset.value) / triggerFor(offset.value))
+})
+
+// Follow the finger 1:1 up to the commit distance, then push back hard. The row
+// visibly slows at exactly the point where the action arms, so the threshold is
+// something you feel rather than something you guess at.
+function resist(dx) {
+  const dir = Math.sign(dx)
+  const dist = Math.abs(dx)
+  const trigger = triggerFor(dx)
+  if (dist <= trigger) return dx
+  const eased = trigger + (dist - trigger) * 0.45
+  if (eased <= MAX_PULL) return dir * eased
+  return dir * (MAX_PULL + (eased - MAX_PULL) * 0.15)
+}
+
+// A short buzz as the action arms, where the platform allows it. The colour
+// change is the real signal; this is a bonus on hardware that can do it.
+function tick() {
+  try {
+    navigator.vibrate?.(10)
+  } catch {
+    /* Vibration can be blocked by policy; the visual state still covers it. */
+  }
+}
 
 function onPointerDown(event) {
   // Ignore secondary buttons and anything mid-drain.
@@ -62,11 +106,12 @@ function onPointerMove(event) {
   const dx = event.clientX - startX
   const dy = event.clientY - startY
 
-  // Decide the gesture's axis once it has moved enough to tell. A vertical
-  // intent belongs to the scroller, so we bow out and never start the drag.
+  // Decide the gesture's axis once it has moved enough to tell, and require the
+  // sideways component to clearly win: an ambiguous diagonal is someone
+  // scrolling the list, so we bow out and never start the drag.
   if (axis === null) {
-    if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return
-    axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y'
+    if (Math.abs(dx) < AXIS_LOCK && Math.abs(dy) < AXIS_LOCK) return
+    axis = Math.abs(dx) > Math.abs(dy) * AXIS_BIAS ? 'x' : 'y'
     if (axis === 'x') {
       dragging.value = true
       event.currentTarget.setPointerCapture?.(pointerId)
@@ -74,22 +119,25 @@ function onPointerMove(event) {
   }
   if (axis !== 'x') return
 
-  // Follow the finger, but add resistance past MAX_PULL so it feels bounded.
-  let next = dx
-  if (Math.abs(dx) > MAX_PULL) {
-    const over = Math.abs(dx) - MAX_PULL
-    next = Math.sign(dx) * (MAX_PULL + over * 0.25)
+  offset.value = resist(dx)
+
+  // Arm on the raw travel, not the resisted offset: they agree at the boundary,
+  // and the finger's own distance is what the user is actually judging.
+  const nextArmed = Math.abs(dx) >= triggerFor(dx)
+  if (nextArmed !== armed.value) {
+    armed.value = nextArmed
+    if (nextArmed) tick()
   }
-  offset.value = next
 }
 
 function onPointerUp(event) {
   if (pointerId !== event.pointerId) return
-  const travelled = axis === 'x'
-  const committed = Math.abs(offset.value) >= TRIGGER
+  const swiped = axis === 'x'
+  const tapped = axis === null
+  const committed = armed.value
   pointerId = null
 
-  if (travelled && committed) {
+  if (swiped && committed) {
     if (offset.value > 0) {
       // Swipe right: check / uncheck. Snap back so the row settles into its new
       // (checked) state rather than staying pulled aside.
@@ -100,20 +148,22 @@ function onPointerUp(event) {
       // the row on the next tick.
       offset.value = -window.innerWidth
       dragging.value = false
+      armed.value = false
       emit('delete', props.item)
     }
     return
   }
 
-  if (!travelled) {
-    // No real travel — treat as a tap to toggle (keyboard/mouse path too).
-    emit('toggle', props.item)
-  }
+  // Only a press that never became a drag counts as a tap. A gesture that
+  // resolved as a scroll has to end as a scroll: releasing your finger after
+  // dragging the list past a row must not toggle that row.
+  if (tapped) emit('toggle', props.item)
   settle()
 }
 
 function settle() {
   dragging.value = false
+  armed.value = false
   offset.value = 0
   axis = null
 }
@@ -133,14 +183,26 @@ function onKeydown(event) {
     :style="draining ? { '--drain-index': drainIndex } : null"
   >
     <!-- Action revealed under a rightward swipe -->
-    <div v-show="offset > 0" class="item-action item-action--check" aria-hidden="true">
+    <div
+      v-show="offset > 0"
+      class="item-action item-action--check"
+      :class="{ 'item-action--armed': armed }"
+      :style="{ '--pull': pullProgress }"
+      aria-hidden="true"
+    >
       <svg class="item-action__icon" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
         <polyline points="2,7 6,11 12,3" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
       <span class="item-action__label">{{ item.checked ? 'Uncheck' : 'Got it' }}</span>
     </div>
     <!-- Action revealed under a leftward swipe -->
-    <div v-show="offset < 0" class="item-action item-action--delete" aria-hidden="true">
+    <div
+      v-show="offset < 0"
+      class="item-action item-action--delete"
+      :class="{ 'item-action--armed': armed }"
+      :style="{ '--pull': pullProgress }"
+      aria-hidden="true"
+    >
       <span class="item-action__label">Remove</span>
       <svg class="item-action__icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M4 6h12M8 6V4.5A1.5 1.5 0 0 1 9.5 3h1A1.5 1.5 0 0 1 12 4.5V6m2 0v9a1.5 1.5 0 0 1-1.5 1.5h-5A1.5 1.5 0 0 1 6 15V6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
@@ -206,20 +268,45 @@ function onKeydown(event) {
   font-weight: var(--weight-bold);
 }
 
+/* Held back at partial strength while the pull is still short of committing,
+   then snapped to full colour the instant it arms. That snap, not the distance,
+   is what tells you letting go will actually do something. */
 .item-action--check {
   justify-content: flex-start;
+  background: color-mix(in srgb, var(--color-primary) 55%, var(--bg-surface));
+  transition: background var(--transition-fast) var(--ease-standard);
+}
+
+.item-action--check.item-action--armed {
   background: var(--color-primary);
 }
 
 .item-action--delete {
   justify-content: flex-end;
+  background: color-mix(in srgb, var(--danger-solid) 55%, var(--bg-surface));
+  transition: background var(--transition-fast) var(--ease-standard);
+}
+
+.item-action--delete.item-action--armed {
   background: var(--danger-solid);
 }
 
+/* Icon grows and label fades in with the pull, so the panel fills up as you go
+   instead of looking the same at 5px and at 100px. */
 .item-action__icon {
   width: 20px;
   height: 20px;
   flex-shrink: 0;
+  transform: scale(calc(0.72 + var(--pull, 0) * 0.28));
+}
+
+.item-action--armed .item-action__icon {
+  transform: scale(1.18);
+  transition: transform var(--transition-fast) cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.item-action__label {
+  opacity: var(--pull, 0);
 }
 
 /* ── Draggable face ── */
@@ -284,6 +371,9 @@ function onKeydown(event) {
     opacity: 0;
   }
   .item-face:not(.item-face--dragging) {
+    transition: none;
+  }
+  .item-action--armed .item-action__icon {
     transition: none;
   }
 }
