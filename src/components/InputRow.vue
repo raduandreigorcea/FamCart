@@ -1,4 +1,6 @@
 <script setup>
+import arrowRightIcon from '../assets/arrow-right.svg?raw'
+
 defineProps({
   modelValue: String,
   type: { type: String, default: 'text' },
@@ -29,10 +31,7 @@ defineEmits(['update:modelValue'])
     />
     <button type="submit" class="submit-btn" :disabled="loading" aria-label="Continue">
       <span v-if="loading" class="spinner"></span>
-      <svg v-else viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
+      <span v-else class="submit-btn__icon" aria-hidden="true" v-html="arrowRightIcon"></span>
     </button>
   </div>
 </template>
@@ -94,9 +93,19 @@ defineEmits(['update:modelValue'])
   padding: 0;
 }
 
-.submit-btn svg {
+.submit-btn__icon {
   width: var(--size-icon-lg);
   height: var(--size-icon-lg);
+  display: inline-flex;
+}
+
+/* The asset ships at stroke-width 1 for a 24px box; weight it for this size. */
+.submit-btn__icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2;
 }
 
 .submit-btn:disabled {

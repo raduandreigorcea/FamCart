@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import AppButton from './AppButton.vue'
+import triangleAlertIcon from '../assets/triangle-alert.svg?raw'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -36,9 +37,14 @@ const emit = defineEmits(['confirm', 'cancel'])
     <div v-if="open" class="confirm-overlay" @click.self="emit('cancel')">
       <div class="confirm-dialog" :class="`confirm-dialog--${resolvedTone}`" role="alertdialog" aria-modal="true" aria-labelledby="confirm-modal-title">
         <div class="confirm-dialog__icon-wrap" :class="`confirm-dialog__icon-wrap--${resolvedTone}`">
-          <svg v-if="resolvedTone === 'danger'" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="confirm-dialog__icon">
-            <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+          <span
+            v-if="resolvedTone === 'danger'"
+            class="confirm-dialog__icon"
+            aria-hidden="true"
+            v-html="triangleAlertIcon"
+          ></span>
+          <!-- The success tick and the neutral exclamation have no asset of their
+               own, so they stay inline. -->
           <svg v-else-if="resolvedTone === 'success'" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="confirm-dialog__icon">
             <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
             <path d="M8 12.5l2.5 2.5L16 9.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -135,6 +141,17 @@ const emit = defineEmits(['confirm', 'cancel'])
 .confirm-dialog__icon {
   width: 26px;
   height: 26px;
+  display: inline-flex;
+}
+
+/* triangle-alert.svg ships with a hardcoded white stroke at width 1, which
+   would vanish against the light danger background. Drive both from here. */
+.confirm-dialog__icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2;
 }
 
 .confirm-dialog__body {
