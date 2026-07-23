@@ -54,21 +54,6 @@ function decreaseQty() {
   <form class="add-form" @submit.prevent="emit('submit')">
     <div class="add-row">
       <div class="qty-picker" aria-label="Item quantity">
-        <div class="qty-value-wrap" aria-live="polite">
-          <Transition :name="qtyDirection === 'up' ? 'qty-slide-up' : 'qty-slide-down'" mode="out-in">
-            <span :key="quantity" class="qty-value">{{ quantity }}</span>
-          </Transition>
-        </div>
-        <div class="qty-buttons">
-        <button
-          type="button"
-          class="qty-btn"
-          @click="increaseQty"
-          :disabled="quantity >= 99 || adding"
-          aria-label="Increase quantity"
-        >
-          <span class="qty-icon qty-icon--plus"></span>
-        </button>
         <button
           type="button"
           class="qty-btn"
@@ -78,7 +63,20 @@ function decreaseQty() {
         >
           <span class="qty-icon qty-icon--minus"></span>
         </button>
+        <div class="qty-value-wrap" aria-live="polite">
+          <Transition :name="qtyDirection === 'up' ? 'qty-slide-up' : 'qty-slide-down'" mode="out-in">
+            <span :key="quantity" class="qty-value">{{ quantity }}</span>
+          </Transition>
         </div>
+        <button
+          type="button"
+          class="qty-btn"
+          @click="increaseQty"
+          :disabled="quantity >= 99 || adding"
+          aria-label="Increase quantity"
+        >
+          <span class="qty-icon qty-icon--plus"></span>
+        </button>
       </div>
       <input
         v-model="name"
@@ -186,7 +184,7 @@ function decreaseQty() {
   margin: 0;
   padding: 0.3rem;
   background: var(--bg-surface);
-  border: 1.5px solid var(--border-main);
+  border: var(--border-width-base) solid var(--border-main);
   border-radius: var(--radius-xl);
   box-shadow: 0 10px 28px color-mix(in srgb, var(--text-primary) 14%, transparent);
   max-height: 275px;
@@ -231,7 +229,7 @@ function decreaseQty() {
 
 .suggestion-emoji {
   flex-shrink: 0;
-  font-size: 1rem;
+  font-size: var(--text-lg);
   line-height: 1;
   display: inline-flex;
   align-items: center;
@@ -240,7 +238,7 @@ function decreaseQty() {
   height: 1.9rem;
   border-radius: 0.6rem;
   background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
-  border: 1px solid color-mix(in srgb, var(--color-primary) 22%, var(--bg-surface));
+  border: var(--border-width-thin) solid color-mix(in srgb, var(--color-primary) 22%, var(--bg-surface));
 }
 
 .suggestion-text {
@@ -250,7 +248,7 @@ function decreaseQty() {
 }
 
 .suggestion-name {
-  font-size: 0.92rem;
+  font-size: var(--text-md);
   color: var(--text-primary);
   line-height: 1.3;
   overflow: hidden;
@@ -259,8 +257,8 @@ function decreaseQty() {
 }
 
 .suggestion-maker {
-  font-size: 0.72rem;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
   color: var(--text-secondary);
   line-height: 1.3;
 }
@@ -270,7 +268,7 @@ function decreaseQty() {
    rather than as one more thing to buy. When it is the only row there is
    nothing to separate it from, so the rule collapses. */
 .suggestions-hatch:not(:only-child) {
-  border-top: 1px solid var(--border-light);
+  border-top: var(--border-width-thin) solid var(--border-light);
   margin-top: 0.3rem;
   padding-top: 0.3rem;
 }
@@ -299,10 +297,10 @@ function decreaseQty() {
   display: flex;
   align-items: center;
   background: var(--bg-surface);
-  border: 1.5px solid var(--border-main);
+  border: var(--border-width-base) solid var(--border-main);
   border-radius: var(--radius-2xl);
   overflow: hidden;
-  transition: border-color 0.15s;
+  transition: border-color var(--transition-fast);
 }
 
 .add-row:focus-within {
@@ -315,7 +313,7 @@ function decreaseQty() {
   border: none;
   background: transparent;
   font-family: inherit;
-  font-size: 0.95rem;
+  font-size: var(--text-md);
   color: var(--text-primary);
   outline: none;
   min-width: 0;
@@ -327,41 +325,38 @@ function decreaseQty() {
 
 .qty-picker {
   display: inline-flex;
-  flex-direction: row;
   align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  border-right: 1px solid var(--border-main);
-  padding: 0.2rem 0.5rem;
-  margin-right: 0.2rem;
-}
-
-.qty-buttons {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.15rem;
+  gap: 0.1rem;
+  border-right: var(--border-width-thin) solid var(--border-main);
+  padding: 0.3rem 0.5rem 0.3rem 0.4rem;
+  margin-right: 0.1rem;
 }
 
 .qty-btn {
-  width: 24px;
-  height: 24px;
-  border: 1px solid var(--border-main);
-  background: var(--bg-surface);
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
   color: var(--text-secondary);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   line-height: 1;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.qty-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--color-primary);
 }
 
 .qty-icon {
   width: var(--size-icon-sm);
   height: var(--size-icon-sm);
-  background-color: var(--text-secondary);
+  background-color: currentColor;
 }
 
 .qty-icon--plus {
@@ -375,13 +370,13 @@ function decreaseQty() {
 }
 
 .qty-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.3;
   cursor: not-allowed;
 }
 
 .qty-value-wrap {
-  min-width: 1.8rem;
-  height: 1.1rem;
+  min-width: 1.4rem;
+  height: 1.3rem;
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -389,11 +384,12 @@ function decreaseQty() {
 }
 
 .qty-value {
-  min-width: 1.6rem;
+  min-width: 1.4rem;
   text-align: center;
-  font-size: 0.82rem;
-  font-weight: 700;
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
   color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
 }
 
 .qty-slide-up-enter-active,
@@ -427,8 +423,9 @@ function decreaseQty() {
   width: 42px;
   height: 42px;
   flex-shrink: 0;
+  /* Even on all four sides: the row has no padding of its own, so this margin
+     is the whole gap to its inner edge. */
   margin: 4px;
-  margin-right: 8px;
   background: var(--color-primary);
   color: var(--text-inverse);
   border: none;
@@ -437,7 +434,7 @@ function decreaseQty() {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: opacity 0.15s;
+  transition: opacity var(--transition-fast);
   padding: 0;
 }
 
@@ -458,7 +455,7 @@ function decreaseQty() {
 .spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid var(--spinner-stroke);
+  border: var(--border-width-thick) solid var(--spinner-stroke);
   border-top-color: var(--text-inverse);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;

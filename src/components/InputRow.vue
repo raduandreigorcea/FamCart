@@ -1,4 +1,6 @@
 <script setup>
+import arrowRightIcon from '../assets/arrow-right.svg?raw'
+
 defineProps({
   modelValue: String,
   type: { type: String, default: 'text' },
@@ -29,10 +31,7 @@ defineEmits(['update:modelValue'])
     />
     <button type="submit" class="submit-btn" :disabled="loading" aria-label="Continue">
       <span v-if="loading" class="spinner"></span>
-      <svg v-else viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
+      <span v-else class="submit-btn__icon" aria-hidden="true" v-html="arrowRightIcon"></span>
     </button>
   </div>
 </template>
@@ -41,10 +40,10 @@ defineEmits(['update:modelValue'])
 .input-row {
   display: flex;
   align-items: center;
-  border: 1.5px solid var(--border-main);
+  border: var(--border-width-base) solid var(--border-main);
   border-radius: var(--radius-xl);
   background: var(--bg-surface);
-  transition: border-color 0.15s;
+  transition: border-color var(--transition-fast);
   overflow: hidden;
 }
 
@@ -58,7 +57,7 @@ defineEmits(['update:modelValue'])
   border: none;
   background: transparent;
   font-family: inherit;
-  font-size: 0.95rem;
+  font-size: var(--text-md);
   color: var(--text-primary);
   outline: none;
   min-width: 0;
@@ -66,7 +65,7 @@ defineEmits(['update:modelValue'])
 
 .input-row input::placeholder {
   color: var(--text-disabled);
-  font-weight: 400;
+  font-weight: var(--weight-regular);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -74,7 +73,7 @@ defineEmits(['update:modelValue'])
 .input--uppercase {
   text-transform: uppercase;
   letter-spacing: 0.14em;
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 
 .submit-btn {
@@ -87,16 +86,26 @@ defineEmits(['update:modelValue'])
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: opacity var(--transition-fast);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
 }
 
-.submit-btn svg {
+.submit-btn__icon {
   width: var(--size-icon-lg);
   height: var(--size-icon-lg);
+  display: inline-flex;
+}
+
+/* The asset ships at stroke-width 1 for a 24px box; weight it for this size. */
+.submit-btn__icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2;
 }
 
 .submit-btn:disabled {
@@ -107,7 +116,7 @@ defineEmits(['update:modelValue'])
 .spinner {
   width: var(--size-icon-lg);
   height: var(--size-icon-lg);
-  border: 2px solid var(--spinner-stroke);
+  border: var(--border-width-thick) solid var(--spinner-stroke);
   border-top-color: var(--text-inverse);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;

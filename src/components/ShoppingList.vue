@@ -3,10 +3,12 @@ import { computed, ref } from 'vue'
 import ShoppingListItem from './ShoppingListItem.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { sumActiveQuantities, sumCheckedQuantities } from '../lib/shoppingList'
+import cartIcon from '../assets/shopping-cart.svg?raw'
+import checkIcon from '../assets/check.svg?raw'
 
-// Presentational: renders the unchecked/checked sections with their move
-// animations, the initial-load skeleton, and the empty state. All mutations
-// stay with the parent, which owns the items.
+// Presentational: renders the list with its move animations, the initial-load
+// skeleton, and the empty state. All mutations stay with the parent, which owns
+// the items.
 const props = defineProps({
   items: { type: Array, default: () => [] },
   // Map<user_id, { display_name, image_url }> — the family roster, used to
@@ -50,6 +52,10 @@ const buying = ref(false)
 const buttonSuccess = ref(false)
 const drainingIds = ref([])
 const isDraining = (id) => drainingIds.value.includes(id)
+// Position among the draining rows, so they fall into the bar in a stagger.
+// Checked rows now sit wherever they were added, so the order comes from the
+// drain list rather than from a contiguous checked section.
+const drainIndex = (id) => Math.max(0, drainingIds.value.indexOf(id))
 
 function startCheckout() {
   if (buying.value || !checkedItems.value.length) return
@@ -174,11 +180,15 @@ const labelText = computed(() =>
 </script>
 
 <template>
-  <div class="list-meta" v-if="items.length">
-    {{ leftCount }} left
+  <div class="list-meta" v-if="!loading && uncheckedItems.length">
+    <span class="list-meta__label">To buy</span>
+    <span class="list-meta__count">{{ leftCount }} left</span>
   </div>
 
-  <!-- Skeleton rows while the first fetch is in flight -->
+  <!-- Skeleton rows while the first fetch is in flight, or the real list: never
+       both. They are separate <ul>s stacked in flow, so rendering them together
+       showed placeholders sitting on top of the rows they stand in for, which
+       then jumped up as the skeletons unmounted. -->
   <ul v-if="loading" class="item-list" aria-hidden="true">
     <li v-for="(nameWidth, idx) in skeletonNameWidths" :key="idx" class="skeleton-item">
       <SkeletonBlock width="24px" height="24px" radius="50%" />
@@ -188,32 +198,17 @@ const labelText = computed(() =>
     </li>
   </ul>
 
-  <!-- List -->
-  <TransitionGroup tag="ul" name="unchecked" class="item-list">
+  <!-- One list, in one order. Ticking a row restyles it in place instead of
+       moving it to a section at the bottom. -->
+  <TransitionGroup v-else tag="ul" name="row" class="item-list">
     <ShoppingListItem
-      v-for="item in uncheckedItems"
-      :key="item.id"
-      :item="item"
-      :avatar-url="avatarUrl(item)"
-      :avatar-name="avatarName(item)"
-      @toggle="$emit('toggle', $event)"
-      @delete="$emit('delete', $event)"
-    />
-  </TransitionGroup>
-
-  <Transition name="section-fade">
-    <p v-if="checkedItems.length" class="section-label">Checked</p>
-  </Transition>
-
-  <TransitionGroup tag="ul" name="checked" class="item-list" :class="{ 'item-list--checked': checkedItems.length }">
-    <ShoppingListItem
-      v-for="(item, idx) in checkedItems"
+      v-for="item in items"
       :key="item.id"
       :item="item"
       :avatar-url="avatarUrl(item)"
       :avatar-name="avatarName(item)"
       :draining="isDraining(item.id)"
-      :drain-index="idx"
+      :drain-index="drainIndex(item.id)"
       @toggle="$emit('toggle', $event)"
       @delete="$emit('delete', $event)"
     />
@@ -222,9 +217,11 @@ const labelText = computed(() =>
   <!-- Keeps the last checked row clear of the fixed buy bar. -->
   <div v-if="checkedItems.length && !loading" class="buy-bar-spacer" aria-hidden="true"></div>
 
-  <p v-if="showEmpty" class="empty-state">
-    Nothing here yet. Add your first item above!
-  </p>
+  <div v-if="showEmpty" class="empty-state">
+    <span class="empty-state__art" aria-hidden="true">🧺</span>
+    <p class="empty-state__title">Your list is empty</p>
+    <p class="empty-state__text">Add your first item above and it shows up for the whole family right away.</p>
+  </div>
 
   <!-- Floating checkout slider: appears whenever something is checked. -->
   <Transition name="buybar">
@@ -253,14 +250,8 @@ const labelText = computed(() =>
           @click="onThumbClick"
         >
           <span class="buy-bar__icon" aria-hidden="true">
-            <svg class="buy-bar__cart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="8" cy="21" r="1" />
-              <circle cx="19" cy="21" r="1" />
-              <path d="M2.5 3h2l2.4 12.4a2 2 0 0 0 2 1.6h9.3a2 2 0 0 0 2-1.5L23 7H6" />
-            </svg>
-            <svg class="buy-bar__check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M20 6 9 17l-5-5" />
-            </svg>
+            <span class="buy-bar__cart" v-html="cartIcon"></span>
+            <span class="buy-bar__check" v-html="checkIcon"></span>
           </span>
         </button>
       </div>
@@ -269,14 +260,29 @@ const labelText = computed(() =>
 </template>
 
 <style scoped>
-/* Meta */
+/* Meta — a header for the active section, mirroring the "Checked" label below. */
 .list-meta {
-  text-align: right;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   margin-top: 0.15rem;
-  margin-bottom: 0.9rem;
-  font-size: 0.8rem;
-  font-weight: 600;
+  margin-bottom: 0.6rem;
+  padding: 0 0.15rem;
+}
+
+.list-meta__label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--text-disabled);
+}
+
+.list-meta__count {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-disabled);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Mirrors ShoppingListItem's .item card so rows swap in without layout shift */
@@ -287,7 +293,7 @@ const labelText = computed(() =>
   background: var(--bg-surface);
   border-radius: var(--radius-xl);
   padding: 0.875rem 0.875rem 0.875rem 0.75rem;
-  border: 1.5px solid var(--border-main);
+  border: var(--border-width-base) solid var(--border-main);
 }
 
 .skeleton-item__name {
@@ -304,75 +310,69 @@ const labelText = computed(() =>
   position: relative;
 }
 
-.item-list--checked {
-  margin-top: 0.4rem;
-}
-
-.unchecked-move,
-.checked-move {
+/* Rows still animate for the things that genuinely move them: something added,
+   removed, or checked out. Ticking is no longer one of those. */
+.row-move {
   transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
 }
 
-.unchecked-enter-active,
-.checked-enter-active {
+.row-enter-active {
   transition: opacity 0.32s ease, transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.unchecked-leave-active,
-.checked-leave-active {
-  transition: opacity 0.24s ease, transform 0.24s ease;
+.row-leave-active {
+  transition: opacity var(--transition-base) ease, transform var(--transition-base) ease;
   position: absolute;
   width: 100%;
   pointer-events: none;
   z-index: 2;
 }
 
-.unchecked-enter-from {
+.row-enter-from {
   opacity: 0;
   transform: translateY(-8px) scale(0.995);
 }
 
-.unchecked-leave-to {
+.row-leave-to {
   opacity: 0;
   transform: translateY(8px) scale(0.995);
-}
-
-.checked-enter-from {
-  opacity: 0;
-  transform: translateY(8px) scale(0.995);
-}
-
-.checked-leave-to {
-  opacity: 0;
-  transform: translateY(-8px) scale(0.995);
-}
-
-.section-fade-enter-active,
-.section-fade-leave-active {
-  transition: opacity 0.18s ease;
-}
-
-.section-fade-enter-from,
-.section-fade-leave-to {
-  opacity: 0;
-}
-
-.section-label {
-  margin: 1rem 0 0.45rem;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-disabled);
 }
 
 /* Empty state */
 .empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
-  font-size: 0.875rem;
-  color: var(--text-disabled);
-  margin: 2.5rem 0;
+  margin: 3rem auto 0;
+  max-width: 20rem;
+}
+
+.empty-state__art {
+  width: 4rem;
+  height: 4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  border-radius: var(--radius-2xl);
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
+  border: var(--border-width-thin) solid color-mix(in srgb, var(--color-primary) 18%, transparent);
+  margin-bottom: var(--space-4);
+}
+
+.empty-state__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-extrabold);
+  color: var(--text-primary);
+}
+
+.empty-state__text {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
   line-height: 1.5;
 }
 
@@ -405,7 +405,7 @@ const labelText = computed(() =>
   justify-content: center;
   border-radius: var(--radius-pill);
   background: var(--bg-surface);
-  border: 1.5px solid var(--border-main);
+  border: var(--border-width-base) solid var(--border-main);
   color: var(--color-primary);
   box-shadow: var(--elevation-primary);
   overflow: hidden; /* fill and thumb stay inside the pill */
@@ -423,7 +423,7 @@ const labelText = computed(() =>
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--color-primary) 80%, var(--bg-surface));
   pointer-events: none;
-  transition: width 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: width var(--transition-slow) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .buy-bar__label {
@@ -431,8 +431,8 @@ const labelText = computed(() =>
   z-index: 1;
   /* Keep the hint clear of the thumb's resting spot. */
   padding: 0 3.4rem;
-  font-size: 0.95rem;
-  font-weight: 800;
+  font-size: var(--text-md);
+  font-weight: var(--weight-extrabold);
   letter-spacing: -0.01em;
   pointer-events: none;
 }
@@ -446,7 +446,7 @@ const labelText = computed(() =>
   align-items: center;
   justify-content: center;
   color: var(--text-inverse);
-  transition: clip-path 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: clip-path var(--transition-slow) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* The thumb keeps the full-strength green so it stands out as the grabbable
@@ -473,7 +473,7 @@ const labelText = computed(() =>
   cursor: grab;
   /* The drag owns the gesture; don't let touch scroll the page instead. */
   touch-action: none;
-  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform var(--transition-slow) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .buy-bar__thumb:disabled {
@@ -483,7 +483,7 @@ const labelText = computed(() =>
 /* The thumb is invisible, so keyboard focus draws its own ring on the green
    disc beneath. */
 .buy-bar__thumb:focus-visible {
-  outline: 2px solid var(--text-inverse);
+  outline: var(--border-width-thick) solid var(--text-inverse);
   outline-offset: -4px;
 }
 
@@ -504,7 +504,7 @@ const labelText = computed(() =>
   width: 22px;
   height: 22px;
   flex-shrink: 0;
-  transition: transform 0.15s ease;
+  transition: transform var(--transition-fast) ease;
 }
 
 /* Slight tactile swell while the finger is on it. */
@@ -518,7 +518,26 @@ const labelText = computed(() =>
   inset: 0;
   width: 100%;
   height: 100%;
-  transition: opacity 0.24s ease, transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: block;
+  transition: opacity var(--transition-base) ease, transform var(--transition-slow) cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Both assets ship at stroke-width 1, too fine for a 22px knob icon. */
+.buy-bar__cart :deep(svg),
+.buy-bar__check :deep(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  stroke: currentColor;
+  fill: none;
+}
+
+.buy-bar__cart :deep(svg) {
+  stroke-width: 2;
+}
+
+.buy-bar__check :deep(svg) {
+  stroke-width: 2.4;
 }
 
 /* Cart is the resting state; on success it lifts away and the check drops in. */
@@ -544,11 +563,11 @@ const labelText = computed(() =>
 
 /* Bar slide-in/out */
 .buybar-enter-active {
-  transition: opacity 0.22s ease, transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity var(--transition-base) ease, transform var(--transition-slow) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .buybar-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity var(--transition-base) ease, transform var(--transition-base) ease;
 }
 
 .buybar-enter-from,

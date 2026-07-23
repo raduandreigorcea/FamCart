@@ -185,27 +185,36 @@ describe('sortItemsForDisplay', () => {
     expect(items.map((i) => i.id)).toEqual(['b', 'a'])
   })
 
-  it('orders checked items by check time descending, newest on top', () => {
+  it('interleaves checked and unchecked by creation time', () => {
     const items = [
-      item({ id: 'x', checked: true, checked_at: '2026-07-10T10:00:00Z' }),
-      item({ id: 'z', checked: true, checked_at: '2026-07-10T12:00:00Z' }),
-      item({ id: 'y', checked: true, checked_at: '2026-07-10T11:00:00Z' }),
+      item({ id: 'd', checked: true, created_at: '2026-07-10T12:00:00Z', checked_at: '2026-07-10T13:00:00Z' }),
+      item({ id: 'b', checked: true, created_at: '2026-07-10T10:00:00Z', checked_at: '2026-07-10T14:00:00Z' }),
+      item({ id: 'c', created_at: '2026-07-10T11:00:00Z' }),
+      item({ id: 'a', created_at: '2026-07-10T09:00:00Z' }),
     ]
-    expect(sortItemsForDisplay(items).map((i) => i.id)).toEqual(['z', 'y', 'x'])
+    expect(sortItemsForDisplay(items).map((i) => i.id)).toEqual(['a', 'b', 'c', 'd'])
   })
 
-  it('keeps unchecked (oldest first) ahead of checked (newest checked first)', () => {
+  it('does not move a row when it gets checked', () => {
     const items = [
-      item({ id: 'checked-old', checked: true, checked_at: '2026-07-10T10:00:00Z' }),
-      item({ id: 'active-new', created_at: '2026-07-10T11:00:00Z' }),
-      item({ id: 'checked-new', checked: true, checked_at: '2026-07-10T12:00:00Z' }),
-      item({ id: 'active-old', created_at: '2026-07-10T09:00:00Z' }),
+      item({ id: 'a', created_at: '2026-07-10T09:00:00Z' }),
+      item({ id: 'b', created_at: '2026-07-10T10:00:00Z' }),
+      item({ id: 'c', created_at: '2026-07-10T11:00:00Z' }),
     ]
-    expect(sortItemsForDisplay(items).map((i) => i.id)).toEqual([
-      'active-old',
-      'active-new',
-      'checked-new',
-      'checked-old',
-    ])
+    const before = sortItemsForDisplay(items).map((i) => i.id)
+
+    // Tick the middle row, the way toggleItem does.
+    items[1].checked = true
+    items[1].checked_at = '2026-07-10T15:00:00Z'
+
+    expect(sortItemsForDisplay(items).map((i) => i.id)).toEqual(before)
+  })
+
+  it('ignores checked_at entirely, so check order cannot reshuffle the list', () => {
+    const items = [
+      item({ id: 'a', created_at: '2026-07-10T09:00:00Z', checked: true, checked_at: '2026-07-10T20:00:00Z' }),
+      item({ id: 'b', created_at: '2026-07-10T10:00:00Z', checked: true, checked_at: '2026-07-10T08:00:00Z' }),
+    ]
+    expect(sortItemsForDisplay(items).map((i) => i.id)).toEqual(['a', 'b'])
   })
 })

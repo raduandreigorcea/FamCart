@@ -12,6 +12,7 @@ export interface FamilySnapshot {
   familyInviteCode: string
   familyOwnerId: string
   familyItemLimit: number
+  familyEmoji: string
   familyMembers: FamilyMemberProfile[]
   items: ShoppingItemRow[]
 }
@@ -50,6 +51,7 @@ export function loadFamilySnapshot(
       familyInviteCode: stored.familyInviteCode ?? '',
       familyOwnerId: stored.familyOwnerId ?? '',
       familyItemLimit: typeof stored.familyItemLimit === 'number' ? stored.familyItemLimit : 50,
+      familyEmoji: stored.familyEmoji ?? '',
       familyMembers: stored.familyMembers,
       items: stored.items,
     }
