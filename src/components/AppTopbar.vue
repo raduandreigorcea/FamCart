@@ -5,6 +5,7 @@ import AccountActionModal from './AccountActionModal.vue'
 import MemberAvatarStack from './MemberAvatarStack.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { sortMembersForSwitcher } from '../lib/memberRoles'
+import { DEFAULT_FAMILY_EMOJI } from '../lib/familyEmoji'
 import chevronLeftRaw from '../assets/chevron-left.svg?raw'
 import checkRaw from '../assets/check.svg?raw'
 import plusRaw from '../assets/plus.svg?raw'
@@ -170,10 +171,6 @@ const memberCount = computed(() => props.memberProfiles.length)
 const orderedActiveMembers = computed(() =>
   sortMembersForSwitcher(props.memberProfiles || [], props.ownerUserId, props.currentUserId),
 )
-
-// Fallback for a family whose owner hasn't picked an emoji: the app's cart, so
-// every switcher row reads as one tidy tile.
-const DEFAULT_FAMILY_EMOJI = '🛒'
 </script>
 
 <template>

@@ -11,6 +11,7 @@ import {
   canPromoteToModerator as canPromoteRule,
   canDemoteFromModerator as canDemoteRule,
 } from '../lib/memberRoles'
+import { DEFAULT_FAMILY_EMOJI, FAMILY_EMOJIS } from '../lib/familyEmoji'
 
 // Raw SVG imports for the settings panels
 import layoutGridIcon from '../assets/layout-grid.svg?raw'
@@ -60,11 +61,6 @@ const itemLimitSaved = ref(false)
 const emojiValue = ref('')
 const savingEmoji = ref(false)
 const emojiSaved = ref(false)
-// Curated household/family emoji for the picker.
-const FAMILY_EMOJIS = [
-  '🏠', '🏡', '🛒', '🧺', '🍎', '🥕', '🍞', '🥑', '🍕',
-  '🍽️', '☕', '🐶', '🐱', '🌿', '🌟', '❤️', '🎉', '🔑',
-]
 const regenerating = ref(false)
 const codeRegenerated = ref(false)
 const memberActionPendingId = ref('')
@@ -634,7 +630,10 @@ async function deleteFamily() {
                         <h5>Family Emoji</h5>
                         <p>Pick an emoji to represent your family in the switcher.</p>
                       </div>
-                      <span v-if="emojiValue" class="pref-card__value pref-card__value--emoji">{{ emojiValue }}</span>
+                      <span
+                        class="pref-card__value pref-card__value--emoji"
+                        :class="{ 'pref-card__value--emoji-default': !emojiValue }"
+                      >{{ emojiValue || DEFAULT_FAMILY_EMOJI }}</span>
                     </div>
 
                     <div class="emoji-picker">
@@ -1493,6 +1492,12 @@ async function deleteFamily() {
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-md);
+}
+
+/* Nothing picked yet: the tile previews the fallback the switcher will use,
+   dimmed so it still reads as a placeholder rather than a choice. */
+.pref-card__value--emoji-default {
+  opacity: 0.45;
 }
 
 /* Info Box */
