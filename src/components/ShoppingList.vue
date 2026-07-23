@@ -180,12 +180,15 @@ const labelText = computed(() =>
 </script>
 
 <template>
-  <div class="list-meta" v-if="uncheckedItems.length">
+  <div class="list-meta" v-if="!loading && uncheckedItems.length">
     <span class="list-meta__label">To buy</span>
     <span class="list-meta__count">{{ leftCount }} left</span>
   </div>
 
-  <!-- Skeleton rows while the first fetch is in flight -->
+  <!-- Skeleton rows while the first fetch is in flight, or the real list: never
+       both. They are separate <ul>s stacked in flow, so rendering them together
+       showed placeholders sitting on top of the rows they stand in for, which
+       then jumped up as the skeletons unmounted. -->
   <ul v-if="loading" class="item-list" aria-hidden="true">
     <li v-for="(nameWidth, idx) in skeletonNameWidths" :key="idx" class="skeleton-item">
       <SkeletonBlock width="24px" height="24px" radius="50%" />
@@ -197,7 +200,7 @@ const labelText = computed(() =>
 
   <!-- One list, in one order. Ticking a row restyles it in place instead of
        moving it to a section at the bottom. -->
-  <TransitionGroup tag="ul" name="row" class="item-list">
+  <TransitionGroup v-else tag="ul" name="row" class="item-list">
     <ShoppingListItem
       v-for="item in items"
       :key="item.id"

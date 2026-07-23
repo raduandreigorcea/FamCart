@@ -675,11 +675,14 @@ async function switchFamily(id) {
   try {
     await loadFamilyHeader()
     await loadItems()
-    void loadFamilyProductStats()
-    await setupRealtimeSubscriptions()
   } finally {
+    // The rows are on screen, so the skeleton has nothing left to stand in for.
+    // Product stats and the realtime channel are background work; holding the
+    // placeholder up behind a websocket handshake just delays the real list.
     switchingFamily.value = false
   }
+  void loadFamilyProductStats()
+  await setupRealtimeSubscriptions()
 }
 
 // The switcher's "add" action: the setup page handles join/create, and the guard
