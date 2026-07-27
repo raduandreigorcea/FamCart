@@ -102,6 +102,65 @@ export function buildFamilyProductStats(rows: PurchaseHistoryRow[]): Map<string,
   return stats
 }
 
+// Catalog matches this family has bought, recovered without a second query.
+//
+// The catalog pool the caller fetches is capped and ordered by GLOBAL
+// popularity, which was harmless while the catalog was a few hundred curated
+// rows: everything that matched fit in the pool, and rankSuggestions could sort
+// it. Once the catalog is imported at scale, a two-character prefix matches
+// thousands of products, and a family's own weekly staple can be crowded out of
+// the pool by globally-popular strangers before ranking ever sees it.
+// rankSuggestions can only reorder what it is handed.
+//
+// This is the other half of the pool: the family's stats are already in memory
+// and already keyed the same way, so matching them here costs no network.
+//
+// It does make purchase history a SOURCE of suggestions, which the note at the
+// top of this file warns against. Two things contain that:
+//
+//   1. rankSuggestions dedupes by productKey, first candidate wins, and the
+//      caller appends these AFTER the catalog rows. So whenever the catalog did
+//      return the product, the catalog's row -- canonical spelling, real
+//      popularity -- wins and the history copy is discarded. Only the rows the
+//      pool starved out survive, which is exactly the gap being filled.
+//   2. requireSpecific is the guard the warning asks for. A maker is only ever
+//      set by picking a catalog suggestion or by filling in the custom-product
+//      modal, so it is a strong "this is a real product" signal. A hand-typed
+//      bare "apa" has no maker and one word and can never be offered back; an
+//      "Apa Plata 2L" / "Dorna" can.
+export function matchFamilyStats(
+  query: string,
+  familyStats: Map<string, FamilyProductStat>,
+  options: { limit: number; requireSpecific?: boolean },
+): ProductSuggestion[] {
+  const needle = normalizeSearchText(String(query ?? ''))
+  if (needle.length < 2) return []
+
+  const requireSpecific = options?.requireSpecific !== false
+  const limit = Math.max(0, Number(options?.limit) || 0)
+  if (limit === 0) return []
+
+  const matches: FamilyProductStat[] = []
+  for (const stat of familyStats?.values() ?? []) {
+    if (requireSpecific && !stat.maker && stat.name.trim().split(/\s+/).length < 2) continue
+    // The same haystack product_search_text() builds, so "contains" means the
+    // same thing here as it does in the server's ilike.
+    const haystack = normalizeSearchText(`${stat.name} ${stat.maker ?? ''}`)
+    if (haystack.includes(needle)) matches.push(stat)
+  }
+
+  return matches
+    .sort((a, b) => {
+      if (a.count !== b.count) return b.count - a.count
+      if (a.lastPurchasedAt !== b.lastPurchasedAt) return b.lastPurchasedAt - a.lastPurchasedAt
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+    })
+    .slice(0, limit)
+    // popularity 0 rather than undefined so these take exactly the same path
+    // through rankSuggestions' Number(x) || 0 comparison as a catalog row.
+    .map((stat) => ({ name: stat.name, maker: stat.maker, popularity: 0 }))
+}
+
 // Order catalog matches, dropping any duplicate product:
 //   1. products this family buys — most often, then most recently
 //   2. global popularity, for everything they have never bought
