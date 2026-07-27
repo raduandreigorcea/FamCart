@@ -21,11 +21,14 @@
 --      add the same product.
 --   8. A user can own at most one family (migration 001) -- a complementary
 --      product rule alongside the contributed_by promotion gate.
+--   9. Bulk-imported catalog rows say where they came from, clients cannot reach
+--      the import path at all, and an import can never rewrite a curated
+--      product or spend a product's earned popularity (migration 028).
 --
 -- Tests run inside a transaction that is rolled back, so they leave no data behind.
 
 begin;
-select plan(33);
+select plan(54);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 -- Three families, because promoting a contributed product to the global catalog
@@ -91,9 +94,11 @@ update public.families
 set max_items_per_member = 1
 where id = '00000000-0000-0000-0000-0000000000a1';
 
--- One catalog row, seeded the way scripts/seed-products.mjs would.
-insert into public.product_catalog (name, maker, search_text)
-values ('Apa Plata 2L', 'Dorna', 'apa plata 2l dorna');
+-- One catalog row, seeded the way scripts/seed-products.mjs would -- including
+-- the provenance stamp (migration 028), which is what protects it from being
+-- rewritten by a bulk import.
+insert into public.product_catalog (name, maker, search_text, source)
+values ('Apa Plata 2L', 'Dorna', 'apa plata 2l dorna', 'curated');
 
 -- ── Act as user_a (authenticated role + JWT sub claim) ───────────────────────
 set local role authenticated;
@@ -441,6 +446,203 @@ select is(
    where search_text = 'attacker junk' and family_id is null),
   0,
   'one account in three families cannot self-promote a product'
+);
+
+-- ── 9. Provenance and bulk import (migration 028) ────────────────────────────
+-- The catalog now has a third kind of row: products imported in bulk from an
+-- external database. These assert the two guarantees that make that safe --
+-- clients cannot reach the import path at all, and an import cannot damage a row
+-- it does not own.
+
+-- 9a. Still acting as the authenticated role. The import RPC is granted to
+-- service_role alone, so it is not merely unhelpful to a client, it is closed.
+select throws_ok(
+  $$ select public.import_catalog_products('[]'::jsonb) $$,
+  '42501',
+  null,
+  'the bulk import RPC is closed to signed-in users'
+);
+
+-- ── Back to the migration/superuser role, standing in for the service role ────
+reset role;
+
+-- 9b. A barcode is digits or nothing.
+select throws_ok(
+  $$ insert into public.product_catalog (name, search_text, barcode)
+     values ('Bad Barcode', 'bad barcode', 'ABC12345') $$,
+  '23514',
+  null,
+  'a non-numeric barcode is rejected'
+);
+
+insert into public.product_catalog (name, search_text, barcode, source, source_ref)
+values ('Barcode Holder', 'barcode holder', '5941000000001', 'openfoodfacts', '5941000000001');
+
+-- 9c. One global row per barcode, so a re-import can key on it.
+select throws_ok(
+  $$ insert into public.product_catalog (name, search_text, barcode)
+     values ('Barcode Thief', 'barcode thief', '5941000000001') $$,
+  '23505',
+  null,
+  'two global products cannot share a barcode'
+);
+
+-- 9d. ...but the uniqueness is partial, so the thousands of rows that have no
+-- barcode do not collide with each other.
+select lives_ok(
+  $$ insert into public.product_catalog (name, search_text) values
+       ('No Barcode One', 'no barcode one'),
+       ('No Barcode Two', 'no barcode two') $$,
+  'many global products may have no barcode at all'
+);
+
+-- 9e-9g. Every row says where it came from.
+select is(
+  (select source from public.product_catalog where search_text = 'apa plata 2l dorna'),
+  'curated',
+  'a seeded product is stamped curated'
+);
+
+select is(
+  (select source from public.product_catalog where search_text = 'ulei de masline'),
+  'community',
+  'a contributed product is stamped community'
+);
+
+select is(
+  (select source from public.product_catalog
+   where search_text = 'olive oil 500ml bertolli' and family_id is null),
+  'community',
+  'a promoted product is still community once global'
+);
+
+-- 9h-9i. A plain import of a product nobody has seen before.
+select is(
+  (select (public.import_catalog_products(
+    '[{"barcode":"5941000000010","name":"Iaurt Grecesc 400g","maker":"Olympus","base_weight":5}]'::jsonb,
+    'openfoodfacts', 'off-test-1') ->> 'inserted')::int),
+  1,
+  'the import RPC inserts a product the catalog does not have'
+);
+
+select is(
+  (select source || '|' || coalesce(barcode, '') || '|' || base_weight::text || '|' || add_count::text
+   from public.product_catalog where search_text = 'iaurt grecesc 400g olympus'),
+  'openfoodfacts|5941000000010|5|0',
+  'the imported row carries its provenance and weight, and starts at zero adds'
+);
+
+-- 9j. The invariant the whole split of base_weight and add_count exists for: a
+-- re-import refreshes the editorial weight and cannot touch earned usage.
+update public.product_catalog set add_count = 7
+where search_text = 'iaurt grecesc 400g olympus';
+
+select public.import_catalog_products(
+  '[{"barcode":"5941000000010","name":"Iaurt Grecesc 400g","maker":"Olympus","base_weight":9}]'::jsonb,
+  'openfoodfacts', 'off-test-2');
+
+select is(
+  (select base_weight::text || '|' || add_count::text || '|' || popularity::text
+   from public.product_catalog where search_text = 'iaurt grecesc 400g olympus'),
+  '9|7|16',
+  'a re-import updates base_weight and leaves earned add_count alone'
+);
+
+-- 9k-9l. Curated wins. The upstream record normalizes onto the seeded row, in a
+-- shoutier spelling and with a weight that would outrank it.
+select public.import_catalog_products(
+  '[{"barcode":"5941000000020","name":"APA PLATA 2L","maker":"DORNA","base_weight":9}]'::jsonb,
+  'openfoodfacts', 'off-test-3');
+
+select is(
+  (select name || '|' || base_weight::text || '|' || source
+   from public.product_catalog where search_text = 'apa plata 2l dorna'),
+  'Apa Plata 2L|0|curated',
+  'an import cannot rewrite a curated product''s name, weight or provenance'
+);
+
+select is(
+  (select barcode from public.product_catalog where search_text = 'apa plata 2l dorna'),
+  '5941000000020',
+  'a curated product still gains the upstream barcode'
+);
+
+-- 9m-9n. Two upstream records for the same product. The partial unique index on
+-- search_text would reject the second, so the batch is collapsed first and the
+-- heavier row wins.
+select is(
+  (select (public.import_catalog_products(
+    '[{"barcode":"5941000000030","name":"Paine Alba 500g","maker":"Vel Pitar","base_weight":3},
+      {"barcode":"5941000000031","name":"paine alba 500g","maker":"vel pitar","base_weight":8}]'::jsonb,
+    'openfoodfacts', 'off-test-4') ->> 'inserted')::int),
+  1,
+  'two barcodes that normalize alike collapse into one global product'
+);
+
+select is(
+  (select barcode from public.product_catalog where search_text = 'paine alba 500g vel pitar'),
+  '5941000000031',
+  'the collapse keeps the heavier of the two upstream rows'
+);
+
+-- 9o. Re-running an import is a no-op, which is what makes it safe to schedule.
+select is(
+  (select (public.import_catalog_products(
+    '[{"barcode":"5941000000031","name":"paine alba 500g","maker":"vel pitar","base_weight":8}]'::jsonb,
+    'openfoodfacts', 'off-test-4') ->> 'inserted')::int),
+  0,
+  'running the same import again inserts nothing'
+);
+
+-- 9p-9q. A dry run reports, and writes nothing at all -- it is a separate
+-- read-only branch rather than a rollback, so it cannot half-apply.
+select is(
+  (select (public.import_catalog_products(
+    '[{"barcode":"5941000000040","name":"Cascaval Rucar 350g","maker":"Hochland","base_weight":4}]'::jsonb,
+    'openfoodfacts', 'off-test-5', true) ->> 'inserted')::int),
+  1,
+  'a dry run reports what it would have inserted'
+);
+
+select is(
+  (select count(*)::int from public.product_catalog
+   where search_text = 'cascaval rucar 350g hochland'),
+  0,
+  'a dry run writes nothing'
+);
+
+-- 9r-9t. Families D, E and F each contributed "Attacker Junk" (7i), so three
+-- scoped rows exist and no global. An import of the same product has to collapse
+-- them the way a promotion would, or those families see it twice forever.
+select is(
+  (select (public.import_catalog_products(
+    '[{"barcode":"5941000000050","name":"Attacker Junk","base_weight":2}]'::jsonb,
+    'openfoodfacts', 'off-test-6') ->> 'collapsed_scoped')::int),
+  3,
+  'importing a product families already contributed collapses their scoped rows'
+);
+
+select is(
+  (select count(*)::int from public.product_catalog
+   where search_text = 'attacker junk' and family_id is not null),
+  0,
+  'no scoped duplicate survives the import'
+);
+
+select is(
+  (select add_count from public.product_catalog
+   where search_text = 'attacker junk' and family_id is null),
+  3,
+  'the import folds the contributors'' earned adds, capped per family, into the global row'
+);
+
+-- 9u. The canary for the normalizer that exists in four places: this SQL
+-- function, src/lib/productSearch.ts, scripts/seed-products.mjs, and the
+-- importer's vendored copy. If this changes, all four have drifted.
+select is(
+  public.product_search_text('Apă Plată', 'Dorna'),
+  'apa plata dorna',
+  'product_search_text lowercases, folds diacritics and joins name to maker'
 );
 
 select * from finish();
