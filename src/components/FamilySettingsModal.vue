@@ -889,52 +889,17 @@ async function deleteFamily() {
                  anyone publishing an app built on it to say so somewhere a user
                  can reach. test/dataAttribution.component.test.js fails if it
                  disappears. -->
-            <div v-if="activeTab === 'about'" class="tab-panel tab-panel--overlay">
-              <div class="panel-section">
-                <h4 class="panel-section-title">Product Suggestions</h4>
-                <p class="panel-section-desc">
-                  As you type in the add-item box, FamCart offers products from a shared catalog.
-                  Anything your family has bought before comes first.
-                </p>
+            <div v-if="activeTab === 'about'" class="tab-panel tab-panel--overlay about-panel">
+              <div class="about-mark" v-html="shoppingCartIcon"></div>
+              <h4 class="about-name">FamCart</h4>
+              <p class="about-tagline">One shopping list, shared with your family.</p>
 
-                <div class="summary-card">
-                  <div class="summary-details">
-                    <div class="summary-row">
-                      <span class="summary-label">Curated</span>
-                      <span class="summary-value">Everyday Romanian groceries</span>
-                    </div>
-                    <div class="summary-row">
-                      <span class="summary-label">Open Food Facts</span>
-                      <span class="summary-value">Branded products, by barcode</span>
-                    </div>
-                    <div class="summary-row">
-                      <span class="summary-label">Your family</span>
-                      <span class="summary-value">Anything you add yourselves</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="panel-section">
-                <h4 class="panel-section-title">Missing a product?</h4>
-                <p class="panel-section-desc">
-                  Use <strong>Add your own</strong> under the suggestions. It goes straight on your
-                  list, and FamCart offers it back to your family next time.
-                </p>
-              </div>
-
-              <div class="panel-section info-box-section">
-                <div class="info-box">
-                  <span class="info-box-icon-wrap" v-html="infoIcon"></span>
-                  <p class="settings-note-text">
-                    Product data comes in part from
-                    <a class="settings-note-link" href="https://openfoodfacts.org" target="_blank" rel="noopener noreferrer">Open Food Facts</a>
-                    contributors, and is used under the
-                    <a class="settings-note-link" href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL 1.0</a>
-                    licence.
-                  </p>
-                </div>
-              </div>
+              <p class="about-credit">
+                Product data from
+                <a class="settings-note-link" href="https://openfoodfacts.org" target="_blank" rel="noopener noreferrer">Open Food Facts</a>,
+                under
+                <a class="settings-note-link" href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL 1.0</a>.
+              </p>
             </div>
           </main>
         </div>
@@ -1587,8 +1552,55 @@ async function deleteFamily() {
   margin-top: 0.1rem;
 }
 
-/* Links inside an info box. Underlined rather than coloured, so the note stays
-   as quiet as the one in Overview while its links are still obviously links. */
+/* About panel: centred, and mostly empty on purpose. */
+.about-panel {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0;
+}
+
+.about-mark {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.about-mark :deep(svg) {
+  width: 26px;
+  height: 26px;
+}
+
+.about-name {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--ui-text-strong);
+  letter-spacing: -0.01em;
+}
+
+.about-tagline {
+  margin: 0.35rem 0 0;
+  font-size: var(--text-sm);
+  color: var(--ui-text-muted);
+}
+
+/* Pinned to the bottom rather than sitting under the tagline, so the panel
+   reads as a title card with a footnote instead of a wall of text. */
+.about-credit {
+  margin-top: auto;
+  padding-top: var(--space-6);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--ui-text-muted);
+  max-width: 30ch;
+}
+
 .settings-note-link {
   color: inherit;
   text-decoration: underline;

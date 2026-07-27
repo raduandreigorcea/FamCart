@@ -70,10 +70,8 @@ describe('the About tab', () => {
     expect(buttons.map((b) => b.text())).toContain('About')
   })
 
-  it('explains where the suggestions come from', () => {
-    const text = mountSettings().text()
-    expect(text).toContain('Product Suggestions')
-    expect(text).toContain('Add your own')
+  it('names the app', () => {
+    expect(mountSettings().text()).toContain('FamCart')
   })
 
   // The panel is rendered with v-if, so the credit only exists while the tab is
