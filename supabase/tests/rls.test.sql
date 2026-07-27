@@ -28,7 +28,7 @@
 -- Tests run inside a transaction that is rolled back, so they leave no data behind.
 
 begin;
-select plan(54);
+select plan(56);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 -- Three families, because promoting a contributed product to the global catalog
@@ -643,6 +643,33 @@ select is(
   public.product_search_text('Apă Plată', 'Dorna'),
   'apa plata dorna',
   'product_search_text lowercases, folds diacritics and joins name to maker'
+);
+
+-- 9v. As the role that actually runs imports, not as the superuser.
+--
+-- Every assertion above this point runs as the migration/superuser role, which
+-- bypasses privilege checks entirely. That made them all pass while the real
+-- importer failed on its first call with "permission denied for function
+-- product_search_text": import_catalog_products is SECURITY INVOKER, so its
+-- body executes as service_role, and service_role had no EXECUTE on the helper
+-- it calls. A whole class of grant bug is invisible to a superuser test, so at
+-- least one call has to be made as the role the client uses.
+set local role service_role;
+
+select lives_ok(
+  $$ select public.import_catalog_products(
+       '[{"barcode":"5941000000060","name":"Ceai Verde 20 plicuri","maker":"Alevia","base_weight":4}]'::jsonb,
+       'openfoodfacts', 'off-test-7') $$,
+  'the service role can run an import end to end'
+);
+
+reset role;
+
+select is(
+  (select source || '|' || base_weight::text from public.product_catalog
+   where search_text = 'ceai verde 20 plicuri alevia'),
+  'openfoodfacts|4',
+  'the service-role import actually landed its row'
 );
 
 select * from finish();
