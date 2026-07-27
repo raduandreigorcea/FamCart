@@ -70,8 +70,26 @@ describe('the About tab', () => {
     expect(buttons.map((b) => b.text())).toContain('About')
   })
 
-  it('names the app', () => {
-    expect(mountSettings().text()).toContain('FamCart')
+  it('names the app and shows its logo', () => {
+    const wrapper = mountSettings()
+    expect(wrapper.text()).toContain('FamCart')
+    expect(wrapper.find('.about-logo').exists()).toBe(true)
+  })
+
+  // Injected from package.json at build time, so a version bump there is the
+  // only step. A hardcoded string would drift the moment anyone released.
+  it('shows the real version, not a hardcoded one', async () => {
+    const { version } = JSON.parse(
+      await import('node:fs').then((fs) => fs.readFileSync('package.json', 'utf8')),
+    )
+    expect(mountSettings().find('.about-version').text()).toBe(`v${version}`)
+  })
+
+  it('sits last in the sidebar, after Danger Zone', () => {
+    const labels = mountSettings('overview')
+      .findAll('.sidebar-tab-btn')
+      .map((b) => b.text())
+    expect(labels[labels.length - 1]).toBe('About')
   })
 
   // The panel is rendered with v-if, so the credit only exists while the tab is
