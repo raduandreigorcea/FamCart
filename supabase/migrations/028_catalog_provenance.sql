@@ -262,10 +262,22 @@ grant execute on function public.add_custom_product(uuid, text, text) to authent
 --    step 8, which folds already-earned counts off scoped rows the import is
 --    superseding. Earned usage survives every re-import.
 --
--- SECURITY INVOKER, not definer: EXECUTE is granted to service_role alone, and
--- service_role could write this table directly anyway, so the function adds no
--- privilege and therefore presents no escalation surface. Making it definer
--- would create one for no gain.
+-- SECURITY DEFINER, so the body always runs as this function's owner whatever
+-- role called it. Two concrete failures forced that, both invisible to a test
+-- suite running as the superuser because superusers bypass privilege checks:
+--
+--   1. As INVOKER the body ran as service_role, which has no EXECUTE on
+--      product_search_text -- 022 revoked it from PUBLIC, and add_custom_product
+--      only gets away with calling it because it is itself DEFINER. Every real
+--      import died with "permission denied for function product_search_text".
+--   2. The staging table below is created by whoever calls, so a second call
+--      from a different role in the same session cannot drop the first one's
+--      table: "must be owner of table catalog_import_staging".
+--
+-- This adds no reachable privilege: EXECUTE is revoked from PUBLIC and granted
+-- to service_role alone, and service_role can already write this table directly.
+-- search_path is pinned, which is the hardening that actually matters for a
+-- DEFINER function.
 create or replace function public.import_catalog_products(
   p_rows           jsonb,
   p_source         text default 'openfoodfacts',
@@ -274,7 +286,7 @@ create or replace function public.import_catalog_products(
 )
 returns jsonb
 language plpgsql
-security invoker
+security definer
 set search_path = public, extensions
 as $$
 declare
@@ -504,7 +516,12 @@ $$;
 revoke all on function public.import_catalog_products(jsonb, text, text, boolean) from public;
 grant execute on function public.import_catalog_products(jsonb, text, text, boolean) to service_role;
 
--- 015's reasoning: hosted projects get these at provisioning, a database built
--- from migrations alone does not. delete is needed for the scoped-row collapse.
+-- product_search_text stays revoked from everyone: the function above is
+-- DEFINER and so keeps its own access, exactly as add_custom_product does.
+--
+-- 015's reasoning for the table grants: hosted projects get these at
+-- provisioning, a database built from migrations alone does not. The importer
+-- also reads product_catalog directly (to build its load diff), so SELECT is
+-- needed beyond what the RPC does internally.
 grant usage on schema public to service_role;
 grant select, insert, update, delete on public.product_catalog to service_role;

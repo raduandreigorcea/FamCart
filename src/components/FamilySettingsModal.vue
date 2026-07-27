@@ -573,6 +573,18 @@ async function deleteFamily() {
                     Use your profile menu on the top right of the dashboard screen to sign out or manage your personal account settings.
                   </p>
                 </div>
+
+                <!-- Part of the product catalog is imported from Open Food Facts,
+                     whose data is ODbL. Using it in a published app obliges us to
+                     credit them somewhere a user can actually see, so this line is
+                     a licence term rather than a courtesy. The rows it covers are
+                     the ones migration 028 stamps source = 'openfoodfacts'. -->
+                <p class="attribution-note">
+                  Product suggestions include data from
+                  <a href="https://openfoodfacts.org" target="_blank" rel="noopener noreferrer">Open Food Facts</a>
+                  contributors, available under
+                  <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL 1.0</a>.
+                </p>
               </div>
             </div>
 
@@ -1521,6 +1533,28 @@ async function deleteFamily() {
   color: var(--ui-text-muted);
   flex-shrink: 0;
   margin-top: 0.1rem;
+}
+
+/* Data attribution. Quiet by design -- it has to be visible to satisfy ODbL,
+   not prominent. */
+.attribution-note {
+  margin: var(--space-3) 0 0;
+  padding: 0 0.2rem;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--ui-text-muted);
+  text-align: center;
+}
+
+.attribution-note a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.attribution-note a:hover,
+.attribution-note a:focus-visible {
+  color: var(--ui-text);
 }
 
 .settings-note-text {

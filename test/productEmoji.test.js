@@ -140,6 +140,23 @@ describe('coverage of the seeded catalog', () => {
   })
 })
 
+// Gaps the importer's coverage report found in real Open Food Facts products,
+// which the curated 256 never happened to contain.
+describe('coverage of imported products', () => {
+  it('knows the products the first import surfaced', () => {
+    expect(getProductEmoji('Tofu Natur 200g', 'SanoVita')).toBe('🫘')
+    expect(getProductEmoji('Originals: Skyr 100g', 'Schogetten')).toBe('🥛')
+    // Neither says "ceai" or "tea", so the existing keywords could not reach them.
+    expect(getProductEmoji('Earl Grey 100g', 'Twinings')).toBe('🍵')
+    expect(getProductEmoji('Tea Lady Grey 100g', 'Twinings')).toBe('🍵')
+  })
+
+  it('does not let the new keywords steal unrelated products', () => {
+    expect(getProductEmoji('Ceafa de Porc 1kg')).toBe('🥩')
+    expect(getProductEmoji('Grey Goose 700ml')).toBe('🛍️')
+  })
+})
+
 describe('memoization', () => {
   it('returns a stable answer for a repeated product', () => {
     const first = getProductEmoji('Apa Plata 2L', 'Dorna')
