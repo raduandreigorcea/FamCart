@@ -10,8 +10,16 @@ import { sentryVitePlugin } from '@sentry/vite-plugin'
 // completely unaffected.
 const uploadSourceMaps = !!process.env.SENTRY_AUTH_TOKEN || fs.existsSync('.env.sentry-build-plugin')
 
+// The version shown in Settings -> About, read from package.json at build time
+// so bumping the version there is the only step. Inlined as a constant rather
+// than imported, so the whole of package.json does not end up in the bundle.
+const appVersion = JSON.parse(fs.readFileSync('./package.json', 'utf8')).version
+
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+  },
   build: {
     // 'hidden' emits the maps for upload without adding sourceMappingURL
     // comments to the bundles; the maps are deleted after upload so they are

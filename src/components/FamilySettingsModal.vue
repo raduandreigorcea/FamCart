@@ -47,6 +47,10 @@ const props = defineProps({
 const emit = defineEmits(['close', 'refresh-family', 'family-deleted', 'family-left'])
 const FAMILY_NAME_MAX_LENGTH = 25
 
+// Replaced at build time with package.json's version, so bumping it there is
+// the only step needed for Settings -> About to show the new one.
+const appVersion = __APP_VERSION__
+
 const { userId } = useAuth()
 const db = useSupabase()
 
@@ -483,15 +487,6 @@ async function deleteFamily() {
             </button>
 
             <button
-              class="sidebar-tab-btn"
-              :class="{ active: activeTab === 'about' }"
-              @click="activeTab = 'about'"
-            >
-              <span class="tab-icon" v-html="infoIcon"></span>
-              <span>About</span>
-            </button>
-
-            <button
               class="sidebar-tab-btn sidebar-tab-btn--danger"
               :class="{ active: activeTab === 'danger' }"
               v-if="!isOwner"
@@ -509,6 +504,19 @@ async function deleteFamily() {
             >
               <span class="tab-icon" v-html="trashIcon"></span>
               <span>Danger Zone</span>
+            </button>
+
+            <!-- Last, and pushed to the foot of the column on desktop: it is
+                 the only tab that changes nothing, so it belongs out of the way
+                 of the ones that do. On phones the sidebar is a horizontal
+                 scroller, where there is no bottom to sit at. -->
+            <button
+              class="sidebar-tab-btn sidebar-tab-btn--about"
+              :class="{ active: activeTab === 'about' }"
+              @click="activeTab = 'about'"
+            >
+              <span class="tab-icon" v-html="infoIcon"></span>
+              <span>About</span>
             </button>
           </nav>
 
@@ -890,8 +898,9 @@ async function deleteFamily() {
                  can reach. test/dataAttribution.component.test.js fails if it
                  disappears. -->
             <div v-if="activeTab === 'about'" class="tab-panel tab-panel--overlay about-panel">
-              <div class="about-mark" v-html="shoppingCartIcon"></div>
+              <img src="/icons/pwa-192.png" alt="" class="about-logo" />
               <h4 class="about-name">FamCart</h4>
+              <p class="about-version">v{{ appVersion }}</p>
               <p class="about-tagline">One shopping list, shared with your family.</p>
 
               <p class="about-credit">
@@ -1112,6 +1121,14 @@ async function deleteFamily() {
   }
   .settings-sidebar::-webkit-scrollbar {
     display: none;
+  }
+}
+
+/* Only on the desktop column layout: `auto` here would fight the horizontal
+   scroller the sidebar becomes on phones, pinning the button to the wrong edge. */
+@media (min-width: 581px) {
+  .sidebar-tab-btn--about {
+    margin-top: auto;
   }
 }
 
@@ -1560,20 +1577,13 @@ async function deleteFamily() {
   gap: 0;
 }
 
-.about-mark {
-  width: 56px;
-  height: 56px;
+/* The PWA icon, same asset the splash screen and topbar use. alt="" because
+   the app name is written out immediately below it. */
+.about-logo {
+  width: 72px;
+  height: 72px;
   border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
-  color: var(--color-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.about-mark :deep(svg) {
-  width: 26px;
-  height: 26px;
+  object-fit: contain;
 }
 
 .about-name {
@@ -1584,8 +1594,15 @@ async function deleteFamily() {
   letter-spacing: -0.01em;
 }
 
+.about-version {
+  margin: 0.25rem 0 0;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text-muted);
+}
+
 .about-tagline {
-  margin: 0.35rem 0 0;
+  margin: 0.6rem 0 0;
   font-size: var(--text-sm);
   color: var(--ui-text-muted);
 }
