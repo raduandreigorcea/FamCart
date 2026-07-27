@@ -21,11 +21,12 @@ vi.mock('@clerk/vue', async () => {
 
 vi.mock('../src/supabase', () => ({ useSupabase: () => ({}) }))
 
-function mountSettings() {
+function mountSettings(initialTab = 'about') {
   return mount(FamilySettingsModal, {
     shallow: true,
     props: {
       open: true,
+      initialTab,
       familyId: 'fam-1',
       familyName: 'Fam',
       inviteCode: 'ABCDEFGH',
@@ -35,6 +36,9 @@ function mountSettings() {
   })
 }
 
+const attributionLinks = (wrapper) =>
+  wrapper.findAll('a').filter((a) => /openfoodfacts|opendatacommons/.test(a.attributes('href') ?? ''))
+
 describe('Open Food Facts attribution', () => {
   it('is rendered where a user can see it', () => {
     const text = mountSettings().text()
@@ -43,10 +47,7 @@ describe('Open Food Facts attribution', () => {
   })
 
   it('links to the project and to the licence', () => {
-    const hrefs = mountSettings()
-      .findAll('.attribution-note a')
-      .map((a) => a.attributes('href'))
-
+    const hrefs = attributionLinks(mountSettings()).map((a) => a.attributes('href'))
     expect(hrefs).toContain('https://openfoodfacts.org')
     expect(hrefs).toContain('https://opendatacommons.org/licenses/odbl/1-0/')
   })
@@ -54,9 +55,31 @@ describe('Open Food Facts attribution', () => {
   it('opens those links safely', () => {
     // rel=noopener because target=_blank otherwise hands the opened page a
     // reference back to this one.
-    for (const link of mountSettings().findAll('.attribution-note a')) {
+    for (const link of attributionLinks(mountSettings())) {
       expect(link.attributes('target')).toBe('_blank')
       expect(link.attributes('rel')).toContain('noopener')
     }
+  })
+})
+
+describe('the About tab', () => {
+  it('is reachable by every member, not just owners and moderators', () => {
+    // Preferences is gated on the role; About is not, so a plain member can
+    // still find out where the suggested products come from.
+    const buttons = mountSettings('overview').findAll('.sidebar-tab-btn')
+    expect(buttons.map((b) => b.text())).toContain('About')
+  })
+
+  it('explains where the suggestions come from', () => {
+    const text = mountSettings().text()
+    expect(text).toContain('Product Suggestions')
+    expect(text).toContain('Add your own')
+  })
+
+  // The panel is rendered with v-if, so the credit only exists while the tab is
+  // open. If it ever stops being reachable, the licence obligation goes unmet.
+  it('is where the attribution lives, not the overview', () => {
+    expect(attributionLinks(mountSettings('overview'))).toHaveLength(0)
+    expect(attributionLinks(mountSettings('about')).length).toBeGreaterThan(0)
   })
 })
