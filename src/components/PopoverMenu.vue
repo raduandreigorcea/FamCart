@@ -137,20 +137,12 @@ onBeforeUnmount(() => {
   bottom: 0;
   border-radius: var(--radius-3xl) var(--radius-3xl) 0 0;
   border-bottom: none;
+  /* A little more room above the first row than the popover needs: the sheet's
+     top corners are large, and content tight against them reads as clipped. */
+  padding-top: var(--space-3);
   padding-bottom: calc(var(--space-3) + var(--safe-bottom));
   max-height: 80vh;
   overflow-y: auto;
-}
-
-/* The grab handle that says "this came up from the bottom". Sheet only. */
-.popover-panel::before {
-  content: '';
-  flex-shrink: 0;
-  width: 36px;
-  height: 4px;
-  margin: var(--space-1) auto var(--space-2);
-  border-radius: var(--radius-pill);
-  background: var(--border-main);
 }
 
 /* ─── Shared row chrome ───────────────────────────────────────────────────────
@@ -266,12 +258,9 @@ onBeforeUnmount(() => {
     top: 25vh;
     border-radius: var(--radius-2xl);
     border-bottom: var(--border-width-thin) solid var(--border-main);
+    padding-top: var(--space-2);
     padding-bottom: var(--space-2);
     max-height: min(70vh, 32rem);
-  }
-
-  .popover-panel::before {
-    display: none;
   }
 
   :slotted(.menu-item) {
