@@ -26,8 +26,8 @@ const MIXED = [item('a', false), item('b', true), item('c', false)]
 // Teleported to body, so the menu is not inside the wrapper's own tree — and so
 // a wrapper left mounted would leave its menu in the document for the next test
 // to find. Everything mounted here is torn down between cases.
-const menuItems = () => [...document.querySelectorAll('.filter-menu__item')]
-const menuOpen = () => Boolean(document.querySelector('.filter-menu'))
+const menuItems = () => [...document.querySelectorAll('.menu-item')]
+const menuOpen = () => Boolean(document.querySelector('.popover-panel'))
 
 const mounted = []
 const realMatchMedia = window.matchMedia
@@ -75,8 +75,8 @@ describe('the filter button', () => {
     expect(menuOpen()).toBe(true)
     const text = (selector) =>
       menuItems().map((i) => i.querySelector(selector).textContent.trim())
-    expect(text('.filter-menu__label')).toEqual(['Everything', 'To buy', 'In cart'])
-    expect(text('.filter-menu__count')).toEqual(['3', '2', '1'])
+    expect(text('.filter-option__label')).toEqual(['Everything', 'To buy', 'In cart'])
+    expect(text('.filter-option__count')).toEqual(['3', '2', '1'])
   })
 
   // A filtered list that looks unfiltered is how items get declared missing.
@@ -109,7 +109,7 @@ describe('the filter button', () => {
     setViewport(true)
     const wrapper = mountMenu()
     await wrapper.find('.filter-btn').trigger('click')
-    expect(document.querySelector('.filter-menu').getAttribute('style')).toMatch(/top:.*right:/)
+    expect(document.querySelector('.popover-panel').getAttribute('style')).toMatch(/top:.*right:/)
   })
 
   // On a phone the menu is a bottom sheet whose position the stylesheet owns.
@@ -119,13 +119,13 @@ describe('the filter button', () => {
     setViewport(false)
     const wrapper = mountMenu()
     await wrapper.find('.filter-btn').trigger('click')
-    expect(document.querySelector('.filter-menu').getAttribute('style')).toBeNull()
+    expect(document.querySelector('.popover-panel').getAttribute('style')).toBeNull()
   })
 
   it('counts from the list it filters', async () => {
     const wrapper = mountMenu({ items: [item('a', true), item('b', true)] })
     await wrapper.find('.filter-btn').trigger('click')
-    expect([...document.querySelectorAll('.filter-menu__count')].map((c) => c.textContent)).toEqual([
+    expect([...document.querySelectorAll('.filter-option__count')].map((c) => c.textContent)).toEqual([
       '2',
       '0',
       '2',
