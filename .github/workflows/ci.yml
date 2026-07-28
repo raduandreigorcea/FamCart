@@ -10,7 +10,7 @@ jobs:
     name: Typecheck, unit tests, build
     runs-on: ubuntu-latest
     steps:
-      # The catalog importer (tools/catalog-importer) is a submodule carrying
+      # The catalog importer (catalog-importer/) is a submodule carrying
       # byte-for-byte copies of src/lib/productSearch.ts and productEmoji.ts.
       # Without checking it out, test/vendorDrift.test.js skips itself and a
       # divergent copy would reach an import unnoticed. The submodule repo is

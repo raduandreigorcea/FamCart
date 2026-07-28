@@ -2,7 +2,7 @@
 -- Migration 022 built a catalog of two kinds of rows: seeded globals and family
 -- contributions. Both are small, hand-shaped, and Romanian. This migration adds
 -- the third kind -- rows imported in bulk from an external database (Open Food
--- Facts, via tools/catalog-importer) -- and the columns and the one function
+-- Facts, via catalog-importer) -- and the columns and the one function
 -- that make importing them safe.
 --
 -- Three things had to exist before a bulk import could be allowed near this
@@ -48,7 +48,7 @@ alter table public.product_catalog
 comment on column public.product_catalog.barcode is
   'EAN/GTIN from the upstream catalog. Null for seeded and contributed rows.';
 comment on column public.product_catalog.source is
-  'curated = scripts/seed-products.mjs, community = add_custom_product(), openfoodfacts = tools/catalog-importer.';
+  'curated = scripts/seed-products.mjs, community = add_custom_product(), openfoodfacts = catalog-importer.';
 comment on column public.product_catalog.source_ref is
   'Identity of this row in the upstream catalog (the OFF code). What makes a re-import update rather than duplicate.';
 comment on column public.product_catalog.source_version is
