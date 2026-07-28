@@ -27,13 +27,18 @@ const counts = computed(() => {
   return { all: props.items.length, active: props.items.length - checked, checked }
 })
 
-// "Checked", not "Bought": a ticked row is not bought until the buy bar checks
-// it out, which is what moves it into purchase history. The hint carries that
-// distinction, because the two words are close enough to be read as one.
+// A ticked row is not bought until the buy bar checks it out, which is what
+// moves it into purchase history -- so this view is the middle of those two,
+// and the hint has to place it there.
+//
+// It says what the rows ARE rather than what has not happened to them yet.
+// "Ticked, not checked out" made the reader hold "checked" and "checked out"
+// side by side and work out the difference; naming the next step tells them
+// where they are in the same breath, and matches the buy bar's own wording.
 const OPTIONS = [
   { value: 'all', label: 'No filter', hint: 'Everything on the list' },
   { value: 'active', label: 'To buy', hint: 'Still to pick up' },
-  { value: 'checked', label: 'Checked', hint: 'Ticked, not checked out' },
+  { value: 'checked', label: 'Checked', hint: 'In the cart, ready to check out' },
 ]
 
 // A filtered list that looks unfiltered is how items get declared missing, so
