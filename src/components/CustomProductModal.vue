@@ -132,7 +132,7 @@ function submit() {
   align-items: center;
   gap: 1rem;
   text-align: center;
-  animation: customProductScaleIn 0.26s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: modal-rise-in var(--transition-slow) var(--ease-rise) forwards;
 }
 
 .custom-product-dialog__icon-wrap {
@@ -247,14 +247,8 @@ function submit() {
   opacity: 0;
 }
 
-@keyframes customProductScaleIn {
-  from {
-    transform: scale(0.9);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
+/* Beats the entrance animation on the base class, which by now has finished. */
+.custom-product-fade-leave-active .custom-product-dialog {
+  animation: modal-rise-out var(--transition-base) var(--ease-fall) forwards;
 }
 </style>

@@ -179,18 +179,13 @@ async function copyCode() {
   border-radius: var(--radius-4xl);
   box-shadow: var(--elevation-dialog);
   padding: var(--space-4) var(--space-6) var(--space-6);
-  animation: tourRise 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: modal-rise-in var(--transition-slow) var(--ease-rise);
 }
 
 .tour-top {
   display: flex;
   justify-content: flex-end;
   margin-bottom: var(--space-2);
-}
-
-@keyframes tourRise {
-  from { transform: translateY(16px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
 }
 
 .tour-skip {

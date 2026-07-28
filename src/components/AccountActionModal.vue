@@ -571,33 +571,11 @@ watch(
 }
 
 .modal-fade-enter-active .account-dialog {
-  animation: modalScaleIn 0.18s cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
+  animation: modal-rise-in var(--transition-slow) var(--ease-rise) forwards;
 }
 
 .modal-fade-leave-active .account-dialog {
-  animation: modalScaleOut 0.16s cubic-bezier(0.4, 0, 1, 1) forwards;
-}
-
-@keyframes modalScaleIn {
-  from {
-    transform: scale(0.96);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-@keyframes modalScaleOut {
-  from {
-    transform: scale(1);
-    opacity: 1;
-  }
-  to {
-    transform: scale(0.96);
-    opacity: 0;
-  }
+  animation: modal-rise-out var(--transition-base) var(--ease-fall) forwards;
 }
 
 @media (max-width: 520px) {
@@ -610,6 +588,9 @@ watch(
     max-width: none;
     border-radius: var(--radius-xl) var(--radius-xl) 0 0;
     padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+    /* Flush with the bottom edge, so it can travel its full height and start
+       off screen rather than merely nudging up. */
+    --modal-rise: 100%;
   }
 }
 </style>
