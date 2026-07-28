@@ -203,6 +203,10 @@ onBeforeUnmount(() => {
   margin: var(--space-1) var(--space-2);
 }
 
+/* Leads the row, and is rendered empty rather than omitted on the rows that are
+   not chosen, so every label starts on the same line. Centred here, which is
+   right for a single-line row; a caller whose rows are taller than one line
+   aligns it to the label itself. */
 :slotted(.menu-check) {
   flex-shrink: 0;
   width: var(--size-icon-md);
