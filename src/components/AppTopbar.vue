@@ -270,15 +270,11 @@ const avatarSlots = computed(() => avatarSlotsForFamilyName(props.familyName))
       :aria-checked="fam.id === familyId"
       @click="selectFamily(fam.id)"
     >
-      <!-- Rendered on every row, empty on the ones not chosen, so the names all
-           start on the same line. Same tick, same side as the list filter. -->
-      <span
-        class="menu-check"
-        aria-hidden="true"
-        v-html="fam.id === familyId ? checkRaw : ''"
-      ></span>
       <span class="family-emoji-tile" aria-hidden="true">{{ fam.emoji || DEFAULT_FAMILY_EMOJI }}</span>
       <span class="family-switcher-item-name">{{ fam.name || 'Family' }}</span>
+      <!-- Trailing here, unlike the list filter: these rows lead with an emoji
+           tile, and a tick in front of it pushed every family's name across. -->
+      <span v-if="fam.id === familyId" class="menu-check" aria-hidden="true" v-html="checkRaw"></span>
     </button>
     <div class="menu-divider" aria-hidden="true"></div>
     <button
@@ -288,8 +284,6 @@ const avatarSlots = computed(() => avatarSlotsForFamilyName(props.familyName))
       role="menuitem"
       @click="addFamily"
     >
-      <!-- Empty tick, so this row's tile lines up with the emoji tiles above. -->
-      <span class="menu-check" aria-hidden="true"></span>
       <span class="family-switcher-add-tile" aria-hidden="true" v-html="plusRaw"></span>
       Join or create a family
     </button>
