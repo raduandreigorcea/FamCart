@@ -56,9 +56,16 @@ const isFiltered = computed(() => model.value !== 'all')
     <span v-if="isFiltered" class="filter-btn__dot" aria-hidden="true"></span>
   </button>
 
-  <PopoverMenu v-model="open" :trigger="btnEl" align="right" label="Filter items">
+  <PopoverMenu
+    v-model="open"
+    :trigger="btnEl"
+    align="right"
+    label="Filter items"
+    heading="Filters"
+    hint="What this list shows"
+    :icon="slidersIcon"
+  >
     <template #default="{ close }">
-      <p class="menu-heading">Filters</p>
       <button
         v-for="option in OPTIONS"
         :key="option.value"

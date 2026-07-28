@@ -11,6 +11,7 @@ import { avatarSlotsForFamilyName } from '../lib/avatarStack'
 import chevronLeftRaw from '../assets/chevron-left.svg?raw'
 import checkRaw from '../assets/check-2.svg?raw'
 import plusRaw from '../assets/plus.svg?raw'
+import usersRaw from '../assets/users-round.svg?raw'
 import { getUserDisplayName, getUserInitial, getUserPrimaryEmail } from '../lib/userIdentity'
 import { forgetUser } from '../lib/session'
 import { clearFamilySnapshot } from '../lib/familyCache'
@@ -258,8 +259,14 @@ const avatarSlots = computed(() => avatarSlotsForFamilyName(props.familyName))
 
   <!-- The panel, its placement and its dismissal all come from PopoverMenu;
        what stays here is the list of families. -->
-  <PopoverMenu v-model="switcherOpen" :trigger="switcherBtnEl" label="Your families" width="280px">
-    <p class="menu-heading">Your families</p>
+  <PopoverMenu
+    v-model="switcherOpen"
+    :trigger="switcherBtnEl"
+    heading="Your families"
+    hint="Switch between them"
+    :icon="usersRaw"
+    width="280px"
+  >
     <button
       v-for="fam in families"
       :key="fam.id"
