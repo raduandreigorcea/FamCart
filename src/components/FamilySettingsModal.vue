@@ -2423,16 +2423,17 @@ async function deleteFamily() {
     border-radius: var(--radius-xl) var(--radius-xl) 0 0;
     box-shadow: var(--elevation-modal);
     padding: 1.15rem 1rem calc(0.75rem + var(--safe-bottom));
-    animation: memberSheetUp 0.22s cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
+    /* This sheet only exists on a phone, so it is always flush with the bottom
+       edge and always travels its own full height. */
+    --modal-rise: 100%;
+    animation: modal-rise-in var(--transition-slow) var(--ease-rise) forwards;
   }
-}
 
-@keyframes memberSheetUp {
-  from {
-    transform: translateY(12%);
-  }
-  to {
-    transform: translateY(0);
+  /* Beats the entrance animation on the base class, which by now has finished.
+     In here rather than beside the other fade rules so it shares the scope that
+     sets --modal-rise. */
+  .member-sheet-fade-leave-active .member-sheet {
+    animation: modal-rise-out var(--transition-base) var(--ease-fall) forwards;
   }
 }
 
@@ -2536,41 +2537,19 @@ async function deleteFamily() {
 }
 
 .modal-fade-enter-active .settings-modal {
-  animation: modalScaleIn 0.18s cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
+  animation: modal-rise-in var(--transition-slow) var(--ease-rise) forwards;
 }
 
-/* While the modal scales in, subpixel rounding on the scaled content can tip
-   these scroll containers a fraction past their box and flash a scrollbar. Clip
-   them for the ~0.18s of the entrance; scrolling resumes right after. */
+/* While the modal moves, subpixel rounding on the shifted content can tip these
+   scroll containers a fraction past their box and flash a scrollbar. Clip them
+   for the length of the entrance; scrolling resumes right after. */
 .modal-fade-enter-active .settings-content-wrapper,
 .modal-fade-enter-active .tab-panel--overlay {
   overflow: hidden;
 }
 
 .modal-fade-leave-active .settings-modal {
-  animation: modalScaleOut 0.16s cubic-bezier(0.4, 0, 1, 1) forwards;
-}
-
-@keyframes modalScaleIn {
-  from {
-    transform: scale(0.96);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-@keyframes modalScaleOut {
-  from {
-    transform: scale(1);
-    opacity: 1;
-  }
-  to {
-    transform: scale(0.96);
-    opacity: 0;
-  }
+  animation: modal-rise-out var(--transition-base) var(--ease-fall) forwards;
 }
 
 @media (max-width: 520px) {
@@ -2589,6 +2568,9 @@ async function deleteFamily() {
     /* Bottom sheet: the surface runs behind the phone's nav bar while the
        content stays above it (the overlay's safe padding is zeroed here). */
     padding-bottom: var(--safe-bottom);
+    /* Flush with the bottom edge, so it can travel its full height and start
+       off screen rather than merely nudging up. */
+    --modal-rise: 100%;
   }
 
   .settings-modal__header {
