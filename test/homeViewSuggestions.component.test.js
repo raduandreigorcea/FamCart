@@ -49,7 +49,7 @@ const CATALOG = [
 
 const mountedWrappers = []
 
-async function mountHome() {
+async function mountHome({ history = [] } = {}) {
   mocks.db = createFakeDb()
   mocks.routerReplace = vi.fn()
   mocks.db.handlers['family_members.select'] = (q) =>
@@ -61,7 +61,7 @@ async function mountHome() {
     error: null,
   })
   mocks.db.handlers['shopping_list_items.select'] = () => ({ data: [], error: null })
-  mocks.db.handlers['purchase_history.select'] = () => ({ data: [], error: null })
+  mocks.db.handlers['purchase_history.select'] = () => ({ data: history, error: null })
 
   const wrapper = mount(HomeView, { shallow: true })
   mountedWrappers.push(wrapper)
@@ -275,5 +275,75 @@ describe('suggestion loading state', () => {
 
     expect(loading(wrapper)).toBe(false)
     expect(mocks.db.calls.some((c) => c.table === 'product_catalog')).toBe(false)
+  })
+})
+
+// The catalog query is capped and ordered by GLOBAL popularity, so a big
+// imported catalog can fill the pool with strangers and leave this family's own
+// staple out of it entirely — and ranking can only reorder what it is handed.
+describe('a family product the catalog pool left out', () => {
+  // Six globally-popular products, none of them the one this family actually
+  // buys. Enough to fill the dropdown on their own.
+  const STRANGERS = [
+    { name: 'Apa Minerala 1.5L', maker: 'Perla Harghitei', popularity: 950 },
+    { name: 'Apa Minerala 2L', maker: 'Borsec', popularity: 940 },
+    { name: 'Apa de Izvor 5L', maker: 'Aqua Carpatica', popularity: 930 },
+    { name: 'Apa Tonica 250ml', maker: 'Schweppes', popularity: 920 },
+    { name: 'Apa de Gura 500ml', maker: 'Listerine', popularity: 910 },
+    { name: 'Apa Plata 6x0.5L', maker: 'Bucovina', popularity: 900 },
+  ]
+
+  const BOUGHT_HERE = [
+    { name: 'Apa Plata 2L', maker: 'Dorna', purchased_at: '2026-07-20T10:00:00Z' },
+    { name: 'Apa Plata 2L', maker: 'Dorna', purchased_at: '2026-07-24T10:00:00Z' },
+  ]
+
+  it('is suggested anyway, from history already in memory', async () => {
+    const wrapper = await mountHome({ history: BOUGHT_HERE })
+    const pending = deferCatalogQueries()
+
+    await type(wrapper, 'apa')
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS)
+    pending[0]({ data: STRANGERS, error: null })
+    await flushPromises()
+
+    const names = form(wrapper).props('suggestions').map((p) => p.name)
+    // Bought here twice, and the pool never returned it — without the merge it
+    // would be unreachable no matter how often this family buys it.
+    expect(names[0]).toBe('Apa Plata 2L')
+    expect(names).toHaveLength(6)
+  })
+
+  it('appears once, in the catalog spelling, when the pool did return it', async () => {
+    const wrapper = await mountHome({ history: BOUGHT_HERE })
+    const pending = deferCatalogQueries()
+
+    await type(wrapper, 'apa')
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS)
+    pending[0]({
+      data: [{ name: 'Apa Plata 2L', maker: 'Dorna', popularity: 100 }, ...STRANGERS],
+      error: null,
+    })
+    await flushPromises()
+
+    const suggestions = form(wrapper).props('suggestions')
+    expect(suggestions.filter((p) => p.name === 'Apa Plata 2L')).toHaveLength(1)
+    // The catalog row wins the dedupe, so the real popularity survives rather
+    // than the zero the history copy carries.
+    expect(suggestions[0]).toMatchObject({ name: 'Apa Plata 2L', popularity: 100 })
+  })
+
+  it('leaves the dropdown alone for a family with no history', async () => {
+    const wrapper = await mountHome()
+    const pending = deferCatalogQueries()
+
+    await type(wrapper, 'apa')
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS)
+    pending[0]({ data: STRANGERS, error: null })
+    await flushPromises()
+
+    expect(form(wrapper).props('suggestions').map((p) => p.name)).toEqual(
+      STRANGERS.map((p) => p.name),
+    )
   })
 })

@@ -21,6 +21,7 @@ import {
   normalizeSearchText,
   escapeIlikePattern,
   buildFamilyProductStats,
+  matchFamilyStats,
   rankSuggestions,
 } from '../lib/productSearch'
 import { upsertOwnProfile } from '../lib/profile'
@@ -187,7 +188,11 @@ let suggestTimer = null
 let suggestRequestId = 0
 const SUGGEST_MIN_CHARS = 2
 const SUGGEST_LIMIT = 6
-const SUGGEST_POOL = 50
+// Wide enough that a common two-character prefix does not fill the pool with
+// globally-popular strangers before this family's own products get a look in.
+// The trigram index does the filtering either way, so the cost is the sort and
+// the payload, not the match.
+const SUGGEST_POOL = 100
 // Long enough to mean "stopped typing" on a phone. Thumb-typing runs ~300-400ms
 // per character, so a shorter pause than this elapses between ordinary
 // keystrokes and every character would cost its own request.
@@ -248,7 +253,16 @@ async function fetchSuggestions(query) {
     // Late response: the input was cleared or a product picked meanwhile, so
     // these matches must not reopen the list.
     if (error || selectedProduct.value || newItem.value.trim().length < SUGGEST_MIN_CHARS) return
-    suggestions.value = rankSuggestions(data || [], familyProductStats.value, SUGGEST_LIMIT)
+    // The pool is capped and ordered globally, so a product this family buys
+    // every week can be crowded out of it entirely by a catalog this large.
+    // familyProductStats is already loaded, so recovering those matches costs no
+    // network. Catalog rows go first: rankSuggestions dedupes first-wins, so the
+    // catalog's spelling and popularity win wherever it did return the product.
+    const candidates = [
+      ...(data || []),
+      ...matchFamilyStats(query, familyProductStats.value, { limit: SUGGEST_LIMIT }),
+    ]
+    suggestions.value = rankSuggestions(candidates, familyProductStats.value, SUGGEST_LIMIT)
   } catch {
     // Suggestions are a convenience; a failed lookup changes nothing.
   } finally {
