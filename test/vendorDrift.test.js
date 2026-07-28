@@ -1,6 +1,6 @@
 // The FamCart half of the importer's vendoring guard.
 //
-// tools/catalog-importer is a separate repo (a submodule) that carries
+// catalog-importer is a separate repo (a submodule) that carries
 // byte-for-byte copies of src/lib/productSearch.ts and src/lib/productEmoji.ts,
 // because it has to work as a standalone clone too.
 //
@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url'
 const lf = (text) => text.replace(/\r\n/g, '\n')
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const vendorDir = join(root, 'tools', 'catalog-importer', 'src', 'vendor')
+const vendorDir = join(root, 'catalog-importer', 'src', 'vendor')
 const metaPath = join(vendorDir, 'vendor.meta.json')
 const haveImporter = existsSync(metaPath)
 
@@ -29,7 +29,7 @@ describe.skipIf(!haveImporter)('the catalog importer vendors these modules uncha
   for (const [name, entry] of Object.entries(meta.files)) {
     it(`${entry.upstream} matches the importer's copy`, () => {
       // If this fails you edited one side only. Re-copy the file into
-      // tools/catalog-importer/src/vendor/ and update the sha256 in
+      // catalog-importer/src/vendor/ and update the sha256 in
       // vendor.meta.json -- never patch the vendored copy by hand.
       //
       // CR is stripped first: core.autocrlf=true gives a CRLF working copy on
