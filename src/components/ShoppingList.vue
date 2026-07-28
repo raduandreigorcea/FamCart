@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import ShoppingListItem from './ShoppingListItem.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
+import ListFilterMenu from './ListFilterMenu.vue'
 import { sumActiveQuantities, sumCheckedQuantities } from '../lib/shoppingList'
 import cartIcon from '../assets/shopping-cart.svg?raw'
 import checkIcon from '../assets/check.svg?raw'
@@ -16,12 +17,16 @@ const props = defineProps({
   memberProfiles: { type: Map, default: () => new Map() },
   loading: { type: Boolean, default: false },
   showEmpty: { type: Boolean, default: false },
-  // 'all' | 'active' | 'checked'. Applied to what is RENDERED only -- the
-  // counts and the buy bar below stay on the whole list, because a filter hides
-  // rows rather than removing them. Filtering to "To buy" while three things
-  // sit in the cart must not strand them behind a bar that vanished.
-  filter: { type: String, default: 'all' },
 })
+
+// 'all' | 'active' | 'checked'. Applied to what is RENDERED only -- the counts
+// and the buy bar below stay on the whole list, because a filter hides rows
+// rather than removing them. Filtering to "To buy" while three things sit in
+// the cart must not strand them behind a bar that vanished.
+//
+// A model rather than a prop: the control that changes it lives in this
+// component's header, but the value belongs to the view that owns the list.
+const filter = defineModel('filter', { type: String, default: 'all' })
 
 function avatarUrl(item) {
   return props.memberProfiles.get(item.added_by)?.image_url || null
@@ -37,16 +42,28 @@ const uncheckedItems = computed(() => props.items.filter((i) => !i.checked))
 const checkedItems = computed(() => props.items.filter((i) => i.checked))
 
 const visibleItems = computed(() => {
-  if (props.filter === 'active') return uncheckedItems.value
-  if (props.filter === 'checked') return checkedItems.value
+  if (filter.value === 'active') return uncheckedItems.value
+  if (filter.value === 'checked') return checkedItems.value
   return props.items
 })
+
+// The header names whichever list is on screen. It stays put in every filter
+// state, because it is also where the filter button lives -- hiding it while
+// viewing the cart would take away the only way back.
+const viewingCart = computed(() => filter.value === 'checked')
+const metaLabel = computed(() => (viewingCart.value ? 'In cart' : 'To buy'))
+const metaCount = computed(() =>
+  viewingCart.value
+    ? `${checkedItems.value.length} ${checkedItems.value.length === 1 ? 'item' : 'items'}`
+    : `${leftCount.value} left`,
+)
 
 // The list has rows, the filter just hides all of them. Distinct from the empty
 // state, which means there is nothing to buy at all.
 const filteredToNothing = computed(
   () => !props.loading && props.items.length > 0 && visibleItems.value.length === 0,
 )
+
 const leftCount = computed(() => sumActiveQuantities(props.items))
 // Units, not rows: "grapes x4" counts as 4 on the buy button.
 const checkedUnitCount = computed(() => sumCheckedQuantities(props.items))
@@ -197,11 +214,10 @@ const labelText = computed(() =>
 </script>
 
 <template>
-  <!-- Hidden while viewing the cart: "To buy — 8 left" over a list of ticked
-       rows describes something that is not on screen. -->
-  <div class="list-meta" v-if="!loading && uncheckedItems.length && filter !== 'checked'">
-    <span class="list-meta__label">To buy</span>
-    <span class="list-meta__count">{{ leftCount }} left</span>
+  <div class="list-meta" v-if="!loading && items.length">
+    <span class="list-meta__label">{{ metaLabel }}</span>
+    <span class="list-meta__count">{{ metaCount }}</span>
+    <ListFilterMenu v-model="filter" :items="items" />
   </div>
 
   <!-- Skeleton rows while the first fetch is in flight, or the real list: never
@@ -283,11 +299,13 @@ const labelText = computed(() =>
 </template>
 
 <style scoped>
-/* Meta — a header for the active section, mirroring the "Checked" label below. */
+/* Meta — names whichever list is on screen, and carries the filter button.
+   Centred rather than baseline-aligned now that a control sits in the row. */
 .list-meta {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--size-control-sm);
   margin-top: 0.15rem;
   margin-bottom: 0.6rem;
   padding: 0 0.15rem;
@@ -301,7 +319,10 @@ const labelText = computed(() =>
   color: var(--text-disabled);
 }
 
+/* Pushed right, with the filter button following it — the count reads as the
+   label's answer, and the button as the thing that changes both. */
 .list-meta__count {
+  margin-left: auto;
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
   color: var(--text-disabled);
