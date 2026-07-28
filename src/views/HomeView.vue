@@ -9,7 +9,6 @@ import CustomProductModal from '../components/CustomProductModal.vue'
 import ErrorModal from '../components/ErrorModal.vue'
 import NotificationPromptModal from '../components/NotificationPromptModal.vue'
 import ShoppingList from '../components/ShoppingList.vue'
-import ListFilterBar from '../components/ListFilterBar.vue'
 import AddItemForm from '../components/AddItemForm.vue'
 import OnboardingTour from '../components/OnboardingTour.vue'
 import { useFamilyRealtime } from '../lib/familyRealtime'
@@ -1244,13 +1243,9 @@ async function deleteItem(item) {
           @add-custom="openCustomProduct"
         />
 
-        <!-- Only once there is a list to filter: an empty list with three
-             filter chips over it is furniture, not a tool. -->
-        <ListFilterBar v-if="!listLoading && items.length" v-model="listFilter" :items="items" />
-
         <ShoppingList
           :items="items"
-          :filter="listFilter"
+          v-model:filter="listFilter"
           :member-profiles="memberProfileMap"
           :loading="listLoading"
           :show-empty="hasInitialized && !items.length && !loadError && !switchingFamily"
