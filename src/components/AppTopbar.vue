@@ -503,6 +503,16 @@ const avatarSlots = computed(() => avatarSlotsForFamilyName(props.familyName))
   border: var(--border-width-thin) solid var(--border-light);
 }
 
+/* The tile's fill is --bg-hover, which is exactly what an active row is filled
+   with -- and in light mode --border-light is that same value again -- so on
+   the selected family the squircle vanished into the row completely. Invert it
+   there: the panel's own colour, which now reads as a chip sitting on top of
+   the highlight rather than a hole cut out of it. */
+.menu-item--active .family-emoji-tile {
+  background: var(--bg-surface);
+  border-color: var(--border-main);
+}
+
 .family-switcher-item-name {
   min-width: 0;
   flex: 1;
