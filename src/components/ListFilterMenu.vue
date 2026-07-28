@@ -87,34 +87,42 @@ const isFiltered = computed(() => model.value !== 'all')
 </template>
 
 <style scoped>
+/* Carries the same surface as the topbar's history and settings buttons -- a
+   filled pill with a border -- one size down, because this sits in a meta line
+   rather than the chrome. Bare icons in a row of muted text read as labels;
+   this one has to read as something you press. */
 .filter-btn {
   position: relative;
   flex-shrink: 0;
-  /* 32px box around a 15px icon. Smaller than a primary control — this sits in
-     a meta line, not in the flow of the list — but the negative margin pushes
-     its hit area back out over the row's padding. */
   width: var(--size-control-sm);
   height: var(--size-control-sm);
-  margin: -0.35rem -0.35rem -0.35rem 0;
+  /* The meta line is short, so the button is allowed to overhang it slightly
+     rather than push the header taller. */
+  margin: -0.35rem -0.15rem -0.35rem 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: none;
-  background: transparent;
-  color: var(--text-disabled);
-  border-radius: var(--radius-md);
+  border: var(--border-width-base) solid var(--border-main);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border-radius: var(--radius-pill);
   cursor: pointer;
   padding: 0;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .filter-btn:hover,
 .filter-btn[aria-expanded='true'] {
-  background: var(--bg-hover);
+  border-color: var(--color-primary);
+  box-shadow: var(--focus-ring-primary-soft);
   color: var(--text-primary);
 }
 
 .filter-btn--on {
+  border-color: color-mix(in srgb, var(--color-primary) 45%, transparent);
   color: var(--color-primary);
 }
 
@@ -134,15 +142,25 @@ const isFiltered = computed(() => model.value !== 'all')
   fill: none;
 }
 
+/* Sits on the rim rather than inside it, so the border stays unbroken. */
 .filter-btn__dot {
   position: absolute;
-  top: 2px;
-  right: 2px;
-  width: 6px;
-  height: 6px;
+  top: -2px;
+  right: -2px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--color-primary);
-  border: var(--border-width-thin) solid var(--bg-page);
+  border: var(--border-width-base) solid var(--bg-page);
+}
+
+/* These rows are two lines tall — a label with a hint under it — so a tick
+   centred on the row lands in the gap between them and reads as though it had
+   slipped. Align it to the label instead. */
+.menu-check {
+  align-self: flex-start;
+  /* Half the difference between the label's line box and the icon. */
+  margin-top: 0.15rem;
 }
 
 /* Row internals; the row's own box comes from PopoverMenu's .menu-item. */
