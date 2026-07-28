@@ -19,8 +19,16 @@ const props = defineProps({
   // The button that opens this. Measured to place the panel, so the panel
   // follows the button when the layout above it changes height.
   trigger: { type: Object, default: null },
-  // Names the menu for assistive tech; both callers have a visible heading too.
+  // Names the menu for assistive tech. Defaults to the visible heading, so a
+  // caller only passes this when the two need to differ.
   label: { type: String, default: '' },
+  // The header, same shape as a modal's: a tinted square holding an icon, the
+  // title, and a line saying what the thing is. Drop `heading` and there is no
+  // header at all.
+  heading: { type: String, default: '' },
+  // Raw SVG markup (an `import ... from '../assets/x.svg?raw'`), not a path.
+  icon: { type: String, default: '' },
+  hint: { type: String, default: '' },
   // Which edge of the trigger the panel lines up with on a wide screen.
   align: {
     type: String,
@@ -99,8 +107,21 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <Transition name="popover">
       <div v-if="open" class="popover-overlay" @click.self="close">
-        <div class="popover-panel" :style="anchor" role="menu" :aria-label="label">
-          <slot :close="close" />
+        <div class="popover-panel" :style="anchor" role="menu" :aria-label="label || heading">
+          <header v-if="heading" class="popover-header">
+            <span v-if="icon" class="popover-header__icon-bg" aria-hidden="true">
+              <span class="popover-header__icon" v-html="icon"></span>
+            </span>
+            <span class="popover-header__text">
+              <span class="popover-header__title">{{ heading }}</span>
+              <span v-if="hint" class="popover-header__hint">{{ hint }}</span>
+            </span>
+          </header>
+          <!-- The rows live in their own box so the header can stay put while
+               they scroll, the way a modal's header does. -->
+          <div class="popover-body">
+            <slot :close="close" />
+          </div>
         </div>
       </div>
     </Transition>
@@ -122,10 +143,21 @@ onBeforeUnmount(() => {
   background: var(--bg-surface);
   border: var(--border-width-thin) solid var(--border-main);
   box-shadow: var(--elevation-modal);
-  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  /* The header runs edge to edge, so its corners have to be cut by the panel's
+     rather than sitting square inside them. */
+  overflow: hidden;
+}
+
+.popover-body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  padding: var(--space-2);
+  /* The scroll lives here rather than on the panel, so a long list of families
+     moves under a header that stays put. */
+  overflow-y: auto;
 }
 
 /* ─── Phone: a bottom sheet ──────────────────────────────────────────────────
@@ -137,27 +169,80 @@ onBeforeUnmount(() => {
   bottom: 0;
   border-radius: var(--radius-3xl) var(--radius-3xl) 0 0;
   border-bottom: none;
-  /* A little more room above the first row than the popover needs: the sheet's
-     top corners are large, and content tight against them reads as clipped. */
-  padding-top: var(--space-3);
-  padding-bottom: calc(var(--space-3) + var(--safe-bottom));
   max-height: 80vh;
-  overflow-y: auto;
+}
+
+.popover-body {
+  padding-bottom: calc(var(--space-3) + var(--safe-bottom));
+}
+
+/* ─── Header ─────────────────────────────────────────────────────────────────
+   Deliberately the same construction as a modal's header -- tinted square, icon
+   at 22px, title, subtitle, a rule underneath -- because on a phone this panel
+   IS a sheet the same width as those modals, and two headers that are nearly
+   the same read worse than either one alone. The wide-screen sizes below are
+   the only place it steps down. */
+.popover-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: var(--border-width-thin) solid var(--bg-hover);
+}
+
+.popover-header__icon-bg {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.popover-header__icon {
+  width: 22px;
+  height: 22px;
+  display: block;
+}
+
+/* The assets ship at stroke-width 1, too fine to read at this size. */
+.popover-header__icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+}
+
+.popover-header__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.popover-header__title {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-extrabold);
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.popover-header__hint {
+  margin-top: 0.1rem;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
 }
 
 /* ─── Shared row chrome ───────────────────────────────────────────────────────
    :slotted so the callers' own markup picks these up. Each still adds whatever
    it needs on top — an emoji tile, a count — but the box, the hover and the
    active fill are decided once. */
-:slotted(.menu-heading) {
-  margin: var(--space-2) var(--space-3) var(--space-1);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-extrabold);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-disabled);
-}
-
 :slotted(.menu-item) {
   display: flex;
   align-items: center;
@@ -258,9 +343,37 @@ onBeforeUnmount(() => {
     top: 25vh;
     border-radius: var(--radius-2xl);
     border-bottom: var(--border-width-thin) solid var(--border-main);
-    padding-top: var(--space-2);
-    padding-bottom: var(--space-2);
     max-height: min(70vh, 32rem);
+  }
+
+  .popover-body {
+    padding-bottom: var(--space-2);
+  }
+
+  /* The panel is ~270px here rather than a phone's full width, so the modal
+     header's proportions would eat a third of it. Everything comes down a
+     step; the layout is unchanged. */
+  .popover-header {
+    gap: 0.6rem;
+    padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  }
+
+  .popover-header__icon-bg {
+    width: 30px;
+    height: 30px;
+  }
+
+  .popover-header__icon {
+    width: 17px;
+    height: 17px;
+  }
+
+  .popover-header__title {
+    font-size: var(--text-md);
+  }
+
+  .popover-header__hint {
+    font-size: var(--text-2xs);
   }
 
   :slotted(.menu-item) {
