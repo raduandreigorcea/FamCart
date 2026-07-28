@@ -9,6 +9,7 @@ import CustomProductModal from '../components/CustomProductModal.vue'
 import ErrorModal from '../components/ErrorModal.vue'
 import NotificationPromptModal from '../components/NotificationPromptModal.vue'
 import ShoppingList from '../components/ShoppingList.vue'
+import ListFilterBar from '../components/ListFilterBar.vue'
 import AddItemForm from '../components/AddItemForm.vue'
 import OnboardingTour from '../components/OnboardingTour.vue'
 import { useFamilyRealtime } from '../lib/familyRealtime'
@@ -58,6 +59,13 @@ const db = useSupabase()
 const effectiveUserId = computed(() => userId.value || getRememberedUser(localStorage))
 
 const items = ref([])
+// Which rows the list shows: 'all' | 'active' | 'checked'. A view of `items`,
+// never a filter on what is fetched -- every other path (realtime, offline
+// queue, the item cap) keeps working on the whole list.
+//
+// Deliberately not persisted. Opening the app to a filtered list, with no memory
+// of having set one, is how items get declared missing.
+const listFilter = ref('all')
 // Every family the user belongs to ({ id, name }), for the topbar switcher.
 // familyId below is whichever one is currently active.
 const families = ref([])
@@ -678,6 +686,9 @@ async function switchFamily(id) {
   cleanupRealtimeSubscriptions()
   // Drop the old family's data so none of it flashes under the new name.
   items.value = []
+  // A filter belongs to the list it was chosen for. Carrying "In cart" into a
+  // family whose cart is empty opens it on a blank list.
+  listFilter.value = 'all'
   familyMembers.value = []
   familyProductStats.value = new Map()
   loadError.value = ''
@@ -1233,8 +1244,13 @@ async function deleteItem(item) {
           @add-custom="openCustomProduct"
         />
 
+        <!-- Only once there is a list to filter: an empty list with three
+             filter chips over it is furniture, not a tool. -->
+        <ListFilterBar v-if="!listLoading && items.length" v-model="listFilter" :items="items" />
+
         <ShoppingList
           :items="items"
+          :filter="listFilter"
           :member-profiles="memberProfileMap"
           :loading="listLoading"
           :show-empty="hasInitialized && !items.length && !loadError && !switchingFamily"
