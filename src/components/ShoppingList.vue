@@ -50,10 +50,10 @@ const visibleItems = computed(() => {
 // The header names whichever list is on screen. It stays put in every filter
 // state, because it is also where the filter button lives -- hiding it while
 // viewing the cart would take away the only way back.
-const viewingCart = computed(() => filter.value === 'checked')
-const metaLabel = computed(() => (viewingCart.value ? 'In cart' : 'To buy'))
+const viewingChecked = computed(() => filter.value === 'checked')
+const metaLabel = computed(() => (viewingChecked.value ? 'Checked' : 'To buy'))
 const metaCount = computed(() =>
-  viewingCart.value
+  viewingChecked.value
     ? `${checkedItems.value.length} ${checkedItems.value.length === 1 ? 'item' : 'items'}`
     : `${leftCount.value} left`,
 )
@@ -250,7 +250,7 @@ const labelText = computed(() =>
   </TransitionGroup>
 
   <p v-if="filteredToNothing" class="filter-empty">
-    {{ filter === 'checked' ? 'Nothing in the cart yet.' : 'Everything here is in the cart.' }}
+    {{ filter === 'checked' ? 'Nothing checked yet.' : 'Everything here is checked.' }}
   </p>
 
   <!-- Keeps the last checked row clear of the fixed buy bar. -->

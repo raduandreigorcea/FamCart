@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import PopoverMenu from './PopoverMenu.vue'
 import slidersIcon from '../assets/sliders-horizontal.svg?raw'
-import checkIcon from '../assets/check.svg?raw'
+import checkIcon from '../assets/check-2.svg?raw'
 
 // The button that filters the list, and the rows it offers. PopoverMenu owns
 // the panel itself — where it lands, how it dismisses, what a row looks like.
@@ -27,12 +27,13 @@ const counts = computed(() => {
   return { all: props.items.length, active: props.items.length - checked, checked }
 })
 
-// "In cart" rather than "Bought": a checked row is not bought until the buy bar
-// checks it out, which is what moves it into purchase history.
+// "Checked", not "Bought": a ticked row is not bought until the buy bar checks
+// it out, which is what moves it into purchase history. The hint carries that
+// distinction, because the two words are close enough to be read as one.
 const OPTIONS = [
-  { value: 'all', label: 'Everything', hint: 'Both lists together' },
+  { value: 'all', label: 'No filter', hint: 'Everything on the list' },
   { value: 'active', label: 'To buy', hint: 'Still to pick up' },
-  { value: 'checked', label: 'In cart', hint: 'Ticked, not checked out' },
+  { value: 'checked', label: 'Checked', hint: 'Ticked, not checked out' },
 ]
 
 // A filtered list that looks unfiltered is how items get declared missing, so
@@ -57,7 +58,7 @@ const isFiltered = computed(() => model.value !== 'all')
 
   <PopoverMenu v-model="open" :trigger="btnEl" align="right" label="Filter items">
     <template #default="{ close }">
-      <p class="menu-heading">Show</p>
+      <p class="menu-heading">Filters</p>
       <button
         v-for="option in OPTIONS"
         :key="option.value"
@@ -68,17 +69,18 @@ const isFiltered = computed(() => model.value !== 'all')
         :aria-checked="model === option.value"
         @click="((model = option.value), close())"
       >
+        <!-- Always rendered, empty on the rows that are not chosen: it holds
+             the space so every label starts on the same line. -->
+        <span
+          class="menu-check"
+          aria-hidden="true"
+          v-html="model === option.value ? checkIcon : ''"
+        ></span>
         <span class="filter-option__text">
           <span class="filter-option__label">{{ option.label }}</span>
           <span class="filter-option__hint">{{ option.hint }}</span>
         </span>
         <span class="filter-option__count">{{ counts[option.value] }}</span>
-        <span
-          v-if="model === option.value"
-          class="menu-check"
-          aria-hidden="true"
-          v-html="checkIcon"
-        ></span>
       </button>
     </template>
   </PopoverMenu>
