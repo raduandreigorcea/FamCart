@@ -50,7 +50,17 @@ const visibleItems = computed(() => {
 // The header names whichever list is on screen. It stays put in every filter
 // state, because it is also where the filter button lives -- hiding it while
 // viewing the cart would take away the only way back.
-const viewingChecked = computed(() => filter.value === 'checked')
+//
+// Which is why the unfiltered case has to check what is actually there: this
+// header used to disappear once the last row was ticked, and now that it
+// cannot, "To buy - 0 left" would sit over a list that is entirely cart. Under
+// an explicit filter the label follows the filter, even when it comes up empty,
+// because there the count is the answer to a question you asked.
+const viewingChecked = computed(
+  () =>
+    filter.value === 'checked' ||
+    (filter.value === 'all' && props.items.length > 0 && uncheckedItems.value.length === 0),
+)
 const metaLabel = computed(() => (viewingChecked.value ? 'Checked' : 'To buy'))
 const metaCount = computed(() =>
   viewingChecked.value

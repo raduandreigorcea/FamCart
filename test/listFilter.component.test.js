@@ -167,6 +167,21 @@ describe('the filtered list', () => {
     expect(cart.find('.list-meta__count').text()).toBe('1 item')
   })
 
+  // The header cannot hide once the last row is ticked -- it carries the filter
+  // button -- so with no filter on it has to describe what is really there.
+  it('stops saying "to buy" once there is nothing left to buy', () => {
+    const allTicked = mountList({ items: [item('a', true), item('b', true)], filter: 'all' })
+    expect(allTicked.find('.list-meta__label').text()).toBe('Checked')
+    expect(allTicked.find('.list-meta__count').text()).toBe('2 items')
+  })
+
+  // But an empty answer to a question you asked is still that question's answer.
+  it('keeps naming the filter you chose, even when it matches nothing', () => {
+    const noneToBuy = mountList({ items: [item('a', true)], filter: 'active' })
+    expect(noneToBuy.find('.list-meta__label').text()).toBe('To buy')
+    expect(noneToBuy.find('.list-meta__count').text()).toBe('0 left')
+  })
+
   // The header carries the filter button, so hiding it while the cart is on
   // screen — or once everything is ticked — would remove the only way back.
   it('keeps the header, and the button, in every filter state', () => {
