@@ -75,7 +75,7 @@ describe('the filter button', () => {
     expect(menuOpen()).toBe(true)
     const text = (selector) =>
       menuItems().map((i) => i.querySelector(selector).textContent.trim())
-    expect(text('.filter-option__label')).toEqual(['Everything', 'To buy', 'In cart'])
+    expect(text('.filter-option__label')).toEqual(['No filter', 'To buy', 'Checked'])
     expect(text('.filter-option__count')).toEqual(['3', '2', '1'])
   })
 
@@ -163,7 +163,7 @@ describe('the filtered list', () => {
     expect(toBuy.find('.list-meta__count').text()).toBe('2 left')
 
     const cart = mountList({ filter: 'checked' })
-    expect(cart.find('.list-meta__label').text()).toBe('In cart')
+    expect(cart.find('.list-meta__label').text()).toBe('Checked')
     expect(cart.find('.list-meta__count').text()).toBe('1 item')
   })
 
@@ -185,11 +185,11 @@ describe('the filtered list', () => {
   // Distinct from the empty state: the list has rows, this view has none of them.
   it('explains an empty view without claiming the list is empty', () => {
     const nothingChecked = mountList({ items: [item('a', false)], filter: 'checked' })
-    expect(nothingChecked.find('.filter-empty').text()).toBe('Nothing in the cart yet.')
+    expect(nothingChecked.find('.filter-empty').text()).toBe('Nothing checked yet.')
     expect(nothingChecked.find('.empty-state').exists()).toBe(false)
 
     const allChecked = mountList({ items: [item('a', true)], filter: 'active' })
-    expect(allChecked.find('.filter-empty').text()).toBe('Everything here is in the cart.')
+    expect(allChecked.find('.filter-empty').text()).toBe('Everything here is checked.')
   })
 
   it('says nothing about filters while the first load is still running', () => {
