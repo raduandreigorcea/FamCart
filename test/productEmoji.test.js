@@ -184,6 +184,55 @@ describe('keywords added from the import coverage report', () => {
   })
 })
 
+// Some products name a brand and a flavour and nothing else. "Pringles Sour
+// Cream & Onion" is crisps, but "sour cream" is the longer keyword, so before
+// brands were given their own tier it rendered as dairy.
+describe('brands that are a category', () => {
+  it('reads the brand when the name says nothing about the product', () => {
+    expect(getProductEmoji('Original 165g', 'Pringles')).toBe('🥔')
+    expect(getProductEmoji('Original 100g', 'Chio')).toBe('🥔')
+    expect(getProductEmoji('Eugenia 36g', 'Dobrogea')).toBe('🍪')
+    expect(getProductEmoji('Mountain Dew 330ml', 'Mountain Dew')).toBe('🥤')
+    expect(getProductEmoji('Activia Fibre 100g', 'Danone')).toBe('🥛')
+    expect(getProductEmoji('Dark Intense 80g', 'Heidi')).toBe('🍫')
+  })
+
+  it('beats a longer flavour word, which is what length alone got wrong', () => {
+    expect(getProductEmoji('Sour Cream & Onion 165g', 'Pringles')).toBe('🥔')
+    expect(getProductEmoji('Sare 140g', "Lay's")).toBe('🥔')
+    expect(getProductEmoji('Nachos Cheese 100g', 'Doritos')).toBe('🥔')
+  })
+
+  // A retailer sells everything, so its name can never imply a category.
+  it('ignores retailers and leaves the keywords in charge', () => {
+    expect(getProductEmoji('Paine Alba Feliata 500g', 'Carrefour')).toBe('🍞')
+    expect(getProductEmoji('Lapte 3.5% 1L', 'Lidl')).toBe('🥛')
+  })
+
+  // Juice brands are deliberately absent: the fruit is the nicer icon and the
+  // keyword table already picks it.
+  it('does not let a brand tier override the fruit in a juice', () => {
+    expect(getProductEmoji('Suc de Portocale 1L', 'Santal')).toBe('🍊')
+  })
+})
+
+// A modifier that happens to be longer than the head noun used to win.
+describe('the head noun beats a longer modifier', () => {
+  it('picks the product, not the thing it is flavoured with', () => {
+    expect(getProductEmoji('Tortilla Chips Nacho 100g', 'Doritos')).toBe('🥔')
+    expect(getProductEmoji('Pate de Porc 120g', 'Cris Tim')).toBe('🥫')
+    expect(getProductEmoji('Crema de Hrean 200g', 'Raureni')).toBe('🥫')
+    expect(getProductEmoji('Salata de Icre de Crap 100g', 'Gusturi Romanesti')).toBe('🐟')
+  })
+
+  it('leaves the deliberate ties alone', () => {
+    // Both called out inline in productEmoji.ts as depending on rule order.
+    expect(getProductEmoji('Chipsuri cu Smantana 140g')).toBe('🥔')
+    expect(getProductEmoji('Inghetata cu Ciocolata 110g')).toBe('🍦')
+    expect(getProductEmoji('Apa de Gura 500ml', 'Colgate')).toBe('🪥')
+  })
+})
+
 describe('memoization', () => {
   it('returns a stable answer for a repeated product', () => {
     const first = getProductEmoji('Apa Plata 2L', 'Dorna')
