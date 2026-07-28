@@ -203,12 +203,18 @@ onBeforeUnmount(() => {
   margin: var(--space-1) var(--space-2);
 }
 
-/* Leads the row, and is rendered empty rather than omitted on the rows that are
-   not chosen, so every label starts on the same line. Centred here, which is
-   right for a single-line row; a caller whose rows are taller than one line
-   aligns it to the label itself. */
+/* Sits a little above the middle of its row, which is where a tick reads as
+   belonging to the label rather than floating beside it.
+
+   The 4px is measured, not picked. Flush with the top of the row the tick reads
+   as too high; centred on the row it reads as too low, because both callers put
+   something taller than the icon in the row -- a hint line under the label, a
+   28px emoji tile. 4px is the midpoint of those two, and lands within a pixel of
+   halfway between flush and centred in either row. */
 :slotted(.menu-check) {
   flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 4px;
   width: var(--size-icon-md);
   height: var(--size-icon-md);
   color: var(--color-primary);

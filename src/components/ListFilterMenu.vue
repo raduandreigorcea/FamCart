@@ -154,15 +154,6 @@ const isFiltered = computed(() => model.value !== 'all')
   border: var(--border-width-base) solid var(--bg-page);
 }
 
-/* These rows are two lines tall — a label with a hint under it — so a tick
-   centred on the row lands in the gap between them and reads as though it had
-   slipped. Align it to the label instead. */
-.menu-check {
-  align-self: flex-start;
-  /* Half the difference between the label's line box and the icon. */
-  margin-top: 0.15rem;
-}
-
 /* Row internals; the row's own box comes from PopoverMenu's .menu-item. */
 .filter-option__text {
   display: flex;
