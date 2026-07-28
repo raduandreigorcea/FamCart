@@ -157,6 +157,33 @@ describe('coverage of imported products', () => {
   })
 })
 
+// Gaps the first Open Food Facts import surfaced: 202 of 3,329 imported
+// products fell through to the shopping bag, and these were the words that
+// covered the most shelf.
+describe('keywords added from the import coverage report', () => {
+  it('recognises the words the imported catalog brought in', () => {
+    expect(getProductEmoji('Oreo Original 154g')).toBe('🍪')
+    expect(getProductEmoji('Crackers cu Susan 100g')).toBe('🍪')
+    expect(getProductEmoji('Spaghete No. 5 500g')).toBe('🍝')
+    expect(getProductEmoji('Hummus Clasic 200g')).toBe('🫘')
+    expect(getProductEmoji('Cuscus Integral 500g')).toBe('🍚')
+    expect(getProductEmoji('Pateu de Ficat 200g')).toBe('🥫')
+    expect(getProductEmoji('Vin Alb Feteasca Regala 750ml')).toBe('🍷')
+    expect(getProductEmoji('Cafea Lungo 10 buc')).toBe('☕')
+    expect(getProductEmoji('Actimel Natural 100ml')).toBe('🥛')
+    expect(getProductEmoji('Vitamin D3 5000 Iu')).toBe('💊')
+  })
+
+  // Longest-keyword-wins means a broad new word can outrank a precise old one.
+  // The report suggested 'protein', which is longer than 'iaurt' and would have
+  // turned every protein yogurt into a pill. It was left out for that reason.
+  it('does not let the new keywords outrank a more precise one', () => {
+    expect(getProductEmoji('Iaurt Proteic 400g')).toBe('🥛')
+    expect(getProductEmoji('Branza Philadelphia 175g')).toBe('🧀')
+    expect(getProductEmoji('Suc de Portocale 1L')).toBe('🍊')
+  })
+})
+
 describe('memoization', () => {
   it('returns a stable answer for a repeated product', () => {
     const first = getProductEmoji('Apa Plata 2L', 'Dorna')
