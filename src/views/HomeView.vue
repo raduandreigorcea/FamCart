@@ -685,7 +685,7 @@ async function switchFamily(id) {
   cleanupRealtimeSubscriptions()
   // Drop the old family's data so none of it flashes under the new name.
   items.value = []
-  // A filter belongs to the list it was chosen for. Carrying "In cart" into a
+  // A filter belongs to the list it was chosen for. Carrying "Checked" into a
   // family whose cart is empty opens it on a blank list.
   listFilter.value = 'all'
   familyMembers.value = []

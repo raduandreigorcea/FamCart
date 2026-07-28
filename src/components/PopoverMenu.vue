@@ -107,7 +107,7 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <Transition name="popover">
       <div v-if="open" class="popover-overlay" @click.self="close">
-        <div class="popover-panel" :style="anchor" role="menu" :aria-label="label || heading">
+        <div class="popover-panel" :style="anchor">
           <header v-if="heading" class="popover-header">
             <span v-if="icon" class="popover-header__icon-bg" aria-hidden="true">
               <span class="popover-header__icon" v-html="icon"></span>
@@ -118,8 +118,13 @@ onBeforeUnmount(() => {
             </span>
           </header>
           <!-- The rows live in their own box so the header can stay put while
-               they scroll, the way a modal's header does. -->
-          <div class="popover-body">
+               they scroll, the way a modal's header does.
+               role="menu" sits here rather than on the panel because a menu
+               exposes only its menuitems: with the header inside it, the title
+               a sighted user reads would be dropped on the way to a screen
+               reader. Outside it, the header is ordinary text and aria-label
+               carries the same name. -->
+          <div class="popover-body" role="menu" :aria-label="label || heading">
             <slot :close="close" />
           </div>
         </div>
