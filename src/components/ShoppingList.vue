@@ -16,6 +16,11 @@ const props = defineProps({
   memberProfiles: { type: Map, default: () => new Map() },
   loading: { type: Boolean, default: false },
   showEmpty: { type: Boolean, default: false },
+  // 'all' | 'active' | 'checked'. Applied to what is RENDERED only -- the
+  // counts and the buy bar below stay on the whole list, because a filter hides
+  // rows rather than removing them. Filtering to "To buy" while three things
+  // sit in the cart must not strand them behind a bar that vanished.
+  filter: { type: String, default: 'all' },
 })
 
 function avatarUrl(item) {
@@ -30,6 +35,18 @@ const emit = defineEmits(['toggle', 'delete', 'checkout'])
 
 const uncheckedItems = computed(() => props.items.filter((i) => !i.checked))
 const checkedItems = computed(() => props.items.filter((i) => i.checked))
+
+const visibleItems = computed(() => {
+  if (props.filter === 'active') return uncheckedItems.value
+  if (props.filter === 'checked') return checkedItems.value
+  return props.items
+})
+
+// The list has rows, the filter just hides all of them. Distinct from the empty
+// state, which means there is nothing to buy at all.
+const filteredToNothing = computed(
+  () => !props.loading && props.items.length > 0 && visibleItems.value.length === 0,
+)
 const leftCount = computed(() => sumActiveQuantities(props.items))
 // Units, not rows: "grapes x4" counts as 4 on the buy button.
 const checkedUnitCount = computed(() => sumCheckedQuantities(props.items))
@@ -180,7 +197,9 @@ const labelText = computed(() =>
 </script>
 
 <template>
-  <div class="list-meta" v-if="!loading && uncheckedItems.length">
+  <!-- Hidden while viewing the cart: "To buy — 8 left" over a list of ticked
+       rows describes something that is not on screen. -->
+  <div class="list-meta" v-if="!loading && uncheckedItems.length && filter !== 'checked'">
     <span class="list-meta__label">To buy</span>
     <span class="list-meta__count">{{ leftCount }} left</span>
   </div>
@@ -202,7 +221,7 @@ const labelText = computed(() =>
        moving it to a section at the bottom. -->
   <TransitionGroup v-else tag="ul" name="row" class="item-list">
     <ShoppingListItem
-      v-for="item in items"
+      v-for="item in visibleItems"
       :key="item.id"
       :item="item"
       :avatar-url="avatarUrl(item)"
@@ -213,6 +232,10 @@ const labelText = computed(() =>
       @delete="$emit('delete', $event)"
     />
   </TransitionGroup>
+
+  <p v-if="filteredToNothing" class="filter-empty">
+    {{ filter === 'checked' ? 'Nothing in the cart yet.' : 'Everything here is in the cart.' }}
+  </p>
 
   <!-- Keeps the last checked row clear of the fixed buy bar. -->
   <div v-if="checkedItems.length && !loading" class="buy-bar-spacer" aria-hidden="true"></div>
@@ -337,6 +360,15 @@ const labelText = computed(() =>
 .row-leave-to {
   opacity: 0;
   transform: translateY(8px) scale(0.995);
+}
+
+/* Not the empty state: the list has rows, this filter just has none of them.
+   Quieter than the real empty state, because nothing is wrong. */
+.filter-empty {
+  margin: var(--space-6) 0 var(--space-4);
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-disabled);
 }
 
 /* Empty state */
