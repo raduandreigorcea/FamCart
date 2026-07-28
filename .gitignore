@@ -33,3 +33,7 @@ graphify-out
 scripts
 .vercel
 .env*
+
+# Local state from `supabase db start` / `supabase test db`.
+supabase/.branches
+supabase/.temp

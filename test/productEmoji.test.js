@@ -105,9 +105,19 @@ describe('specificity', () => {
     expect(getProductEmoji('Ton in Ulei 185g')).toBe('🐟')
   })
 
+  // Unicode has no crisps. Before this split, a bag of Lay's and a kilo of
+  // potatoes were the same icon, which is the one distinction a shopping list
+  // actually needs to draw.
+  it('tells a snack apart from the vegetable it is made of', () => {
+    expect(getProductEmoji('Chipsuri Sare 140g', "Lay's")).toBe('🍟')
+    expect(getProductEmoji('Cartofi Albi 1kg')).toBe('🥔')
+    expect(getProductEmoji('Cartofi Pai Congelati 750g', 'Aviko')).toBe('🍟')
+    expect(getProductEmoji('Piure de Cartofi 125g', 'Maggi')).toBe('🥔')
+  })
+
   it('resolves an equal-length tie by rule order', () => {
     // "chipsuri" and "smantana" are both eight letters; the product is chips.
-    expect(getProductEmoji('Chipsuri cu Smantana si Verdeturi 140g', "Lay's")).toBe('🥔')
+    expect(getProductEmoji('Chipsuri cu Smantana si Verdeturi 140g', "Lay's")).toBe('🍟')
     // "inghetata" and "ciocolata" are both nine; the product is ice cream.
     expect(getProductEmoji('Inghetata cu Ciocolata 900ml', 'Betty Ice')).toBe('🍦')
   })
@@ -137,6 +147,99 @@ describe('coverage of the seeded catalog', () => {
   it('keeps fruit juice fruity but does not call iced tea a fruit', () => {
     expect(getProductEmoji('Suc de Portocale 1L', 'Cappy')).toBe('🍊')
     expect(getProductEmoji('Ice Tea Piersici 1.5L', 'Lipton')).toBe('🥤')
+  })
+})
+
+// Gaps the importer's coverage report found in real Open Food Facts products,
+// which the curated 256 never happened to contain.
+describe('coverage of imported products', () => {
+  it('knows the products the first import surfaced', () => {
+    expect(getProductEmoji('Tofu Natur 200g', 'SanoVita')).toBe('🫘')
+    expect(getProductEmoji('Originals: Skyr 100g', 'Schogetten')).toBe('🥛')
+    // Neither says "ceai" or "tea", so the existing keywords could not reach them.
+    expect(getProductEmoji('Earl Grey 100g', 'Twinings')).toBe('🍵')
+    expect(getProductEmoji('Tea Lady Grey 100g', 'Twinings')).toBe('🍵')
+  })
+
+  it('does not let the new keywords steal unrelated products', () => {
+    expect(getProductEmoji('Ceafa de Porc 1kg')).toBe('🥩')
+    expect(getProductEmoji('Grey Goose 700ml')).toBe('🛍️')
+  })
+})
+
+// Gaps the first Open Food Facts import surfaced: 202 of 3,329 imported
+// products fell through to the shopping bag, and these were the words that
+// covered the most shelf.
+describe('keywords added from the import coverage report', () => {
+  it('recognises the words the imported catalog brought in', () => {
+    expect(getProductEmoji('Oreo Original 154g')).toBe('🍪')
+    expect(getProductEmoji('Crackers cu Susan 100g')).toBe('🍪')
+    expect(getProductEmoji('Spaghete No. 5 500g')).toBe('🍝')
+    expect(getProductEmoji('Hummus Clasic 200g')).toBe('🫘')
+    expect(getProductEmoji('Cuscus Integral 500g')).toBe('🍚')
+    expect(getProductEmoji('Pateu de Ficat 200g')).toBe('🥫')
+    expect(getProductEmoji('Vin Alb Feteasca Regala 750ml')).toBe('🍷')
+    expect(getProductEmoji('Cafea Lungo 10 buc')).toBe('☕')
+    expect(getProductEmoji('Actimel Natural 100ml')).toBe('🥛')
+    expect(getProductEmoji('Vitamin D3 5000 Iu')).toBe('💊')
+  })
+
+  // Longest-keyword-wins means a broad new word can outrank a precise old one.
+  // The report suggested 'protein', which is longer than 'iaurt' and would have
+  // turned every protein yogurt into a pill. It was left out for that reason.
+  it('does not let the new keywords outrank a more precise one', () => {
+    expect(getProductEmoji('Iaurt Proteic 400g')).toBe('🥛')
+    expect(getProductEmoji('Branza Philadelphia 175g')).toBe('🧀')
+    expect(getProductEmoji('Suc de Portocale 1L')).toBe('🍊')
+  })
+})
+
+// Some products name a brand and a flavour and nothing else. "Pringles Sour
+// Cream & Onion" is crisps, but "sour cream" is the longer keyword, so before
+// brands were given their own tier it rendered as dairy.
+describe('brands that are a category', () => {
+  it('reads the brand when the name says nothing about the product', () => {
+    expect(getProductEmoji('Original 165g', 'Pringles')).toBe('🍟')
+    expect(getProductEmoji('Original 100g', 'Chio')).toBe('🍟')
+    expect(getProductEmoji('Eugenia 36g', 'Dobrogea')).toBe('🍪')
+    expect(getProductEmoji('Mountain Dew 330ml', 'Mountain Dew')).toBe('🥤')
+    expect(getProductEmoji('Activia Fibre 100g', 'Danone')).toBe('🥛')
+    expect(getProductEmoji('Dark Intense 80g', 'Heidi')).toBe('🍫')
+  })
+
+  it('beats a longer flavour word, which is what length alone got wrong', () => {
+    expect(getProductEmoji('Sour Cream & Onion 165g', 'Pringles')).toBe('🍟')
+    expect(getProductEmoji('Sare 140g', "Lay's")).toBe('🍟')
+    expect(getProductEmoji('Nachos Cheese 100g', 'Doritos')).toBe('🍟')
+  })
+
+  // A retailer sells everything, so its name can never imply a category.
+  it('ignores retailers and leaves the keywords in charge', () => {
+    expect(getProductEmoji('Paine Alba Feliata 500g', 'Carrefour')).toBe('🍞')
+    expect(getProductEmoji('Lapte 3.5% 1L', 'Lidl')).toBe('🥛')
+  })
+
+  // Juice brands are deliberately absent: the fruit is the nicer icon and the
+  // keyword table already picks it.
+  it('does not let a brand tier override the fruit in a juice', () => {
+    expect(getProductEmoji('Suc de Portocale 1L', 'Santal')).toBe('🍊')
+  })
+})
+
+// A modifier that happens to be longer than the head noun used to win.
+describe('the head noun beats a longer modifier', () => {
+  it('picks the product, not the thing it is flavoured with', () => {
+    expect(getProductEmoji('Tortilla Chips Nacho 100g', 'Doritos')).toBe('🍟')
+    expect(getProductEmoji('Pate de Porc 120g', 'Cris Tim')).toBe('🥫')
+    expect(getProductEmoji('Crema de Hrean 200g', 'Raureni')).toBe('🥫')
+    expect(getProductEmoji('Salata de Icre de Crap 100g', 'Gusturi Romanesti')).toBe('🐟')
+  })
+
+  it('leaves the deliberate ties alone', () => {
+    // Both called out inline in productEmoji.ts as depending on rule order.
+    expect(getProductEmoji('Chipsuri cu Smantana 140g')).toBe('🍟')
+    expect(getProductEmoji('Inghetata cu Ciocolata 110g')).toBe('🍦')
+    expect(getProductEmoji('Apa de Gura 500ml', 'Colgate')).toBe('🪥')
   })
 })
 

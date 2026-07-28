@@ -4,6 +4,7 @@ import {
   escapeIlikePattern,
   productKey,
   buildFamilyProductStats,
+  matchFamilyStats,
   rankSuggestions,
 } from '../src/lib/productSearch'
 
@@ -165,5 +166,98 @@ describe('rankSuggestions', () => {
 
   it('ignores candidates with no usable name', () => {
     expect(rankSuggestions([{ name: '  ', maker: 'x' }, ...catalog], noStats, 6)).toHaveLength(3)
+  })
+})
+
+// The other half of the suggestion pool. The catalog query is capped and ordered
+// globally, so once the catalog is imported at scale a family's own staple can
+// be crowded out of it before ranking ever sees it. These matches come from
+// memory and close that gap.
+describe('matchFamilyStats', () => {
+  const stats = buildFamilyProductStats([
+    { name: 'Apa Plata 2L', maker: 'Dorna', purchased_at: '2026-07-01T10:00:00Z' },
+    { name: 'Apa Plata 2L', maker: 'Dorna', purchased_at: '2026-07-02T10:00:00Z' },
+    { name: 'Apa Minerala 1.5L', maker: 'Perla Harghitei', purchased_at: '2026-07-08T10:00:00Z' },
+    { name: 'Lapte 3.5% 1L', maker: 'Napolact', purchased_at: '2026-07-09T10:00:00Z' },
+  ])
+
+  it('finds a bought product by name', () => {
+    expect(matchFamilyStats('plata', stats, { limit: 6 }).map((p) => p.name)).toEqual([
+      'Apa Plata 2L',
+    ])
+  })
+
+  it('matches the maker too, the way the server ilike does', () => {
+    expect(matchFamilyStats('dorna', stats, { limit: 6 }).map((p) => p.name)).toEqual([
+      'Apa Plata 2L',
+    ])
+  })
+
+  it('ignores the accents the user typed', () => {
+    expect(matchFamilyStats('apă plată', stats, { limit: 6 }).map((p) => p.name)).toEqual([
+      'Apa Plata 2L',
+    ])
+  })
+
+  it('stays quiet until the query is worth searching', () => {
+    expect(matchFamilyStats('a', stats, { limit: 6 })).toEqual([])
+    expect(matchFamilyStats('   ', stats, { limit: 6 })).toEqual([])
+  })
+
+  it('orders by how often, then how recently, like the ranking does', () => {
+    expect(matchFamilyStats('apa', stats, { limit: 6 }).map((p) => p.name)).toEqual([
+      'Apa Plata 2L', // bought twice
+      'Apa Minerala 1.5L', // bought once
+    ])
+  })
+
+  it('caps the list at the limit', () => {
+    expect(matchFamilyStats('apa', stats, { limit: 1 })).toHaveLength(1)
+  })
+
+  // The guard that stops history becoming a source of junk: purchase_history
+  // records whatever was typed, so a hand-typed bare word must never be offered
+  // back as if it were a product.
+  it('refuses a hand-typed one-word entry with no maker', () => {
+    const typed = buildFamilyProductStats([
+      { name: 'apa', purchased_at: '2026-07-10T10:00:00Z' },
+      { name: 'apa', purchased_at: '2026-07-11T10:00:00Z' },
+      { name: 'apa', purchased_at: '2026-07-12T10:00:00Z' },
+    ])
+    expect(matchFamilyStats('apa', typed, { limit: 6 })).toEqual([])
+  })
+
+  it('accepts a maker-less entry that still reads as a product', () => {
+    const typed = buildFamilyProductStats([
+      { name: 'Rosii Cherry 250g', purchased_at: '2026-07-10T10:00:00Z' },
+    ])
+    expect(matchFamilyStats('rosii', typed, { limit: 6 }).map((p) => p.name)).toEqual([
+      'Rosii Cherry 250g',
+    ])
+  })
+
+  it('can be told to skip the specificity guard', () => {
+    const typed = buildFamilyProductStats([{ name: 'apa', purchased_at: '2026-07-10T10:00:00Z' }])
+    expect(
+      matchFamilyStats('apa', typed, { limit: 6, requireSpecific: false }).map((p) => p.name),
+    ).toEqual(['apa'])
+  })
+
+  // popularity 0 rather than undefined, so these take the identical path through
+  // rankSuggestions' comparison and a catalog row with real popularity wins.
+  it('returns a zero popularity so the catalog row outranks it on a tie', () => {
+    const [match] = matchFamilyStats('plata', stats, { limit: 6 })
+    expect(match).toEqual({ name: 'Apa Plata 2L', maker: 'Dorna', popularity: 0 })
+  })
+
+  it('yields to the catalog spelling when both have the product', () => {
+    const fromCatalog = { name: 'Apa Plata 2L', maker: 'Dorna', popularity: 100 }
+    const merged = rankSuggestions(
+      [fromCatalog, ...matchFamilyStats('plata', stats, { limit: 6 })],
+      stats,
+      6,
+    )
+    expect(merged).toHaveLength(1)
+    expect(merged[0].popularity).toBe(100)
   })
 })
