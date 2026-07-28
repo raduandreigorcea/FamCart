@@ -105,9 +105,19 @@ describe('specificity', () => {
     expect(getProductEmoji('Ton in Ulei 185g')).toBe('🐟')
   })
 
+  // Unicode has no crisps. Before this split, a bag of Lay's and a kilo of
+  // potatoes were the same icon, which is the one distinction a shopping list
+  // actually needs to draw.
+  it('tells a snack apart from the vegetable it is made of', () => {
+    expect(getProductEmoji('Chipsuri Sare 140g', "Lay's")).toBe('🍟')
+    expect(getProductEmoji('Cartofi Albi 1kg')).toBe('🥔')
+    expect(getProductEmoji('Cartofi Pai Congelati 750g', 'Aviko')).toBe('🍟')
+    expect(getProductEmoji('Piure de Cartofi 125g', 'Maggi')).toBe('🥔')
+  })
+
   it('resolves an equal-length tie by rule order', () => {
     // "chipsuri" and "smantana" are both eight letters; the product is chips.
-    expect(getProductEmoji('Chipsuri cu Smantana si Verdeturi 140g', "Lay's")).toBe('🥔')
+    expect(getProductEmoji('Chipsuri cu Smantana si Verdeturi 140g', "Lay's")).toBe('🍟')
     // "inghetata" and "ciocolata" are both nine; the product is ice cream.
     expect(getProductEmoji('Inghetata cu Ciocolata 900ml', 'Betty Ice')).toBe('🍦')
   })
@@ -189,8 +199,8 @@ describe('keywords added from the import coverage report', () => {
 // brands were given their own tier it rendered as dairy.
 describe('brands that are a category', () => {
   it('reads the brand when the name says nothing about the product', () => {
-    expect(getProductEmoji('Original 165g', 'Pringles')).toBe('🥔')
-    expect(getProductEmoji('Original 100g', 'Chio')).toBe('🥔')
+    expect(getProductEmoji('Original 165g', 'Pringles')).toBe('🍟')
+    expect(getProductEmoji('Original 100g', 'Chio')).toBe('🍟')
     expect(getProductEmoji('Eugenia 36g', 'Dobrogea')).toBe('🍪')
     expect(getProductEmoji('Mountain Dew 330ml', 'Mountain Dew')).toBe('🥤')
     expect(getProductEmoji('Activia Fibre 100g', 'Danone')).toBe('🥛')
@@ -198,9 +208,9 @@ describe('brands that are a category', () => {
   })
 
   it('beats a longer flavour word, which is what length alone got wrong', () => {
-    expect(getProductEmoji('Sour Cream & Onion 165g', 'Pringles')).toBe('🥔')
-    expect(getProductEmoji('Sare 140g', "Lay's")).toBe('🥔')
-    expect(getProductEmoji('Nachos Cheese 100g', 'Doritos')).toBe('🥔')
+    expect(getProductEmoji('Sour Cream & Onion 165g', 'Pringles')).toBe('🍟')
+    expect(getProductEmoji('Sare 140g', "Lay's")).toBe('🍟')
+    expect(getProductEmoji('Nachos Cheese 100g', 'Doritos')).toBe('🍟')
   })
 
   // A retailer sells everything, so its name can never imply a category.
@@ -219,7 +229,7 @@ describe('brands that are a category', () => {
 // A modifier that happens to be longer than the head noun used to win.
 describe('the head noun beats a longer modifier', () => {
   it('picks the product, not the thing it is flavoured with', () => {
-    expect(getProductEmoji('Tortilla Chips Nacho 100g', 'Doritos')).toBe('🥔')
+    expect(getProductEmoji('Tortilla Chips Nacho 100g', 'Doritos')).toBe('🍟')
     expect(getProductEmoji('Pate de Porc 120g', 'Cris Tim')).toBe('🥫')
     expect(getProductEmoji('Crema de Hrean 200g', 'Raureni')).toBe('🥫')
     expect(getProductEmoji('Salata de Icre de Crap 100g', 'Gusturi Romanesti')).toBe('🐟')
@@ -227,7 +237,7 @@ describe('the head noun beats a longer modifier', () => {
 
   it('leaves the deliberate ties alone', () => {
     // Both called out inline in productEmoji.ts as depending on rule order.
-    expect(getProductEmoji('Chipsuri cu Smantana 140g')).toBe('🥔')
+    expect(getProductEmoji('Chipsuri cu Smantana 140g')).toBe('🍟')
     expect(getProductEmoji('Inghetata cu Ciocolata 110g')).toBe('🍦')
     expect(getProductEmoji('Apa de Gura 500ml', 'Colgate')).toBe('🪥')
   })
