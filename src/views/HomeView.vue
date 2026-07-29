@@ -22,8 +22,10 @@ import {
   escapeIlikePattern,
   buildFamilyProductStats,
   matchFamilyStats,
+  productKey,
   rankSuggestions,
 } from '../lib/productSearch'
+import { topFamilyProducts } from '../lib/productRecents'
 import { upsertOwnProfile } from '../lib/profile'
 import { cleanAuthCallbackUrl } from '../lib/authCallbackUrl'
 import {
@@ -195,6 +197,15 @@ let suggestTimer = null
 let suggestRequestId = 0
 const SUGGEST_MIN_CHARS = 2
 const SUGGEST_LIMIT = 6
+// On a phone the form lifts to the top of the screen when focused, and the
+// dropdown gets the whole screen instead of a 275px slot. Twice the room is
+// worth twice the matches; the pool below already dwarfs both numbers, so this
+// costs nothing but stops throwing ranked matches away.
+const SUGGEST_LIMIT_EXPANDED = 12
+const searchExpanded = ref(false)
+const suggestLimit = computed(() =>
+  searchExpanded.value ? SUGGEST_LIMIT_EXPANDED : SUGGEST_LIMIT
+)
 // Wide enough that a common two-character prefix does not fill the pool with
 // globally-popular strangers before this family's own products get a look in.
 // The trigram index does the filtering either way, so the cost is the sort and
@@ -204,6 +215,37 @@ const SUGGEST_POOL = 100
 // per character, so a shorter pause than this elapses between ordinary
 // keystrokes and every character would cost its own request.
 const SUGGEST_DEBOUNCE_MS = 300
+
+// ─── The regulars ────────────────────────────────────────────────────────────
+// What the search screen opens on before anything is typed, and what the empty
+// list offers as one-tap adds. Groceries are mostly repeats, so the most useful
+// thing either space can hold is the shortcut past typing altogether.
+// familyProductStats is already loaded for ranking, so this costs no query.
+const RECENT_LIMIT = 8
+const recentProducts = computed(() =>
+  topFamilyProducts(familyProductStats.value, {
+    limit: RECENT_LIMIT,
+    // Already on the list is not something to add again.
+    exclude: items.value.map((item) => productKey(item.name, item.maker)),
+  })
+)
+
+// The same list, shorter. On the search screen these fill a screen the keyboard
+// is already up for; on the empty list they are a way to start rather than a
+// list to read through. A prefix rather than a second query, because the order
+// is the same one either way.
+const RESTART_LIMIT = 6
+const restartProducts = computed(() => recentProducts.value.slice(0, RESTART_LIMIT))
+
+// What just landed, for the search screen to confirm — while it is up, the list
+// is behind it and a tap would otherwise have no visible result. Reported at
+// the point the row is actually on the list rather than when the tap happened,
+// so a rejected add never claims to have worked. A fresh object each time, so
+// adding the same product twice reads as two adds.
+const lastAdded = ref(null)
+function reportAdded(name, maker) {
+  lastAdded.value = { name, maker: maker ?? null }
+}
 
 watch(newItem, (value) => {
   const query = value.trim()
@@ -267,9 +309,9 @@ async function fetchSuggestions(query) {
     // catalog's spelling and popularity win wherever it did return the product.
     const candidates = [
       ...(data || []),
-      ...matchFamilyStats(query, familyProductStats.value, { limit: SUGGEST_LIMIT }),
+      ...matchFamilyStats(query, familyProductStats.value, { limit: suggestLimit.value }),
     ]
-    suggestions.value = rankSuggestions(candidates, familyProductStats.value, SUGGEST_LIMIT)
+    suggestions.value = rankSuggestions(candidates, familyProductStats.value, suggestLimit.value)
   } catch {
     // Suggestions are a convenience; a failed lookup changes nothing.
   } finally {
@@ -824,6 +866,7 @@ async function addItem(product = null) {
     newQty.value = 1
     const previousQty = Number(existing.quantity) || 1
     existing.quantity = previousQty + quantity // optimistic
+    reportAdded(name, maker)
     if (isOffline()) {
       enqueueOfflineMutation(localStorage, effectiveUserId.value, {
         kind: 'update',
@@ -840,6 +883,7 @@ async function addItem(product = null) {
       // Keep the bumped quantity and sync it when connectivity returns.
       if (deferIfOffline(error, { kind: 'update', id: existing.id, patch: { quantity: existing.quantity } })) return
       existing.quantity = previousQty // rollback
+      lastAdded.value = null // it did not land after all
       addError.value = error.message ?? 'Could not update that item.'
       return
     }
@@ -879,6 +923,7 @@ async function addItem(product = null) {
   })
   newItem.value = ''
   newQty.value = 1
+  reportAdded(name, maker)
 
   if (isOffline()) {
     enqueueOfflineMutation(localStorage, effectiveUserId.value, { kind: 'insert', id, row })
@@ -905,6 +950,7 @@ async function addItem(product = null) {
     if (deferIfOffline(error, { kind: 'insert', id, row })) return
     // Roll back the optimistic row and surface the reason.
     items.value = items.value.filter((i) => i.id !== id)
+    lastAdded.value = null // it did not land after all
     if (error.message?.includes('member_active_item_limit_exceeded')
       || error.message?.includes('limit of')) {
       limitReachedPopupOpen.value = true
@@ -1233,9 +1279,12 @@ async function deleteItem(item) {
         <AddItemForm
           v-model:name="newItem"
           v-model:quantity="newQty"
+          v-model:expanded="searchExpanded"
           :adding="adding"
           :max-length="ITEM_NAME_MAX_LENGTH"
           :suggestions="suggestions"
+          :recents="recentProducts"
+          :last-added="lastAdded"
           :suggestions-loading="suggestionsLoading"
           :can-add-custom="canAddCustomProduct"
           @submit="addItem"
@@ -1249,6 +1298,9 @@ async function deleteItem(item) {
           :member-profiles="memberProfileMap"
           :loading="listLoading"
           :show-empty="hasInitialized && !items.length && !loadError && !switchingFamily"
+          :has-shopped="familyProductStats.size > 0"
+          :suggested-products="restartProducts"
+          @add="selectSuggestion"
           @toggle="toggleItem"
           @delete="deleteItem"
           @checkout="checkoutItems"
