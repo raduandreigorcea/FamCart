@@ -67,10 +67,21 @@
   --radius-lg: 12px;
   --radius-xl: 14px;
   --radius-2xl: 16px;
-  --radius-dialog: 18px;
   --radius-3xl: 20px;
   --radius-4xl: 24px;
   --radius-pill: 999px;
+
+  /* Dialog corners, named rather than picked off the scale above. Every dialog
+     in the app is one of two shapes and they have to agree, so the shape is the
+     token: a floating panel rounds on all four corners, a sheet parked on the
+     bottom edge rounds only the two you can see. They are different numbers
+     because a sheet is full width -- the same 18px reads heavier spread across
+     a whole screen than it does on a 400px card.
+
+     Picking these off the scale by hand is how the popovers ended up at 16 and
+     20 while the modals sat at 18 and 14. */
+  --radius-dialog: 18px;
+  --radius-sheet: 14px;
 
   /* Spacing scale */
   --space-1: 0.25rem;

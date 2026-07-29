@@ -172,7 +172,7 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  border-radius: var(--radius-3xl) var(--radius-3xl) 0 0;
+  border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
   border-bottom: none;
   max-height: 80vh;
 }
@@ -346,7 +346,7 @@ onBeforeUnmount(() => {
     right: auto;
     bottom: auto;
     top: 25vh;
-    border-radius: var(--radius-2xl);
+    border-radius: var(--radius-dialog);
     border-bottom: var(--border-width-thin) solid var(--border-main);
     max-height: min(70vh, 32rem);
   }

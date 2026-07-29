@@ -266,7 +266,7 @@ watch(
   max-width: 360px;
   background: var(--bg-surface);
   border: none;
-  border-radius: var(--radius-3xl);
+  border-radius: var(--radius-dialog);
   box-shadow: var(--elevation-modal);
   display: flex;
   flex-direction: column;
@@ -586,7 +586,7 @@ watch(
 
   .account-dialog {
     max-width: none;
-    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
     padding-bottom: calc(1rem + env(safe-area-inset-bottom));
     /* Flush with the bottom edge, so it can travel its full height and start
        off screen rather than merely nudging up. */
