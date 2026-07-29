@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import ShoppingListItem from './ShoppingListItem.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
+import ListFilterMenu from './ListFilterMenu.vue'
 import { sumActiveQuantities, sumCheckedQuantities } from '../lib/shoppingList'
 import cartIcon from '../assets/shopping-cart.svg?raw'
 import checkIcon from '../assets/check.svg?raw'
@@ -18,6 +19,15 @@ const props = defineProps({
   showEmpty: { type: Boolean, default: false },
 })
 
+// 'all' | 'active' | 'checked'. Applied to what is RENDERED only -- the counts
+// and the buy bar below stay on the whole list, because a filter hides rows
+// rather than removing them. Filtering to "To buy" while three things sit in
+// the cart must not strand them behind a bar that vanished.
+//
+// A model rather than a prop: the control that changes it lives in this
+// component's header, but the value belongs to the view that owns the list.
+const filter = defineModel('filter', { type: String, default: 'all' })
+
 function avatarUrl(item) {
   return props.memberProfiles.get(item.added_by)?.image_url || null
 }
@@ -30,6 +40,40 @@ const emit = defineEmits(['toggle', 'delete', 'checkout'])
 
 const uncheckedItems = computed(() => props.items.filter((i) => !i.checked))
 const checkedItems = computed(() => props.items.filter((i) => i.checked))
+
+const visibleItems = computed(() => {
+  if (filter.value === 'active') return uncheckedItems.value
+  if (filter.value === 'checked') return checkedItems.value
+  return props.items
+})
+
+// The header names whichever list is on screen. It stays put in every filter
+// state, because it is also where the filter button lives -- hiding it while
+// viewing the cart would take away the only way back.
+//
+// Which is why the unfiltered case has to check what is actually there: this
+// header used to disappear once the last row was ticked, and now that it
+// cannot, "To buy - 0 left" would sit over a list that is entirely cart. Under
+// an explicit filter the label follows the filter, even when it comes up empty,
+// because there the count is the answer to a question you asked.
+const viewingChecked = computed(
+  () =>
+    filter.value === 'checked' ||
+    (filter.value === 'all' && props.items.length > 0 && uncheckedItems.value.length === 0),
+)
+const metaLabel = computed(() => (viewingChecked.value ? 'Checked' : 'To buy'))
+const metaCount = computed(() =>
+  viewingChecked.value
+    ? `${checkedItems.value.length} ${checkedItems.value.length === 1 ? 'item' : 'items'}`
+    : `${leftCount.value} left`,
+)
+
+// The list has rows, the filter just hides all of them. Distinct from the empty
+// state, which means there is nothing to buy at all.
+const filteredToNothing = computed(
+  () => !props.loading && props.items.length > 0 && visibleItems.value.length === 0,
+)
+
 const leftCount = computed(() => sumActiveQuantities(props.items))
 // Units, not rows: "grapes x4" counts as 4 on the buy button.
 const checkedUnitCount = computed(() => sumCheckedQuantities(props.items))
@@ -180,9 +224,10 @@ const labelText = computed(() =>
 </script>
 
 <template>
-  <div class="list-meta" v-if="!loading && uncheckedItems.length">
-    <span class="list-meta__label">To buy</span>
-    <span class="list-meta__count">{{ leftCount }} left</span>
+  <div class="list-meta" v-if="!loading && items.length">
+    <span class="list-meta__label">{{ metaLabel }}</span>
+    <span class="list-meta__count">{{ metaCount }}</span>
+    <ListFilterMenu v-model="filter" :items="items" />
   </div>
 
   <!-- Skeleton rows while the first fetch is in flight, or the real list: never
@@ -202,7 +247,7 @@ const labelText = computed(() =>
        moving it to a section at the bottom. -->
   <TransitionGroup v-else tag="ul" name="row" class="item-list">
     <ShoppingListItem
-      v-for="item in items"
+      v-for="item in visibleItems"
       :key="item.id"
       :item="item"
       :avatar-url="avatarUrl(item)"
@@ -213,6 +258,10 @@ const labelText = computed(() =>
       @delete="$emit('delete', $event)"
     />
   </TransitionGroup>
+
+  <p v-if="filteredToNothing" class="filter-empty">
+    {{ filter === 'checked' ? 'Nothing checked yet.' : 'Everything here is checked.' }}
+  </p>
 
   <!-- Keeps the last checked row clear of the fixed buy bar. -->
   <div v-if="checkedItems.length && !loading" class="buy-bar-spacer" aria-hidden="true"></div>
@@ -260,11 +309,13 @@ const labelText = computed(() =>
 </template>
 
 <style scoped>
-/* Meta — a header for the active section, mirroring the "Checked" label below. */
+/* Meta — names whichever list is on screen, and carries the filter button.
+   Centred rather than baseline-aligned now that a control sits in the row. */
 .list-meta {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--size-control-sm);
   margin-top: 0.15rem;
   margin-bottom: 0.6rem;
   padding: 0 0.15rem;
@@ -278,7 +329,10 @@ const labelText = computed(() =>
   color: var(--text-disabled);
 }
 
+/* Pushed right, with the filter button following it — the count reads as the
+   label's answer, and the button as the thing that changes both. */
 .list-meta__count {
+  margin-left: auto;
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
   color: var(--text-disabled);
@@ -337,6 +391,15 @@ const labelText = computed(() =>
 .row-leave-to {
   opacity: 0;
   transform: translateY(8px) scale(0.995);
+}
+
+/* Not the empty state: the list has rows, this filter just has none of them.
+   Quieter than the real empty state, because nothing is wrong. */
+.filter-empty {
+  margin: var(--space-6) 0 var(--space-4);
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-disabled);
 }
 
 /* Empty state */

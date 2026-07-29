@@ -208,7 +208,7 @@ function formatTime(iso) {
   width: 100%;
   max-width: 520px;
   background: var(--bg-surface);
-  border-radius: var(--radius-3xl);
+  border-radius: var(--radius-dialog);
   box-shadow: var(--elevation-modal);
   display: flex;
   flex-direction: column;
@@ -496,25 +496,18 @@ function formatTime(iso) {
 }
 
 .modal-fade-enter-active .history-modal {
-  animation: modalScaleIn 0.18s cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
+  animation: modal-rise-in var(--transition-slow) var(--ease-rise) forwards;
 }
 
-/* While the modal scales in, subpixel rounding on the scaled content can tip the
+.modal-fade-leave-active .history-modal {
+  animation: modal-rise-out var(--transition-base) var(--ease-fall) forwards;
+}
+
+/* While the modal moves, subpixel rounding on the shifted content can tip the
    scroll body a fraction past its box and flash a scrollbar. Clip it for the
-   ~0.18s of the entrance; scrolling resumes right after. */
+   length of the entrance; scrolling resumes right after. */
 .modal-fade-enter-active .history-modal__body {
   overflow: hidden;
-}
-
-@keyframes modalScaleIn {
-  from {
-    transform: scale(0.96);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
 }
 
 /* Bottom sheet on phones */
@@ -528,8 +521,11 @@ function formatTime(iso) {
     max-width: none;
     height: min(85dvh, 640px);
     max-height: min(85dvh, 640px);
-    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
     padding-bottom: var(--safe-bottom);
+    /* Flush with the bottom edge, so it can travel its full height and start
+       off screen rather than merely nudging up. */
+    --modal-rise: 100%;
   }
 
   .history-modal__header {

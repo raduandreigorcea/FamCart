@@ -124,7 +124,9 @@ describe('AppTopbar family switcher', () => {
     // The menu is teleported to <body>.
     const items = [...document.body.querySelectorAll('.family-switcher-item')]
     expect(items.map((i) => i.querySelector('.family-switcher-item-name').textContent.trim())).toEqual(['Home', 'Parents'])
-    expect(document.body.querySelector('.family-switcher-item--active').textContent).toContain('Home')
+    // The active fill comes from PopoverMenu's shared row styling now, so the
+    // marker is .menu-item--active rather than a switcher-specific class.
+    expect(document.body.querySelector('.menu-item--active').textContent).toContain('Home')
 
     items.find((i) => i.textContent.includes('Parents')).click()
     await wrapper.vm.$nextTick()
