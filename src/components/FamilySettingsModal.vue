@@ -1030,7 +1030,7 @@ async function deleteFamily() {
   width: 100%;
   max-width: 640px;
   background: var(--bg-surface);
-  border-radius: var(--radius-3xl);
+  border-radius: var(--radius-dialog);
   border: none;
   box-shadow: var(--elevation-modal);
   display: flex;
@@ -2420,7 +2420,7 @@ async function deleteFamily() {
   .member-sheet {
     width: 100%;
     background: var(--bg-surface);
-    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
     box-shadow: var(--elevation-modal);
     padding: 1.15rem 1rem calc(0.75rem + var(--safe-bottom));
     /* This sheet only exists on a phone, so it is always flush with the bottom
@@ -2564,7 +2564,7 @@ async function deleteFamily() {
        every tab. The cap only bites on very short viewports. */
     height: auto;
     max-height: min(88dvh, calc(760px + var(--safe-bottom)));
-    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
     /* Bottom sheet: the surface runs behind the phone's nav bar while the
        content stays above it (the overlay's safe padding is zeroed here). */
     padding-bottom: var(--safe-bottom);

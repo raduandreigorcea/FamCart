@@ -208,7 +208,7 @@ function formatTime(iso) {
   width: 100%;
   max-width: 520px;
   background: var(--bg-surface);
-  border-radius: var(--radius-3xl);
+  border-radius: var(--radius-dialog);
   box-shadow: var(--elevation-modal);
   display: flex;
   flex-direction: column;
@@ -521,7 +521,7 @@ function formatTime(iso) {
     max-width: none;
     height: min(85dvh, 640px);
     max-height: min(85dvh, 640px);
-    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
     padding-bottom: var(--safe-bottom);
     /* Flush with the bottom edge, so it can travel its full height and start
        off screen rather than merely nudging up. */

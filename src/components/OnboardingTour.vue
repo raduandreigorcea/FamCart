@@ -176,7 +176,7 @@ async function copyCode() {
   max-width: 420px;
   background: var(--bg-surface);
   border: var(--border-width-thin) solid var(--border-main);
-  border-radius: var(--radius-4xl);
+  border-radius: var(--radius-dialog);
   box-shadow: var(--elevation-dialog);
   padding: var(--space-4) var(--space-6) var(--space-6);
   animation: modal-rise-in var(--transition-slow) var(--ease-rise);
