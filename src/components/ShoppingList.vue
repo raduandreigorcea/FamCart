@@ -3,6 +3,8 @@ import { computed, ref } from 'vue'
 import ShoppingListItem from './ShoppingListItem.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import ListFilterMenu from './ListFilterMenu.vue'
+import { getProductEmoji } from '../lib/productEmoji'
+import { productKey } from '../lib/productSearch'
 import { sumActiveQuantities, sumCheckedQuantities } from '../lib/shoppingList'
 import cartIcon from '../assets/shopping-cart.svg?raw'
 import checkIcon from '../assets/check.svg?raw'
@@ -17,6 +19,13 @@ const props = defineProps({
   memberProfiles: { type: Map, default: () => new Map() },
   loading: { type: Boolean, default: false },
   showEmpty: { type: Boolean, default: false },
+  // Whether this family has ever bought anything. An empty list means two
+  // different things either side of that, and only one of them is a list
+  // waiting to be started.
+  hasShopped: { type: Boolean, default: false },
+  // The regulars, [{ name, maker }], offered as one-tap adds on the empty
+  // list. Empty for a family with no history, which then gets the words alone.
+  suggestedProducts: { type: Array, default: () => [] },
 })
 
 // 'all' | 'active' | 'checked'. Applied to what is RENDERED only -- the counts
@@ -36,7 +45,7 @@ function avatarName(item) {
   return props.memberProfiles.get(item.added_by)?.display_name || 'Member'
 }
 
-const emit = defineEmits(['toggle', 'delete', 'checkout'])
+const emit = defineEmits(['toggle', 'delete', 'checkout', 'add'])
 
 const uncheckedItems = computed(() => props.items.filter((i) => !i.checked))
 const checkedItems = computed(() => props.items.filter((i) => i.checked))
@@ -266,10 +275,41 @@ const labelText = computed(() =>
   <!-- Keeps the last checked row clear of the fixed buy bar. -->
   <div v-if="checkedItems.length && !loading" class="buy-bar-spacer" aria-hidden="true"></div>
 
+  <!-- An empty grocery list is usually a finished one, not a broken one: for a
+       family that shops, this screen is what checking out leaves behind. And
+       the thing they are most likely to want from it is not a message — it is
+       the next list, which for groceries is largely the same as the last one.
+       So the regulars are here as one tap each, and the screen is a way to
+       start rather than a notice that there is nothing to see. -->
   <div v-if="showEmpty" class="empty-state">
-    <span class="empty-state__art" aria-hidden="true">🧺</span>
-    <p class="empty-state__title">Your list is empty</p>
-    <p class="empty-state__text">Add your first item above and it shows up for the whole family right away.</p>
+    <p class="empty-state__title">{{ hasShopped ? 'All bought' : 'Nothing here yet' }}</p>
+    <p class="empty-state__text">
+      {{ hasShopped
+        ? 'Nothing left to pick up.'
+        : 'Add the first thing and everyone in the family sees it straight away.' }}
+    </p>
+
+    <!-- Same name as the search screen's section, because it is the same idea
+         and one name for it is how it gets learned. -->
+    <div v-if="suggestedProducts.length" class="restart">
+      <p class="restart__label">Buy again</p>
+      <div class="restart__chips">
+        <button
+          v-for="product in suggestedProducts"
+          :key="productKey(product.name, product.maker)"
+          type="button"
+          class="chip"
+          :aria-label="`Add ${product.name}`"
+          @click="emit('add', product)"
+        >
+          <span class="chip__emoji" aria-hidden="true">
+            {{ getProductEmoji(product.name, product.maker || '') }}
+          </span>
+          <span class="chip__name">{{ product.name }}</span>
+          <span class="chip__plus" aria-hidden="true"></span>
+        </button>
+      </div>
+    </div>
   </div>
 
   <!-- Floating checkout slider: appears whenever something is checked. -->
@@ -402,41 +442,122 @@ const labelText = computed(() =>
   color: var(--text-disabled);
 }
 
-/* Empty state */
+/* Empty state.
+   Left-aligned on .list-meta's inset — the list's own left edge — so it reads
+   as this list having nothing in it rather than as a widget parked in the
+   middle of the screen. No card and no tinted icon tile; the chips below are
+   the substance, and the words are just enough to say where you are. */
 .empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  margin: 3rem auto 0;
-  max-width: 20rem;
-}
-
-.empty-state__art {
-  width: 4rem;
-  height: 4rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 2rem;
-  border-radius: var(--radius-2xl);
-  background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
-  border: var(--border-width-thin) solid color-mix(in srgb, var(--color-primary) 18%, transparent);
-  margin-bottom: var(--space-4);
+  margin: 2.25rem 0 0;
+  padding: 0 0.15rem;
 }
 
 .empty-state__title {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-lg);
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-xl);
   font-weight: var(--weight-extrabold);
+  /* The app's heading tracking. At this size the default spacing reads loose. */
+  letter-spacing: -0.02em;
+  line-height: 1.2;
   color: var(--text-primary);
 }
 
+/* ~34ch is the measure where a line of this size still scans in one go. */
 .empty-state__text {
   margin: 0;
+  max-width: 34ch;
   font-size: var(--text-sm);
   color: var(--text-secondary);
-  line-height: 1.5;
+  line-height: 1.6;
+}
+
+/* Deliberately NOT the shape of an item row — these are things that are not on
+   the list yet, and a row would say the opposite. Pills, wrapping, sized to
+   their own names. */
+.restart {
+  margin-top: var(--space-5);
+}
+
+/* Mirrors .list-meta__label: both name what the things under them are. */
+.restart__label {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-disabled);
+}
+
+.restart__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  /* 40px: comfortably tappable without the pills turning into buttons. */
+  min-height: 40px;
+  max-width: 100%;
+  padding: 0.3rem 0.7rem 0.3rem 0.45rem;
+  background: var(--bg-surface);
+  border: var(--border-width-thin) solid var(--border-main);
+  border-radius: var(--radius-pill);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast),
+    transform var(--transition-fast) var(--ease-standard);
+}
+
+.chip:hover,
+.chip:focus-visible {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--bg-surface));
+}
+
+/* Presses in rather than lifting: the chip is going onto the list, not away. */
+.chip:active {
+  transform: scale(0.97);
+}
+
+.chip__emoji {
+  flex-shrink: 0;
+  font-size: var(--text-md);
+  line-height: 1;
+}
+
+/* The catalog carries some long names; the emoji does most of the recognising,
+   so the tail can go rather than the row wrapping to three lines. */
+.chip__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The same plus as the add button, at the size of a hint: what the tap does,
+   said once per chip without a word. */
+.chip__plus {
+  flex-shrink: 0;
+  width: 0.85rem;
+  height: 0.85rem;
+  margin-left: 0.05rem;
+  background-color: var(--color-primary);
+  mask: url('../assets/plus.svg') no-repeat center / contain;
+  -webkit-mask: url('../assets/plus.svg') no-repeat center / contain;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chip {
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+  }
+
+  .chip:active {
+    transform: none;
+  }
 }
 
 /* Buy bar */
