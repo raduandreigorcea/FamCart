@@ -96,7 +96,7 @@ const emit = defineEmits(['confirm', 'cancel'])
   align-items: center;
   gap: 1rem;
   text-align: center;
-  animation: confirmScaleIn 0.26s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: modal-rise-in var(--transition-slow) var(--ease-rise) forwards;
 }
 
 .confirm-dialog--danger {
@@ -198,14 +198,8 @@ const emit = defineEmits(['confirm', 'cancel'])
   opacity: 0;
 }
 
-@keyframes confirmScaleIn {
-  from {
-    transform: scale(0.9);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
+/* Beats the entrance animation on the base class, which by now has finished. */
+.confirm-fade-leave-active .confirm-dialog {
+  animation: modal-rise-out var(--transition-base) var(--ease-fall) forwards;
 }
 </style>

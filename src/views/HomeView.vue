@@ -58,6 +58,13 @@ const db = useSupabase()
 const effectiveUserId = computed(() => userId.value || getRememberedUser(localStorage))
 
 const items = ref([])
+// Which rows the list shows: 'all' | 'active' | 'checked'. A view of `items`,
+// never a filter on what is fetched -- every other path (realtime, offline
+// queue, the item cap) keeps working on the whole list.
+//
+// Deliberately not persisted. Opening the app to a filtered list, with no memory
+// of having set one, is how items get declared missing.
+const listFilter = ref('all')
 // Every family the user belongs to ({ id, name }), for the topbar switcher.
 // familyId below is whichever one is currently active.
 const families = ref([])
@@ -678,6 +685,9 @@ async function switchFamily(id) {
   cleanupRealtimeSubscriptions()
   // Drop the old family's data so none of it flashes under the new name.
   items.value = []
+  // A filter belongs to the list it was chosen for. Carrying "Checked" into a
+  // family whose cart is empty opens it on a blank list.
+  listFilter.value = 'all'
   familyMembers.value = []
   familyProductStats.value = new Map()
   loadError.value = ''
@@ -1235,6 +1245,7 @@ async function deleteItem(item) {
 
         <ShoppingList
           :items="items"
+          v-model:filter="listFilter"
           :member-profiles="memberProfileMap"
           :loading="listLoading"
           :show-empty="hasInitialized && !items.length && !loadError && !switchingFamily"

@@ -3,13 +3,15 @@ import { computed, defineAsyncComponent, ref } from 'vue'
 import { useClerk, useUser } from '@clerk/vue'
 import AccountActionModal from './AccountActionModal.vue'
 import MemberAvatarStack from './MemberAvatarStack.vue'
+import PopoverMenu from './PopoverMenu.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { sortMembersForSwitcher } from '../lib/memberRoles'
 import { DEFAULT_FAMILY_EMOJI } from '../lib/familyEmoji'
 import { avatarSlotsForFamilyName } from '../lib/avatarStack'
 import chevronLeftRaw from '../assets/chevron-left.svg?raw'
-import checkRaw from '../assets/check.svg?raw'
+import checkRaw from '../assets/check-2.svg?raw'
 import plusRaw from '../assets/plus.svg?raw'
+import usersRaw from '../assets/users-round.svg?raw'
 import { getUserDisplayName, getUserInitial, getUserPrimaryEmail } from '../lib/userIdentity'
 import { forgetUser } from '../lib/session'
 import { clearFamilySnapshot } from '../lib/familyCache'
@@ -55,6 +57,9 @@ const emit = defineEmits([
 const MAX_FAMILIES = 3
 
 const switcherOpen = ref(false)
+// Handed to PopoverMenu so the panel is placed from the button's real position
+// rather than a fixed offset down the page.
+const switcherBtnEl = ref(null)
 const canAddFamily = computed(() => props.families.length < MAX_FAMILIES)
 
 function toggleSwitcher() {
@@ -182,6 +187,7 @@ const avatarSlots = computed(() => avatarSlotsForFamilyName(props.familyName))
     <div class="topbar-left">
       <template v-if="familyName">
         <button
+          ref="switcherBtnEl"
           class="family-switcher-btn"
           type="button"
           aria-haspopup="menu"
@@ -251,46 +257,47 @@ const avatarSlots = computed(() => avatarSlotsForFamilyName(props.familyName))
     </div>
   </header>
 
-  <!-- Family switcher: teleported so the topbar's overflow:hidden (which
-       ellipsizes the name) can't clip it. The transparent overlay catches
-       outside clicks to dismiss. -->
-  <Teleport to="body">
-    <Transition name="switcher-fade">
-      <div v-if="switcherOpen" class="family-switcher-overlay" @click.self="closeSwitcher">
-        <div class="family-switcher-menu" role="menu">
-          <p class="family-switcher-heading">Your families</p>
-          <button
-            v-for="fam in families"
-            :key="fam.id"
-            class="family-switcher-item"
-            :class="{ 'family-switcher-item--active': fam.id === familyId }"
-            type="button"
-            role="menuitemradio"
-            :aria-checked="fam.id === familyId"
-            @click="selectFamily(fam.id)"
-          >
-            <span class="family-emoji-tile" aria-hidden="true">{{ fam.emoji || DEFAULT_FAMILY_EMOJI }}</span>
-            <span class="family-switcher-item-name">{{ fam.name || 'Family' }}</span>
-            <span v-if="fam.id === familyId" class="family-switcher-check" aria-hidden="true" v-html="checkRaw"></span>
-          </button>
-          <div class="family-switcher-divider" aria-hidden="true"></div>
-          <button
-            v-if="canAddFamily"
-            class="family-switcher-add"
-            type="button"
-            role="menuitem"
-            @click="addFamily"
-          >
-            <span class="family-switcher-add-tile" aria-hidden="true" v-html="plusRaw"></span>
-            Join or create a family
-          </button>
-          <p v-else class="family-switcher-cap-note">
-            You're in the maximum of {{ MAX_FAMILIES }} families. Leave one to join or create another.
-          </p>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+  <!-- The panel, its placement and its dismissal all come from PopoverMenu;
+       what stays here is the list of families. -->
+  <PopoverMenu
+    v-model="switcherOpen"
+    :trigger="switcherBtnEl"
+    heading="Your families"
+    hint="Switch between them"
+    :icon="usersRaw"
+    width="280px"
+  >
+    <button
+      v-for="fam in families"
+      :key="fam.id"
+      class="menu-item family-switcher-item"
+      :class="{ 'menu-item--active': fam.id === familyId }"
+      type="button"
+      role="menuitemradio"
+      :aria-checked="fam.id === familyId"
+      @click="selectFamily(fam.id)"
+    >
+      <span class="family-emoji-tile" aria-hidden="true">{{ fam.emoji || DEFAULT_FAMILY_EMOJI }}</span>
+      <span class="family-switcher-item-name">{{ fam.name || 'Family' }}</span>
+      <!-- Trailing here, unlike the list filter: these rows lead with an emoji
+           tile, and a tick in front of it pushed every family's name across. -->
+      <span v-if="fam.id === familyId" class="menu-check" aria-hidden="true" v-html="checkRaw"></span>
+    </button>
+    <div class="menu-divider" aria-hidden="true"></div>
+    <button
+      v-if="canAddFamily"
+      class="menu-item family-switcher-add"
+      type="button"
+      role="menuitem"
+      @click="addFamily"
+    >
+      <span class="family-switcher-add-tile" aria-hidden="true" v-html="plusRaw"></span>
+      Join or create a family
+    </button>
+    <p v-else class="family-switcher-cap-note">
+      You're in the maximum of {{ MAX_FAMILIES }} families. Leave one to join or create another.
+    </p>
+  </PopoverMenu>
 
   <PurchaseHistoryModal
     v-if="historyEverOpened"
@@ -488,64 +495,6 @@ const avatarSlots = computed(() => avatarSlotsForFamilyName(props.familyName))
   fill: none;
 }
 
-.family-switcher-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-}
-
-.family-switcher-menu {
-  position: fixed;
-  top: calc(var(--safe-top) + 60px);
-  left: max(1.25rem, calc((100vw - var(--desktop-column)) / 2));
-  min-width: 280px;
-  max-width: calc(100vw - 2.5rem);
-  background: var(--bg-surface);
-  border: var(--border-width-thin) solid var(--border-main);
-  border-radius: var(--radius-2xl);
-  box-shadow: var(--elevation-modal);
-  padding: var(--space-2);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.family-switcher-heading {
-  margin: var(--space-2) var(--space-3) var(--space-1);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-extrabold);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-disabled);
-}
-
-.family-switcher-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  border: var(--border-width-thin) solid transparent;
-  background: transparent;
-  color: var(--text-primary);
-  padding: var(--space-2);
-  border-radius: var(--radius-lg);
-  font-size: var(--text-base);
-  font-weight: var(--weight-bold);
-  cursor: pointer;
-  text-align: left;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
-}
-
-.family-switcher-item:hover {
-  background: var(--bg-hover);
-}
-
-/* Active row: a quiet neutral fill, not a green wash — the green check is the
-   only accent, so the monogram's own colour stays readable on top of it. */
-.family-switcher-item--active {
-  background: var(--bg-hover);
-}
-
 /* Each family's emoji (the owner's pick, or the default cart). */
 .family-emoji-tile {
   flex-shrink: 0;
@@ -561,6 +510,25 @@ const avatarSlots = computed(() => avatarSlotsForFamilyName(props.familyName))
   border: var(--border-width-thin) solid var(--border-light);
 }
 
+/* Both tiles are filled with --bg-hover, which is exactly what a hovered or
+   active row is filled with -- and in light mode --border-light is that same
+   value a third time. So the emoji squircle vanished completely on the selected
+   family and under the cursor, and the add tile lost its fill (its dashed
+   border survives, being a different colour).
+
+   On any highlighted row the tiles take the panel's own colour instead, which
+   reads as a chip sitting on top of the highlight rather than a hole cut out
+   of it. */
+.menu-item--active .family-emoji-tile,
+.menu-item:hover .family-emoji-tile {
+  background: var(--bg-surface);
+  border-color: var(--border-main);
+}
+
+.menu-item:hover .family-switcher-add-tile {
+  background: var(--bg-surface);
+}
+
 .family-switcher-item-name {
   min-width: 0;
   flex: 1;
@@ -568,49 +536,6 @@ const avatarSlots = computed(() => avatarSlotsForFamilyName(props.familyName))
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-primary);
-}
-
-.family-switcher-check {
-  flex-shrink: 0;
-  width: 15px;
-  height: 15px;
-  display: inline-flex;
-  color: var(--color-primary);
-}
-
-.family-switcher-check :deep(svg) {
-  width: 100%;
-  height: 100%;
-  stroke: currentColor;
-  stroke-width: 2.5;
-  fill: none;
-}
-
-.family-switcher-divider {
-  height: 1px;
-  background: var(--border-light);
-  margin: var(--space-1) var(--space-2);
-}
-
-.family-switcher-add {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  border: none;
-  border-radius: var(--radius-lg);
-  background: transparent;
-  color: var(--text-primary);
-  padding: var(--space-2);
-  font-size: var(--text-base);
-  font-weight: var(--weight-bold);
-  cursor: pointer;
-  text-align: left;
-  transition: background var(--transition-fast);
-}
-
-.family-switcher-add:hover {
-  background: var(--bg-hover);
 }
 
 .family-switcher-add-tile {
@@ -655,15 +580,7 @@ const avatarSlots = computed(() => avatarSlotsForFamilyName(props.familyName))
   }
 }
 
-.switcher-fade-enter-active,
-.switcher-fade-leave-active {
-  transition: opacity var(--transition-fast) ease;
-}
 
-.switcher-fade-enter-from,
-.switcher-fade-leave-to {
-  opacity: 0;
-}
 
 .topbar-actions {
   display: flex;

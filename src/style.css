@@ -67,10 +67,21 @@
   --radius-lg: 12px;
   --radius-xl: 14px;
   --radius-2xl: 16px;
-  --radius-dialog: 18px;
   --radius-3xl: 20px;
   --radius-4xl: 24px;
   --radius-pill: 999px;
+
+  /* Dialog corners, named rather than picked off the scale above. Every dialog
+     in the app is one of two shapes and they have to agree, so the shape is the
+     token: a floating panel rounds on all four corners, a sheet parked on the
+     bottom edge rounds only the two you can see. They are different numbers
+     because a sheet is full width -- the same 18px reads heavier spread across
+     a whole screen than it does on a 400px card.
+
+     Picking these off the scale by hand is how the popovers ended up at 16 and
+     20 while the modals sat at 18 and 14. */
+  --radius-dialog: 18px;
+  --radius-sheet: 14px;
 
   /* Spacing scale */
   --space-1: 0.25rem;
@@ -145,6 +156,16 @@
   --transition-base: 0.2s;
   --transition-slow: 0.28s;
   --ease-standard: ease;
+  /* Decelerating: fast off the mark, settling at the end. Everything that
+     arrives on screen uses it. Its mirror is for things leaving, which should
+     go the other way -- start slow, get out of the way quickly. */
+  --ease-rise: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-fall: cubic-bezier(0.4, 0, 1, 1);
+
+  /* How far a dialog travels on its way in. Centred dialogs nudge up; a dialog
+     anchored to the bottom edge overrides this to 100% so it comes in from off
+     screen entirely. See the modal-rise keyframes at the foot of this file. */
+  --modal-rise: 16px;
 }
 
 :root[data-theme='dark'] {
@@ -247,4 +268,61 @@ select {
 
 #app {
   min-height: 100dvh;
+}
+
+/* ── Dialog motion ───────────────────────────────────────────────────────────
+   One rise, shared by every dialog in the app.
+
+   Global rather than per-component because @keyframes inside a scoped <style>
+   is renamed per component: six copies of "the same" curve is exactly how the
+   modals ended up scaling at four different speeds while the popovers slid.
+
+   The travel is --modal-rise, set by the dialog rather than baked in here. A
+   centred dialog nudges up 16px. A dialog anchored to the bottom edge sets it
+   to 100% -- its own height -- so it comes in from off screen the way the
+   bottom sheets do. That single override is the whole difference between the
+   two, so it lives next to the layout that decides it. */
+@keyframes modal-rise-in {
+  from {
+    transform: translateY(var(--modal-rise));
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes modal-rise-out {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(var(--modal-rise));
+    opacity: 0;
+  }
+}
+
+/* Redefining the keyframes rather than switching off `animation` on each
+   consumer: the later definition wins, so every dialog loses the travel and
+   keeps the fade without any of them having to know about this. */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes modal-rise-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes modal-rise-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
 }
