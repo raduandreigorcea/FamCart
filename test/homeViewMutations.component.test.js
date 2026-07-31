@@ -419,8 +419,9 @@ describe('addItem', () => {
     await submitAdd(wrapper, 'Milk', 2)
 
     expect(listedItems(wrapper)).toHaveLength(0)
-    // Second ErrorModal is the add-item one (first is the load error).
-    expect(wrapper.findAllComponents(ErrorModal)[1].props('message')).toBe('boom')
+    // Second ErrorModal is the add-item one (first is the load error). The raw
+    // Postgres text ('boom') is masked — only the generic message reaches the UI.
+    expect(wrapper.findAllComponents(ErrorModal)[1].props('message')).toBe('Failed to add item.')
     const form = wrapper.findComponent(AddItemForm)
     expect(form.props('name')).toBe('Milk')
     expect(form.props('quantity')).toBe(2)
@@ -488,7 +489,7 @@ describe('toggleItem', () => {
     await flushPromises()
 
     expect(listedItems(wrapper)[0].checked).toBe(false)
-    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('nope')
+    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('Could not update that item.')
   })
 
   it('merges an unchecked item into the existing active row with the same name', async () => {
@@ -528,7 +529,7 @@ describe('toggleItem', () => {
     expect(items).toHaveLength(2)
     expect(items.find((i) => i.id === 'item-b').quantity).toBe(3)
     expect(items.find((i) => i.id === 'item-a')).toBeTruthy()
-    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('delete failed')
+    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('Could not merge those items.')
   })
 
   it('moves a newly checked item to the top of the checked section', async () => {
@@ -686,7 +687,7 @@ describe('deleteItem', () => {
 
     const items = listedItems(wrapper)
     expect(items.map((i) => i.id)).toEqual(['item-1', 'item-2'])
-    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('cannot delete')
+    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('Could not delete that item.')
   })
 
   it('removes the row optimistically when the delete succeeds', async () => {

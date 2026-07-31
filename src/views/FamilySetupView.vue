@@ -16,6 +16,7 @@ import ChoiceButton from '../components/ChoiceButton.vue'
 import BackButton from '../components/BackButton.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import { isOfflineError } from '../lib/offlineQueue'
+import { UserFacingError, userMessage } from '../lib/errorMessages'
 
 const OFFLINE_MESSAGE = 'You appear to be offline. Check your connection and try again.'
 
@@ -123,7 +124,7 @@ async function createFamily() {
     // rather than leaking the raw constraint text.
     if (familyErr) {
       if (familyErr.message?.includes('families_one_per_owner')) {
-        throw new Error('You can only own one family. Leave or delete your current one before creating another.')
+        throw new UserFacingError('You can only own one family. Leave or delete your current one before creating another.')
       }
       throw familyErr
     }
@@ -144,7 +145,7 @@ async function createFamily() {
       // The sentinel is raised as the exception DETAIL, which supabase-js exposes
       // on error.details, not error.message.
       if ((memberErr.details ?? memberErr.message ?? '').includes('family_membership_limit_exceeded')) {
-        throw new Error('You can be part of at most 3 families. Leave one before creating another.')
+        throw new UserFacingError('You can be part of at most 3 families. Leave one before creating another.')
       }
       throw memberErr
     }
@@ -153,7 +154,7 @@ async function createFamily() {
     saveActiveFamilyId(localStorage, userId.value, family.id)
     router.replace('/')
   } catch (e) {
-    error.value = isOfflineError(e) ? OFFLINE_MESSAGE : (e.message ?? 'Failed to create family.')
+    error.value = isOfflineError(e) ? OFFLINE_MESSAGE : userMessage(e, 'Failed to create family.')
   } finally {
     loading.value = false
   }
@@ -200,7 +201,7 @@ async function joinFamily() {
     saveActiveFamilyId(localStorage, userId.value, family.id)
     router.replace('/')
   } catch (e) {
-    error.value = isOfflineError(e) ? OFFLINE_MESSAGE : (e.message ?? 'Failed to join family.')
+    error.value = isOfflineError(e) ? OFFLINE_MESSAGE : userMessage(e, 'Failed to join family.')
   } finally {
     loading.value = false
   }

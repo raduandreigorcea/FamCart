@@ -182,7 +182,10 @@ describe('buyCheckedItems', () => {
     expect(listedItems(wrapper).map((i) => i.id).sort()).toEqual(['a', 'c'])
     // No delete was queued for a genuine (non-connectivity) rejection.
     expect(loadOfflineQueue(localStorage, 'user-1')).toEqual([])
-    const errorModal = wrapper.findAllComponents(ErrorModal).find((m) => m.props('message') === 'nope')
+    // The RPC's raw text ('nope') is masked; the user sees the generic message.
+    const errorModal = wrapper
+      .findAllComponents(ErrorModal)
+      .find((m) => m.props('message') === 'Could not complete the checkout.')
     expect(errorModal).toBeTruthy()
   })
 })
