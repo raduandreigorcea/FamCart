@@ -100,6 +100,13 @@ const selectedProduct = ref(null)
 // What this family actually buys, folded from purchase_history — the primary
 // ranking signal for suggestions (see rankSuggestions).
 const familyProductStats = ref(new Map())
+// Whether that fold has actually run yet. An empty Map means "this family has
+// never bought anything" only once we've looked; before that it means "we don't
+// know", and the two lead to opposite empty-state copy.
+const productStatsLoaded = ref(false)
+// A checkout that just succeeded is proof this family has shopped, available
+// immediately rather than after the stats refetch lands.
+const boughtThisSession = ref(false)
 const loadError = ref('')
 const addError = ref('')
 const customProductOpen = ref(false)
@@ -145,6 +152,16 @@ const initialLoading = computed(
 )
 // The skeleton shows on the first-ever load and while switching families.
 const listLoading = computed(() => initialLoading.value || switchingFamily.value)
+
+// Has this family ever bought anything? Purchase history is the record, but a
+// checkout in this session counts before the refetch confirms it.
+const hasShopped = computed(() => familyProductStats.value.size > 0 || boughtThisSession.value)
+// The empty list has two opposite readings — "All bought" for a family that
+// shops, "Nothing here yet" for one starting out — and picking the wrong one and
+// correcting it a moment later is worse than waiting. Hold the empty state until
+// the answer is actually known. There are no rows to delay in the meantime;
+// this gates nothing but the message itself.
+const emptyStateAnswerable = computed(() => productStatsLoaded.value || boughtThisSession.value)
 
 // Mutations check this at call time: on a definite offline signal they queue
 // the write instead of hitting the network. Mid-flight failures on a flaky
@@ -328,7 +345,12 @@ async function fetchSuggestions(query) {
 // (migration 019) already caps history at 60 checkouts / 30 days, so this is a
 // small, naturally-recent window and can be fetched whole.
 async function loadFamilyProductStats() {
-  if (!familyId.value || isOffline()) return
+  if (!familyId.value || isOffline()) {
+    // Nothing is coming, so stop the empty list waiting on an answer it will
+    // never get. Offline we fall back to the "no history" copy, same as before.
+    productStatsLoaded.value = true
+    return
+  }
   try {
     const { data, error } = await db
       .from('purchase_history')
@@ -338,6 +360,11 @@ async function loadFamilyProductStats() {
     familyProductStats.value = buildFamilyProductStats(data || [])
   } catch {
     // No stats just means suggestions rank globally, which is the old behaviour.
+  } finally {
+    // Every path resolves the question, including the failures above: a family
+    // whose history we could not read is not a family that never shopped, but
+    // it is one we cannot hold a blank screen for.
+    productStatsLoaded.value = true
   }
 }
 
@@ -733,6 +760,11 @@ async function switchFamily(id) {
   listFilter.value = 'all'
   familyMembers.value = []
   familyProductStats.value = new Map()
+  // The new family's history is unknown until it loads. Without this reset the
+  // cleared Map reads as "never shopped" and an empty list flashes "Nothing here
+  // yet" before the refetch turns it into "All bought".
+  productStatsLoaded.value = false
+  boughtThisSession.value = false
   loadError.value = ''
   // Show the new name straight away (we already know it from the switcher list);
   // only the roster is unknown until loadFamilyHeader returns, so that's all the
@@ -1222,6 +1254,11 @@ async function checkoutItems(ids) {
     return
   }
 
+  // The list is now empty because it was bought, not because it was never
+  // filled. Recording that here means the empty state says so at once, instead
+  // of showing "Nothing here yet" until the refetch below lands.
+  boughtThisSession.value = true
+
   // The checkout just became history, which is the ranking signal — fold it in
   // so what was bought ranks higher on the very next keystroke.
   void loadFamilyProductStats()
@@ -1298,8 +1335,8 @@ async function deleteItem(item) {
           v-model:filter="listFilter"
           :member-profiles="memberProfileMap"
           :loading="listLoading"
-          :show-empty="hasInitialized && !items.length && !loadError && !switchingFamily"
-          :has-shopped="familyProductStats.size > 0"
+          :show-empty="hasInitialized && !items.length && !loadError && !switchingFamily && emptyStateAnswerable"
+          :has-shopped="hasShopped"
           :suggested-products="restartProducts"
           @add="selectSuggestion"
           @toggle="toggleItem"
