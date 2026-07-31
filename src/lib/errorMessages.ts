@@ -1,0 +1,45 @@
+// What a failure is allowed to say out loud.
+//
+// Supabase hands back Postgres error text verbatim: constraint names, trigger
+// messages, "permission denied for table shopping_list_items". Passing that
+// straight into the UI (the old `error.message ?? 'Could not …'` fallback) turned
+// every failure into a readout of the schema. It also read badly — nobody wants
+// "duplicate key value violates unique constraint" in a dialog.
+//
+// So messages come from one of two places:
+//   • UserFacingError — text written deliberately for the user, shown as-is;
+//   • everything else — replaced with the caller's fallback, with the original
+//     sent to Sentry so the detail is still there when debugging.
+//
+// Errors are still *inspected* freely at the call sites (the item-limit and
+// 23505 branches read error.message/code to pick a friendly response). This is
+// only about what reaches the screen.
+
+import * as Sentry from '@sentry/vue'
+
+export class UserFacingError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'UserFacingError'
+  }
+}
+
+// Sentry is a no-op until main.ts initializes it (no DSN in dev, CI, or tests),
+// so this is safe everywhere. Wrapped anyway: reporting must never throw on top
+// of the failure it is reporting.
+function report(error: unknown): void {
+  try {
+    Sentry.captureException(error)
+  } catch {
+    // Nothing useful to do here — swallow and let the caller show its fallback.
+  }
+}
+
+// The message to show the user for `error`, and the only way an error should
+// reach the UI. Deliberate messages pass through; anything else is reported and
+// replaced with `fallback`.
+export function userMessage(error: unknown, fallback: string): string {
+  if (error instanceof UserFacingError) return error.message
+  report(error)
+  return fallback
+}

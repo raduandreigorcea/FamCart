@@ -37,6 +37,7 @@ import {
   clearActiveFamilyId,
 } from '../lib/familyCache'
 import { enqueueOfflineMutation, flushOfflineQueue, hasQueuedOfflineMutations, isOfflineError } from '../lib/offlineQueue'
+import { userMessage } from '../lib/errorMessages'
 import { isCurrentlyOffline, onReconnect } from '../lib/connectivity'
 import { rememberUser, getRememberedUser } from '../lib/session'
 import { hasSeenTour, markTourSeen } from '../lib/onboarding'
@@ -884,7 +885,7 @@ async function addItem(product = null) {
       if (deferIfOffline(error, { kind: 'update', id: existing.id, patch: { quantity: existing.quantity } })) return
       existing.quantity = previousQty // rollback
       lastAdded.value = null // it did not land after all
-      addError.value = error.message ?? 'Could not update that item.'
+      addError.value = userMessage(error, 'Could not update that item.')
       return
     }
     recordProductAdd(picked)
@@ -955,7 +956,7 @@ async function addItem(product = null) {
       || error.message?.includes('limit of')) {
       limitReachedPopupOpen.value = true
     } else {
-      addError.value = error.message ?? 'Failed to add item.'
+      addError.value = userMessage(error, 'Failed to add item.')
       newItem.value = name
       newQty.value = quantity
       // Keep the catalog pick across the retry (the watcher sees the restored
@@ -1020,7 +1021,7 @@ async function incrementActiveItemByName(name, maker, quantity, optimisticId) {
   if (error) {
     if (deferIfOffline(error, { kind: 'update', id: target.id, patch: { quantity: target.quantity } })) return true
     target.quantity = previousQty
-    addError.value = error.message ?? 'Could not update that item.'
+    addError.value = userMessage(error, 'Could not update that item.')
     return false
   }
   return true
@@ -1115,7 +1116,7 @@ async function toggleItem(item) {
           return
         }
       }
-      loadError.value = error.message ?? 'Could not update that item.'
+      loadError.value = userMessage(error, 'Could not update that item.')
     }
   } finally {
     pendingItemWrites.delete(item.id)
@@ -1161,7 +1162,7 @@ async function mergeItemInto(source, target) {
       enqueueOfflineMutation(localStorage, effectiveUserId.value, { kind: 'delete', id: source.id })
       return
     }
-    rollback(updateErr.message ?? 'Could not merge those items.')
+    rollback(userMessage(updateErr, 'Could not merge those items.'))
     return
   }
 
@@ -1175,7 +1176,7 @@ async function mergeItemInto(source, target) {
     if (deferIfOffline(deleteErr, { kind: 'delete', id: source.id })) return
     // Undo the quantity bump we already committed, then restore the row.
     await db.from('shopping_list_items').update({ quantity: previousTargetQty }).eq('id', target.id)
-    rollback(deleteErr.message ?? 'Could not merge those items.')
+    rollback(userMessage(deleteErr, 'Could not merge those items.'))
   }
 }
 
@@ -1217,7 +1218,7 @@ async function checkoutItems(ids) {
       return
     }
     items.value = snapshot
-    loadError.value = error.message ?? 'Could not complete the checkout.'
+    loadError.value = userMessage(error, 'Could not complete the checkout.')
     return
   }
 
@@ -1246,7 +1247,7 @@ async function deleteItem(item) {
     // Keep the row removed and queue the delete when it's just connectivity.
     if (deferIfOffline(error, { kind: 'delete', id: item.id })) return
     items.value.splice(index, 0, removed)
-    loadError.value = error.message ?? 'Could not delete that item.'
+    loadError.value = userMessage(error, 'Could not delete that item.')
   }
 }
 </script>
