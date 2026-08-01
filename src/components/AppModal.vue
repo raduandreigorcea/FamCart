@@ -36,6 +36,11 @@ const props = defineProps({
   // A confirm dialog wants a click outside to mean cancel; a destructive one
   // may not want to be dismissed by accident.
   closeOnBackdrop: { type: Boolean, default: true },
+  // Off for a dialog that places focus itself — a form wanting its first field
+  // focused and selected, say. Both would otherwise fire on the same tick and
+  // the winner would come down to watcher order. Escape, the Tab trap and
+  // restoring focus on close stay in force either way.
+  autofocus: { type: Boolean, default: true },
 })
 
 const emit = defineEmits(['close'])
@@ -100,9 +105,11 @@ function activate() {
   openModal(token)
   document.addEventListener('keydown', onKeydown)
   // The overlay does not exist until after this tick.
-  void nextTick(() => {
-    focusables()[0]?.focus()
-  })
+  if (props.autofocus) {
+    void nextTick(() => {
+      focusables()[0]?.focus()
+    })
+  }
 }
 
 function deactivate() {

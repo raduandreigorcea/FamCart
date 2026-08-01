@@ -6,6 +6,7 @@
 // solely from a catalog pick.
 import { ref, computed, watch, nextTick } from 'vue'
 import AppButton from './AppButton.vue'
+import AppModal from './AppModal.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -48,8 +49,13 @@ function submit() {
 </script>
 
 <template>
-  <Transition name="custom-product-fade">
-    <div v-if="open" class="custom-product-overlay" @click.self="emit('cancel')">
+  <AppModal
+    :open="open"
+    overlay-class="custom-product-overlay"
+    transition="custom-product-fade"
+    :autofocus="false"
+    @close="emit('cancel')"
+  >
       <div
         class="custom-product-dialog"
         role="dialog"
@@ -101,8 +107,7 @@ function submit() {
           </div>
         </form>
       </div>
-    </div>
-  </Transition>
+  </AppModal>
 </template>
 
 <style scoped>
