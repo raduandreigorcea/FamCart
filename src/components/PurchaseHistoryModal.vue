@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useSupabase } from '../supabase'
+import AppModal from './AppModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { getProductEmoji } from '../lib/productEmoji'
@@ -88,8 +89,12 @@ function formatTime(iso) {
 </script>
 
 <template>
-  <Transition name="modal-fade" appear>
-    <div v-if="open" class="history-overlay" @click.self="emit('close')">
+  <AppModal
+    :open="open"
+    overlay-class="history-overlay"
+    transition="modal-fade"
+    @close="emit('close')"
+  >
       <div class="history-modal" role="dialog" aria-modal="true" aria-label="Purchase history">
         <div class="history-modal__header">
           <div class="history-modal__title-wrap">
@@ -186,8 +191,7 @@ function formatTime(iso) {
           </dl>
         </div>
       </div>
-    </div>
-  </Transition>
+  </AppModal>
 </template>
 
 <style scoped>
