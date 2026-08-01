@@ -156,6 +156,28 @@ const listLoading = computed(() => initialLoading.value || switchingFamily.value
 // Has this family ever bought anything? Purchase history is the record, but a
 // checkout in this session counts before the refetch confirms it.
 const hasShopped = computed(() => familyProductStats.value.size > 0 || boughtThisSession.value)
+
+// The three error channels are independent, so more than one can be set at once
+// — a background refresh failing while an add is also rejected, say. Rendering a
+// dialog each stacked two overlays on top of each other. Show the first that has
+// something to say and leave the rest queued behind it; dismissing reveals the
+// next, so nothing is silently dropped.
+const ERROR_CHANNELS = [
+  { ref: () => loadError, title: 'Something went wrong' },
+  { ref: () => addError, title: 'Something went wrong' },
+  { ref: () => notificationError, title: 'Notifications' },
+]
+const activeError = computed(() => {
+  const channel = ERROR_CHANNELS.find((c) => c.ref().value)
+  if (!channel) return { title: '', message: '', dismiss: () => {} }
+  return {
+    title: channel.title,
+    message: channel.ref().value,
+    dismiss: () => {
+      channel.ref().value = ''
+    },
+  }
+})
 // The empty list has two opposite readings — "All bought" for a family that
 // shops, "Nothing here yet" for one starting out — and picking the wrong one and
 // correcting it a moment later is worse than waiting. Hold the empty state until
@@ -1377,9 +1399,11 @@ async function deleteItem(item) {
       @decline="declineNotifications"
     />
 
-    <ErrorModal :message="loadError" @dismiss="loadError = ''" />
-    <ErrorModal :message="addError" @dismiss="addError = ''" />
-    <ErrorModal title="Notifications" :message="notificationError" @dismiss="notificationError = ''" />
+    <ErrorModal
+      :title="activeError.title"
+      :message="activeError.message"
+      @dismiss="activeError.dismiss()"
+    />
   </div>
 </template>
 
