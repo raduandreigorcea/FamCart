@@ -10,7 +10,9 @@ import App from '../src/App.vue'
 
 const captured = vi.hoisted(() => ({ calls: [] }))
 
-vi.mock('@sentry/vue', () => ({
+// The boundary reports through lib/errorReporting, not Sentry directly — the
+// SDK is loaded lazily and this is the seam that hides that from callers.
+vi.mock('../src/lib/errorReporting', () => ({
   captureException: (e) => captured.calls.push(e),
 }))
 

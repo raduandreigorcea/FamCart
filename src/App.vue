@@ -1,7 +1,7 @@
 <script setup>
 import { onErrorCaptured, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import * as Sentry from '@sentry/vue'
+import { captureException } from './lib/errorReporting'
 import AppSplash from './components/AppSplash.vue'
 import AppButton from './components/AppButton.vue'
 
@@ -23,7 +23,7 @@ onErrorCaptured((error) => {
   // Reported here rather than left to Sentry's Vue integration, because
   // returning false below stops the error propagating to the global handler
   // that would otherwise have logged it.
-  Sentry.captureException(error)
+  captureException(error)
   return false
 })
 

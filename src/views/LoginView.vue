@@ -1,7 +1,7 @@
 <script setup>
 import { useAuth, useClerk, useSignIn, useSignUp } from '@clerk/vue'
 import { Capacitor } from '@capacitor/core'
-import * as Sentry from '@sentry/vue'
+import { captureException } from '../lib/errorReporting'
 import { ref, nextTick, toRaw, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { startNativeOAuth } from '../lib/nativeOAuth'
@@ -99,7 +99,7 @@ async function signInWithOAuth(providerId) {
                     // a detached method crash on Clerk's private class fields.
                     await toRaw(clerk.value).setActive({ session: sessionId })
                 } catch (activationError) {
-                    Sentry.captureException(activationError)
+                    captureException(activationError)
                 }
                 goToApp()
                 return
@@ -109,7 +109,7 @@ async function signInWithOAuth(providerId) {
             // cancellation resolves null instead) — worth a Sentry event
             // (no-op without a DSN). The dialog shows the diagnosis the
             // error carries: which state the attempt got stuck in.
-            Sentry.captureException(e)
+            captureException(e)
             handleSignInError(e, e?.message || 'OAuth sign-in failed.')
         }
         loadingProvider.value = null

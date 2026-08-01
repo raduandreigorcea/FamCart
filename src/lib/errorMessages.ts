@@ -15,7 +15,7 @@
 // 23505 branches read error.message/code to pick a friendly response). This is
 // only about what reaches the screen.
 
-import * as Sentry from '@sentry/vue'
+import { captureException } from './errorReporting'
 
 export class UserFacingError extends Error {
   constructor(message: string) {
@@ -24,12 +24,12 @@ export class UserFacingError extends Error {
   }
 }
 
-// Sentry is a no-op until main.ts initializes it (no DSN in dev, CI, or tests),
-// so this is safe everywhere. Wrapped anyway: reporting must never throw on top
-// of the failure it is reporting.
+// Reporting is a no-op without a DSN (dev, CI, tests) and buffers until the SDK
+// finishes loading, so this is safe everywhere and at any time. Wrapped anyway:
+// reporting must never throw on top of the failure it is reporting.
 function report(error: unknown): void {
   try {
-    Sentry.captureException(error)
+    captureException(error)
   } catch {
     // Nothing useful to do here — swallow and let the caller show its fallback.
   }
