@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 // Add a product the catalog doesn't have. This only builds the product and hands
 // it to the caller; contributing it to the catalog is HomeView's job, via the
 // add_custom_product RPC (migration 022) once the add itself succeeds. This is
@@ -23,7 +23,7 @@ const emit = defineEmits(['submit', 'cancel'])
 
 const name = ref('')
 const maker = ref('')
-const nameInput = ref(null)
+const nameInput = ref<HTMLInputElement | null>(null)
 
 // Every open starts from the add form's text with a blank maker, so a previous
 // visit can never leave a stale manufacturer attached to a different product.

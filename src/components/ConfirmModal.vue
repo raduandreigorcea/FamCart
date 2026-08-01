@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { computed, useId } from 'vue'
 import AppButton from './AppButton.vue'
 import AppModal from './AppModal.vue'
@@ -19,7 +19,7 @@ const props = defineProps({
   tone: {
     type: String,
     default: '',
-    validator: (value) => ['danger', 'warning', 'success', ''].includes(value),
+    validator: (value: string) => ['danger', 'warning', 'success', ''].includes(value),
   },
   confirmText: { type: String, default: 'Confirm' },
   cancelText: { type: String, default: 'Cancel' },

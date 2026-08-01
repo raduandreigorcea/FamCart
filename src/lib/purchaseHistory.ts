@@ -1,10 +1,19 @@
 // Pure helpers for the checkout-history view. Kept free of Vue/Supabase so the
 // grouping logic can be unit-tested.
 
+// One archived row. The grouping below only reads the first three, but the rest
+// are what the history view renders, and leaving them to the index signature
+// made every one of them `unknown` at the point of use.
 export interface CheckoutEntry {
   purchased_at: string
   checkout_id?: string | null
   purchased_by?: string | null
+  id?: string
+  name?: string
+  maker?: string | null
+  quantity?: number
+  added_by_name?: string | null
+  added_by_image_url?: string | null
   [key: string]: unknown
 }
 
