@@ -46,6 +46,8 @@ export interface ProductSuggestions {
   restartProducts: Ref<ProductSuggestion[]>
   lastAdded: Ref<{ name: string; maker: string | null } | null>
   reportAdded: (name: string, maker?: string | null) => void
+  /** Take the confirmation back when the add turns out not to have landed. */
+  clearLastAdded: () => void
   recordProductAdd: (product: ProductSuggestion & { custom?: boolean }) => void
   clearSuggestions: () => void
 }
@@ -121,6 +123,10 @@ export function useProductSuggestions(options: {
   // adding the same product twice reads as two adds.
   function reportAdded(name: string, maker?: string | null): void {
     lastAdded.value = { name, maker: maker ?? null }
+  }
+
+  function clearLastAdded(): void {
+    lastAdded.value = null
   }
 
   function clearSuggestions(): void {
@@ -279,6 +285,7 @@ export function useProductSuggestions(options: {
     restartProducts,
     lastAdded,
     reportAdded,
+    clearLastAdded,
     recordProductAdd,
     clearSuggestions,
   }
