@@ -17,15 +17,7 @@ import {
   countActiveItemsByMember,
   sortItemsForDisplay,
 } from '../lib/shoppingList'
-import {
-  normalizeSearchText,
-  escapeIlikePattern,
-  buildFamilyProductStats,
-  matchFamilyStats,
-  productKey,
-  rankSuggestions,
-} from '../lib/productSearch'
-import { topFamilyProducts } from '../lib/productRecents'
+import { useProductSuggestions } from '../lib/productSuggestions'
 import { upsertOwnProfile } from '../lib/profile'
 import { cleanAuthCallbackUrl } from '../lib/authCallbackUrl'
 import {
@@ -84,18 +76,27 @@ const memberProfileMap = computed(
 )
 const newItem = ref('')
 const newQty = ref(1)
-// Product-catalog matches for what's being typed, and the suggestion the user
-// picked (its maker is stored on the item and shown as a subtitle).
-const suggestions = ref([])
-const suggestionsLoading = ref(false)
-const selectedProduct = ref(null)
-// What this family actually buys, folded from purchase_history — the primary
-// ranking signal for suggestions (see rankSuggestions).
-const familyProductStats = ref(new Map())
-// Whether that fold has actually run yet. An empty Map means "this family has
-// never bought anything" only once we've looked; before that it means "we don't
-// know", and the two lead to opposite empty-state copy.
-const productStatsLoaded = ref(false)
+// Everything behind the search box: the catalog query, this family's purchase
+// habits (which rank it), and the regulars offered before anything is typed.
+// familyProductStats comes back out because the empty state reads it too — the
+// same numbers answer "what does this family buy" and "have they ever shopped".
+const {
+  suggestions,
+  suggestionsLoading,
+  selectedProduct,
+  searchExpanded,
+  suggestLimit,
+  canAddCustomProduct,
+  familyProductStats,
+  productStatsLoaded,
+  loadFamilyProductStats,
+  recentProducts,
+  restartProducts,
+  lastAdded,
+  reportAdded,
+  recordProductAdd,
+  clearSuggestions,
+} = useProductSuggestions({ db, familyId, items, query: newItem, isOffline })
 // A checkout that just succeeded is proof this family has shopped, available
 // immediately rather than after the stats refetch lands.
 const boughtThisSession = ref(false)
@@ -209,10 +210,6 @@ function deferIfOffline(error, mutation) {
 }
 
 let stopReconnect = null
-// Declared here rather than beside the suggestion code below, because the
-// unmount hook clears it: reading a `let` from further down the file works (the
-// hook runs long after initialization) but reads as a bug every time.
-let suggestTimer = null
 
 onMounted(() => {
   // Two reconnect signals: the reliable native one, plus the web 'online' event
@@ -225,193 +222,18 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('online', handleBackOnline)
   if (stopReconnect) stopReconnect()
-  if (suggestTimer) clearTimeout(suggestTimer)
 })
-
-// ── Product suggestions ───────────────────────────────────────────────────────
-// Typing queries the read-only product catalog (debounced) and offers matches;
-// picking one fills the input with the product name and remembers its maker.
-// Best-effort: any failure just means no dropdown, never an error surface.
-//
-// The catalog is the only source of suggestions; this family's history only
-// decides their order. History is not a catalog — it holds whatever anyone typed
-// into the list, so a lazy "apa" entry would otherwise be offered as a product,
-// outrank every real one, and entrench itself by being picked again.
-//
-// So the catalog is queried for a candidate pool wider than the six shown, and
-// the final order is decided locally against familyProductStats.
-// (suggestTimer is declared up with the other lifecycle state, since the unmount
-// hook clears it.)
-let suggestRequestId = 0
-const SUGGEST_MIN_CHARS = 2
-const SUGGEST_LIMIT = 6
-// On a phone the form lifts to the top of the screen when focused, and the
-// dropdown gets the whole screen instead of a 275px slot. Twice the room is
-// worth twice the matches; the pool below already dwarfs both numbers, so this
-// costs nothing but stops throwing ranked matches away.
-const SUGGEST_LIMIT_EXPANDED = 12
-const searchExpanded = ref(false)
-const suggestLimit = computed(() =>
-  searchExpanded.value ? SUGGEST_LIMIT_EXPANDED : SUGGEST_LIMIT
-)
-// Wide enough that a common two-character prefix does not fill the pool with
-// globally-popular strangers before this family's own products get a look in.
-// The trigram index does the filtering either way, so the cost is the sort and
-// the payload, not the match.
-const SUGGEST_POOL = 100
-// Long enough to mean "stopped typing" on a phone. Thumb-typing runs ~300-400ms
-// per character, so a shorter pause than this elapses between ordinary
-// keystrokes and every character would cost its own request.
-const SUGGEST_DEBOUNCE_MS = 300
-
-// ─── The regulars ────────────────────────────────────────────────────────────
-// What the search screen opens on before anything is typed, and what the empty
-// list offers as one-tap adds. Groceries are mostly repeats, so the most useful
-// thing either space can hold is the shortcut past typing altogether.
-// familyProductStats is already loaded for ranking, so this costs no query.
-const RECENT_LIMIT = 8
-const recentProducts = computed(() =>
-  topFamilyProducts(familyProductStats.value, {
-    limit: RECENT_LIMIT,
-    // Already on the list is not something to add again.
-    exclude: items.value.map((item) => productKey(item.name, item.maker)),
-  })
-)
-
-// The same list, shorter. On the search screen these fill a screen the keyboard
-// is already up for; on the empty list they are a way to start rather than a
-// list to read through. A prefix rather than a second query, because the order
-// is the same one either way.
-const RESTART_LIMIT = 6
-const restartProducts = computed(() => recentProducts.value.slice(0, RESTART_LIMIT))
-
-// What just landed, for the search screen to confirm — while it is up, the list
-// is behind it and a tap would otherwise have no visible result. Reported at
-// the point the row is actually on the list rather than when the tap happened,
-// so a rejected add never claims to have worked. A fresh object each time, so
-// adding the same product twice reads as two adds.
-const lastAdded = ref(null)
-function reportAdded(name, maker) {
-  lastAdded.value = { name, maker: maker ?? null }
-}
-
-watch(newItem, (value) => {
-  const query = value.trim()
-  // Editing away from a picked suggestion drops its maker; retyping the exact
-  // product name without re-picking keeps it (same product, same subtitle).
-  if (selectedProduct.value && query !== selectedProduct.value.name) {
-    selectedProduct.value = null
-  }
-  if (suggestTimer) clearTimeout(suggestTimer)
-  if (query.length < SUGGEST_MIN_CHARS || selectedProduct.value) {
-    suggestions.value = []
-    suggestionsLoading.value = false
-    return
-  }
-  // The last query's matches are not this query's answers, so drop them and show
-  // the skeleton from the first keystroke — across the debounce as well as the
-  // request, since both are time the user spends waiting. Without this the
-  // dropdown would offer "Can't find it?" while the search is still running.
-  suggestions.value = []
-  suggestionsLoading.value = true
-  suggestTimer = setTimeout(() => void fetchSuggestions(query), SUGGEST_DEBOUNCE_MS)
-})
-
-async function fetchSuggestions(query) {
-  if (isOffline()) {
-    suggestionsLoading.value = false
-    return
-  }
-  const requestId = ++suggestRequestId
-  try {
-    const pattern = `%${escapeIlikePattern(normalizeSearchText(query))}%`
-    let pool = db
-      .from('product_catalog')
-      .select('name, maker, popularity')
-      .ilike('search_text', pattern)
-    // Scope to the global catalog plus THIS family's own contributions. RLS
-    // already blocks other families' rows, but a user in more than one family
-    // would otherwise see (and, via recordProductAdd, bump) the products they
-    // contributed elsewhere while shopping here. familyId is a server-issued
-    // uuid, never typed input, so it is safe to interpolate into the filter.
-    pool = familyId.value
-      ? pool.or(`family_id.is.null,family_id.eq.${familyId.value}`)
-      : pool.is('family_id', null)
-    const { data, error } = await pool
-      // Popularity decides which matches make the pool, then rankSuggestions
-      // reorders it around this family. Ordering here (rather than only locally)
-      // is what keeps the pool cap from cutting off globally-popular products.
-      .order('popularity', { ascending: false })
-      .order('name')
-      .limit(SUGGEST_POOL)
-    // Stale response: a newer keystroke queried already, and that request owns
-    // the dropdown now — including when its skeleton stops.
-    if (requestId !== suggestRequestId) return
-    // Late response: the input was cleared or a product picked meanwhile, so
-    // these matches must not reopen the list.
-    if (error || selectedProduct.value || newItem.value.trim().length < SUGGEST_MIN_CHARS) return
-    // The pool is capped and ordered globally, so a product this family buys
-    // every week can be crowded out of it entirely by a catalog this large.
-    // familyProductStats is already loaded, so recovering those matches costs no
-    // network. Catalog rows go first: rankSuggestions dedupes first-wins, so the
-    // catalog's spelling and popularity win wherever it did return the product.
-    const candidates = [
-      ...(data || []),
-      ...matchFamilyStats(query, familyProductStats.value, { limit: suggestLimit.value }),
-    ]
-    suggestions.value = rankSuggestions(candidates, familyProductStats.value, suggestLimit.value)
-  } catch {
-    // Suggestions are a convenience; a failed lookup changes nothing.
-  } finally {
-    // Only the newest request may stop the skeleton. A superseded one returning
-    // early must leave it spinning for the request that replaced it, or the
-    // dropdown would flash "Can't find it?" mid-search.
-    if (requestId === suggestRequestId) suggestionsLoading.value = false
-  }
-}
-
-// Fold this family's recent purchases into the ranking signal. Best-effort: on
-// failure suggestions just fall back to the global catalog order. Retention
-// (migration 019) already caps history at 60 checkouts / 30 days, so this is a
-// small, naturally-recent window and can be fetched whole.
-async function loadFamilyProductStats() {
-  if (!familyId.value || isOffline()) {
-    // Nothing is coming, so stop the empty list waiting on an answer it will
-    // never get. Offline we fall back to the "no history" copy, same as before.
-    productStatsLoaded.value = true
-    return
-  }
-  try {
-    const { data, error } = await db
-      .from('purchase_history')
-      .select('name, maker, purchased_at')
-      .eq('family_id', familyId.value)
-    if (error) return
-    familyProductStats.value = buildFamilyProductStats(data || [])
-  } catch {
-    // No stats just means suggestions rank globally, which is the old behaviour.
-  } finally {
-    // Every path resolves the question, including the failures above: a family
-    // whose history we could not read is not a family that never shopped, but
-    // it is one we cannot hold a blank screen for.
-    productStatsLoaded.value = true
-  }
-}
 
 // Picking a suggestion adds it outright rather than filling the input: the pick
 // already says exactly which product was meant, so a second confirming tap is
 // just friction. The typed text is dropped by addItem clearing the input.
 function selectSuggestion(product) {
-  suggestions.value = []
+  clearSuggestions()
   void addItem(product)
 }
 
-// The escape hatch, offered as soon as the query is long enough to have been
-// searched for — including when nothing matched, which is when it matters most.
-const canAddCustomProduct = computed(() => newItem.value.trim().length >= SUGGEST_MIN_CHARS)
-
 function openCustomProduct() {
-  suggestions.value = []
+  clearSuggestions()
   customProductOpen.value = true
 }
 
@@ -425,30 +247,6 @@ function addCustomProduct(product) {
 }
 
 // Record that a product was added, so it ranks higher in future suggestions.
-// A catalog product just gets its popularity bumped. A custom one is contributed
-// to the catalog scoped to this family — suggested back to them straight away,
-// and promoted to a global suggestion only once enough other families have added
-// the same product (migration 022), so one family's spelling cannot leak into
-// everyone else's dropdown.
-//
-// Best-effort either way: fire-and-forget, never blocks or errors the add, and
-// skipped offline (neither is part of the offline queue).
-function recordProductAdd(product) {
-  if (!product || isOffline()) return
-  const call = product.custom
-    ? db.rpc('add_custom_product', {
-        p_family_id: familyId.value,
-        p_name: product.name,
-        p_maker: product.maker ?? null,
-      })
-    : db.rpc('bump_product_popularity', {
-        p_name: product.name,
-        p_maker: product.maker ?? null,
-        p_family_id: familyId.value,
-      })
-  void call.then(() => {}, () => {})
-}
-
 // Single-flight flush of the offline queue. Every list refetch funnels through
 // this first (see loadItems), so a reload triggered by realtime/watchdog on
 // reconnect can never paint the server's pre-sync state and drop the user's own
