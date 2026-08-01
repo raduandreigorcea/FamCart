@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
 import { useAuth, useUser } from '@clerk/vue'
 import { useRouter, useRoute } from 'vue-router'
@@ -59,7 +59,7 @@ onMounted(async () => {
 const welcomed = ref(false)
 const showWelcome = computed(() => !welcomed.value && !isAddingFamily.value)
 
-const mode = ref(null) // null | 'create' | 'join'
+const mode = ref<'create' | 'join' | null>(null)
 const familyName = ref('')
 const inviteCode = ref('')
 const error = ref('')
@@ -70,7 +70,7 @@ const familyNameLength = computed(() => familyName.value.length)
 const familyNameOverLimit = computed(() => familyNameLength.value > FAMILY_NAME_MAX_LENGTH)
 const limitModal = ref({ open: false, title: '', message: '' })
 
-function openLimitModal(message) {
+function openLimitModal(message: string) {
   limitModal.value = {
     open: true,
     title: 'Name Too Long',
@@ -93,6 +93,8 @@ function randomInviteCode() {
 
 async function createFamily() {
   if (loading.value) return
+  const uid = userId.value
+  if (!uid) return
   if (familyNameOverLimit.value) {
     openLimitModal(`Family name must be ${FAMILY_NAME_MAX_LENGTH} characters or fewer.`)
     return
@@ -110,14 +112,14 @@ async function createFamily() {
 
     // Establish the profile first: the membership insert below references it
     // (FK), and this is where the creator's Clerk name/avatar lands.
-    const { error: profileErr } = await upsertOwnProfile(db, userId.value, user.value)
+    const { error: profileErr } = await upsertOwnProfile(db, uid, user.value)
     if (profileErr) throw profileErr
 
     const { data: family, error: familyErr } = await db
       .from('families')
-      .insert({ name: nextFamilyName, invite_code: code, created_by: userId.value })
+      .insert({ name: nextFamilyName, invite_code: code, created_by: uid })
       .select('id')
-      .single()
+      .single<{ id: string }>()
 
     // A user may own only one family (migration 001). The unique index rejects a
     // second with a 23505; turn that one case into a message that explains it
@@ -133,7 +135,7 @@ async function createFamily() {
       .from('family_members')
       .insert({
         family_id: family.id,
-        user_id: userId.value,
+        user_id: uid,
         role: 'moderator',
       })
 
@@ -151,7 +153,7 @@ async function createFamily() {
     }
 
     // Make the new family the active one so HomeView opens straight to it.
-    saveActiveFamilyId(localStorage, userId.value, family.id)
+    saveActiveFamilyId(localStorage, uid, family.id)
     router.replace('/')
   } catch (e) {
     error.value = isOfflineError(e) ? OFFLINE_MESSAGE : userMessage(e, 'Failed to create family.')
@@ -162,6 +164,8 @@ async function createFamily() {
 
 async function joinFamily() {
   if (loading.value || !inviteCode.value.trim()) return
+  const uid = userId.value
+  if (!uid) return
   error.value = ''
   loading.value = true
   try {
@@ -182,7 +186,7 @@ async function joinFamily() {
         p_display_name: display_name,
         p_image_url: image_url,
       })
-      .maybeSingle()
+      .maybeSingle<{ id: string; name: string }>()
 
     if (joinErr) {
       // The sentinel is raised as the exception DETAIL (error.details), not message.
@@ -198,7 +202,7 @@ async function joinFamily() {
     }
 
     // Make the joined family the active one so HomeView opens straight to it.
-    saveActiveFamilyId(localStorage, userId.value, family.id)
+    saveActiveFamilyId(localStorage, uid, family.id)
     router.replace('/')
   } catch (e) {
     error.value = isOfflineError(e) ? OFFLINE_MESSAGE : userMessage(e, 'Failed to join family.')

@@ -1,5 +1,6 @@
-<script setup>
-import { computed, ref } from 'vue'
+<script setup lang="ts">
+import { computed, ref, type PropType } from 'vue'
+import type { ShoppingItem } from '../lib/shoppingList'
 import PopoverMenu from './PopoverMenu.vue'
 import slidersIcon from '../assets/sliders-horizontal.svg?raw'
 import checkIcon from '../assets/check-2.svg?raw'
@@ -16,11 +17,11 @@ const model = defineModel({ type: String, default: 'all' })
 const props = defineProps({
   // Every item, checked and unchecked. Counts are derived here rather than
   // passed in, so a row's number can never disagree with what picking it shows.
-  items: { type: Array, default: () => [] },
+  items: { type: Array as PropType<ShoppingItem[]>, default: () => [] },
 })
 
 const open = ref(false)
-const btnEl = ref(null)
+const btnEl = ref<HTMLElement | null>(null)
 
 const counts = computed(() => {
   const checked = props.items.filter((i) => i.checked).length
@@ -92,7 +93,7 @@ const isFiltered = computed(() => model.value !== 'all')
           <span class="filter-option__label">{{ option.label }}</span>
           <span class="filter-option__hint">{{ option.hint }}</span>
         </span>
-        <span class="filter-option__count">{{ counts[option.value] }}</span>
+        <span class="filter-option__count">{{ counts[option.value as keyof typeof counts] }}</span>
       </button>
     </template>
   </PopoverMenu>

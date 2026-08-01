@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { closeModal, isTopModal, openModal } from '../lib/modalStack'
 
@@ -45,7 +45,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close'])
 
-const overlay = ref(null)
+const overlay = ref<HTMLElement | null>(null)
 
 // Which dialogs are open, and the page's scroll lock, live in lib/modalStack —
 // they are properties of the screen rather than of any one dialog, and state
@@ -55,16 +55,16 @@ const overlay = ref(null)
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
-let previouslyFocused = null
+let previouslyFocused: HTMLElement | null = null
 
 function focusables() {
   if (!overlay.value) return []
-  return [...overlay.value.querySelectorAll(FOCUSABLE)]
+  return [...overlay.value.querySelectorAll<HTMLElement>(FOCUSABLE)]
 }
 
 // Tab must not walk out of an open dialog into the page behind it, which the
 // overlay makes unreachable to a mouse but not to a keyboard.
-function trapTab(event) {
+function trapTab(event: KeyboardEvent) {
   const items = focusables()
   if (!items.length) return
   const first = items[0]
@@ -83,7 +83,7 @@ function trapTab(event) {
 // Identity for this instance's place in the stack.
 const token = Symbol('app-modal')
 
-function onKeydown(event) {
+function onKeydown(event: KeyboardEvent) {
   if (!isTopModal(token)) return
   if (event.key === 'Escape') {
     event.stopPropagation()
@@ -101,7 +101,7 @@ let active = false
 function activate() {
   if (typeof document === 'undefined' || active) return
   active = true
-  previouslyFocused = document.activeElement
+  previouslyFocused = document.activeElement as HTMLElement | null
   openModal(token)
   document.addEventListener('keydown', onKeydown)
   // The overlay does not exist until after this tick.

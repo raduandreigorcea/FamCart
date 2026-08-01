@@ -1,11 +1,12 @@
-<script setup>
-import { computed, defineAsyncComponent, ref } from 'vue'
+<script setup lang="ts">
+import { computed, defineAsyncComponent, ref, type PropType } from 'vue'
 import { useClerk, useUser } from '@clerk/vue'
 import AccountActionModal from './AccountActionModal.vue'
 import MemberAvatarStack from './MemberAvatarStack.vue'
 import PopoverMenu from './PopoverMenu.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { sortMembersForSwitcher } from '../lib/memberRoles'
+import type { FamilyMemberProfile } from '../lib/familyRealtime'
 import { DEFAULT_FAMILY_EMOJI } from '../lib/familyEmoji'
 import { avatarSlotsForFamilyName } from '../lib/avatarStack'
 import chevronLeftRaw from '../assets/chevron-left.svg?raw'
@@ -28,7 +29,10 @@ const props = defineProps({
   familyId: { type: String, default: '' },
   familyName: { type: String, default: '' },
   // Every family the user belongs to ({ id, name }); the switcher lists them.
-  families: { type: Array, default: () => [] },
+  families: {
+    type: Array as PropType<{ id: string; name: string; emoji?: string | null }[]>,
+    default: () => [],
+  },
   loading: { type: Boolean, default: false },
   // True mid family-switch: the name is already known, but the roster isn't yet,
   // so the member count and avatars show a skeleton instead of a stale/empty one.
@@ -39,7 +43,7 @@ const props = defineProps({
   ownerUserId: { type: String, default: '' },
   currentUserId: { type: String, default: '' },
   memberProfiles: {
-    type: Array,
+    type: Array as PropType<FamilyMemberProfile[]>,
     default: () => [],
   },
 })
@@ -68,7 +72,7 @@ function toggleSwitcher() {
 function closeSwitcher() {
   switcherOpen.value = false
 }
-function selectFamily(id) {
+function selectFamily(id: string) {
   closeSwitcher()
   if (id !== props.familyId) emit('switch-family', id)
 }
@@ -109,7 +113,7 @@ function openSettings() {
   openFamilySettingsTab('overview')
 }
 
-function openFamilySettingsTab(tab) {
+function openFamilySettingsTab(tab: string) {
   accountMenuOpen.value = false
   settingsTab.value = tab
   settingsEverOpened.value = true
@@ -159,7 +163,7 @@ const cachedProfile = computed(() =>
     : null,
 )
 
-const userAvatarUrl = computed(() => user.value?.imageUrl || cachedProfile.value?.image_url || null)
+const userAvatarUrl = computed(() => user.value?.imageUrl || cachedProfile.value?.image_url || '')
 const userDisplayName = computed(
   () => getUserDisplayName(user.value) || cachedProfile.value?.display_name || 'Account',
 )
