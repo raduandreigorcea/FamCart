@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { onErrorCaptured, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { captureException } from './lib/errorReporting'

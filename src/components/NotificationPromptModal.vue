@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 // One-time greeting shown after login for users who never decided on
 // notifications. Explains the benefit up front so the browser/OS permission
 // prompt that follows an accept doesn't arrive cold.

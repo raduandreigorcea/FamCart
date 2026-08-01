@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 // One-time first-run tour. Three beats — add, swipe, invite — that teach the
 // gestures a new (or returning-after-the-redesign) user needs. Rendered by
 // HomeView over the real list; dismissing marks it seen.

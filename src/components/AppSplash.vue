@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 // Shown while the very first navigation resolves (connectivity + Clerk), so the
 // app never flashes a blank screen on cold start — especially offline, where the
 // router has to make a decision before any route can mount.
