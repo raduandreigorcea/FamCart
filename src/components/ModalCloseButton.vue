@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import xIcon from '../assets/x.svg?raw'
 
 defineProps({

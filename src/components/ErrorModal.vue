@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import ConfirmModal from './ConfirmModal.vue'
 
 // The app's single error surface: every failure message pops this dialog.

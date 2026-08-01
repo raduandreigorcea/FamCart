@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useAuth } from '@clerk/vue'
 import AppModal from './AppModal.vue'
@@ -10,7 +10,11 @@ import {
   disablePushNotifications,
   getNotificationPreference,
   setNotificationPreference,
+  type NotificationPreference,
 } from '../lib/pushNotifications'
+
+// The three theme choices the control offers; 'system' follows the OS.
+type ThemeMode = 'light' | 'dark' | 'system'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -27,10 +31,10 @@ const emit = defineEmits(['close', 'edit-account', 'sign-out', 'manage-family', 
 
 const { userId } = useAuth()
 
-const themeMode = ref('system')
-const notificationMode = ref('on')
+const themeMode = ref<ThemeMode>('system')
+const notificationMode = ref<NotificationPreference>('on')
 const notificationHint = ref('')
-let mediaQuery = null
+let mediaQuery: MediaQueryList | null = null
 
 function syncPreferencesFromStorage() {
   const savedTheme = localStorage.getItem('famcart-theme')
@@ -48,7 +52,7 @@ function syncPreferencesFromStorage() {
   notificationMode.value = getNotificationPreference(localStorage) === 'on' ? 'on' : 'off'
 }
 
-function applyResolvedTheme(mode) {
+function applyResolvedTheme(mode: ThemeMode) {
   const root = document.documentElement
   if (mode === 'system') {
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -68,13 +72,13 @@ function closeMenu() {
   emit('close')
 }
 
-function applyTheme(mode) {
+function applyTheme(mode: ThemeMode) {
   themeMode.value = mode
   localStorage.setItem('famcart-theme', mode)
   applyResolvedTheme(mode)
 }
 
-async function applyNotifications(mode) {
+async function applyNotifications(mode: NotificationPreference) {
   notificationMode.value = mode
   setNotificationPreference(localStorage, mode)
   notificationHint.value = ''

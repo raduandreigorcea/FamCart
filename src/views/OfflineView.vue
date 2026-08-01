@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AppCard from '../components/AppCard.vue'
@@ -10,7 +10,7 @@ import { refreshConnectivity, onReconnect } from '../lib/connectivity'
 const router = useRouter()
 const checking = ref(false)
 const stillOffline = ref(false)
-let stopReconnect = null
+let stopReconnect: (() => void) | null = null
 
 async function retry() {
   if (checking.value) return
