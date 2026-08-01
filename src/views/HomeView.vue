@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useAuth, useUser } from '@clerk/vue'
 import { useRouter } from 'vue-router'
@@ -13,6 +13,8 @@ import AddItemForm from '../components/AddItemForm.vue'
 import OnboardingTour from '../components/OnboardingTour.vue'
 import { useFamilyRealtime } from '../lib/familyRealtime'
 import { useProductSuggestions } from '../lib/productSuggestions'
+import type { ProductSuggestion } from '../lib/productSearch'
+import type { FamilyMemberProfile, ShoppingItemRow } from '../lib/familyRealtime'
 import { ITEM_NAME_MAX_LENGTH, useShoppingListActions } from '../lib/shoppingListActions'
 import { upsertOwnProfile } from '../lib/profile'
 import { cleanAuthCallbackUrl } from '../lib/authCallbackUrl'
@@ -29,7 +31,7 @@ import { isCurrentlyOffline, onReconnect } from '../lib/connectivity'
 import { rememberUser, getRememberedUser } from '../lib/session'
 import { useFirstRunGreeting } from '../lib/firstRunGreeting'
 
-const { userId, isLoaded, getToken } = useAuth()
+const { userId, isLoaded } = useAuth()
 const { user } = useUser()
 const router = useRouter()
 const db = useSupabase()
@@ -37,26 +39,43 @@ const db = useSupabase()
 // Offline, Clerk hasn't loaded and userId is null, but we may have booted from a
 // remembered session. Fall back to that id so the cache, offline queue, and new
 // rows' authorship all key to the right user until Clerk confirms it online.
-const effectiveUserId = computed(() => userId.value || getRememberedUser(localStorage))
+// Always a string: every consumer keys storage or rows by it, and '' simply
+// finds nothing rather than forcing a null check at each call site.
+const effectiveUserId = computed(() => userId.value || getRememberedUser(localStorage) || '')
 
-const items = ref([])
+// The switcher's rows: every family the user belongs to.
+interface FamilyRow { id: string; name: string; emoji?: string | null }
+
+// PostgREST types an embedded to-one relation as an array, but these selects
+// each return a single joined row; the casts at the two call sites say so once.
+interface MemberRow {
+  user_id: string
+  role?: string | null
+  profiles?: { display_name?: string | null; image_url?: string | null } | null
+}
+interface MembershipRow {
+  family_id: string
+  families?: { name?: string | null } | null
+}
+
+const items = ref<ShoppingItemRow[]>([])
 // Which rows the list shows: 'all' | 'active' | 'checked'. A view of `items`,
 // never a filter on what is fetched -- every other path (realtime, offline
 // queue, the item cap) keeps working on the whole list.
 //
 // Deliberately not persisted. Opening the app to a filtered list, with no memory
 // of having set one, is how items get declared missing.
-const listFilter = ref('all')
+const listFilter = ref<'all' | 'active' | 'checked'>('all')
 // Every family the user belongs to ({ id, name }), for the topbar switcher.
 // familyId below is whichever one is currently active.
-const families = ref([])
-const familyId = ref(null)
+const families = ref<FamilyRow[]>([])
+const familyId = ref<string | null>(null)
 const familyName = ref('')
 const familyInviteCode = ref('')
 const familyOwnerId = ref('')
 const familyItemLimit = ref(50)
 const familyEmoji = ref('')
-const familyMembers = ref([])
+const familyMembers = ref<FamilyMemberProfile[]>([])
 // Roster keyed by user id, so a list row can resolve its author's live avatar
 // from added_by (the row no longer carries a copied name/photo).
 const memberProfileMap = computed(
@@ -73,7 +92,6 @@ const {
   suggestionsLoading,
   selectedProduct,
   searchExpanded,
-  suggestLimit,
   canAddCustomProduct,
   familyProductStats,
   productStatsLoaded,
@@ -220,7 +238,7 @@ function isOffline() {
   return typeof navigator !== 'undefined' && navigator.onLine === false
 }
 
-let stopReconnect = null
+let stopReconnect: (() => void) | null = null
 
 onMounted(() => {
   // Two reconnect signals: the reliable native one, plus the web 'online' event
@@ -238,7 +256,7 @@ onBeforeUnmount(() => {
 // Picking a suggestion adds it outright rather than filling the input: the pick
 // already says exactly which product was meant, so a second confirming tap is
 // just friction. The typed text is dropped by addItem clearing the input.
-function selectSuggestion(product) {
+function selectSuggestion(product: ProductSuggestion) {
   clearSuggestions()
   void addItem(product)
 }
@@ -252,7 +270,7 @@ function openCustomProduct() {
 // pick — it is simply a product the catalog does not have yet. The tag rides
 // along so recordProductAdd knows to contribute it rather than bump it; it is
 // dropped before the insert, which builds its row from named fields only.
-function addCustomProduct(product) {
+function addCustomProduct(product: ProductSuggestion) {
   customProductOpen.value = false
   void addItem({ ...product, custom: true })
 }
@@ -355,7 +373,7 @@ async function initializeHome() {
   const storedActiveId = loadActiveFamilyId(localStorage, userId.value)
   const activeFamily = families.value.find((f) => f.id === storedActiveId) || families.value[0]
   familyId.value = activeFamily.id
-  saveActiveFamilyId(localStorage, userId.value, activeFamily.id)
+  saveActiveFamilyId(localStorage, effectiveUserId.value, activeFamily.id)
   // Writes queued during a previous offline session land before the first
   // fetch, so the list below already reflects them. No-op when the queue is empty.
   await flushOfflineQueue(localStorage, effectiveUserId.value, db)
@@ -469,7 +487,7 @@ async function loadFamilyHeader() {
   }
 
   if (!membersErr && Array.isArray(members)) {
-    familyMembers.value = members.map((m) => ({
+    familyMembers.value = (members as unknown as MemberRow[]).map((m) => ({
       user_id: m.user_id,
       role: m.role,
       display_name: m.profiles?.display_name || m.user_id,
@@ -497,7 +515,7 @@ async function loadFamilies() {
   // The switcher renders an emoji tile, a name and a tick, so that is all a row
   // carries. It used to fetch every family's full roster here to draw composite
   // member avatars; those are gone, and so is the extra round trip.
-  const list = (data || []).map((row) => ({
+  const list = ((data ?? []) as unknown as MembershipRow[]).map((row) => ({
     id: row.family_id,
     name: row.families?.name ?? '',
     emoji: '',
@@ -522,12 +540,12 @@ async function loadFamilies() {
 
 // Switch which family is active: persist the choice, tear down the old realtime
 // channels, and reload everything scoped to the new family.
-async function switchFamily(id) {
+async function switchFamily(id: string) {
   if (!id || id === familyId.value) return
   if (!families.value.some((f) => f.id === id)) return
   switchingFamily.value = true
   familyId.value = id
-  saveActiveFamilyId(localStorage, userId.value, id)
+  saveActiveFamilyId(localStorage, effectiveUserId.value, id)
   cleanupRealtimeSubscriptions()
   // Drop the old family's data so none of it flashes under the new name.
   items.value = []

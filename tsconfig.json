@@ -1,20 +1,12 @@
 {
-  // Typechecking runs through vue-tsc so .vue files are in scope, not just the
-  // .ts under lib/ and router/.
+  // Typechecking runs through vue-tsc, so .vue files are in scope alongside the
+  // .ts under lib/ and router/. Every SFC declares lang="ts", so this is the
+  // whole of src — script blocks and templates both.
   //
-  // checkJs is deliberately OFF here. The SFCs still have plain-JS <script setup>
-  // blocks, and type-checking those today reports 209 errors that are almost
-  // entirely inference limits rather than defects — an un-annotated `ref({...})`
-  // narrows to its initializer, so correct code like `confirmModal.value.resolve`
-  // reads as "null is not callable". Gating CI on that would train everyone to
-  // ignore it.
-  //
-  // What this config does buy: any SFC that adopts `lang="ts"` is fully checked
-  // from that moment, including its template. So the migration is now incremental
-  // and self-enforcing rather than blocked on a 209-error cleanup.
-  //
-  // To see the full picture across the JS SFCs, run `npm run typecheck:sfc`
-  // (tsconfig.sfc.json). That is a triage tool, not a gate.
+  // It was not always: the SFCs were plain JS, and this config carried allowJs
+  // plus a second, looser tsconfig.sfc.json to triage them a file at a time.
+  // Both are gone now that the migration is done, along with the checkJs escape
+  // hatch — there is no JavaScript left in src for it to apply to.
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -23,10 +15,7 @@
     "noEmit": true,
     "skipLibCheck": true,
     "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    // Lets vue-tsc parse the JS <script setup> blocks. With checkJs off they are
-    // read for exports and template bindings but not type-checked.
-    "allowJs": true
+    "noUnusedParameters": true
   },
   "include": ["src/**/*.ts", "src/**/*.vue"]
 }

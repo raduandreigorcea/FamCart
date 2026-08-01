@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, type PropType } from 'vue'
 import { getProductEmoji } from '../lib/productEmoji'
+import type { ShoppingItemRow } from '../lib/familyRealtime'
 import checkIcon from '../assets/check.svg?raw'
 import xIcon from '../assets/x.svg?raw'
 
 const props = defineProps({
   item: {
-    type: Object,
+    type: Object as PropType<ShoppingItemRow>,
     required: true
   },
   // Set while a purchase animation is playing on this checked row: it drains
@@ -230,7 +231,7 @@ function onKeydown(event: KeyboardEvent) {
         <span class="item-name">{{ item.name }}</span>
         <span v-if="item.maker" class="item-maker">{{ item.maker }}</span>
       </span>
-      <span v-if="item.quantity > 1" class="item-qty">x{{ item.quantity }}</span>
+      <span v-if="(item.quantity ?? 1) > 1" class="item-qty">x{{ item.quantity }}</span>
       <img
         v-if="avatarUrl"
         :src="avatarUrl"
