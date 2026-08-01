@@ -1,0 +1,29 @@
+{
+  // Full type-checking of the plain-JS <script setup> blocks, which tsconfig.json
+  // leaves alone. Run with `npm run typecheck:sfc`.
+  //
+  // This is a triage tool, not a CI gate. It currently reports ~209 errors, and
+  // the ones sampled so far are dominated by inference limits rather than bugs:
+  // an un-annotated ref() narrows to the shape of its initializer, so a ref
+  // seeded with `{ resolve: null }` makes a later `resolve(result)` look
+  // uncallable even though the runtime path is correct.
+  //
+  // Two ways to use it:
+  //   • Before migrating a component to `lang="ts"`, run this and filter to that
+  //     file to see what the conversion will have to answer for.
+  //   • Periodically, to scan for the classes that are usually real — TS2531 /
+  //     TS18047 / TS18048 (null and undefined) and TS2339 (property does not
+  //     exist) — rather than reading all 209.
+  //
+  // noImplicitAny is off because untyped parameters account for ~110 of the
+  // errors on their own and say nothing about correctness; the migration to
+  // `lang="ts"` is what fixes those, file by file.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "checkJs": true,
+    "noImplicitAny": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": ["src/**/*.ts", "src/**/*.vue"]
+}
