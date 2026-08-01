@@ -11,8 +11,7 @@
     "seed:products": "node scripts/seed-products.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "vue-tsc --noEmit",
-    "typecheck:sfc": "vue-tsc --noEmit -p tsconfig.sfc.json"
+    "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",

@@ -1,8 +1,9 @@
-<script setup>
-import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
+<script setup lang="ts">
+import { computed, ref, watch, onMounted, onBeforeUnmount, type PropType } from 'vue'
 import { useAuth } from '@clerk/vue'
 import { useSupabase } from '../supabase'
 import AppModal from './AppModal.vue'
+import type { FamilyMemberProfile } from '../lib/familyRealtime'
 import ConfirmModal from './ConfirmModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
 import {
@@ -40,7 +41,7 @@ const props = defineProps({
   familyEmoji: { type: String, default: '' },
   ownerUserId: { type: String, default: '' },
   memberProfiles: {
-    type: Array,
+    type: Array as PropType<FamilyMemberProfile[]>,
     default: () => [],
   },
 })
@@ -107,7 +108,21 @@ function dismiss() {
 }
 
 // Confirm modal state
-const confirmModal = ref({
+// resolve is the pending promise's continuation, which is why the ref needs an
+// explicit type: seeded with null, it would otherwise narrow to `null` and the
+// assignment in showConfirm below would be the error rather than the fix.
+interface ConfirmModalState {
+  open: boolean
+  title: string
+  message: string
+  danger: boolean
+  confirmText: string
+  cancelText: string
+  showCancel: boolean
+  resolve: ((value: boolean) => void) | null
+}
+
+const confirmModal = ref<ConfirmModalState>({
   open: false,
   title: '',
   message: '',
@@ -118,13 +133,27 @@ const confirmModal = ref({
   resolve: null,
 })
 
-function showConfirm({ title, message, danger = false, confirmText = 'Confirm', cancelText = 'Cancel', showCancel = true }) {
-  return new Promise((resolve) => {
+function showConfirm({
+  title,
+  message,
+  danger = false,
+  confirmText = 'Confirm',
+  cancelText = 'Cancel',
+  showCancel = true,
+}: {
+  title: string
+  message: string
+  danger?: boolean
+  confirmText?: string
+  cancelText?: string
+  showCancel?: boolean
+}): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
     confirmModal.value = { open: true, title, message, danger, confirmText, cancelText, showCancel, resolve }
   })
 }
 
-function handleConfirmModalResult(result) {
+function handleConfirmModalResult(result: boolean) {
   const resolve = confirmModal.value.resolve
   confirmModal.value = {
     open: false,
@@ -139,7 +168,7 @@ function handleConfirmModalResult(result) {
   if (resolve) resolve(result)
 }
 
-async function showValidationErrorModal(message) {
+async function showValidationErrorModal(message: string) {
   await showConfirm({
     title: 'Name Too Long',
     message,
@@ -165,19 +194,19 @@ const ownerProfile = computed(() => {
   return props.memberProfiles.find((m) => m.user_id === props.ownerUserId)
 })
 
-function canManageMember(member) {
+function canManageMember(member: FamilyMemberProfile) {
   return canManageMemberRule(member, {
     actorIsOwnerOrModerator: isOwnerOrModerator.value,
     ownerUserId: props.ownerUserId,
-    actorUserId: userId.value,
+    actorUserId: userId.value ?? '',
   })
 }
 
-function canPromoteToModerator(member) {
+function canPromoteToModerator(member: FamilyMemberProfile) {
   return canPromoteRule(member, isOwner.value)
 }
 
-function canDemoteFromModerator(member) {
+function canDemoteFromModerator(member: FamilyMemberProfile) {
   return canDemoteRule(member, isOwner.value)
 }
 
@@ -216,7 +245,9 @@ async function leaveFamily() {
         console.error('Error leaving family:', error)
       }
     })
-    .finally(() => {
+    // Not .finally(): PostgREST's builder is a thenable rather than a real
+    // Promise, so there is no finally to chain onto.
+    .then(() => {
       leavingFamily.value = false
     })
 }
@@ -273,7 +304,7 @@ async function saveItemLimit() {
 }
 
 // Pick is local; the Save button below commits it (like the name and item limit).
-function pickEmoji(emoji) {
+function pickEmoji(emoji: string) {
   if (savingEmoji.value) return
   // Tapping the current selection clears it (back to no emoji).
   emojiValue.value = emojiValue.value === emoji ? '' : emoji
@@ -334,7 +365,7 @@ async function regenerateInviteCode() {
   }
 }
 
-async function removeMember(memberUserId) {
+async function removeMember(memberUserId: string) {
   if (!props.familyId || memberActionPendingId.value) return
   // Dismiss first: on mobile the action sheet covers the confirm dialog.
   closeMemberMenu()
@@ -357,7 +388,7 @@ async function removeMember(memberUserId) {
   }
 }
 
-function toggleMemberMenu(memberUserId) {
+function toggleMemberMenu(memberUserId: string) {
   if (memberActionPendingId.value) return
   openMemberMenuId.value = openMemberMenuId.value === memberUserId ? '' : memberUserId
 }
@@ -373,7 +404,7 @@ const activeMenuMember = computed(() => {
   return props.memberProfiles.find((m) => m.user_id === openMemberMenuId.value) || null
 })
 
-function handleGlobalPointerDown(event) {
+function handleGlobalPointerDown(event: PointerEvent) {
   if (!openMemberMenuId.value) return
 
   const target = event.target
@@ -401,7 +432,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('pointerdown', handleGlobalPointerDown)
 })
 
-async function setMemberRole(memberUserId, role) {
+async function setMemberRole(memberUserId: string, role: string) {
   if (!isOwner.value) return
   if (!props.familyId || memberActionPendingId.value) return
   memberActionPendingId.value = memberUserId

@@ -1,17 +1,17 @@
-<script setup>
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+<script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, ref, watch, type PropType } from 'vue'
 import { getProductEmoji } from '../lib/productEmoji'
 import BackButton from './BackButton.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import checkIcon from '../assets/check.svg?raw'
-import { productKey } from '../lib/productSearch'
+import { productKey, type ProductSuggestion } from '../lib/productSearch'
 
 // Phone search mode: the same boundary PopoverMenu uses to pick sheet over
 // popover. Above it nothing below changes and the form stays in the flow.
 const PHONE_QUERY = '(max-width: 599.98px)'
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
 
-const mediaMatches = (query) =>
+const mediaMatches = (query: string) =>
   typeof window !== 'undefined' &&
   typeof window.matchMedia === 'function' &&
   window.matchMedia(query).matches
@@ -36,16 +36,19 @@ const props = defineProps({
   adding: { type: Boolean, default: false },
   maxLength: { type: Number, default: 120 },
   // Product catalog matches for the current input: [{ name, maker }].
-  suggestions: { type: Array, default: () => [] },
+  suggestions: { type: Array as PropType<ProductSuggestion[]>, default: () => [] },
   // What this family buys most, same shape as suggestions. Shown on the phone
   // search screen before anything is typed; ignored everywhere else, where
   // there is no screen to fill.
-  recents: { type: Array, default: () => [] },
+  recents: { type: Array as PropType<ProductSuggestion[]>, default: () => [] },
   // The product that just landed on the list, as a fresh object each time so
   // adding the same thing twice still reads as two adds. Only the search screen
   // shows it: everywhere else the list is right there and the row arriving in
   // it is the confirmation.
-  lastAdded: { type: Object, default: null },
+  lastAdded: {
+    type: Object as PropType<{ name: string; maker: string | null } | null>,
+    default: null,
+  },
   // A search is running (or debouncing) for what is currently typed, so the
   // matches below are not the answer yet.
   suggestionsLoading: { type: Boolean, default: false },
@@ -63,25 +66,25 @@ const emit = defineEmits(['submit', 'select', 'add-custom'])
 // options keeps focus in the input, so picking one never races the blur.
 const inputFocused = ref(false)
 
-const slotRef = ref(null)
-const rowRef = ref(null)
-const inputRef = ref(null)
+const slotRef = ref<HTMLElement | null>(null)
+const rowRef = ref<HTMLElement | null>(null)
+const inputRef = ref<HTMLInputElement | null>(null)
 
 // Freezes the gap the form leaves behind once it goes fixed, so the list below
 // does not jump up to meet it.
-const slotStyle = ref(null)
+const slotStyle = ref<Record<string, string> | null>(null)
 // The screen the search fills: the visual viewport, so it ends where the
 // keyboard starts. Null until measured — the stylesheet's 100dvh covers that
 // frame.
-const screenBox = ref(null)
+const screenBox = ref<Record<string, string> | null>(null)
 // The field is on its way back down. Everything in the band that is not the
 // field fades over exactly that journey, so the screen is empty by the time it
 // lands rather than resolving in pieces afterwards.
 const closing = ref(false)
 
-let slideTimer = null
+let slideTimer: ReturnType<typeof setTimeout> | null = null
 
-function selectSuggestion(product) {
+function selectSuggestion(product: ProductSuggestion) {
   emit('select', product)
 }
 
@@ -124,8 +127,8 @@ const showingHint = computed(
 // the row says so itself, in the shape of the row that was tapped.
 const ADDED_VISIBLE_MS = 2400
 
-const justAdded = ref(null)
-let addedTimer = null
+const justAdded = ref<{ name: string; maker: string | null } | null>(null)
+let addedTimer: ReturnType<typeof setTimeout> | null = null
 
 watch(
   () => props.lastAdded,
@@ -174,9 +177,9 @@ function onResize() {
   else measureScreen()
 }
 
-function bindViewportListeners(on) {
+function bindViewportListeners(on: boolean) {
   if (typeof window === 'undefined') return
-  const method = on ? 'addEventListener' : 'removeEventListener'
+  const method = on ? 'addEventListener' : ('removeEventListener' as const)
   window[method]('resize', onResize)
   window.visualViewport?.[method]('resize', measureScreen)
   window.visualViewport?.[method]('scroll', measureScreen)
@@ -186,7 +189,7 @@ function bindViewportListeners(on) {
 // it: the browser animates the release rather than the jump. Without silencing
 // the transition first, this inverting step would itself animate — the wrong
 // way, at the wrong time.
-function slideFrom(startTop) {
+function slideFrom(startTop: number) {
   const row = rowRef.value
   if (!row) return
   const delta = Math.round(startTop - row.getBoundingClientRect().top)
@@ -227,9 +230,11 @@ function collapse() {
   // The slot never left the flow, so its rect is the destination. Measured
   // before `closing` changes anything, though nothing it fades takes the field
   // out of the flow.
-  const delta = slot && row
-    ? Math.round(slot.getBoundingClientRect().top - row.getBoundingClientRect().top)
-    : 0
+  if (!slot || !row) {
+    settle()
+    return
+  }
+  const delta = Math.round(slot.getBoundingClientRect().top - row.getBoundingClientRect().top)
   if (!delta || mediaMatches(REDUCED_MOTION_QUERY)) {
     settle()
     return
@@ -249,7 +254,7 @@ function collapse() {
 
 // .add-row transitions its border colour on focus too, on this very element —
 // only the transform means the slide is over.
-function onSlideEnd(event) {
+function onSlideEnd(event: TransitionEvent) {
   if (event.target !== rowRef.value || event.propertyName !== 'transform') return
   settle()
 }

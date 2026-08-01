@@ -1,11 +1,13 @@
-<script setup>
-import { computed, ref } from 'vue'
+<script setup lang="ts">
+import { computed, ref, type PropType } from 'vue'
 import ShoppingListItem from './ShoppingListItem.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import ListFilterMenu from './ListFilterMenu.vue'
 import { getProductEmoji } from '../lib/productEmoji'
 import { productKey } from '../lib/productSearch'
 import { sumActiveQuantities, sumCheckedQuantities } from '../lib/shoppingList'
+import type { ShoppingItemRow, FamilyMemberProfile } from '../lib/familyRealtime'
+import type { ProductSuggestion } from '../lib/productSearch'
 import cartIcon from '../assets/shopping-cart.svg?raw'
 import checkIcon from '../assets/check.svg?raw'
 
@@ -13,10 +15,13 @@ import checkIcon from '../assets/check.svg?raw'
 // skeleton, and the empty state. All mutations stay with the parent, which owns
 // the items.
 const props = defineProps({
-  items: { type: Array, default: () => [] },
+  items: { type: Array as PropType<ShoppingItemRow[]>, default: () => [] },
   // Map<user_id, { display_name, image_url }> — the family roster, used to
   // resolve each row's author avatar/name from item.added_by at render time.
-  memberProfiles: { type: Map, default: () => new Map() },
+  memberProfiles: {
+    type: Map as PropType<Map<string, FamilyMemberProfile>>,
+    default: () => new Map(),
+  },
   loading: { type: Boolean, default: false },
   showEmpty: { type: Boolean, default: false },
   // Whether this family has ever bought anything. An empty list means two
@@ -25,7 +30,7 @@ const props = defineProps({
   hasShopped: { type: Boolean, default: false },
   // The regulars, [{ name, maker }], offered as one-tap adds on the empty
   // list. Empty for a family with no history, which then gets the words alone.
-  suggestedProducts: { type: Array, default: () => [] },
+  suggestedProducts: { type: Array as PropType<ProductSuggestion[]>, default: () => [] },
 })
 
 // 'all' | 'active' | 'checked'. Applied to what is RENDERED only -- the counts
@@ -55,10 +60,10 @@ const visibleItems = computed(() => {
 const visibleRows = computed(() => {
   const drainOrder = new Map(drainingIds.value.map((id, index) => [id, index]))
   return visibleItems.value.map((item) => {
-    const profile = props.memberProfiles.get(item.added_by)
+    const profile = props.memberProfiles.get(item.added_by ?? '')
     return {
       item,
-      avatarUrl: profile?.image_url || null,
+      avatarUrl: profile?.image_url || undefined,
       avatarName: profile?.display_name || 'Member',
       draining: drainOrder.has(item.id),
       // Position among the draining rows, so they fall into the bar in a
@@ -116,7 +121,7 @@ const prefersReducedMotion =
 
 const buying = ref(false)
 const buttonSuccess = ref(false)
-const drainingIds = ref([])
+const drainingIds = ref<string[]>([])
 
 function startCheckout() {
   if (buying.value || !checkedItems.value.length) return
@@ -141,7 +146,7 @@ function startCheckout() {
   window.setTimeout(() => finishCheckout(ids), total)
 }
 
-function finishCheckout(ids) {
+function finishCheckout(ids: string[]) {
   emit('checkout', ids)
   drainingIds.value = []
   buying.value = false
@@ -164,11 +169,11 @@ const THUMB_SIZE = 51 // px; bar height minus its borders; keep in sync with .bu
 const THUMB_INSET = 0 // px gap between thumb and track edge; the thumb sits flush
 const COMPLETE_AT = 0.85 // fraction of the travel that counts as done
 
-const barEl = ref(null)
-const thumbEl = ref(null)
+const barEl = ref<HTMLElement | null>(null)
+const thumbEl = ref<HTMLElement | null>(null)
 const dragging = ref(false)
 const dragX = ref(0)
-let activePointerId = null
+let activePointerId: number | null = null
 let grabOffsetX = 0
 let maxTravel = 0
 
@@ -177,22 +182,22 @@ function measureTravel() {
   return Math.max(0, barEl.value.clientWidth - thumbEl.value.offsetWidth - THUMB_INSET * 2)
 }
 
-function onThumbDown(e) {
+function onThumbDown(e: PointerEvent) {
   if (buying.value) return
   maxTravel = measureTravel()
   if (!maxTravel) return
   dragging.value = true
   activePointerId = e.pointerId
   grabOffsetX = e.clientX - dragX.value
-  e.currentTarget.setPointerCapture?.(e.pointerId)
+  ;(e.currentTarget as Element).setPointerCapture?.(e.pointerId)
 }
 
-function onThumbMove(e) {
+function onThumbMove(e: PointerEvent) {
   if (!dragging.value || e.pointerId !== activePointerId) return
   dragX.value = Math.min(Math.max(e.clientX - grabOffsetX, 0), maxTravel)
 }
 
-function onThumbUp(e) {
+function onThumbUp(e: PointerEvent) {
   if (!dragging.value || e.pointerId !== activePointerId) return
   dragging.value = false
   activePointerId = null
@@ -211,7 +216,7 @@ function onThumbCancel() {
 
 // A pointer click must not check out — requiring the slide is the point. A
 // keyboard activation of the button arrives as a click with detail === 0.
-function onThumbClick(e) {
+function onThumbClick(e: MouseEvent) {
   if (e.detail === 0) startCheckout()
 }
 
