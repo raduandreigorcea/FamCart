@@ -37,14 +37,6 @@ const props = defineProps({
 // component's header, but the value belongs to the view that owns the list.
 const filter = defineModel('filter', { type: String, default: 'all' })
 
-function avatarUrl(item) {
-  return props.memberProfiles.get(item.added_by)?.image_url || null
-}
-
-function avatarName(item) {
-  return props.memberProfiles.get(item.added_by)?.display_name || 'Member'
-}
-
 const emit = defineEmits(['toggle', 'delete', 'checkout', 'add'])
 
 const uncheckedItems = computed(() => props.items.filter((i) => !i.checked))
@@ -54,6 +46,27 @@ const visibleItems = computed(() => {
   if (filter.value === 'active') return uncheckedItems.value
   if (filter.value === 'checked') return checkedItems.value
   return props.items
+})
+
+// Everything each row needs, worked out once per render instead of four times
+// per row inside the v-for. The drain lookups were the reason: indexOf() per row
+// over the draining list is quadratic in the row count. Harmless at the 50-item
+// cap, but a map costs nothing and the template reads as data rather than calls.
+const visibleRows = computed(() => {
+  const drainOrder = new Map(drainingIds.value.map((id, index) => [id, index]))
+  return visibleItems.value.map((item) => {
+    const profile = props.memberProfiles.get(item.added_by)
+    return {
+      item,
+      avatarUrl: profile?.image_url || null,
+      avatarName: profile?.display_name || 'Member',
+      draining: drainOrder.has(item.id),
+      // Position among the draining rows, so they fall into the bar in a
+      // stagger. Checked rows sit wherever they were added, so the order comes
+      // from the drain list rather than from a contiguous checked section.
+      drainIndex: drainOrder.get(item.id) ?? 0,
+    }
+  })
 })
 
 // The header names whichever list is on screen. It stays put in every filter
@@ -104,11 +117,6 @@ const prefersReducedMotion =
 const buying = ref(false)
 const buttonSuccess = ref(false)
 const drainingIds = ref([])
-const isDraining = (id) => drainingIds.value.includes(id)
-// Position among the draining rows, so they fall into the bar in a stagger.
-// Checked rows now sit wherever they were added, so the order comes from the
-// drain list rather than from a contiguous checked section.
-const drainIndex = (id) => Math.max(0, drainingIds.value.indexOf(id))
 
 function startCheckout() {
   if (buying.value || !checkedItems.value.length) return
@@ -256,13 +264,13 @@ const labelText = computed(() =>
        moving it to a section at the bottom. -->
   <TransitionGroup v-else tag="ul" name="row" class="item-list">
     <ShoppingListItem
-      v-for="item in visibleItems"
-      :key="item.id"
-      :item="item"
-      :avatar-url="avatarUrl(item)"
-      :avatar-name="avatarName(item)"
-      :draining="isDraining(item.id)"
-      :drain-index="drainIndex(item.id)"
+      v-for="row in visibleRows"
+      :key="row.item.id"
+      :item="row.item"
+      :avatar-url="row.avatarUrl"
+      :avatar-name="row.avatarName"
+      :draining="row.draining"
+      :drain-index="row.drainIndex"
       @toggle="$emit('toggle', $event)"
       @delete="$emit('delete', $event)"
     />

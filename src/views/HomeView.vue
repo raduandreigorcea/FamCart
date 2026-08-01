@@ -107,6 +107,9 @@ const productStatsLoaded = ref(false)
 // A checkout that just succeeded is proof this family has shopped, available
 // immediately rather than after the stats refetch lands.
 const boughtThisSession = ref(false)
+// The last known answer, from the cached snapshot. Offline this is the only one
+// there is, since purchase history cannot be fetched.
+const cachedHasShopped = ref(false)
 const loadError = ref('')
 const addError = ref('')
 const customProductOpen = ref(false)
@@ -155,7 +158,9 @@ const listLoading = computed(() => initialLoading.value || switchingFamily.value
 
 // Has this family ever bought anything? Purchase history is the record, but a
 // checkout in this session counts before the refetch confirms it.
-const hasShopped = computed(() => familyProductStats.value.size > 0 || boughtThisSession.value)
+const hasShopped = computed(
+  () => familyProductStats.value.size > 0 || boughtThisSession.value || cachedHasShopped.value,
+)
 
 // The three error channels are independent, so more than one can be set at once
 // — a background refresh failing while an add is also rejected, say. Rendering a
@@ -206,6 +211,10 @@ function deferIfOffline(error, mutation) {
 }
 
 let stopReconnect = null
+// Declared here rather than beside the suggestion code below, because the
+// unmount hook clears it: reading a `let` from further down the file works (the
+// hook runs long after initialization) but reads as a bug every time.
+let suggestTimer = null
 
 onMounted(() => {
   // Two reconnect signals: the reliable native one, plus the web 'online' event
@@ -233,7 +242,8 @@ onBeforeUnmount(() => {
 //
 // So the catalog is queried for a candidate pool wider than the six shown, and
 // the final order is decided locally against familyProductStats.
-let suggestTimer = null
+// (suggestTimer is declared up with the other lifecycle state, since the unmount
+// hook clears it.)
 let suggestRequestId = 0
 const SUGGEST_MIN_CHARS = 2
 const SUGGEST_LIMIT = 6
@@ -658,6 +668,10 @@ function hydrateFromCachedSnapshot() {
   familyEmoji.value = snapshot.familyEmoji || ''
   familyMembers.value = snapshot.familyMembers
   items.value = snapshot.items
+  // Offline there is no purchase history to read, so the cached answer is the
+  // only one available. Without it an empty list tells a family that shops every
+  // week they have never started.
+  cachedHasShopped.value = snapshot.hasShopped
 }
 
 function persistSnapshot() {
@@ -671,6 +685,7 @@ function persistSnapshot() {
     familyEmoji: familyEmoji.value,
     familyMembers: familyMembers.value,
     items: items.value,
+    hasShopped: hasShopped.value,
   })
 }
 
@@ -787,6 +802,8 @@ async function switchFamily(id) {
   // yet" before the refetch turns it into "All bought".
   productStatsLoaded.value = false
   boughtThisSession.value = false
+  // The cached answer belonged to the family we just left.
+  cachedHasShopped.value = false
   loadError.value = ''
   // Show the new name straight away (we already know it from the switcher list);
   // only the roster is unknown until loadFamilyHeader returns, so that's all the

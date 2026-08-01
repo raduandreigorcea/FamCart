@@ -15,6 +15,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import HomeView from '../src/views/HomeView.vue'
 import ShoppingList from '../src/components/ShoppingList.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
+import { saveFamilySnapshot } from '../src/lib/familyCache'
 import { __setOnlineForTest } from '../src/lib/connectivity'
 
 const mocks = vi.hoisted(() => ({ db: null, routerReplace: () => {} }))
@@ -126,6 +127,29 @@ describe('the empty list', () => {
     const wrapper = await mountHome({ history: pending() })
 
     expect(showEmpty(wrapper)).toBe(true)
+  })
+
+  // Offline the history cannot be fetched at all, so the cached snapshot holds
+  // the only answer there is. Without it a family that shops every week opens
+  // their empty list to "Nothing here yet" every time they lose signal.
+  it('trusts the cached answer offline rather than claiming a fresh start', async () => {
+    saveFamilySnapshot(localStorage, 'user-1', {
+      familyId: 'fam-1',
+      familyName: 'Fam',
+      familyInviteCode: 'ABCDEFGH',
+      familyOwnerId: 'user-1',
+      familyItemLimit: 50,
+      familyEmoji: '',
+      familyMembers: [],
+      items: [],
+      hasShopped: true,
+    })
+    __setOnlineForTest(false)
+
+    const wrapper = await mountHome({ history: pending() })
+
+    expect(showEmpty(wrapper)).toBe(true)
+    expect(hasShopped(wrapper)).toBe(true)
   })
 
   // The other half of the bug: a first-ever checkout empties the list while the
