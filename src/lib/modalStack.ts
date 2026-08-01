@@ -37,10 +37,3 @@ export function closeModal(token: symbol): void {
     document.body.style.overflow = previousOverflow
   }
 }
-
-// Test seam: the stack outlives any one component, so a test that unmounts
-// mid-stack would otherwise leak state into the next one.
-export function __resetModalStackForTest(): void {
-  stack.length = 0
-  previousOverflow = ''
-}
