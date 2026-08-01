@@ -24,6 +24,11 @@ vi.mock('../src/supabase', () => ({ useSupabase: () => ({}) }))
 function mountSettings(initialTab = 'about') {
   return mount(FamilySettingsModal, {
     shallow: true,
+    // The dialog renders through AppModal now, and a shallow mount stubs it
+    // along with everything else — which drops the slot, and with it the whole
+    // dialog body this file is here to inspect. The shell is structure rather
+    // than a child worth isolating from, so keep it real.
+    global: { stubs: { AppModal: false } },
     props: {
       open: true,
       initialTab,

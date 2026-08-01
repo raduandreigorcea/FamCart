@@ -1,6 +1,7 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useAuth } from '@clerk/vue'
+import AppModal from './AppModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
 import ErrorModal from './ErrorModal.vue'
 import userRoundIconRaw from '../assets/user-round.svg?raw'
@@ -67,12 +68,6 @@ function closeMenu() {
   emit('close')
 }
 
-function onKeydown(event) {
-  if (event.key === 'Escape' && props.open) {
-    closeMenu()
-  }
-}
-
 function applyTheme(mode) {
   themeMode.value = mode
   localStorage.setItem('famcart-theme', mode)
@@ -106,14 +101,12 @@ async function applyNotifications(mode) {
 }
 
 onMounted(() => {
-  window.addEventListener('keydown', onKeydown)
   mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
   mediaQuery.addEventListener('change', handleSystemThemeChange)
   syncPreferencesFromStorage()
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKeydown)
   mediaQuery?.removeEventListener('change', handleSystemThemeChange)
 })
 
@@ -127,8 +120,12 @@ watch(
 </script>
 
 <template>
-  <Transition name="modal-fade">
-    <div v-if="open" class="account-overlay" @click.self="closeMenu">
+  <AppModal
+    :open="open"
+    overlay-class="account-overlay"
+    transition="modal-fade"
+    @close="closeMenu"
+  >
       <div class="account-dialog" role="dialog" aria-modal="true" aria-labelledby="account-modal-title">
         <div class="account-dialog__header">
           <div class="account-dialog__title-wrap">
@@ -241,8 +238,7 @@ watch(
           </div>
         </div>
       </div>
-    </div>
-  </Transition>
+  </AppModal>
 
   <ErrorModal title="Notifications" :message="notificationHint" @dismiss="notificationHint = ''" />
 </template>
