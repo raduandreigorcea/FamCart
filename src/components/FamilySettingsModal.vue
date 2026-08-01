@@ -2,6 +2,7 @@
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useAuth } from '@clerk/vue'
 import { useSupabase } from '../supabase'
+import AppModal from './AppModal.vue'
 import ConfirmModal from './ConfirmModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
 import {
@@ -91,6 +92,18 @@ watch(
 function requestClose() {
   closeMemberMenu()
   emit('close')
+}
+
+// Escape and a backdrop click both arrive here from AppModal. With the member
+// menu open they belong to the menu, not the dialog underneath it: dismissing
+// both at once would take the whole settings modal away from someone who only
+// meant to back out of a sub-menu.
+function dismiss() {
+  if (openMemberMenuId.value) {
+    closeMemberMenu()
+    return
+  }
+  requestClose()
 }
 
 // Confirm modal state
@@ -376,18 +389,16 @@ function handleGlobalPointerDown(event) {
   closeMemberMenu()
 }
 
-function handleMemberMenuKeydown(event) {
-  if (event.key === 'Escape' && openMemberMenuId.value) closeMemberMenu()
-}
-
+// Escape used to be handled here as well, on window. AppModal now owns it and
+// routes it through dismiss(), which is what keeps one keystroke from closing
+// the member menu and the dialog behind it at the same time — two independent
+// listeners could only have raced.
 onMounted(() => {
   window.addEventListener('pointerdown', handleGlobalPointerDown)
-  window.addEventListener('keydown', handleMemberMenuKeydown)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('pointerdown', handleGlobalPointerDown)
-  window.removeEventListener('keydown', handleMemberMenuKeydown)
 })
 
 async function setMemberRole(memberUserId, role) {
@@ -434,8 +445,12 @@ async function deleteFamily() {
 </script>
 
 <template>
-  <Transition name="modal-fade" appear>
-    <div v-if="open" class="settings-modal-overlay" @click.self="requestClose()">
+  <AppModal
+    :open="open"
+    overlay-class="settings-modal-overlay"
+    transition="modal-fade"
+    @close="dismiss"
+  >
       <div class="settings-modal" role="dialog" aria-modal="true" aria-label="Settings">
         
         <!-- Modal Header -->
@@ -913,8 +928,7 @@ async function deleteFamily() {
           </main>
         </div>
       </div>
-    </div>
-  </Transition>
+  </AppModal>
 
   <!-- Mobile member actions: a bottom sheet teleported out of the scrolling
        tab panel, which would otherwise clip an anchored dropdown. Hidden by

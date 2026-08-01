@@ -150,15 +150,15 @@ onBeforeUnmount(deactivate)
 </template>
 
 <style scoped>
-/* Layout only. Each dialog's look still comes from the class it passes as
-   `overlayClass`, which lands on this same element. */
+/* Covering the screen is the only thing every dialog agrees on, so it is the
+   only thing declared here.
+   Layout and stacking deliberately are NOT: the callers disagree (z-index runs
+   999 to 1200, and the tour sits at the bottom of the screen rather than the
+   middle), and their class lands on this same element at the same specificity.
+   Anything set here would be settled by stylesheet order rather than intent. */
 .app-modal-overlay {
   position: fixed;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1100;
 }
 
 .app-modal-fade-enter-active,
