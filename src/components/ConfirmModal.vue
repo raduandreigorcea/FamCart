@@ -1,6 +1,7 @@
 <script setup>
 import { computed, useId } from 'vue'
 import AppButton from './AppButton.vue'
+import AppModal from './AppModal.vue'
 import triangleAlertIcon from '../assets/triangle-alert.svg?raw'
 
 // Per-instance, because this component is mounted several times over on one
@@ -40,8 +41,12 @@ const emit = defineEmits(['confirm', 'cancel'])
 </script>
 
 <template>
-  <Transition name="confirm-fade">
-    <div v-if="open" class="confirm-overlay" @click.self="emit('cancel')">
+  <AppModal
+    :open="open"
+    overlay-class="confirm-overlay"
+    transition="confirm-fade"
+    @close="emit('cancel')"
+  >
       <div class="confirm-dialog" :class="`confirm-dialog--${resolvedTone}`" role="alertdialog" aria-modal="true" :aria-labelledby="titleId">
         <div class="confirm-dialog__icon-wrap" :class="`confirm-dialog__icon-wrap--${resolvedTone}`">
           <span
@@ -72,8 +77,7 @@ const emit = defineEmits(['confirm', 'cancel'])
           <AppButton :variant="confirmVariant" :block="showCancel" @click="emit('confirm')">{{ confirmText }}</AppButton>
         </div>
       </div>
-    </div>
-  </Transition>
+  </AppModal>
 </template>
 
 <style scoped>
