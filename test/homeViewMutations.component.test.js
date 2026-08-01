@@ -419,9 +419,9 @@ describe('addItem', () => {
     await submitAdd(wrapper, 'Milk', 2)
 
     expect(listedItems(wrapper)).toHaveLength(0)
-    // Second ErrorModal is the add-item one (first is the load error). The raw
-    // Postgres text ('boom') is masked — only the generic message reaches the UI.
-    expect(wrapper.findAllComponents(ErrorModal)[1].props('message')).toBe('Failed to add item.')
+    // One ErrorModal serves every channel now, so this is the add error itself.
+    // The raw Postgres text ('boom') is masked on the way out.
+    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('Failed to add item.')
     const form = wrapper.findComponent(AddItemForm)
     expect(form.props('name')).toBe('Milk')
     expect(form.props('quantity')).toBe(2)
