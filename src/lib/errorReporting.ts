@@ -48,6 +48,41 @@ function flush(): void {
   buffered.length = 0
 }
 
+// Stand-in global handlers for the window before the SDK lands.
+//
+// Sentry installs its own onerror/onunhandledrejection hooks inside init(),
+// which is deliberately deferred to idle (see above). Until then nothing is
+// listening: a Vue render error still reaches captureException through App.vue's
+// onErrorCaptured, but a plain unhandled rejection simply vanishes — and this
+// codebase has many fire-and-forget `void someAsync()` calls that produce
+// exactly those. On a fast machine that window is milliseconds; on a slow phone
+// it is the full idle timeout, which is precisely the boot window the router
+// guard, the Clerk load and the first fetches occupy.
+//
+// These feed the same buffer everything else uses, so a report raised here is
+// flushed to Sentry the moment it arrives. Returns an unregister function: the
+// caller drops them once reporting is live, so nothing is reported twice.
+export function captureEarlyErrors(): () => void {
+  if (typeof window === 'undefined') return () => {}
+
+  // event.error is absent for resource-load failures (a 404 on an <img> raises
+  // an 'error' event too). Those are not exceptions and would only add noise.
+  const onError = (event: ErrorEvent) => {
+    if (event.error) captureException(event.error)
+  }
+  const onRejection = (event: PromiseRejectionEvent) => {
+    captureException(event.reason)
+  }
+
+  window.addEventListener('error', onError)
+  window.addEventListener('unhandledrejection', onRejection)
+
+  return () => {
+    window.removeEventListener('error', onError)
+    window.removeEventListener('unhandledrejection', onRejection)
+  }
+}
+
 // Defer to whenever the browser is next idle, so the SDK competes with nothing
 // that matters. The timeout is the ceiling: on a busy page idle may never come,
 // and an error reporter that waits forever reports nothing.
