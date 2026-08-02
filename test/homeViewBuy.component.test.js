@@ -155,6 +155,26 @@ describe('buyCheckedItems', () => {
     expect(rpcCalls(mocks.db)[0].params.p_item_ids).toEqual(['a'])
   })
 
+  it('still archives a checkout whose rows have already left the list', async () => {
+    // The buy bar defers its emit until the drain animation ends (~550ms).
+    // Switching family in that window replaces the whole array, so the ids
+    // arrive naming rows that are no longer here. This used to read as
+    // "nothing to buy" and return, leaving them checked in the database after
+    // the user had been told they were bought.
+    const items = [makeItem({ id: 'a', name: 'Milk', checked: true })]
+    const wrapper = await mountHome({ items })
+    mocks.db.handlers['rpc.buy_items'] = (q) => ({ data: q.params.p_item_ids.length, error: null })
+
+    // The list is swapped for another family's, exactly as switchFamily does.
+    wrapper.findComponent(ShoppingList).props('items').splice(0)
+    await flushPromises()
+
+    await emitBuy(wrapper, ['a'])
+
+    expect(rpcCalls(mocks.db)).toHaveLength(1)
+    expect(rpcCalls(mocks.db)[0].params.p_item_ids).toEqual(['a'])
+  })
+
   it('offline: removes the items and queues deletes instead of calling the RPC', async () => {
     const items = [makeItem({ id: 'a', name: 'Milk', checked: true })]
     const wrapper = await mountHome({ items })

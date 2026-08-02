@@ -152,6 +152,31 @@ describe('the empty list', () => {
     expect(hasShopped(wrapper)).toBe(true)
   })
 
+  // The snapshot is keyed to the USER, not the family. Creating or joining a
+  // family makes it active immediately, but the snapshot still describes the
+  // previous one — so its cached "this family has shopped" answer was being
+  // applied to a family that has bought nothing, and a brand-new list opened on
+  // "All bought". Switching families cleared it; arriving at a new one did not.
+  it('does not carry the cached answer over to a different family', async () => {
+    saveFamilySnapshot(localStorage, 'user-1', {
+      familyId: 'fam-old',            // a family that HAS shopped
+      familyName: 'Old Fam',
+      familyInviteCode: 'ABCDEFGH',
+      familyOwnerId: 'user-1',
+      familyItemLimit: 50,
+      familyEmoji: '',
+      familyMembers: [],
+      items: [],
+      hasShopped: true,
+    })
+
+    // The active family resolves to fam-1, which has no purchase history.
+    const wrapper = await mountHome({ history: () => ({ data: [], error: null }) })
+
+    expect(showEmpty(wrapper)).toBe(true)
+    expect(hasShopped(wrapper)).toBe(false)
+  })
+
   // The other half of the bug: a first-ever checkout empties the list while the
   // history refetch is still in flight, so the stats are momentarily empty and
   // the screen used to claim the family had never bought anything — right after

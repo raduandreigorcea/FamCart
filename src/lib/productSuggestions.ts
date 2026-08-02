@@ -33,7 +33,6 @@ export interface ProductSuggestions {
   selectedProduct: Ref<ProductSuggestion | null>
   /** True while the phone's full-screen search is up, which earns more rows. */
   searchExpanded: Ref<boolean>
-  suggestLimit: Ref<number>
   canAddCustomProduct: Ref<boolean>
   /** This family's purchase habits: the ranking signal, and the empty state's answer. */
   familyProductStats: Ref<Map<string, FamilyProductStat>>
@@ -213,7 +212,7 @@ export function useProductSuggestions(options: {
 
   // Fold this family's recent purchases into the ranking signal. Best-effort: on
   // failure suggestions just fall back to the global catalog order. Retention
-  // (migration 019) already caps history at 60 checkouts / 30 days, so this is a
+  // (005_purchase_history.sql) already caps history at 60 checkouts / 30 days, so this is a
   // small, naturally-recent window and can be fetched whole.
   async function loadFamilyProductStats(): Promise<void> {
     if (!familyId.value || isOffline()) {
@@ -242,12 +241,12 @@ export function useProductSuggestions(options: {
   // A catalog product just gets its popularity bumped. A custom one is
   // contributed to the catalog scoped to this family — suggested back to them
   // straight away, and promoted to a global suggestion only once enough other
-  // families have added the same product (migration 022), so one family's
+  // families have added the same product (006_product_catalog.sql), so one family's
   // spelling cannot leak into everyone else's dropdown.
   //
   // Best-effort either way: fire-and-forget, never blocks or errors the add, and
   // skipped offline (neither is part of the offline queue). Both RPCs are
-  // throttled server-side as well (migration 032).
+  // throttled server-side as well (002_security_audit.sql).
   function recordProductAdd(product: ProductSuggestion & { custom?: boolean }): void {
     if (!product || isOffline()) return
     const call = product.custom
@@ -276,7 +275,6 @@ export function useProductSuggestions(options: {
     suggestionsLoading,
     selectedProduct,
     searchExpanded,
-    suggestLimit,
     canAddCustomProduct,
     familyProductStats,
     productStatsLoaded,

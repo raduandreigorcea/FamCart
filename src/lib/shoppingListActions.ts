@@ -13,6 +13,7 @@ import {
   type FlushResult,
 } from './offlineQueue'
 import { userMessage } from './errorMessages'
+import { ITEM_NAME_MAX_LENGTH } from './limits'
 import type { ShoppingItemRow } from './familyRealtime'
 import type { ProductSuggestion } from './productSearch'
 
@@ -26,10 +27,6 @@ import type { ProductSuggestion } from './productSearch'
 // one is an error the user should see.
 //
 // Extracted from HomeView, where this was the largest of seven concerns.
-
-// Mirrors the DB's own length check (migration 013), so the form rejects what
-// the row would reject anyway.
-export const ITEM_NAME_MAX_LENGTH = 120
 
 export interface ShoppingListActions {
   /** Set while an item's write is in flight, so a racing refetch keeps the local row. */
@@ -290,7 +287,7 @@ export function useShoppingListActions(options: {
     }
 
     // Guard the per-member active-item cap locally so we never flash an optimistic
-    // row that the DB trigger would reject. The trigger (migration 010) stays the
+    // row that the DB trigger would reject. The trigger (004_shopping_list.sql) stays the
     // authoritative backstop for races or stale local state.
     const activeCount = countActiveItemsByMember(items.value, userId.value)
     if (activeCount >= itemLimit.value) {
@@ -471,7 +468,7 @@ export function useShoppingListActions(options: {
     // Optimistic: flip immediately, roll back if the write fails. checked_at is
     // mirrored because the refetch's 30-row cap is taken on it, not because it
     // affects position: display order is creation time, so a tick never moves the
-    // row. The DB trigger (migration 024) is the authority on the stored value, so
+    // row. The DB trigger (004_shopping_list.sql) is the authority on the stored value, so
     // we only send `checked` — the server stamps the time itself.
     item.checked = nextChecked
     item.checked_at = nextChecked ? new Date().toISOString() : null
@@ -501,8 +498,9 @@ export function useShoppingListActions(options: {
         if (deferIfOffline(error, { kind: 'update', id: item.id, patch })) return
         item.checked = previous
         item.checked_at = previousCheckedAt
-        // Unchecking would push the member over the active-item cap (migration 010
-        // now enforces it on uncheck too): show the same friendly popup as adding.
+        // Unchecking would push the member over the active-item cap
+        // (004_shopping_list.sql enforces it on uncheck too): show the same
+        // friendly popup as adding.
         if (
           error.message?.includes('member_active_item_limit_exceeded') ||
           error.message?.includes('limit of')
@@ -547,14 +545,28 @@ export function useShoppingListActions(options: {
   // from the active list. The animation has already played in ShoppingList by the
   // time this runs, so we just persist the outcome.
   async function checkoutItems(ids: string[]): Promise<void> {
+    if (!ids.length) return
     const idSet = new Set(ids)
-    const bought = items.value.filter((i) => idSet.has(i.id) && i.checked)
-    if (!bought.length) return
+    const known = items.value.filter((i) => idSet.has(i.id))
+    const bought = known.filter((i) => i.checked)
 
-    // Optimistic removal. Only drop the rows actually bought (checked) — never an
-    // unchecked row that happened to be named in `ids` — mirroring the RPC's own
-    // `checked = true` guard. Keep the pre-removal array so a hard failure can
-    // restore the exact list, order included.
+    // Which ids actually reach the RPC. While the rows are here — the normal
+    // case, mid drain animation — only the checked ones do, never an unchecked
+    // row that happened to be named, mirroring the RPC's own `checked = true`
+    // guard.
+    //
+    // None of them being here is a different situation: switching family
+    // replaces the whole array while that animation is still running. This used
+    // to read as "nothing to buy" and return, leaving the rows checked in the
+    // database after the user had been told they were bought. There is nothing
+    // local left to judge checkedness by, so the confirmed ids are the
+    // authority and the server's own guard is what filters them.
+    const toBuy = known.length ? bought.map((i) => i.id) : ids
+    if (!toBuy.length) return
+
+    // Optimistic removal covers only rows actually present and checked. Keep
+    // the pre-removal array so a hard failure can restore the exact list, order
+    // included.
     const boughtIds = new Set(bought.map((i) => i.id))
     const snapshot = items.value
     items.value = items.value.filter((i) => !boughtIds.has(i.id))
@@ -564,19 +576,19 @@ export function useShoppingListActions(options: {
     // an offline checkout is not recorded in history — it is archived only when the
     // checkout runs against the server.
     if (isOffline()) {
-      for (const it of bought) {
-        enqueueOfflineMutation(localStorage, userId.value, { kind: 'delete', id: it.id })
+      for (const id of toBuy) {
+        enqueueOfflineMutation(localStorage, userId.value, { kind: 'delete', id })
       }
       return
     }
 
-    const { error } = await db.rpc('buy_items', { p_item_ids: bought.map((i) => i.id) })
+    const { error } = await db.rpc('buy_items', { p_item_ids: toBuy })
     if (error) {
       // Never reached the server: keep them off the list and fall back to queued
       // deletes, same as the offline path.
       if (isOfflineError(error)) {
-        for (const it of bought) {
-          enqueueOfflineMutation(localStorage, userId.value, { kind: 'delete', id: it.id })
+        for (const id of toBuy) {
+          enqueueOfflineMutation(localStorage, userId.value, { kind: 'delete', id })
         }
         return
       }

@@ -32,24 +32,15 @@ export async function fetchWithRetry(
   }
 }
 
-// Base client (no auth) — for public/unauthenticated queries.
-// Disable auth persistence so this client does not compete with the authenticated one.
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-  },
-  global: {
-    fetch: fetchWithRetry,
-  },
-})
+// There was an unauthenticated `supabase` client exported here for
+// "public/unauthenticated queries". Nothing ever imported it — every table is
+// behind RLS and every read needs a Clerk token — but being at module scope it
+// was constructed on any page that imported this file, for nobody.
 
-// Returns a Supabase client authenticated with the current Clerk session token.
-// Use this inside Vue components/composables where useAuth() is available.
-export function useSupabase(): SupabaseClient {
-  const { getToken } = useAuth()
-  getTokenFn = async () => getToken.value({ template: 'supabase' })
-
+// The one client, built once and shared. The token comes from whatever resolver
+// was last installed, so the client itself never needs rebuilding when the
+// session changes.
+export function getSupabase(): SupabaseClient {
   if (!authClient) {
     authClient = createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
@@ -65,6 +56,23 @@ export function useSupabase(): SupabaseClient {
       },
     })
   }
-
   return authClient
+}
+
+// How the client learns to mint tokens. Kept separate from getSupabase because
+// the two have different requirements: this needs Clerk's useAuth() and so a
+// component context, while the client is wanted from places that have none —
+// the router guard in particular, which used to hand-roll its own fetch with
+// its own apikey/Authorization headers (and no fetchWithRetry) purely to work
+// around that.
+export function setSupabaseTokenResolver(resolve: () => Promise<string | null>): void {
+  getTokenFn = resolve
+}
+
+// Returns a Supabase client authenticated with the current Clerk session token.
+// Use this inside Vue components/composables where useAuth() is available.
+export function useSupabase(): SupabaseClient {
+  const { getToken } = useAuth()
+  setSupabaseTokenResolver(async () => getToken.value({ template: 'supabase' }))
+  return getSupabase()
 }

@@ -93,10 +93,10 @@ export async function startNativeOAuth(
   // The exact stuck state is the difference between "allowlist the redirect
   // URL in Clerk" and a bug here — name it instead of a generic failure.
   throw new Error(
-    'OAuth sign-in did not complete ' +
+    'Could not finish signing in with that provider ' +
       `(attempt: ${signIn.status ?? 'unknown'}, ` +
       `verification: ${signIn.firstFactorVerification.status ?? 'unknown'}, ` +
-      `sign-up: ${signUp.status ?? 'none'}, ` +
+      `signup: ${signUp.status ?? 'none'}, ` +
       `nonce: ${rotatingTokenNonce ? 'present' : 'missing'}).`,
   )
 }

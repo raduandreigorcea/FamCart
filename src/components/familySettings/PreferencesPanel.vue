@@ -1,0 +1,562 @@
+<script setup lang="ts">
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useSupabase } from '../../supabase'
+import { userMessage } from '../../lib/errorMessages'
+import { DEFAULT_FAMILY_EMOJI, FAMILY_EMOJIS } from '../../lib/familyEmoji'
+import {
+  clampItemLimit,
+  FAMILY_NAME_MAX_LENGTH,
+  ITEM_LIMIT_DEFAULT,
+  ITEM_LIMIT_MAX,
+  ITEM_LIMIT_MIN,
+} from '../../lib/limits'
+import checkIcon from '../../assets/check.svg?raw'
+import squarePenIcon from '../../assets/square-pen.svg?raw'
+import stickerIcon from '../../assets/sticker.svg?raw'
+import shoppingCartIcon from '../../assets/shopping-cart.svg?raw'
+
+// The three settings an owner can change: the family's name, its emoji, and how
+// many active items each member may hold. Each is edited locally and committed
+// by its own Save button, so a half-typed name is never written.
+//
+// The item limit is the one a moderator can also change, which is why it sits
+// outside the isOwner sections rather than in a panel of its own.
+const props = defineProps({
+  familyId: { type: String, default: '' },
+  familyName: { type: String, default: '' },
+  familyItemLimit: { type: Number, default: ITEM_LIMIT_DEFAULT },
+  familyEmoji: { type: String, default: '' },
+  isOwner: { type: Boolean, default: false },
+})
+
+// `error` carries the message up to the modal's single ErrorModal rather than
+// opening one per panel — one dialog, wherever the failure came from.
+const emit = defineEmits<{
+  (e: 'refresh-family'): void
+  (e: 'error', message: string, title?: string): void
+}>()
+
+const db = useSupabase()
+
+const renameValue = ref('')
+const savingName = ref(false)
+const nameSaved = ref(false)
+const renameLength = computed(() => renameValue.value.length)
+const renameOverLimit = computed(() => renameLength.value > FAMILY_NAME_MAX_LENGTH)
+
+const itemLimitValue = ref(ITEM_LIMIT_DEFAULT)
+const savingItemLimit = ref(false)
+const itemLimitSaved = ref(false)
+
+const emojiValue = ref('')
+const savingEmoji = ref(false)
+const emojiSaved = ref(false)
+
+// Re-seed the editable fields whenever the source values change — which
+// includes the moment this panel mounts, and a refresh landing underneath it.
+watch(
+  () => [props.familyName, props.familyItemLimit, props.familyEmoji] as const,
+  ([name, limit, emoji]) => {
+    renameValue.value = name || ''
+    itemLimitValue.value = clampItemLimit(limit)
+    emojiValue.value = emoji || ''
+  },
+  { immediate: true },
+)
+
+// The "Saved" ticks all clear themselves after a beat. Tracked so unmounting
+// mid-tick (closing the modal, switching tab) does not leave a timer behind.
+const savedTimers = new Set<ReturnType<typeof setTimeout>>()
+
+function flashSaved(flag: { value: boolean }) {
+  flag.value = true
+  const timer = setTimeout(() => {
+    flag.value = false
+    savedTimers.delete(timer)
+  }, 2000)
+  savedTimers.add(timer)
+}
+
+onBeforeUnmount(() => {
+  for (const timer of savedTimers) clearTimeout(timer)
+  savedTimers.clear()
+})
+
+async function renameFamily() {
+  if (!props.isOwner) return
+  const nextName = renameValue.value.trim()
+  if (!nextName || !props.familyId || savingName.value) return
+  if (renameOverLimit.value) {
+    emit('error', `Family name must be ${FAMILY_NAME_MAX_LENGTH} characters or fewer.`, 'Name too long')
+    return
+  }
+  savingName.value = true
+  try {
+    const { error } = await db.from('families').update({ name: nextName }).eq('id', props.familyId)
+    if (error) {
+      emit('error', userMessage(error, 'Could not rename the family.'))
+      return
+    }
+    emit('refresh-family')
+    flashSaved(nameSaved)
+  } finally {
+    savingName.value = false
+  }
+}
+
+async function saveEmoji() {
+  if (!props.isOwner || !props.familyId || savingEmoji.value) return
+  savingEmoji.value = true
+  try {
+    const { error } = await db
+      .from('families')
+      .update({ emoji: emojiValue.value || null })
+      .eq('id', props.familyId)
+    if (error) {
+      emit('error', userMessage(error, 'Could not save the family emoji.'))
+      return
+    }
+    emit('refresh-family')
+    flashSaved(emojiSaved)
+  } finally {
+    savingEmoji.value = false
+  }
+}
+
+// Picking is local; Save commits it, like the name and the item limit.
+function pickEmoji(emoji: string) {
+  if (savingEmoji.value) return
+  // Tapping the current selection clears it (back to no emoji).
+  emojiValue.value = emojiValue.value === emoji ? '' : emoji
+}
+
+async function saveItemLimit() {
+  if (!props.familyId || savingItemLimit.value) return
+
+  const normalizedLimit = clampItemLimit(itemLimitValue.value)
+  itemLimitValue.value = normalizedLimit
+
+  savingItemLimit.value = true
+  try {
+    const { error } = await db
+      .from('families')
+      .update({ max_items_per_member: normalizedLimit })
+      .eq('id', props.familyId)
+    if (error) {
+      emit('error', userMessage(error, 'Could not save the item limit.'))
+      return
+    }
+    emit('refresh-family')
+    flashSaved(itemLimitSaved)
+  } finally {
+    savingItemLimit.value = false
+  }
+}
+</script>
+
+<template>
+  <div class="tab-panel tab-panel--overlay">
+    <div class="panel-section">
+      <h4 class="panel-section-title">General Preferences</h4>
+
+      <div class="preferences-grid">
+        <section v-if="isOwner" class="card-item pref-card">
+          <div class="pref-card__head">
+            <span class="pref-card__icon" aria-hidden="true" v-html="squarePenIcon"></span>
+            <div class="pref-card__meta">
+              <h5>Family Name</h5>
+              <p>Choose a name everyone in your household can recognize quickly.</p>
+            </div>
+          </div>
+
+          <div class="card-item__form">
+            <div class="input-action-group">
+              <div class="input-wrapper">
+                <input
+                  id="familyNameInput"
+                  v-model="renameValue"
+                  class="panel-input"
+                  type="text"
+                  placeholder="My Awesome Family"
+                />
+              </div>
+              <div class="panel-save-stack">
+                <button
+                  class="panel-save-btn"
+                  type="button"
+                  :disabled="savingName"
+                  @click="renameFamily"
+                >
+                  <span v-if="savingName" class="btn-spinner"></span>
+                  <span v-else-if="nameSaved" class="success-state animate-pop">
+                    <span class="success-icon-wrap" aria-hidden="true" v-html="checkIcon"></span>
+                    Saved
+                  </span>
+                  <span v-else>Save</span>
+                </button>
+                <p class="panel-counter panel-counter--under-save" :class="{ 'panel-counter--danger': renameOverLimit }">
+                  {{ renameLength }}/{{ FAMILY_NAME_MAX_LENGTH }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section v-if="isOwner" class="card-item pref-card">
+          <div class="pref-card__head">
+            <span class="pref-card__icon" aria-hidden="true" v-html="stickerIcon"></span>
+            <div class="pref-card__meta">
+              <h5>Family Emoji</h5>
+              <p>Pick an emoji to represent your family in the switcher.</p>
+            </div>
+            <span
+              class="pref-card__value pref-card__value--emoji"
+              :class="{ 'pref-card__value--emoji-default': !emojiValue }"
+            >{{ emojiValue || DEFAULT_FAMILY_EMOJI }}</span>
+          </div>
+
+          <div class="emoji-picker">
+            <button
+              v-for="e in FAMILY_EMOJIS"
+              :key="e"
+              type="button"
+              class="emoji-option"
+              :class="{ 'emoji-option--active': emojiValue === e }"
+              :aria-pressed="emojiValue === e"
+              :aria-label="`Use ${e} for this family`"
+              @click="pickEmoji(e)"
+            >{{ e }}</button>
+          </div>
+
+          <div class="card-item__form">
+            <div class="input-action-group input-action-group--end">
+              <button
+                class="panel-save-btn"
+                type="button"
+                :disabled="savingEmoji"
+                @click="saveEmoji"
+              >
+                <span v-if="savingEmoji" class="btn-spinner"></span>
+                <span v-else-if="emojiSaved" class="success-state animate-pop">
+                  <span class="success-icon-wrap" aria-hidden="true" v-html="checkIcon"></span>
+                  Saved
+                </span>
+                <span v-else>Save</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section class="card-item pref-card">
+          <div class="pref-card__head">
+            <span class="pref-card__icon" aria-hidden="true" v-html="shoppingCartIcon"></span>
+            <div class="pref-card__meta">
+              <h5>Item Limit Per User</h5>
+              <p>Control how many active (unchecked) items each member can add.</p>
+            </div>
+            <span class="pref-card__value">{{ itemLimitValue }}</span>
+          </div>
+
+          <div class="pref-range-wrap">
+            <span class="pref-range-minmax">{{ ITEM_LIMIT_MIN }}</span>
+            <input
+              v-model.number="itemLimitValue"
+              class="pref-range"
+              type="range"
+              :min="ITEM_LIMIT_MIN"
+              :max="ITEM_LIMIT_MAX"
+              step="1"
+              aria-label="Item limit slider"
+            />
+            <span class="pref-range-minmax">{{ ITEM_LIMIT_MAX }}</span>
+          </div>
+
+          <div class="card-item__form">
+            <div class="input-action-group input-action-group--end">
+              <button
+                class="panel-save-btn"
+                type="button"
+                :disabled="savingItemLimit"
+                @click="saveItemLimit"
+              >
+                <span v-if="savingItemLimit" class="btn-spinner"></span>
+                <span v-else-if="itemLimitSaved" class="success-state animate-pop">
+                  <span class="success-icon-wrap" aria-hidden="true" v-html="checkIcon"></span>
+                  Saved
+                </span>
+                <span v-else>Save</span>
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+/* Emoji picker */
+.emoji-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(2.5rem, 1fr));
+  gap: 0.4rem;
+  margin-top: 0.85rem;
+}
+
+.emoji-option {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  line-height: 1;
+  border: var(--border-width-thin) solid var(--border-main);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
+}
+
+.emoji-option:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: var(--bg-hover);
+}
+
+.emoji-option:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.emoji-option--active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-bg);
+  box-shadow: var(--focus-ring-primary);
+}
+
+.emoji-option:disabled {
+  cursor: default;
+}
+
+.pref-card__value--emoji {
+  font-size: 1.35rem;
+  line-height: 1;
+  /* Square, not the wide number-badge shape it inherits from .pref-card__value. */
+  width: 2.4rem;
+  height: 2.4rem;
+  min-width: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+}
+
+/* Nothing picked yet: the tile previews the fallback the switcher will use,
+   dimmed so it still reads as a placeholder rather than a choice. */
+.pref-card__value--emoji-default {
+  opacity: 0.45;
+}
+
+.preferences-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.pref-card {
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--color-primary) 3%, var(--bg-surface)) 0%,
+    var(--bg-surface) 60%
+  );
+}
+
+.pref-card__head {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.7rem;
+}
+
+.pref-card__meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.pref-card__meta h5 {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: var(--weight-extrabold);
+  color: var(--ui-text-strong);
+}
+
+.pref-card__meta p {
+  margin: 0.18rem 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--ui-text-muted);
+}
+
+.pref-card__icon {
+  width: 20px;
+  height: 20px;
+  color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pref-card__icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+}
+
+.pref-card__value {
+  font-family: 'SF Mono', Consolas, Monaco, 'Andale Mono', monospace;
+  font-size: var(--text-base);
+  font-weight: var(--weight-extrabold);
+  color: var(--ui-text-strong);
+  background: var(--bg-surface-alt);
+  border: var(--border-width-thin) solid var(--ui-border-soft);
+  border-radius: var(--radius-sm);
+  padding: 0.22rem 0.5rem;
+  min-width: 2.2rem;
+  text-align: center;
+}
+
+.pref-range-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.pref-range-minmax {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--ui-text-muted);
+  min-width: 1rem;
+  text-align: center;
+}
+
+.pref-range {
+  flex: 1;
+  appearance: none;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--border-light);
+  outline: none;
+}
+
+.pref-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  border: var(--border-width-thick) solid var(--bg-surface);
+  box-shadow: var(--elevation-soft);
+  cursor: pointer;
+}
+
+.pref-range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  border: var(--border-width-thick) solid var(--bg-surface);
+  box-shadow: var(--elevation-soft);
+  cursor: pointer;
+}
+
+.input-action-group {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.15rem;
+  align-items: flex-start;
+}
+
+.input-action-group--end {
+  justify-content: flex-end;
+}
+
+.input-wrapper {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.panel-input {
+  width: 100%;
+  border: var(--border-width-thin) solid var(--ui-border);
+  border-radius: var(--radius-md);
+  padding: 0.55rem 0.75rem;
+  font-size: var(--text-base);
+  background: var(--bg-surface);
+  color: var(--ui-text-strong);
+  transition: all var(--transition-base) ease;
+}
+
+.panel-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: var(--focus-ring-primary);
+  outline: none;
+}
+
+.panel-input::placeholder {
+  color: var(--border-dark);
+}
+
+.panel-counter {
+  margin: 0.25rem 0 0;
+  text-align: right;
+  font-size: var(--text-xs);
+  color: var(--ui-text-muted);
+}
+
+.panel-counter--under-save {
+  min-width: 82px;
+  text-align: center;
+}
+
+.panel-save-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.panel-counter--danger {
+  color: var(--danger-main);
+  font-weight: var(--weight-bold);
+}
+
+.panel-save-btn {
+  background: var(--bg-hover);
+  color: var(--ui-text-strong);
+  border: var(--border-width-thin) solid var(--ui-border-soft);
+  border-radius: var(--radius-md);
+  padding: 0.55rem 1rem;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  cursor: pointer;
+  transition: all var(--transition-base) ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 82px;
+}
+
+.panel-save-btn:hover:not(:disabled) {
+  background: var(--border-light);
+  border-color: var(--border-dark);
+}
+
+.panel-save-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+</style>

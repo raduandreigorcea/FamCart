@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-// The module creates Supabase clients at import time; stub that out so the
-// test exercises fetchWithRetry alone (CI has no VITE_SUPABASE_* env).
+// The client is built lazily now, so importing this module no longer calls
+// createClient — but the stubs stay: they keep the test exercising
+// fetchWithRetry alone, and CI has no VITE_SUPABASE_* env to build one from.
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({}) }))
 vi.mock('@clerk/vue', () => ({ useAuth: () => ({}) }))
 

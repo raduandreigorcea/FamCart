@@ -38,7 +38,7 @@ function reload() {
       <img src="/icons/pwa-192.png" alt="" class="crash__logo" />
       <h1 class="crash__title">Something went wrong</h1>
       <p class="crash__text">
-        FamCart hit an error and had to stop. Your list is safe — it lives on the
+        FamCart hit an error and had to stop. Your list is safe. It lives on the
         server, not in this page.
       </p>
       <AppButton variant="primary" @click="reload">Reload</AppButton>

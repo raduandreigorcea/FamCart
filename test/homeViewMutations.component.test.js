@@ -356,7 +356,7 @@ describe('adding a custom product', () => {
     // ...and the catalog itself saw nothing but reads. Contributing goes through
     // add_custom_product (see homeViewCustomProduct.component.test.js), which is
     // what scopes the product to this family and checks membership. RLS grants
-    // SELECT and nothing else (migration 022), so a direct write here would be
+    // SELECT and nothing else (006_product_catalog.sql), so a direct write here would be
     // rejected by the database anyway — this catches it at the source instead.
     expect(mocks.db.calls.filter((c) => c.table === 'product_catalog' && c.op !== 'select')).toEqual([])
   })
@@ -549,7 +549,7 @@ describe('toggleItem', () => {
   it('shows the limit popup (not a raw error) when unchecking would exceed the cap', async () => {
     const item = makeItem({ id: 'item-1', name: 'Milk', checked: true, checked_at: '2026-01-01T00:00:00.000Z' })
     const wrapper = await mountHome({ items: [item] })
-    // The DB trigger (migration 010) now rejects an uncheck that breaks the cap.
+    // The DB trigger (004_shopping_list.sql) now rejects an uncheck that breaks the cap.
     mocks.db.handlers['shopping_list_items.update'] = () => ({
       data: null,
       error: { message: 'You reached your limit of 50 active items.', detail: 'member_active_item_limit_exceeded' },

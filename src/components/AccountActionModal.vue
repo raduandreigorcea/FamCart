@@ -134,7 +134,7 @@ watch(
         <div class="account-dialog__header">
           <div class="account-dialog__title-wrap">
             <div class="account-dialog__icon-bg">
-              <span class="account-header-icon" v-html="userRoundIconRaw"></span>
+              <span class="account-header-icon" aria-hidden="true" v-html="userRoundIconRaw"></span>
             </div>
             <div>
               <h3 id="account-modal-title">Account Settings</h3>

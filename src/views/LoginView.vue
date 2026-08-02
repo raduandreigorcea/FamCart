@@ -39,23 +39,30 @@ watch(isSignedIn, (signedIn) => {
     if (signedIn) router.replace('/')
 }, { immediate: true })
 
+// The two error shapes that reach this function: Clerk's, which carries an
+// `errors` array, and a network failure, which carries none. Structural rather
+// than imported — @clerk/types is not a direct dependency — and narrow enough
+// that reading a field off it is checked rather than waved through.
+interface ClerkErrorLike {
+    errors?: { code?: string; message?: string; longMessage?: string }[]
+}
+
 // Clerk rejects sign-in attempts with session_exists when a session is
 // already active. That is an account-level condition, not an input problem,
 // so it gets the app's announcement dialog instead of the inline field error.
-// Clerk errors carry an `errors` array; a network failure carries none. Typed
-// loosely on purpose — this is the one place both shapes arrive together.
-function handleSignInError(e: any, fallback: string) {
-    if (e?.errors?.some((err: { code?: string }) => err.code === 'session_exists')) {
+function handleSignInError(e: unknown, fallback: string) {
+    const clerkErrors = (e as ClerkErrorLike | null | undefined)?.errors
+    if (clerkErrors?.some((err) => err.code === 'session_exists')) {
         alreadySignedInOpen.value = true
         return
     }
     // A network failure has no Clerk error array; show a plain offline message
     // rather than the raw "Failed to fetch".
-    if (isOfflineError(e) && !e?.errors?.length) {
+    if (isOfflineError(e) && !clerkErrors?.length) {
         error.value = 'You appear to be offline. Check your connection and try again.'
         return
     }
-    error.value = e?.errors?.[0]?.longMessage ?? e?.errors?.[0]?.message ?? fallback
+    error.value = clerkErrors?.[0]?.longMessage ?? clerkErrors?.[0]?.message ?? fallback
 }
 
 function goToApp() {
@@ -121,7 +128,7 @@ async function signInWithOAuth(providerId: string) {
             // (no-op without a DSN). The dialog shows the diagnosis the
             // error carries: which state the attempt got stuck in.
             captureException(e)
-            handleSignInError(e, (e as Error)?.message || 'OAuth sign-in failed.')
+            handleSignInError(e, (e as Error)?.message || 'Could not sign in with that provider.')
         }
         loadingProvider.value = null
         return
@@ -137,7 +144,7 @@ async function signInWithOAuth(providerId: string) {
             redirectUrlComplete: `${window.location.origin}/`,
         })
     } catch (e) {
-        handleSignInError(e, 'OAuth sign-in failed.')
+        handleSignInError(e, 'Could not sign in with that provider.')
         loadingProvider.value = null
     }
 }
@@ -154,7 +161,7 @@ async function handleEmailSubmit() {
             (f) => f.strategy === 'email_code',
         )
         if (!otpFactor) {
-            error.value = 'Email code sign-in is not enabled for this account.'
+            error.value = 'This account cannot sign in with an email code.'
             return
         }
         await signIn.value!.prepareFirstFactor({
@@ -285,7 +292,7 @@ function goBack() {
                     :disabled="!!loadingProvider"
                     :aria-label="provider.label" :title="provider.label" @click="signInWithOAuth(provider.id)">
                     <span v-if="loadingProvider === provider.id" class="oauth-spinner"></span>
-                    <span v-else class="oauth-icon" v-html="provider.icon"></span>
+                    <span v-else class="oauth-icon" aria-hidden="true" v-html="provider.icon"></span>
                 </button>
             </div>
         </AppCard>
@@ -300,7 +307,7 @@ function goBack() {
             @cancel="goToApp"
         />
 
-        <ErrorModal title="Sign-in failed" :message="error" @dismiss="error = ''" />
+        <ErrorModal title="Could not sign in" :message="error" @dismiss="error = ''" />
     </div>
 </template>
 
