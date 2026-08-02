@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, type PropType } from 'vue'
+import { computed, onBeforeUnmount, ref, type PropType } from 'vue'
 import ShoppingListItem from './ShoppingListItem.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import ListFilterMenu from './ListFilterMenu.vue'
@@ -123,11 +123,19 @@ const buying = ref(false)
 const buttonSuccess = ref(false)
 const drainingIds = ref<string[]>([])
 
+// The checkout the user has already confirmed, held until the drain finishes.
+// Non-null means the emit is still owed to the parent — the animation is the
+// only thing outstanding, so it must survive whatever interrupts it.
+let pendingCheckout: string[] | null = null
+let drainTimer: ReturnType<typeof setTimeout> | null = null
+let successTimer: ReturnType<typeof setTimeout> | null = null
+
 function startCheckout() {
   if (buying.value || !checkedItems.value.length) return
   const ids = checkedItems.value.map((i) => i.id)
   buying.value = true
   buttonSuccess.value = true
+  pendingCheckout = ids
   // Park the thumb at the end of the track for the success state, whichever
   // path got us here (a completed drag already has it there; the keyboard
   // path animates it across).
@@ -143,21 +151,39 @@ function startCheckout() {
   // Wait out the last row's fall (its delay + one drain duration) before the
   // parent removes them, so nothing pops out mid-animation.
   const total = DRAIN_MS + Math.min(ids.length - 1, 6) * STAGGER_MS
-  window.setTimeout(() => finishCheckout(ids), total)
+  drainTimer = setTimeout(() => finishCheckout(ids), total)
 }
 
 function finishCheckout(ids: string[]) {
+  // Idempotent: the drain timer and the unmount flush can both reach here, and
+  // archiving the same checkout twice would be a second RPC for nothing.
+  if (!pendingCheckout) return
+  pendingCheckout = null
+  if (drainTimer) {
+    clearTimeout(drainTimer)
+    drainTimer = null
+  }
   emit('checkout', ids)
   drainingIds.value = []
   buying.value = false
   // Let the success tick linger a beat; the bar usually unmounts before this
   // fires because the checked list just emptied. On a failed checkout the parent
   // restores the items and the bar reappears cleanly in its idle state.
-  window.setTimeout(() => {
+  successTimer = setTimeout(() => {
     buttonSuccess.value = false
     dragX.value = 0
   }, 260)
 }
+
+onBeforeUnmount(() => {
+  if (drainTimer) clearTimeout(drainTimer)
+  if (successTimer) clearTimeout(successTimer)
+  // Unmounting mid-drain (a route change, a family switch tearing the list
+  // down) used to drop the checkout on the floor: the timer died with the
+  // component and the rows stayed checked in the database, having told the user
+  // they were bought. The confirmation already happened — flush it.
+  if (pendingCheckout) finishCheckout(pendingCheckout)
+})
 
 // ─── Slide to confirm ─────────────────────────────────────────────────────────
 // Checking out archives the whole checked section, so the bar is a
@@ -352,8 +378,8 @@ const labelText = computed(() =>
           @click="onThumbClick"
         >
           <span class="buy-bar__icon" aria-hidden="true">
-            <span class="buy-bar__cart" v-html="cartIcon"></span>
-            <span class="buy-bar__check" v-html="checkIcon"></span>
+            <span class="buy-bar__cart" aria-hidden="true" v-html="cartIcon"></span>
+            <span class="buy-bar__check" aria-hidden="true" v-html="checkIcon"></span>
           </span>
         </button>
       </div>

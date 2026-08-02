@@ -197,7 +197,7 @@ function onKeydown(event: KeyboardEvent) {
       :style="{ '--pull': pullProgress }"
       aria-hidden="true"
     >
-      <span class="item-action__icon" v-html="checkIcon"></span>
+      <span class="item-action__icon" aria-hidden="true" v-html="checkIcon"></span>
       <span class="item-action__label">{{ item.checked ? 'Uncheck' : 'Got it' }}</span>
     </div>
     <!-- Action revealed under a leftward swipe -->
@@ -209,7 +209,7 @@ function onKeydown(event: KeyboardEvent) {
       aria-hidden="true"
     >
       <span class="item-action__label">Remove</span>
-      <span class="item-action__icon" v-html="xIcon"></span>
+      <span class="item-action__icon" aria-hidden="true" v-html="xIcon"></span>
     </div>
 
     <div

@@ -40,7 +40,7 @@ export default defineConfig({
       injectRegister: 'auto',
       includeAssets: ['icons/*.png', 'screen.webp'],
       manifest: {
-        name: 'FamCart — Family Shopping List',
+        name: 'FamCart: Family Shopping List',
         short_name: 'FamCart',
         description: 'A shared grocery list for your family, with live updates.',
         theme_color: '#4d8c65',

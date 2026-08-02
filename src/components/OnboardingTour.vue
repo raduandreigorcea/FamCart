@@ -99,7 +99,7 @@ async function copyCode() {
               <div v-if="current.key === 'add'" class="art-add">
                 <div class="art-addbar">
                   <span class="art-addbar__text">Avocados</span>
-                  <span class="art-addbar__btn" v-html="addIcon"></span>
+                  <span class="art-addbar__btn" aria-hidden="true" v-html="addIcon"></span>
                 </div>
                 <div class="art-suggest">
                   <span class="art-suggest__row"><span>🥑</span> Avocado</span>

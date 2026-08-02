@@ -111,7 +111,7 @@ onBeforeUnmount(() => {
         <div class="popover-panel" :style="anchor">
           <header v-if="heading" class="popover-header">
             <span v-if="icon" class="popover-header__icon-bg" aria-hidden="true">
-              <span class="popover-header__icon" v-html="icon"></span>
+              <span class="popover-header__icon" aria-hidden="true" v-html="icon"></span>
             </span>
             <span class="popover-header__text">
               <span class="popover-header__title">{{ heading }}</span>

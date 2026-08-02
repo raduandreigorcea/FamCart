@@ -15,7 +15,7 @@ import { useFamilyRealtime } from '../lib/familyRealtime'
 import { useProductSuggestions } from '../lib/productSuggestions'
 import type { ProductSuggestion } from '../lib/productSearch'
 import type { FamilyMemberProfile, ShoppingItemRow } from '../lib/familyRealtime'
-import { ITEM_NAME_MAX_LENGTH, useShoppingListActions } from '../lib/shoppingListActions'
+import { useShoppingListActions } from '../lib/shoppingListActions'
 import { upsertOwnProfile } from '../lib/profile'
 import { cleanAuthCallbackUrl } from '../lib/authCallbackUrl'
 import {
@@ -27,9 +27,15 @@ import {
   clearActiveFamilyId,
 } from '../lib/familyCache'
 import { flushOfflineQueue, isOfflineError } from '../lib/offlineQueue'
+// isCurrentlyOffline is the app's one answer to "are we offline", handed to
+// every composable below that has to choose between writing and queueing. The
+// composite it computes (Capacitor status first, navigator.onLine as the
+// definite-offline backstop) used to be re-derived here, which left realtime
+// reading navigator directly — see the note in lib/connectivity.
 import { isCurrentlyOffline, onReconnect } from '../lib/connectivity'
 import { rememberUser, getRememberedUser } from '../lib/session'
 import { useFirstRunGreeting } from '../lib/firstRunGreeting'
+import { clampItemLimit, ITEM_LIMIT_DEFAULT, ITEM_NAME_MAX_LENGTH } from '../lib/limits'
 
 const { userId, isLoaded } = useAuth()
 const { user } = useUser()
@@ -55,7 +61,7 @@ interface MemberRow {
 }
 interface MembershipRow {
   family_id: string
-  families?: { name?: string | null } | null
+  families?: { name?: string | null; emoji?: string | null } | null
 }
 
 const items = ref<ShoppingItemRow[]>([])
@@ -73,7 +79,7 @@ const familyId = ref<string | null>(null)
 const familyName = ref('')
 const familyInviteCode = ref('')
 const familyOwnerId = ref('')
-const familyItemLimit = ref(50)
+const familyItemLimit = ref(ITEM_LIMIT_DEFAULT)
 const familyEmoji = ref('')
 const familyMembers = ref<FamilyMemberProfile[]>([])
 // Roster keyed by user id, so a list row can resolve its author's live avatar
@@ -103,13 +109,20 @@ const {
   clearLastAdded,
   recordProductAdd,
   clearSuggestions,
-} = useProductSuggestions({ db, familyId, items, query: newItem, isOffline })
+} = useProductSuggestions({ db, familyId, items, query: newItem, isOffline: isCurrentlyOffline })
 // A checkout that just succeeded is proof this family has shopped, available
 // immediately rather than after the stats refetch lands.
 const boughtThisSession = ref(false)
-// The last known answer, from the cached snapshot. Offline this is the only one
-// there is, since purchase history cannot be fetched.
-const cachedHasShopped = ref(false)
+// Which family the cached snapshot said had shopped, or '' for none. Offline
+// this is the only answer there is, since purchase history cannot be fetched.
+//
+// The family id rather than a bare boolean, because the snapshot is keyed to the
+// USER: after creating or joining a family, that family is active immediately
+// while the painted snapshot still describes the previous one. A boolean carried
+// the old family's answer straight onto the new family's empty list, which then
+// opened on "All bought" having bought nothing. Storing what the answer is ABOUT
+// makes it self-invalidating — no path can forget to clear it.
+const cachedShoppedFamilyId = ref('')
 const loadError = ref('')
 const customProductOpen = ref(false)
 // The one-time first-run sequence: gesture tour, then the notifications ask.
@@ -122,7 +135,7 @@ const {
   closeTour: closeOnboardingTour,
   acceptNotifications,
   declineNotifications,
-} = useFirstRunGreeting({ userId, isOffline })
+} = useFirstRunGreeting({ userId, isOffline: isCurrentlyOffline })
 const hasInitialized = ref(false)
 // True while switchFamily is tearing down the old family and loading the new one.
 // Drives the skeleton (instead of the "no items" empty state) so a switch never
@@ -149,7 +162,7 @@ const {
   familyId,
   userId: effectiveUserId,
   itemLimit: familyItemLimit,
-  isOffline,
+  isOffline: isCurrentlyOffline,
   draftName: newItem,
   draftQuantity: newQty,
   selectedProduct,
@@ -198,7 +211,11 @@ const listLoading = computed(() => initialLoading.value || switchingFamily.value
 // Has this family ever bought anything? Purchase history is the record, but a
 // checkout in this session counts before the refetch confirms it.
 const hasShopped = computed(
-  () => familyProductStats.value.size > 0 || boughtThisSession.value || cachedHasShopped.value,
+  () =>
+    familyProductStats.value.size > 0
+    || boughtThisSession.value
+    // Only while the cached answer is about the family currently on screen.
+    || (!!familyId.value && cachedShoppedFamilyId.value === familyId.value),
 )
 
 // The three error channels are independent, so more than one can be set at once
@@ -229,15 +246,6 @@ const activeError = computed(() => {
 // this gates nothing but the message itself.
 const emptyStateAnswerable = computed(() => productStatsLoaded.value || boughtThisSession.value)
 
-// Mutations check this at call time: on a definite offline signal they queue
-// the write instead of hitting the network. Mid-flight failures on a flaky
-// connection keep the existing rollback paths. The Capacitor connectivity ref
-// is authoritative on native; navigator.onLine is the web/test fallback.
-function isOffline() {
-  if (isCurrentlyOffline()) return true
-  return typeof navigator !== 'undefined' && navigator.onLine === false
-}
-
 let stopReconnect: (() => void) | null = null
 
 onMounted(() => {
@@ -245,12 +253,21 @@ onMounted(() => {
   // for the browser and tests. Both funnel into the same idempotent sync.
   window.addEventListener('online', handleBackOnline)
   stopReconnect = onReconnect(handleBackOnline)
+  // The snapshot write is deferred to coalesce bursts, so it can still be
+  // outstanding when the app goes away — which on a phone is most of the time,
+  // and is exactly the moment the next cold boot depends on it. pagehide is the
+  // one teardown event that fires reliably on mobile Safari and in a WebView.
+  window.addEventListener('pagehide', flushSnapshot)
+  document.addEventListener('visibilitychange', flushSnapshotIfHidden)
   void initializeHome()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('online', handleBackOnline)
+  window.removeEventListener('pagehide', flushSnapshot)
+  document.removeEventListener('visibilitychange', flushSnapshotIfHidden)
   if (stopReconnect) stopReconnect()
+  flushSnapshot()
 })
 
 // Picking a suggestion adds it outright rather than filling the input: the pick
@@ -308,9 +325,24 @@ watch([isLoaded, userId], () => {
   void initializeHome()
 })
 
-async function initializeHome() {
-  if (hasInitialized.value) return
+// hasInitialized is only set once the whole sequence below has finished, so it
+// cannot keep a second run out while the first is still awaiting. Both entry
+// points (onMounted and the Clerk watcher) can fire inside that window — a
+// session resolving in another tab is enough — and two overlapping runs mean
+// duplicate loadFamilies/loadItems calls and two sets of realtime channels.
+let initializing = false
 
+async function initializeHome() {
+  if (hasInitialized.value || initializing) return
+  initializing = true
+  try {
+    await runInitializeHome()
+  } finally {
+    initializing = false
+  }
+}
+
+async function runInitializeHome() {
   // Clerk has not confirmed the session yet. A remembered user with a cached
   // snapshot still gets painted right now rather than staring at skeletons for
   // the whole Clerk warm-up: the router already vetted us here, and this is the
@@ -323,7 +355,7 @@ async function initializeHome() {
     if (uid && loadFamilySnapshot(localStorage, uid)) {
       sanitizeAuthCallbackUrl()
       hydrateFromCachedSnapshot()
-      if (isOffline()) hasInitialized.value = true
+      if (isCurrentlyOffline()) hasInitialized.value = true
     }
     return
   }
@@ -397,6 +429,12 @@ async function initializeHome() {
 let hydratedUserId = ''
 
 // Throw away a cache painted for a different user than the one Clerk confirmed.
+// Clears exactly what hydrateFromCachedSnapshot below sets — the two have to
+// stay a matched pair, or a field the paint wrote survives into the next
+// account. familyItemLimit and the cached shopping answer were the two that did:
+// the previous user's item cap governed the add form until loadFamilyHeader
+// returned, and their shopping history decided whether a new user's empty list
+// read "All bought" or "Nothing here yet".
 function discardCachedPaint() {
   hydratedUserId = ''
   paintedFromCache.value = false
@@ -406,7 +444,9 @@ function discardCachedPaint() {
   familyName.value = ''
   familyInviteCode.value = ''
   familyOwnerId.value = ''
+  familyItemLimit.value = ITEM_LIMIT_DEFAULT
   familyEmoji.value = ''
+  cachedShoppedFamilyId.value = ''
 }
 
 // Paint the last known state immediately (stale-while-revalidate): a returning
@@ -428,7 +468,36 @@ function hydrateFromCachedSnapshot() {
   // Offline there is no purchase history to read, so the cached answer is the
   // only one available. Without it an empty list tells a family that shops every
   // week they have never started.
-  cachedHasShopped.value = snapshot.hasShopped
+  cachedShoppedFamilyId.value = snapshot.hasShopped ? snapshot.familyId : ''
+}
+
+// Writing the snapshot means JSON-stringifying the whole list and handing it to
+// localStorage, which is synchronous and blocks the main thread. The watcher
+// below is deep, so a quantity bump fires it per change — during a checkout,
+// once per row. Coalesce into one write on the next tick: nothing reads the
+// snapshot until a future page load, so it only has to be right when the dust
+// settles, not on every intermediate state.
+let snapshotTimer: ReturnType<typeof setTimeout> | null = null
+
+function schedulePersistSnapshot() {
+  if (snapshotTimer) return
+  snapshotTimer = setTimeout(() => {
+    snapshotTimer = null
+    persistSnapshot()
+  }, 0)
+}
+
+// Write now if a write is owed. Called on the way out, where "next tick" may
+// never come.
+function flushSnapshot() {
+  if (!snapshotTimer) return
+  clearTimeout(snapshotTimer)
+  snapshotTimer = null
+  persistSnapshot()
+}
+
+function flushSnapshotIfHidden() {
+  if (document.visibilityState === 'hidden') flushSnapshot()
 }
 
 function persistSnapshot() {
@@ -449,9 +518,11 @@ function persistSnapshot() {
 // Keep the snapshot current as state changes (mutations, realtime events).
 // Guarded by hasInitialized inside persistSnapshot, so hydration itself and
 // partial init states are never written back.
-watch([items, familyMembers, familyName, familyInviteCode, familyItemLimit, familyEmoji], persistSnapshot, {
-  deep: true,
-})
+watch(
+  [items, familyMembers, familyName, familyInviteCode, familyItemLimit, familyEmoji],
+  schedulePersistSnapshot,
+  { deep: true },
+)
 
 function sanitizeAuthCallbackUrl() {
   const cleanedUrl = cleanAuthCallbackUrl(window.location.href)
@@ -460,7 +531,7 @@ function sanitizeAuthCallbackUrl() {
 
 async function loadFamilyHeader() {
   const [{ data: family, error: familyErr }, { data: members, error: membersErr }] = await Promise.all([
-    db.from('families').select('name, invite_code, created_by, max_items_per_member').eq('id', familyId.value).single(),
+    db.from('families').select('name, invite_code, created_by, max_items_per_member, emoji').eq('id', familyId.value).single(),
     // Name/avatar live in profiles now; embed them so the roster keeps the same
     // { user_id, display_name, image_url, role } shape every consumer expects.
     db.from('family_members').select('user_id, role, profiles(display_name, image_url)').eq('family_id', familyId.value),
@@ -470,20 +541,8 @@ async function loadFamilyHeader() {
     familyName.value = family.name
     familyInviteCode.value = family.invite_code || ''
     familyOwnerId.value = family.created_by || ''
-    familyItemLimit.value = Math.min(50, Math.max(1, Number(family.max_items_per_member) || 50))
-  }
-
-  // Best-effort, on its own query: the emoji column may not be migrated yet, and
-  // a missing-column error here must not take the family header down with it.
-  try {
-    const { data: emojiRow, error: emojiErr } = await db
-      .from('families')
-      .select('emoji')
-      .eq('id', familyId.value)
-      .maybeSingle()
-    if (!emojiErr) familyEmoji.value = emojiRow?.emoji || ''
-  } catch {
-    // Column absent → the family simply has no emoji.
+    familyItemLimit.value = clampItemLimit(family.max_items_per_member)
+    familyEmoji.value = family.emoji || ''
   }
 
   if (!membersErr && Array.isArray(members)) {
@@ -509,29 +568,18 @@ async function refreshFamilyAfterSettingsChange() {
 async function loadFamilies() {
   const { data, error } = await db
     .from('family_members')
-    .select('family_id, families(name)')
+    .select('family_id, families(name, emoji)')
     .eq('user_id', userId.value)
   if (error) return { error }
   // The switcher renders an emoji tile, a name and a tick, so that is all a row
-  // carries. It used to fetch every family's full roster here to draw composite
-  // member avatars; those are gone, and so is the extra round trip.
+  // carries, and the embed brings all of it back in this one query. It used to
+  // fetch every family's full roster here to draw composite member avatars;
+  // those are gone, and so is the extra round trip.
   const list = ((data ?? []) as unknown as MembershipRow[]).map((row) => ({
     id: row.family_id,
     name: row.families?.name ?? '',
-    emoji: '',
+    emoji: row.families?.emoji ?? '',
   }))
-
-  // Best-effort family emoji (its column may be unmigrated), keyed by family id.
-  // RLS scopes families to this user, so one unfiltered select is enough.
-  try {
-    const { data: emojiRows, error: emojiErr } = await db.from('families').select('id, emoji')
-    if (!emojiErr && Array.isArray(emojiRows)) {
-      const emojiById = new Map(emojiRows.map((r) => [r.id, r.emoji || '']))
-      for (const fam of list) fam.emoji = emojiById.get(fam.id) || ''
-    }
-  } catch {
-    // Column absent → families just have no emoji.
-  }
 
   // Stable, name-ordered so the switcher never reshuffles between loads.
   families.value = list.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
@@ -559,8 +607,6 @@ async function switchFamily(id: string) {
   // yet" before the refetch turns it into "All bought".
   productStatsLoaded.value = false
   boughtThisSession.value = false
-  // The cached answer belonged to the family we just left.
-  cachedHasShopped.value = false
   loadError.value = ''
   // Show the new name straight away (we already know it from the switcher list);
   // only the roster is unknown until loadFamilyHeader returns, so that's all the

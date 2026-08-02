@@ -1,35 +1,33 @@
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, onBeforeUnmount, type PropType } from 'vue'
+import { computed, ref, watch, type PropType } from 'vue'
 import { useAuth } from '@clerk/vue'
-import { useSupabase } from '../supabase'
 import AppModal from './AppModal.vue'
-import type { FamilyMemberProfile } from '../lib/familyRealtime'
 import ConfirmModal from './ConfirmModal.vue'
+import ErrorModal from './ErrorModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
-import {
-  normalizeMemberRole,
-  sortMembersForDisplay,
-  canManageMember as canManageMemberRule,
-  canPromoteToModerator as canPromoteRule,
-  canDemoteFromModerator as canDemoteRule,
-} from '../lib/memberRoles'
-import { DEFAULT_FAMILY_EMOJI, FAMILY_EMOJIS } from '../lib/familyEmoji'
+import OverviewPanel from './familySettings/OverviewPanel.vue'
+import PreferencesPanel from './familySettings/PreferencesPanel.vue'
+import MembersPanel from './familySettings/MembersPanel.vue'
+import DangerPanel from './familySettings/DangerPanel.vue'
+import AboutPanel from './familySettings/AboutPanel.vue'
+import type { FamilyMemberProfile } from '../lib/familyRealtime'
+import { normalizeMemberRole } from '../lib/memberRoles'
+import { ITEM_LIMIT_DEFAULT } from '../lib/limits'
+import { useConfirm } from '../lib/useConfirm'
 
-// Raw SVG imports for the settings panels
+// The settings dialog's shell: which tab is showing, what the viewer is allowed
+// to do, and the two dialogs the panels share (confirm and error).
+//
+// Each tab is its own component under familySettings/. They were all inline
+// here once, which made this file 2,658 lines and meant every change to the
+// members list was a change to the same file as the emoji picker.
+
+// Raw SVG imports for the sidebar and header.
 import layoutGridIcon from '../assets/layout-grid.svg?raw'
 import settingsIconRaw from '../assets/settings.svg?raw'
 import usersIcon from '../assets/users-round.svg?raw'
 import trashIcon from '../assets/trash-2.svg?raw'
-import copyIcon from '../assets/copy.svg?raw'
-import checkIcon from '../assets/check.svg?raw'
 import infoIcon from '../assets/info.svg?raw'
-import crownIcon from '../assets/crown.svg?raw'
-import squarePenIcon from '../assets/square-pen.svg?raw'
-import shoppingCartIcon from '../assets/shopping-cart.svg?raw'
-import ellipsisIcon from '../assets/ellipsis.svg?raw'
-import shieldIcon from '../assets/shield.svg?raw'
-import userRoundIcon from '../assets/user-round.svg?raw'
-import stickerIcon from '../assets/sticker.svg?raw'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -37,7 +35,7 @@ const props = defineProps({
   familyId: { type: String, default: '' },
   familyName: { type: String, default: '' },
   inviteCode: { type: String, default: '' },
-  familyItemLimit: { type: Number, default: 50 },
+  familyItemLimit: { type: Number, default: ITEM_LIMIT_DEFAULT },
   familyEmoji: { type: String, default: '' },
   ownerUserId: { type: String, default: '' },
   memberProfiles: {
@@ -47,48 +45,43 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['close', 'refresh-family', 'family-deleted', 'family-left'])
-const FAMILY_NAME_MAX_LENGTH = 25
-
-// Replaced at build time with package.json's version, so bumping it there is
-// the only step needed for Settings -> About to show the new one.
-const appVersion = __APP_VERSION__
 
 const { userId } = useAuth()
-const db = useSupabase()
 
 const activeTab = ref('overview')
-const renameValue = ref('')
-const savingName = ref(false)
-const nameSaved = ref(false)
-const renameLength = computed(() => renameValue.value.length)
-const renameOverLimit = computed(() => renameLength.value > FAMILY_NAME_MAX_LENGTH)
-const itemLimitValue = ref(50)
-const savingItemLimit = ref(false)
-const itemLimitSaved = ref(false)
-const emojiValue = ref('')
-const savingEmoji = ref(false)
-const emojiSaved = ref(false)
-const regenerating = ref(false)
-const codeRegenerated = ref(false)
-const memberActionPendingId = ref('')
+// Which member row has its actions open, owned here because dismiss() below has
+// to know: with the menu up, Escape and a backdrop click belong to it.
 const openMemberMenuId = ref('')
-const leavingFamily = ref(false)
-const deletingFamily = ref(false)
-const copied = ref(false)
 
-// Re-sync editable fields from props every time the modal opens.
+// The awaitable confirm dialog, handed to the panels that destroy things so
+// there is one dialog rather than one per panel.
+const { state: confirmModal, confirm, resolveWith } = useConfirm()
+
+// Whatever the last action failed with. Panels emit `error` rather than opening
+// their own dialog, so every failure in here arrives on one surface.
+const actionError = ref('')
+const actionErrorTitle = ref('Something went wrong')
+
+function showError(message: string, title = 'Something went wrong') {
+  actionErrorTitle.value = title
+  actionError.value = message
+}
+
+// Re-sync the tab every time the modal opens; the panels re-seed their own
+// editable fields from their props.
 watch(
   () => props.open,
   (open) => {
     if (!open) return
     activeTab.value = props.initialTab || 'overview'
-    renameValue.value = props.familyName || ''
-    itemLimitValue.value = Math.min(50, Math.max(1, Number(props.familyItemLimit) || 50))
-    emojiValue.value = props.familyEmoji || ''
     closeMemberMenu()
   },
   { immediate: true },
 )
+
+function closeMemberMenu() {
+  openMemberMenuId.value = ''
+}
 
 function requestClose() {
   closeMemberMenu()
@@ -107,77 +100,6 @@ function dismiss() {
   requestClose()
 }
 
-// Confirm modal state
-// resolve is the pending promise's continuation, which is why the ref needs an
-// explicit type: seeded with null, it would otherwise narrow to `null` and the
-// assignment in showConfirm below would be the error rather than the fix.
-interface ConfirmModalState {
-  open: boolean
-  title: string
-  message: string
-  danger: boolean
-  confirmText: string
-  cancelText: string
-  showCancel: boolean
-  resolve: ((value: boolean) => void) | null
-}
-
-const confirmModal = ref<ConfirmModalState>({
-  open: false,
-  title: '',
-  message: '',
-  danger: false,
-  confirmText: 'Confirm',
-  cancelText: 'Cancel',
-  showCancel: true,
-  resolve: null,
-})
-
-function showConfirm({
-  title,
-  message,
-  danger = false,
-  confirmText = 'Confirm',
-  cancelText = 'Cancel',
-  showCancel = true,
-}: {
-  title: string
-  message: string
-  danger?: boolean
-  confirmText?: string
-  cancelText?: string
-  showCancel?: boolean
-}): Promise<boolean> {
-  return new Promise<boolean>((resolve) => {
-    confirmModal.value = { open: true, title, message, danger, confirmText, cancelText, showCancel, resolve }
-  })
-}
-
-function handleConfirmModalResult(result: boolean) {
-  const resolve = confirmModal.value.resolve
-  confirmModal.value = {
-    open: false,
-    title: '',
-    message: '',
-    danger: false,
-    confirmText: 'Confirm',
-    cancelText: 'Cancel',
-    showCancel: true,
-    resolve: null,
-  }
-  if (resolve) resolve(result)
-}
-
-async function showValidationErrorModal(message: string) {
-  await showConfirm({
-    title: 'Name Too Long',
-    message,
-    danger: true,
-    confirmText: 'OK',
-    showCancel: false,
-  })
-}
-
 const memberCount = computed(() => props.memberProfiles.length)
 const isOwner = computed(() => !!props.ownerUserId && props.ownerUserId === userId.value)
 
@@ -188,290 +110,53 @@ const currentUserRole = computed(() => {
 
 const isOwnerOrModerator = computed(() => isOwner.value || currentUserRole.value === 'moderator')
 
-const sortedMembers = computed(() => sortMembersForDisplay(props.memberProfiles, props.ownerUserId))
+const ownerProfile = computed(
+  () => props.memberProfiles.find((m) => m.user_id === props.ownerUserId) ?? null,
+)
 
-const ownerProfile = computed(() => {
-  return props.memberProfiles.find((m) => m.user_id === props.ownerUserId)
+interface SettingsTab {
+  id: string
+  label: string
+  icon: string
+  badge?: number
+  danger?: boolean
+  about?: boolean
+}
+
+// The tabs this viewer can reach, in sidebar order. Built as data so the
+// tablist below is one v-for rather than five near-identical buttons carrying
+// their own v-ifs — which is how the Danger tab came to be written out twice.
+const tabs = computed<SettingsTab[]>(() => {
+  const list: SettingsTab[] = [{ id: 'overview', label: 'Overview', icon: layoutGridIcon }]
+  if (isOwnerOrModerator.value) {
+    list.push({ id: 'family', label: 'Preferences', icon: settingsIconRaw })
+  }
+  list.push({ id: 'members', label: 'Members', icon: usersIcon, badge: memberCount.value })
+  list.push({ id: 'danger', label: 'Danger Zone', icon: trashIcon, danger: true })
+  // Last, and pushed to the foot of the column on desktop: it is the only tab
+  // that changes nothing, so it belongs out of the way of the ones that do. On
+  // phones the sidebar is a horizontal scroller, where there is no bottom.
+  list.push({ id: 'about', label: 'About', icon: infoIcon, about: true })
+  return list
 })
 
-function canManageMember(member: FamilyMemberProfile) {
-  return canManageMemberRule(member, {
-    actorIsOwnerOrModerator: isOwnerOrModerator.value,
-    ownerUserId: props.ownerUserId,
-    actorUserId: userId.value ?? '',
-  })
-}
-
-function canPromoteToModerator(member: FamilyMemberProfile) {
-  return canPromoteRule(member, isOwner.value)
-}
-
-function canDemoteFromModerator(member: FamilyMemberProfile) {
-  return canDemoteRule(member, isOwner.value)
-}
-
-async function copyInviteCode() {
-  if (!props.inviteCode) return
-  try {
-    await navigator.clipboard.writeText(props.inviteCode)
-    copied.value = true
-    setTimeout(() => {
-      copied.value = false
-    }, 2000)
-  } catch {
-    // no-op
-  }
-}
-
-async function leaveFamily() {
-  if (!props.familyId || leavingFamily.value) return
-  const confirmed = await showConfirm({
-    title: 'Leave Family?',
-    message: 'You will lose access to the shopping list and will need a new invite code to rejoin.',
-    danger: true,
-  })
-  if (!confirmed) return
-  leavingFamily.value = true
-  db.from('family_members')
-    .delete()
-    .eq('family_id', props.familyId)
-    .eq('user_id', userId.value)
-    .then(({ error }) => {
-      if (!error) {
-        // Leave HomeView to move to another family (or setup if none remain).
-        emit('close')
-        emit('family-left')
-      } else {
-        console.error('Error leaving family:', error)
-      }
-    })
-    // Not .finally(): PostgREST's builder is a thenable rather than a real
-    // Promise, so there is no finally to chain onto.
-    .then(() => {
-      leavingFamily.value = false
-    })
-}
-
-async function renameFamily() {
-  if (!isOwner.value) return
-  const nextName = renameValue.value.trim()
-  if (!nextName || !props.familyId || savingName.value) return
-  if (renameOverLimit.value || nextName.length > FAMILY_NAME_MAX_LENGTH) {
-    await showValidationErrorModal(`Family name must be ${FAMILY_NAME_MAX_LENGTH} characters or fewer.`)
-    return
-  }
-  savingName.value = true
-  try {
-    const { error } = await db
-      .from('families')
-      .update({ name: nextName })
-      .eq('id', props.familyId)
-    if (!error) {
-      emit('refresh-family')
-      nameSaved.value = true
-      setTimeout(() => {
-        nameSaved.value = false
-      }, 2000)
-    }
-  } finally {
-    savingName.value = false
-  }
-}
-
-async function saveItemLimit() {
-  if (!props.familyId || savingItemLimit.value) return
-
-  const normalizedLimit = Math.min(50, Math.max(1, Number(itemLimitValue.value) || 1))
-  itemLimitValue.value = normalizedLimit
-
-  savingItemLimit.value = true
-  try {
-    const { error } = await db
-      .from('families')
-      .update({ max_items_per_member: normalizedLimit })
-      .eq('id', props.familyId)
-
-    if (!error) {
-      emit('refresh-family')
-      itemLimitSaved.value = true
-      setTimeout(() => {
-        itemLimitSaved.value = false
-      }, 2000)
-    }
-  } finally {
-    savingItemLimit.value = false
-  }
-}
-
-// Pick is local; the Save button below commits it (like the name and item limit).
-function pickEmoji(emoji: string) {
-  if (savingEmoji.value) return
-  // Tapping the current selection clears it (back to no emoji).
-  emojiValue.value = emojiValue.value === emoji ? '' : emoji
-}
-
-async function saveEmoji() {
-  if (!isOwner.value || !props.familyId || savingEmoji.value) return
-  savingEmoji.value = true
-  try {
-    const { error } = await db
-      .from('families')
-      .update({ emoji: emojiValue.value || null })
-      .eq('id', props.familyId)
-    if (!error) {
-      emit('refresh-family')
-      emojiSaved.value = true
-      setTimeout(() => {
-        emojiSaved.value = false
-      }, 2000)
-    }
-  } finally {
-    savingEmoji.value = false
-  }
-}
-
-function randomInviteCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  // Use a CSPRNG, not Math.random(): the code is the only credential guarding
-  // family membership. The 32-char alphabet divides 256 evenly, so `byte & 31`
-  // maps to a character with no modulo bias.
-  const bytes = crypto.getRandomValues(new Uint8Array(8))
-  return Array.from(bytes, (b) => chars[b & 31]).join('')
-}
-
-async function regenerateInviteCode() {
-  if (!props.familyId || regenerating.value) return
-  const confirmed = await showConfirm({
-    title: 'Regenerate Invite Code?',
-    message: 'This will immediately invalidate the current invite code. Existing members are unaffected, but anyone with the old code will no longer be able to join.',
-    danger: false,
-  })
-  if (!confirmed) return
-  regenerating.value = true
-  try {
-    const { error } = await db
-      .from('families')
-      .update({ invite_code: randomInviteCode() })
-      .eq('id', props.familyId)
-    if (!error) {
-      emit('refresh-family')
-      codeRegenerated.value = true
-      setTimeout(() => {
-        codeRegenerated.value = false
-      }, 2000)
-    }
-  } finally {
-    regenerating.value = false
-  }
-}
-
-async function removeMember(memberUserId: string) {
-  if (!props.familyId || memberActionPendingId.value) return
-  // Dismiss first: on mobile the action sheet covers the confirm dialog.
-  closeMemberMenu()
-  const confirmed = await showConfirm({
-    title: 'Remove Member?',
-    message: 'This person will immediately lose access to the family shopping list. They can be re-invited using the invite code.',
-    danger: true,
-  })
-  if (!confirmed) return
-  memberActionPendingId.value = memberUserId
-  try {
-    const { error } = await db
-      .from('family_members')
-      .delete()
-      .eq('family_id', props.familyId)
-      .eq('user_id', memberUserId)
-    if (!error) emit('refresh-family')
-  } finally {
-    memberActionPendingId.value = ''
-  }
-}
-
-function toggleMemberMenu(memberUserId: string) {
-  if (memberActionPendingId.value) return
-  openMemberMenuId.value = openMemberMenuId.value === memberUserId ? '' : memberUserId
-}
-
-function closeMemberMenu() {
-  openMemberMenuId.value = ''
-}
-
-// The member whose actions are showing, used by the mobile action sheet, which
-// lives outside the list (teleported) and so cannot read the v-for's `member`.
-const activeMenuMember = computed(() => {
-  if (!openMemberMenuId.value) return null
-  return props.memberProfiles.find((m) => m.user_id === openMemberMenuId.value) || null
+// A tab can disappear from under the viewer — losing moderator while the
+// Preferences tab is open — which would otherwise leave the content area blank
+// with no tab marked current.
+watch(tabs, (list) => {
+  if (!list.some((tab) => tab.id === activeTab.value)) activeTab.value = 'overview'
 })
 
-function handleGlobalPointerDown(event: PointerEvent) {
-  if (!openMemberMenuId.value) return
-
-  const target = event.target
-  if (!(target instanceof Element)) {
-    closeMemberMenu()
-    return
-  }
-
-  // The sheet is teleported to <body>, so it is outside the trigger's wrapper.
-  // Without this it would close on pointerdown, before the click ever lands.
-  if (target.closest('.member-actions-menu-wrap')) return
-  if (target.closest('.member-sheet')) return
-  closeMemberMenu()
+// Leaving and deleting both take the user off this family, so the dialog goes
+// with it; HomeView decides where they land.
+function onFamilyLeft() {
+  emit('close')
+  emit('family-left')
 }
 
-// Escape used to be handled here as well, on window. AppModal now owns it and
-// routes it through dismiss(), which is what keeps one keystroke from closing
-// the member menu and the dialog behind it at the same time — two independent
-// listeners could only have raced.
-onMounted(() => {
-  window.addEventListener('pointerdown', handleGlobalPointerDown)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('pointerdown', handleGlobalPointerDown)
-})
-
-async function setMemberRole(memberUserId: string, role: string) {
-  if (!isOwner.value) return
-  if (!props.familyId || memberActionPendingId.value) return
-  memberActionPendingId.value = memberUserId
-  // Dismiss on tap; the row's spinner carries the pending state from here.
-  closeMemberMenu()
-  try {
-    const { error } = await db
-      .from('family_members')
-      .update({ role })
-      .eq('family_id', props.familyId)
-      .eq('user_id', memberUserId)
-    if (!error) emit('refresh-family')
-  } finally {
-    memberActionPendingId.value = ''
-  }
-}
-
-async function deleteFamily() {
-  if (!props.familyId || deletingFamily.value) return
-  const confirmed = await showConfirm({
-    title: 'Delete Family Group?',
-    message: `Deleting "${props.familyName}" will permanently remove all members, shopping list items, and history. This action cannot be undone.`,
-    danger: true,
-  })
-  if (!confirmed) return
-  deletingFamily.value = true
-  try {
-    const { error } = await db
-      .from('families')
-      .delete()
-      .eq('id', props.familyId)
-    if (!error) {
-      // HomeView reconciles: switch to another family, or setup if none remain.
-      emit('close')
-      emit('family-deleted')
-    }
-  } finally {
-    deletingFamily.value = false
-  }
+function onFamilyDeleted() {
+  emit('close')
+  emit('family-deleted')
 }
 </script>
 
@@ -483,12 +168,12 @@ async function deleteFamily() {
     @close="dismiss"
   >
       <div class="settings-modal" role="dialog" aria-modal="true" aria-label="Settings">
-        
+
         <!-- Modal Header -->
         <div class="settings-modal__header">
           <div class="settings-modal__title-wrap">
             <div class="settings-modal__icon-bg">
-              <span class="header-icon" v-html="settingsIconRaw"></span>
+              <span class="header-icon" aria-hidden="true" v-html="settingsIconRaw"></span>
             </div>
             <div>
               <h3>Family Settings</h3>
@@ -500,543 +185,114 @@ async function deleteFamily() {
 
         <!-- Modal Body Container -->
         <div class="settings-modal__body">
-          
-          <!-- Sidebar Navigation -->
-          <nav class="settings-sidebar">
-            <button 
-              class="sidebar-tab-btn" 
-              :class="{ active: activeTab === 'overview' }"
-              @click="activeTab = 'overview'"
-            >
-              <span class="tab-icon" v-html="layoutGridIcon"></span>
-              <span>Overview</span>
-            </button>
 
-            <button 
-              v-if="isOwnerOrModerator"
-              class="sidebar-tab-btn" 
-              :class="{ active: activeTab === 'family' }"
-              @click="activeTab = 'family'"
-            >
-              <span class="tab-icon" v-html="settingsIconRaw"></span>
-              <span>Preferences</span>
-            </button>
-
-            <button 
-              class="sidebar-tab-btn" 
-              :class="{ active: activeTab === 'members' }"
-              @click="activeTab = 'members'"
-            >
-              <span class="tab-icon" v-html="usersIcon"></span>
-              <span>Members</span>
-              <span class="tab-badge">{{ memberCount }}</span>
-            </button>
-
+          <!-- Sidebar Navigation. Real tab semantics: these were plain buttons
+               carrying an `active` class, so a screen reader got five unlabelled
+               controls and no indication which view was showing. -->
+          <nav
+            class="settings-sidebar"
+            role="tablist"
+            aria-orientation="vertical"
+            aria-label="Settings sections"
+          >
             <button
-              class="sidebar-tab-btn sidebar-tab-btn--danger"
-              :class="{ active: activeTab === 'danger' }"
-              v-if="!isOwner"
-              @click="activeTab = 'danger'"
+              v-for="tab in tabs"
+              :id="`settings-tab-${tab.id}`"
+              :key="tab.id"
+              class="sidebar-tab-btn"
+              :class="{
+                active: activeTab === tab.id,
+                'sidebar-tab-btn--danger': tab.danger,
+                'sidebar-tab-btn--about': tab.about,
+              }"
+              type="button"
+              role="tab"
+              :aria-selected="activeTab === tab.id"
+              :aria-controls="`settings-panel-${tab.id}`"
+              :tabindex="activeTab === tab.id ? 0 : -1"
+              @click="activeTab = tab.id"
             >
-              <span class="tab-icon" v-html="trashIcon"></span>
-              <span>Danger Zone</span>
-            </button>
-
-            <button 
-              v-if="isOwner"
-              class="sidebar-tab-btn sidebar-tab-btn--danger" 
-              :class="{ active: activeTab === 'danger' }"
-              @click="activeTab = 'danger'"
-            >
-              <span class="tab-icon" v-html="trashIcon"></span>
-              <span>Danger Zone</span>
-            </button>
-
-            <!-- Last, and pushed to the foot of the column on desktop: it is
-                 the only tab that changes nothing, so it belongs out of the way
-                 of the ones that do. On phones the sidebar is a horizontal
-                 scroller, where there is no bottom to sit at. -->
-            <button
-              class="sidebar-tab-btn sidebar-tab-btn--about"
-              :class="{ active: activeTab === 'about' }"
-              @click="activeTab = 'about'"
-            >
-              <span class="tab-icon" v-html="infoIcon"></span>
-              <span>About</span>
+              <span class="tab-icon" aria-hidden="true" v-html="tab.icon"></span>
+              <span>{{ tab.label }}</span>
+              <span v-if="tab.badge !== undefined" class="tab-badge">{{ tab.badge }}</span>
             </button>
           </nav>
 
           <!-- Content Panel Area -->
           <main class="settings-content-wrapper">
-            
-            <!-- OVERVIEW PANEL
-                 Always in the layout, even when another tab is active: it is the
+
+            <!-- Always in the layout, even when another tab is active: it is the
                  tallest panel, so it fixes the modal's height and the other tabs
-                 overlay it. Hidden copies are inert and out of the a11y tree. -->
-            <div
-              class="tab-panel tab-panel--base"
-              :class="{ 'tab-panel--ghost': activeTab !== 'overview' }"
-              :inert="activeTab !== 'overview'"
-              :aria-hidden="activeTab !== 'overview'"
-            >
-              <div class="panel-section">
-                <h4 class="panel-section-title">Family Summary</h4>
-                
-                <div class="summary-card">
-                  <div class="summary-details">
-                    <div class="summary-row">
-                      <span class="summary-label">Family Name</span>
-                      <span class="summary-value highlight">{{ familyName }}</span>
-                    </div>
-                    <div class="summary-row" v-if="ownerProfile">
-                      <span class="summary-label">Created By</span>
-                      <div class="owner-chip">
-                        <img 
-                          v-if="ownerProfile.image_url" 
-                          :src="ownerProfile.image_url" 
-                          alt="Owner avatar" 
-                          class="owner-avatar-mini" 
-                        />
-                        <span class="owner-name">{{ ownerProfile.display_name || 'Owner' }}</span>
-                      </div>
-                    </div>
-                    <div class="summary-row">
-                      <span class="summary-label">Total Members</span>
-                      <span class="summary-value">{{ memberCount }} active</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                 overlay it. Ghosted copies are inert and out of the a11y tree. -->
+            <OverviewPanel
+              id="settings-panel-overview"
+              role="tabpanel"
+              aria-labelledby="settings-tab-overview"
+              :ghost="activeTab !== 'overview'"
+              :family-name="familyName"
+              :invite-code="inviteCode"
+              :member-count="memberCount"
+              :owner-profile="ownerProfile"
+            />
 
-              <div class="panel-section" v-if="inviteCode">
-                <h4 class="panel-section-title">Invite New Members</h4>
-                <p class="panel-section-desc">Share this code with your family members so they can join your list.</p>
-                
-                <div class="invite-card">
-                  <div class="invite-code-container">
-                    <span class="invite-code-label">INVITE CODE</span>
-                    <span class="invite-code-value">{{ inviteCode }}</span>
-                  </div>
-                  <button 
-                    class="invite-copy-btn" 
-                    :class="{ 'invite-copy-btn--copied': copied }"
-                    type="button" 
-                    @click="copyInviteCode"
-                  >
-                    <span class="btn-icon-wrap" v-html="copied ? checkIcon : copyIcon"></span>
-                    <span>{{ copied ? 'Copied!' : 'Copy Code' }}</span>
-                  </button>
-                </div>
-              </div>
+            <PreferencesPanel
+              v-if="activeTab === 'family' && isOwnerOrModerator"
+              id="settings-panel-family"
+              role="tabpanel"
+              aria-labelledby="settings-tab-family"
+              :family-id="familyId"
+              :family-name="familyName"
+              :family-item-limit="familyItemLimit"
+              :family-emoji="familyEmoji"
+              :is-owner="isOwner"
+              @refresh-family="emit('refresh-family')"
+              @error="showError"
+            />
 
-              <div class="panel-section info-box-section">
-                <div class="info-box">
-                  <span class="info-box-icon-wrap" v-html="infoIcon"></span>
-                  <p class="settings-note-text">
-                    Use your profile menu on the top right of the dashboard screen to sign out or manage your personal account settings.
-                  </p>
-                </div>
-              </div>
-            </div>
+            <MembersPanel
+              v-if="activeTab === 'members'"
+              id="settings-panel-members"
+              role="tabpanel"
+              aria-labelledby="settings-tab-members"
+              v-model:open-menu-id="openMemberMenuId"
+              :family-id="familyId"
+              :owner-user-id="ownerUserId"
+              :is-owner="isOwner"
+              :is-owner-or-moderator="isOwnerOrModerator"
+              :member-profiles="memberProfiles"
+              :confirm="confirm"
+              @refresh-family="emit('refresh-family')"
+              @error="showError"
+            />
 
-            <!-- PREFERENCES PANEL (Owner + Moderators) -->
-            <div v-if="activeTab === 'family' && isOwnerOrModerator" class="tab-panel tab-panel--overlay">
-              <div class="panel-section">
-                <h4 class="panel-section-title">General Preferences</h4>
+            <DangerPanel
+              v-if="activeTab === 'danger'"
+              id="settings-panel-danger"
+              role="tabpanel"
+              aria-labelledby="settings-tab-danger"
+              :family-id="familyId"
+              :family-name="familyName"
+              :is-owner="isOwner"
+              :is-owner-or-moderator="isOwnerOrModerator"
+              :confirm="confirm"
+              @refresh-family="emit('refresh-family')"
+              @family-left="onFamilyLeft"
+              @family-deleted="onFamilyDeleted"
+              @error="showError"
+            />
 
-                <div class="preferences-grid">
-                  <section v-if="isOwner" class="card-item pref-card">
-                    <div class="pref-card__head">
-                      <span class="pref-card__icon" v-html="squarePenIcon"></span>
-                      <div class="pref-card__meta">
-                        <h5>Family Name</h5>
-                        <p>Choose a name everyone in your household can recognize quickly.</p>
-                      </div>
-                    </div>
-
-                    <div class="card-item__form">
-                      <div class="input-action-group">
-                        <div class="input-wrapper">
-                          <input
-                            id="familyNameInput"
-                            v-model="renameValue"
-                            class="panel-input"
-                            type="text"
-                            placeholder="My Awesome Family"
-                          />
-                        </div>
-                        <div class="panel-save-stack">
-                          <button
-                            class="panel-save-btn"
-                            type="button"
-                            :disabled="savingName"
-                            @click="renameFamily"
-                          >
-                            <span v-if="savingName" class="btn-spinner"></span>
-                            <span v-else-if="nameSaved" class="success-state animate-pop">
-                              <span class="success-icon-wrap" v-html="checkIcon"></span>
-                              Saved
-                            </span>
-                            <span v-else>Save</span>
-                          </button>
-                          <p class="panel-counter panel-counter--under-save" :class="{ 'panel-counter--danger': renameOverLimit }">
-                            {{ renameLength }}/{{ FAMILY_NAME_MAX_LENGTH }}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </section>
-
-                  <section v-if="isOwner" class="card-item pref-card">
-                    <div class="pref-card__head">
-                      <span class="pref-card__icon" v-html="stickerIcon"></span>
-                      <div class="pref-card__meta">
-                        <h5>Family Emoji</h5>
-                        <p>Pick an emoji to represent your family in the switcher.</p>
-                      </div>
-                      <span
-                        class="pref-card__value pref-card__value--emoji"
-                        :class="{ 'pref-card__value--emoji-default': !emojiValue }"
-                      >{{ emojiValue || DEFAULT_FAMILY_EMOJI }}</span>
-                    </div>
-
-                    <div class="emoji-picker">
-                      <button
-                        v-for="e in FAMILY_EMOJIS"
-                        :key="e"
-                        type="button"
-                        class="emoji-option"
-                        :class="{ 'emoji-option--active': emojiValue === e }"
-                        :aria-pressed="emojiValue === e"
-                        :aria-label="`Use ${e} for this family`"
-                        @click="pickEmoji(e)"
-                      >{{ e }}</button>
-                    </div>
-
-                    <div class="card-item__form">
-                      <div class="input-action-group input-action-group--end">
-                        <button
-                          class="panel-save-btn"
-                          type="button"
-                          :disabled="savingEmoji"
-                          @click="saveEmoji"
-                        >
-                          <span v-if="savingEmoji" class="btn-spinner"></span>
-                          <span v-else-if="emojiSaved" class="success-state animate-pop">
-                            <span class="success-icon-wrap" v-html="checkIcon"></span>
-                            Saved
-                          </span>
-                          <span v-else>Save</span>
-                        </button>
-                      </div>
-                    </div>
-                  </section>
-
-                  <section class="card-item pref-card">
-                    <div class="pref-card__head">
-                      <span class="pref-card__icon" v-html="shoppingCartIcon"></span>
-                      <div class="pref-card__meta">
-                        <h5>Item Limit Per User</h5>
-                        <p>Control how many active (unchecked) items each member can add.</p>
-                      </div>
-                      <span class="pref-card__value">{{ itemLimitValue }}</span>
-                    </div>
-
-                    <div class="pref-range-wrap">
-                      <span class="pref-range-minmax">1</span>
-                      <input
-                        v-model.number="itemLimitValue"
-                        class="pref-range"
-                        type="range"
-                        min="1"
-                        max="50"
-                        step="1"
-                        aria-label="Item limit slider"
-                      />
-                      <span class="pref-range-minmax">50</span>
-                    </div>
-
-                    <div class="card-item__form">
-                      <div class="input-action-group input-action-group--end">
-                        <button
-                          class="panel-save-btn"
-                          type="button"
-                          :disabled="savingItemLimit"
-                          @click="saveItemLimit"
-                        >
-                          <span v-if="savingItemLimit" class="btn-spinner"></span>
-                          <span v-else-if="itemLimitSaved" class="success-state animate-pop">
-                            <span class="success-icon-wrap" v-html="checkIcon"></span>
-                            Saved
-                          </span>
-                          <span v-else>Save</span>
-                        </button>
-                      </div>
-                    </div>
-                  </section>
-                </div>
-              </div>
-            </div>
-
-            <!-- MEMBERS PANEL -->
-            <div v-if="activeTab === 'members'" class="tab-panel tab-panel--overlay">
-              <div class="panel-section">
-                <h4 class="panel-section-title">Family Members ({{ memberCount }})</h4>
-                <p class="panel-section-desc">Below are the people who have access to this shopping list.</p>
-                
-                <div class="members-list-wrapper">
-                  <ul class="members-custom-list">
-                    <li
-                      v-for="member in sortedMembers"
-                      :key="member.user_id"
-                      class="member-custom-item"
-                      :class="{ 'member-custom-item--menu-open': openMemberMenuId === member.user_id }"
-                    >
-                      <div class="member-custom-left">
-                        <img 
-                          v-if="member.image_url" 
-                          :src="member.image_url" 
-                          :alt="(member.display_name || 'Member') + ' avatar'" 
-                          class="member-custom-avatar" 
-                        />
-                        <span v-else class="member-custom-avatar member-custom-avatar--fallback">
-                          {{ (member.display_name || '?').slice(0,1).toUpperCase() }}
-                        </span>
-                        <div class="member-custom-details">
-                          <span class="member-custom-name">
-                            {{ member.display_name || 'Member' }}
-                            <span v-if="member.user_id === userId" class="you-tag">(You)</span>
-                          </span>
-                        </div>
-                      </div>
-                      <div class="member-custom-right">
-                        <!-- Badges -->
-                        <span v-if="member.user_id === ownerUserId" class="member-role-badge role-owner">
-                          <span class="badge-icon-wrap" v-html="crownIcon"></span>
-                          Owner
-                        </span>
-
-                        <div
-                          v-if="canManageMember(member)"
-                          class="member-actions-menu-wrap"
-                          :class="{ 'member-actions-menu-wrap--open': openMemberMenuId === member.user_id }"
-                          @click.stop
-                        >
-                          <button
-                            class="member-actions-trigger"
-                            type="button"
-                            aria-label="Open member actions"
-                            :disabled="memberActionPendingId === member.user_id"
-                            @click.stop="toggleMemberMenu(member.user_id)"
-                          >
-                            <span v-if="memberActionPendingId === member.user_id" class="btn-spinner btn-spinner--accent"></span>
-                            <span v-else class="member-actions-icon" v-html="ellipsisIcon"></span>
-                          </button>
-
-                          <div v-if="openMemberMenuId === member.user_id" class="member-actions-menu">
-                            <button
-                              v-if="canPromoteToModerator(member)"
-                              class="member-action-item"
-                              type="button"
-                              @click="setMemberRole(member.user_id, 'moderator')"
-                            >
-                              <span class="member-action-icon" v-html="shieldIcon"></span>
-                              <span class="member-action-text">
-                                <span class="member-action-label">Promote to moderator</span>
-                                <span class="member-action-hint">Can manage items and members</span>
-                              </span>
-                            </button>
-                            <button
-                              v-if="canDemoteFromModerator(member)"
-                              class="member-action-item"
-                              type="button"
-                              @click="setMemberRole(member.user_id, 'member')"
-                            >
-                              <span class="member-action-icon" v-html="userRoundIcon"></span>
-                              <span class="member-action-text">
-                                <span class="member-action-label">Demote to member</span>
-                                <span class="member-action-hint">Removes moderator permissions</span>
-                              </span>
-                            </button>
-                            <button
-                              class="member-action-item member-action-item--danger"
-                              type="button"
-                              @click="removeMember(member.user_id)"
-                            >
-                              <span class="member-action-icon" v-html="trashIcon"></span>
-                              <span class="member-action-text">
-                                <span class="member-action-label">Remove from family</span>
-                                <span class="member-action-hint">Loses access to the shopping list</span>
-                              </span>
-                            </button>
-                          </div>
-                        </div>
-
-                        <span v-if="member.user_id !== ownerUserId && normalizeMemberRole(member.role) === 'moderator'" class="member-role-badge role-moderator">Moderator</span>
-                        <span v-if="member.user_id !== ownerUserId && normalizeMemberRole(member.role) !== 'moderator'" class="member-role-badge role-member">Member</span>
-                      </div>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-            <!-- DANGER ZONE PANEL (Owner Only + Member Leave) -->
-            <div v-if="activeTab === 'danger'" class="tab-panel tab-panel--overlay">
-              <!-- Invite Code Regen Card -->
-              <div class="panel-section" v-if="isOwnerOrModerator">
-                <h4 class="panel-section-title">Invite Code Administration</h4>
-                <div class="card-item card-item--action">
-                  <div class="card-item__info">
-                    <p>Immediately invalidates the current invite code. Existing members are unaffected, but future members must use the new code.</p>
-                  </div>
-                  <button
-                    class="panel-action-btn"
-                    type="button"
-                    :disabled="regenerating"
-                    @click="regenerateInviteCode"
-                  >
-                    <span v-if="regenerating" class="btn-spinner"></span>
-                    <span v-else-if="codeRegenerated" class="success-state animate-pop">
-                      <span class="success-icon-wrap" v-html="checkIcon"></span>
-                      Regenerated
-                    </span>
-                    <span v-else>Regenerate</span>
-                  </button>
-                </div>
-              </div>
-
-              <!-- Leave Family Card (Visible to non-owners) -->
-              <div class="panel-section" v-if="!isOwner">
-                <h4 class="panel-section-title text-danger">Leave Family</h4>
-                <div class="card-item card-item--action">
-                  <div class="card-item__info">
-                    <p>This will remove you from the family group. You will no longer have access to the shopping list.</p>
-                  </div>
-                  <button class="danger-action-btn" type="button" :disabled="leavingFamily" @click="leaveFamily">Leave Family</button>
-                </div>
-              </div>
-
-              <!-- Delete Family Card -->
-              <div class="panel-section" v-if="isOwner">
-                <h4 class="panel-section-title text-danger">Delete Family Group</h4>
-                <div class="card-item card-item--action card-item--danger">
-                  <div class="card-item__info">
-                    <p>Permanently deletes <strong>{{ familyName }}</strong>, removes all members, and erases all shopping list data. This cannot be undone.</p>
-                  </div>
-                  <button
-                    class="danger-action-btn danger-action-btn--delete"
-                    type="button"
-                    :disabled="deletingFamily"
-                    @click="deleteFamily"
-                  >
-                    <span v-if="deletingFamily" class="btn-spinner btn-spinner--light"></span>
-                    <span v-else>Delete Family</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- ABOUT PANEL
-                 Explains where the products offered in the add-item box come
-                 from, and carries the Open Food Facts credit. That credit is a
-                 licence term, not a courtesy: their data is ODbL, which obliges
-                 anyone publishing an app built on it to say so somewhere a user
-                 can reach. test/dataAttribution.component.test.js fails if it
-                 disappears. -->
-            <div v-if="activeTab === 'about'" class="tab-panel tab-panel--overlay about-panel">
-              <img src="/icons/pwa-192.png" alt="" class="about-logo" />
-              <h4 class="about-name">FamCart</h4>
-              <p class="about-version">v{{ appVersion }}</p>
-              <p class="about-tagline">One shopping list, shared with your family.</p>
-
-              <p class="about-credit">
-                Product data from
-                <a class="settings-note-link" href="https://openfoodfacts.org" target="_blank" rel="noopener noreferrer">Open Food Facts</a>,
-                under
-                <a class="settings-note-link" href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL 1.0</a>.
-              </p>
-            </div>
+            <AboutPanel
+              v-if="activeTab === 'about'"
+              id="settings-panel-about"
+              role="tabpanel"
+              aria-labelledby="settings-tab-about"
+            />
           </main>
         </div>
       </div>
   </AppModal>
 
-  <!-- Mobile member actions: a bottom sheet teleported out of the scrolling
-       tab panel, which would otherwise clip an anchored dropdown. Hidden by
-       CSS above the phone breakpoint, where the inline dropdown is used. -->
-  <Teleport to="body">
-    <Transition name="member-sheet-fade">
-      <div
-        v-if="activeMenuMember"
-        class="member-sheet-overlay"
-        @click.self="closeMemberMenu()"
-      >
-        <div class="member-sheet" role="dialog" aria-modal="true" :aria-label="`Actions for ${activeMenuMember.display_name || 'member'}`">
-          <div class="member-sheet__head">
-            <img
-              v-if="activeMenuMember.image_url"
-              :src="activeMenuMember.image_url"
-              alt=""
-              class="member-sheet__avatar"
-            />
-            <span v-else class="member-sheet__avatar member-sheet__avatar--fallback">
-              {{ (activeMenuMember.display_name || '?').slice(0, 1).toUpperCase() }}
-            </span>
-            <div class="member-sheet__meta">
-              <span class="member-sheet__name">{{ activeMenuMember.display_name || 'Member' }}</span>
-              <span class="member-sheet__role">
-                {{ normalizeMemberRole(activeMenuMember.role) === 'moderator' ? 'Moderator' : 'Member' }}
-              </span>
-            </div>
-          </div>
-
-          <div class="member-sheet__actions">
-            <button
-              v-if="canPromoteToModerator(activeMenuMember)"
-              class="member-sheet__action"
-              type="button"
-              @click="setMemberRole(activeMenuMember.user_id, 'moderator')"
-            >
-              <span class="member-sheet__action-icon" v-html="shieldIcon"></span>
-              <span class="member-sheet__action-text">
-                <span class="member-sheet__action-label">Promote to moderator</span>
-                <span class="member-sheet__action-hint">Can manage items and members</span>
-              </span>
-            </button>
-
-            <button
-              v-if="canDemoteFromModerator(activeMenuMember)"
-              class="member-sheet__action"
-              type="button"
-              @click="setMemberRole(activeMenuMember.user_id, 'member')"
-            >
-              <span class="member-sheet__action-icon" v-html="userRoundIcon"></span>
-              <span class="member-sheet__action-text">
-                <span class="member-sheet__action-label">Demote to member</span>
-                <span class="member-sheet__action-hint">Removes moderator permissions</span>
-              </span>
-            </button>
-
-            <button
-              class="member-sheet__action member-sheet__action--danger"
-              type="button"
-              @click="removeMember(activeMenuMember.user_id)"
-            >
-              <span class="member-sheet__action-icon" v-html="trashIcon"></span>
-              <span class="member-sheet__action-text">
-                <span class="member-sheet__action-label">Remove from family</span>
-                <span class="member-sheet__action-hint">Loses access to the shopping list</span>
-              </span>
-            </button>
-          </div>
-
-          <button class="member-sheet__cancel" type="button" @click="closeMemberMenu()">Cancel</button>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
-
-  <!-- Confirm Modal -->
+  <!-- Shared by every destructive action in the panels. -->
   <ConfirmModal
     :open="confirmModal.open"
     :title="confirmModal.title"
@@ -1045,8 +301,17 @@ async function deleteFamily() {
     :confirm-text="confirmModal.confirmText"
     :cancel-text="confirmModal.cancelText"
     :show-cancel="confirmModal.showCancel"
-    @confirm="handleConfirmModalResult(true)"
-    @cancel="handleConfirmModalResult(false)"
+    @confirm="resolveWith(true)"
+    @cancel="resolveWith(false)"
+  />
+
+  <!-- Whatever the last write failed with. Stacks above the settings dialog
+       rather than replacing it, so dismissing it leaves the panel exactly where
+       it was and the action can simply be retried. -->
+  <ErrorModal
+    :title="actionErrorTitle"
+    :message="actionError"
+    @dismiss="actionError = ''"
   />
 </template>
 
@@ -1258,72 +523,6 @@ async function deleteFamily() {
   fill: none;
 }
 
-.btn-icon-wrap {
-  width: 15px;
-  height: 15px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-icon-wrap :deep(svg) {
-  width: 100%;
-  height: 100%;
-  stroke: currentColor;
-  stroke-width: 2;
-  fill: none;
-}
-
-.info-box-icon-wrap {
-  width: 16px;
-  height: 16px;
-  color: var(--ui-text-muted);
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.info-box-icon-wrap :deep(svg) {
-  width: 100%;
-  height: 100%;
-  stroke: currentColor;
-  stroke-width: 2;
-  fill: none;
-}
-
-.badge-icon-wrap {
-  width: 10px;
-  height: 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.badge-icon-wrap :deep(svg) {
-  width: 100%;
-  height: 100%;
-  stroke: currentColor;
-  stroke-width: 2;
-  fill: none;
-}
-
-.success-icon-wrap {
-  width: 14px;
-  height: 14px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.success-icon-wrap :deep(svg) {
-  width: 100%;
-  height: 100%;
-  stroke: currentColor;
-  stroke-width: 3;
-  fill: none;
-}
-
 .tab-badge {
   margin-left: auto;
   font-size: var(--text-2xs);
@@ -1371,1175 +570,10 @@ async function deleteFamily() {
   background: var(--bg-surface);
 }
 
-.panel-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.panel-section-title {
-  margin: 0;
-  font-size: var(--text-sm);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ui-text-muted);
-  font-weight: var(--weight-bold);
-}
-
-.panel-section-title.text-danger {
-  color: var(--danger-text);
-}
-
-.panel-section-desc {
-  margin: 0 0 0.25rem;
-  font-size: var(--text-sm);
-  color: var(--ui-text-muted);
-  line-height: 1.4;
-}
-
-.panel-section-desc.min-margin {
-  margin-bottom: 0.1rem;
-}
-
-/* Overview Panel cards */
-.summary-card {
-  border: var(--border-width-thin) solid var(--ui-border-soft);
-  background: var(--bg-surface-alt);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4);
-}
-
-.summary-details {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-}
-
-.summary-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: var(--text-base);
-}
-
-.summary-label {
-  color: var(--ui-text-muted);
-  font-weight: var(--weight-medium);
-}
-
-.summary-value {
-  color: var(--ui-text-strong);
-  font-weight: var(--weight-bold);
-}
-
-.summary-value.highlight {
-  color: var(--color-primary);
-}
-
-.owner-chip {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  background: var(--bg-surface);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
-  border: var(--border-width-thin) solid var(--ui-border-soft);
-}
-
-.owner-avatar-mini {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  object-fit: cover;
-}
-
-.owner-name {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  color: var(--ui-text-strong);
-}
-
-/* Invite card */
-.invite-card {
-  border: var(--border-width-base) dashed color-mix(in srgb, var(--color-primary) 35%, var(--border-light));
-  background: color-mix(in srgb, var(--color-primary) 3%, var(--bg-surface));
-  border-radius: var(--radius-lg);
-  padding: var(--space-4);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.invite-code-container {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-
-.invite-code-label {
-  font-size: var(--text-2xs);
-  letter-spacing: 0.08em;
-  font-weight: var(--weight-extrabold);
-  color: var(--ui-text-muted);
-}
-
-.invite-code-value {
-  font-family: 'SF Mono', Consolas, Monaco, 'Andale Mono', monospace;
-  font-size: var(--text-xl);
-  font-weight: var(--weight-extrabold);
-  color: var(--ui-text-strong);
-  letter-spacing: 0.05em;
-}
-
-.invite-copy-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  background: var(--color-primary);
-  color: var(--text-inverse);
-  border: none;
-  padding: 0.55rem 0.85rem;
-  border-radius: var(--radius-md);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-bold);
-  cursor: pointer;
-  transition: all var(--transition-base) ease;
-}
-
-.invite-copy-btn:hover {
-  background: color-mix(in srgb, var(--color-primary) 85%, var(--text-primary));
-  transform: translateY(-1px);
-  box-shadow: var(--elevation-primary);
-}
-
-.invite-copy-btn--copied {
-  background: var(--color-primary-bg);
-  color: var(--color-primary-text);
-  border: var(--border-width-thin) solid var(--color-primary-bg);
-}
-
-.invite-copy-btn--copied:hover {
-  background: var(--color-primary-bg);
-  color: var(--color-primary-text);
-  transform: none;
-  box-shadow: none;
-}
-
-.btn-icon {
-  width: 15px;
-  height: 15px;
-}
-
-/* Emoji picker */
-.emoji-picker {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(2.5rem, 1fr));
-  gap: 0.4rem;
-  margin-top: 0.85rem;
-}
-
-.emoji-option {
-  aspect-ratio: 1 / 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.3rem;
-  line-height: 1;
-  border: var(--border-width-thin) solid var(--border-main);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  cursor: pointer;
-  transition: border-color var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
-}
-
-.emoji-option:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  background: var(--bg-hover);
-}
-
-.emoji-option:active:not(:disabled) {
-  transform: scale(0.92);
-}
-
-.emoji-option--active {
-  border-color: var(--color-primary);
-  background: var(--color-primary-bg);
-  box-shadow: var(--focus-ring-primary);
-}
-
-.emoji-option:disabled {
-  cursor: default;
-}
-
-.pref-card__value--emoji {
-  font-size: 1.35rem;
-  line-height: 1;
-  /* Square, not the wide number-badge shape it inherits from .pref-card__value. */
-  width: 2.4rem;
-  height: 2.4rem;
-  min-width: 0;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-md);
-}
-
-/* Nothing picked yet: the tile previews the fallback the switcher will use,
-   dimmed so it still reads as a placeholder rather than a choice. */
-.pref-card__value--emoji-default {
-  opacity: 0.45;
-}
-
-/* Info Box */
-.info-box-section {
-  margin-top: auto;
-  padding-top: 0.5rem;
-}
-
-.info-box {
-  display: flex;
-  gap: 0.65rem;
-  background: var(--bg-surface-alt);
-  padding: var(--space-3) 0.9rem;
-  border-radius: var(--radius-md);
-}
-
-.info-box-icon {
-  width: 16px;
-  height: 16px;
-  color: var(--ui-text-muted);
-  flex-shrink: 0;
-  margin-top: 0.1rem;
-}
-
-/* About panel: centred, and mostly empty on purpose. */
-.about-panel {
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  gap: 0;
-}
-
-/* The PWA icon, same asset the splash screen and topbar use. alt="" because
-   the app name is written out immediately below it. */
-.about-logo {
-  width: 72px;
-  height: 72px;
-  border-radius: var(--radius-lg);
-  object-fit: contain;
-}
-
-.about-name {
-  margin: var(--space-4) 0 0;
-  font-size: var(--text-lg);
-  font-weight: 700;
-  color: var(--ui-text-strong);
-  letter-spacing: -0.01em;
-}
-
-.about-version {
-  margin: 0.25rem 0 0;
-  font-size: var(--text-xs);
-  font-variant-numeric: tabular-nums;
-  color: var(--ui-text-muted);
-}
-
-.about-tagline {
-  margin: 0.6rem 0 0;
-  font-size: var(--text-sm);
-  color: var(--ui-text-muted);
-}
-
-/* Pinned to the bottom rather than sitting under the tagline, so the panel
-   reads as a title card with a footnote instead of a wall of text. */
-.about-credit {
-  margin-top: auto;
-  padding-top: var(--space-6);
-  font-size: var(--text-xs);
-  line-height: 1.6;
-  color: var(--ui-text-muted);
-  max-width: 30ch;
-}
-
-.settings-note-link {
-  color: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.settings-note-link:hover,
-.settings-note-link:focus-visible {
-  color: var(--ui-text-strong);
-}
-
-.settings-note-text {
-  margin: 0;
-  font-size: var(--text-xs);
-  color: var(--ui-text-muted);
-  line-height: 1.45;
-}
-
-.preferences-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-}
-
-.pref-card {
-  background: linear-gradient(
-    160deg,
-    color-mix(in srgb, var(--color-primary) 3%, var(--bg-surface)) 0%,
-    var(--bg-surface) 60%
-  );
-}
-
-.pref-card__head {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  margin-bottom: 0.7rem;
-}
-
-.pref-card__meta {
-  min-width: 0;
-  flex: 1;
-}
-
-.pref-card__meta h5 {
-  margin: 0;
-  font-size: var(--text-base);
-  font-weight: var(--weight-extrabold);
-  color: var(--ui-text-strong);
-}
-
-.pref-card__meta p {
-  margin: 0.18rem 0 0;
-  font-size: var(--text-xs);
-  line-height: 1.45;
-  color: var(--ui-text-muted);
-}
-
-.pref-card__icon {
-  width: 20px;
-  height: 20px;
-  color: var(--color-primary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.pref-card__icon :deep(svg) {
-  width: 100%;
-  height: 100%;
-  stroke: currentColor;
-  stroke-width: 2;
-  fill: none;
-}
-
-.pref-card__value {
-  font-family: 'SF Mono', Consolas, Monaco, 'Andale Mono', monospace;
-  font-size: var(--text-base);
-  font-weight: var(--weight-extrabold);
-  color: var(--ui-text-strong);
-  background: var(--bg-surface-alt);
-  border: var(--border-width-thin) solid var(--ui-border-soft);
-  border-radius: var(--radius-sm);
-  padding: 0.22rem 0.5rem;
-  min-width: 2.2rem;
-  text-align: center;
-}
-
-.pref-range-wrap {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin-bottom: 0.6rem;
-}
-
-.pref-range-minmax {
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  color: var(--ui-text-muted);
-  min-width: 1rem;
-  text-align: center;
-}
-
-.pref-range {
-  flex: 1;
-  appearance: none;
-  height: 4px;
-  border-radius: var(--radius-pill);
-  background: var(--border-light);
-  outline: none;
-}
-
-.pref-range::-webkit-slider-thumb {
-  appearance: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--color-primary);
-  border: var(--border-width-thick) solid var(--bg-surface);
-  box-shadow: var(--elevation-soft);
-  cursor: pointer;
-}
-
-.pref-range::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--color-primary);
-  border: var(--border-width-thick) solid var(--bg-surface);
-  box-shadow: var(--elevation-soft);
-  cursor: pointer;
-}
-
-/* Form Settings (Preferences) */
-.card-item {
-  border: var(--border-width-thin) solid var(--ui-border-soft);
-  background: var(--bg-surface);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4);
-  transition: all var(--transition-base) ease;
-}
-
-.card-item:focus-within {
-  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--border-light));
-  box-shadow: var(--elevation-soft);
-}
-
-.card-item__form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-
-.panel-label {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-bold);
-  color: var(--ui-text-strong);
-}
-
-.panel-label--with-icon {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.38rem;
-}
-
-.panel-label-icon {
-  width: 14px;
-  height: 14px;
-  color: var(--ui-text-muted);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.panel-label-icon :deep(svg) {
-  width: 100%;
-  height: 100%;
-  stroke: currentColor;
-  stroke-width: 2;
-  fill: none;
-}
-
-.input-action-group {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 0.15rem;
-  align-items: flex-start;
-}
-
-.input-action-group--end {
-  justify-content: flex-end;
-}
-
-.input-wrapper {
-  position: relative;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.panel-input {
-  width: 100%;
-  border: var(--border-width-thin) solid var(--ui-border);
-  border-radius: var(--radius-md);
-  padding: 0.55rem 0.75rem;
-  font-size: var(--text-base);
-  background: var(--bg-surface);
-  color: var(--ui-text-strong);
-  transition: all var(--transition-base) ease;
-}
-
-.panel-input:focus {
-  border-color: var(--color-primary);
-  box-shadow: var(--focus-ring-primary);
-  outline: none;
-}
-
-.panel-input::placeholder {
-  color: var(--border-dark);
-}
-
-.panel-counter {
-  margin: 0.25rem 0 0;
-  text-align: right;
-  font-size: var(--text-xs);
-  color: var(--ui-text-muted);
-}
-
-.panel-counter--under-save {
-  min-width: 82px;
-  text-align: center;
-}
-
-.panel-save-stack {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.panel-counter--danger {
-  color: var(--danger-main);
-  font-weight: var(--weight-bold);
-}
-
-.panel-save-btn {
-  background: var(--bg-hover);
-  color: var(--ui-text-strong);
-  border: var(--border-width-thin) solid var(--ui-border-soft);
-  border-radius: var(--radius-md);
-  padding: 0.55rem 1rem;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-bold);
-  cursor: pointer;
-  transition: all var(--transition-base) ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 82px;
-}
-
-.panel-save-btn:hover:not(:disabled) {
-  background: var(--border-light);
-  border-color: var(--border-dark);
-}
-
-.panel-save-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* Card Action (Regenerate code) */
-.card-item--action {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1.5rem;
-  background: var(--bg-surface);
-}
-
-@media (max-width: 480px) {
-  .card-item--action {
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-  .card-item--action .panel-action-btn {
-    width: auto;
-    align-self: flex-start;
-    justify-content: flex-start;
-  }
-}
-
-.card-item__info h5 {
-  margin: 0 0 0.2rem 0;
-  font-size: var(--text-base);
-  font-weight: var(--weight-bold);
-  color: var(--ui-text-strong);
-}
-
-.card-item__info p {
-  margin: 0;
-  font-size: var(--text-xs);
-  color: var(--ui-text-muted);
-  line-height: 1.45;
-}
-
-.panel-action-btn {
-  background: var(--bg-surface);
-  color: var(--ui-text-strong);
-  border: var(--border-width-thin) solid var(--ui-border);
-  border-radius: var(--radius-md);
-  padding: 0.55rem 0.9rem;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-bold);
-  cursor: pointer;
-  transition: all var(--transition-base) ease;
-  white-space: nowrap;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 100px;
-}
-
-.panel-action-btn:hover:not(:disabled) {
-  background: var(--bg-surface-alt);
-  border-color: var(--border-dark);
-}
-
-.panel-action-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Loaders and success checks */
-.btn-spinner {
-  width: 14px;
-  height: 14px;
-  border: var(--border-width-thick) solid transparent;
-  border-top-color: var(--ui-text-strong);
-  border-radius: 50%;
-  animation: btnSpin 0.6s linear infinite;
-}
-
-.btn-spinner--accent {
-  border-top-color: var(--color-primary);
-}
-
-.btn-spinner--light {
-  border-top-color: var(--text-inverse);
-}
-
 @keyframes btnSpin {
   to {
     transform: rotate(360deg);
   }
-}
-
-.success-state {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  color: var(--color-primary-text);
-  font-weight: var(--weight-bold);
-}
-
-.inline-success-icon {
-  width: 14px;
-  height: 14px;
-  stroke-width: 3;
-}
-
-/* Members tab styling */
-.members-list-wrapper {
-  border-radius: var(--radius-lg);
-  overflow: visible;
-  background: var(--bg-surface);
-}
-
-.members-custom-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.member-custom-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1rem;
-  border-bottom: var(--border-width-thin) solid var(--ui-border-soft);
-  gap: 1rem;
-  position: relative;
-  overflow: visible;
-}
-
-.member-custom-item--menu-open {
-  z-index: 7000;
-}
-
-.member-custom-item:last-child {
-  border-bottom: none;
-}
-
-.member-custom-left {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  min-width: 0;
-}
-
-.member-custom-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  object-fit: cover;
-  border: var(--border-width-thin) solid var(--ui-border-soft);
-  background: var(--bg-hover);
-  flex-shrink: 0;
-}
-
-.member-custom-avatar--fallback {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-bold);
-  color: var(--ui-text-muted);
-}
-
-.member-custom-details {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.member-custom-name {
-  font-size: var(--text-base);
-  font-weight: var(--weight-semibold);
-  color: var(--ui-text-strong);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.you-tag {
-  font-size: var(--text-xs);
-  color: var(--color-primary);
-  font-weight: var(--weight-semibold);
-  margin-left: 0.2rem;
-}
-
-.member-custom-right {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-shrink: 0;
-  position: relative;
-  overflow: visible;
-}
-
-.member-role-badge {
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  /* Match the height of the ellipsis trigger sitting beside it. */
-  min-height: 28px;
-  padding: 0 0.55rem;
-  border-radius: var(--radius-xs);
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-}
-
-.role-owner {
-  background: var(--warning-bg);
-  color: var(--warning-text);
-  border: var(--border-width-thin) solid var(--warning-border);
-}
-
-.badge-icon {
-  width: 10px;
-  height: 10px;
-}
-
-.role-member {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-  border: var(--border-width-thin) solid var(--border-light);
-}
-
-.role-moderator {
-  background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
-  color: var(--color-primary-text);
-  border: var(--border-width-thin) solid color-mix(in srgb, var(--color-primary) 28%, var(--bg-surface));
-}
-
-.member-actions-menu-wrap {
-  position: relative;
-}
-
-.member-actions-menu-wrap--open {
-  z-index: 6000;
-}
-
-.member-actions-trigger {
-  width: 28px;
-  height: 28px;
-  border: var(--border-width-thin) solid var(--ui-border-soft);
-  background: var(--bg-surface);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
-}
-
-.member-actions-trigger:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.member-actions-trigger:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.member-actions-icon {
-  width: 16px;
-  height: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.member-actions-icon :deep(svg) {
-  width: 100%;
-  height: 100%;
-  stroke: currentColor;
-  stroke-width: 2;
-  fill: none;
-}
-
-.member-actions-menu {
-  position: absolute;
-  top: calc(100% + 0.25rem);
-  right: 0;
-  left: auto;
-  z-index: 6100;
-  min-width: 248px;
-  padding: 0.25rem;
-  border: var(--border-width-thin) solid color-mix(in srgb, var(--border-dark) 45%, var(--ui-border-soft));
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--bg-surface-alt) 88%, var(--border-light));
-  box-shadow: 0 12px 28px var(--shadow-popover);
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  animation: memberMenuIn 0.16s cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
-  transform-origin: top right;
-}
-
-.member-action-item {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  border: none;
-  background: transparent;
-  color: var(--text-primary);
-  text-align: left;
-  border-radius: var(--radius-sm);
-  padding: 0.5rem 0.55rem;
-  cursor: pointer;
-}
-
-.member-action-item:hover {
-  background: var(--bg-hover);
-}
-
-.member-action-item--danger {
-  color: var(--danger-text);
-}
-
-.member-action-item--danger:hover {
-  background: var(--danger-bg);
-}
-
-.member-action-icon {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: currentColor;
-}
-
-.member-action-icon :deep(svg) {
-  width: 100%;
-  height: 100%;
-  stroke: currentColor;
-  stroke-width: 2;
-  fill: none;
-}
-
-.member-action-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.member-action-label {
-  font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
-}
-
-.member-action-hint {
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-medium);
-  color: var(--ui-text-muted);
-  margin-top: 0.05rem;
-}
-
-/* Mobile member action sheet (hidden on desktop; dropdown is used there) */
-.member-sheet-overlay {
-  display: none;
-}
-
-.member-sheet__head {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  padding: 0 0.35rem 0.9rem;
-  border-bottom: var(--border-width-thin) solid var(--ui-border-soft);
-}
-
-.member-sheet__avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  object-fit: cover;
-  border: var(--border-width-thin) solid var(--ui-border-soft);
-  background: var(--bg-hover);
-  flex-shrink: 0;
-}
-
-.member-sheet__avatar--fallback {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-md);
-  font-weight: var(--weight-bold);
-  color: var(--ui-text-muted);
-}
-
-.member-sheet__meta {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.member-sheet__name {
-  font-size: var(--text-md);
-  font-weight: var(--weight-bold);
-  color: var(--ui-text-strong);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.member-sheet__role {
-  font-size: var(--text-xs);
-  color: var(--ui-text-muted);
-  font-weight: var(--weight-medium);
-}
-
-.member-sheet__actions {
-  display: flex;
-  flex-direction: column;
-  padding: 0.5rem 0;
-}
-
-.member-sheet__action {
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-  width: 100%;
-  /* Comfortable touch target; the old 0.45rem dropdown rows were ~28px tall. */
-  min-height: 56px;
-  padding: 0.75rem 0.35rem;
-  border: none;
-  background: transparent;
-  border-radius: var(--radius-md);
-  color: var(--ui-text-strong);
-  text-align: left;
-  cursor: pointer;
-}
-
-.member-sheet__action:active {
-  background: var(--bg-hover);
-}
-
-.member-sheet__action--danger {
-  color: var(--danger-text);
-}
-
-.member-sheet__action--danger:active {
-  background: var(--danger-bg);
-}
-
-.member-sheet__action-icon {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: currentColor;
-}
-
-.member-sheet__action-icon :deep(svg) {
-  width: 100%;
-  height: 100%;
-  stroke: currentColor;
-  stroke-width: 2;
-  fill: none;
-}
-
-.member-sheet__action-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.member-sheet__action-label {
-  font-size: var(--text-md);
-  font-weight: var(--weight-semibold);
-}
-
-.member-sheet__action-hint {
-  font-size: var(--text-xs);
-  color: var(--ui-text-muted);
-  font-weight: var(--weight-medium);
-  margin-top: 0.1rem;
-}
-
-.member-sheet__cancel {
-  width: 100%;
-  min-height: 52px;
-  margin-top: 0.35rem;
-  border: var(--border-width-thin) solid var(--ui-border-soft);
-  background: var(--bg-surface-alt);
-  border-radius: var(--radius-md);
-  color: var(--ui-text-strong);
-  font-size: var(--text-base);
-  font-weight: var(--weight-bold);
-  cursor: pointer;
-}
-
-.member-sheet__cancel:active {
-  background: var(--bg-hover);
-}
-
-@media (max-width: 520px) {
-  /* Swap the anchored dropdown for the bottom sheet. */
-  .member-actions-menu {
-    display: none;
-  }
-
-  .member-role-badge {
-    min-height: 32px;
-    padding: 0 0.6rem;
-    font-size: var(--text-xs);
-  }
-
-  .member-actions-trigger {
-    width: 32px;
-    height: 32px;
-    position: relative;
-  }
-
-  /* Keep a 44px touch target without drawing a 44px button. */
-  .member-actions-trigger::after {
-    content: '';
-    position: absolute;
-    inset: -6px;
-  }
-
-  .member-sheet-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 7500;
-    display: flex;
-    align-items: flex-end;
-    background: var(--overlay-dark);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-  }
-
-  .member-sheet {
-    width: 100%;
-    background: var(--bg-surface);
-    border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
-    box-shadow: var(--elevation-modal);
-    padding: 1.15rem 1rem calc(0.75rem + var(--safe-bottom));
-    /* This sheet only exists on a phone, so it is always flush with the bottom
-       edge and always travels its own full height. */
-    --modal-rise: 100%;
-    animation: modal-rise-in var(--transition-slow) var(--ease-rise) forwards;
-  }
-
-  /* Beats the entrance animation on the base class, which by now has finished.
-     In here rather than beside the other fade rules so it shares the scope that
-     sets --modal-rise. */
-  .member-sheet-fade-leave-active .member-sheet {
-    animation: modal-rise-out var(--transition-base) var(--ease-fall) forwards;
-  }
-}
-
-.member-sheet-fade-enter-active,
-.member-sheet-fade-leave-active {
-  transition: opacity var(--transition-base) ease;
-}
-
-.member-sheet-fade-enter-from,
-.member-sheet-fade-leave-to {
-  opacity: 0;
-}
-
-@keyframes memberMenuIn {
-  from {
-    opacity: 0;
-    transform: translateY(-4px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-/* Danger zone card modifier */
-.card-item--danger {
-  border-color: var(--danger-border);
-  background: var(--danger-bg);
-}
-
-.danger-action-btn {
-  background: var(--danger-solid);
-  color: var(--text-inverse);
-  border: none;
-  border-radius: var(--radius-md);
-  padding: 0.6rem 1.25rem;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-bold);
-  cursor: pointer;
-  transition: all var(--transition-base) ease;
-  box-shadow: var(--elevation-danger-subtle);
-  white-space: nowrap;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 100px;
-}
-
-.danger-action-btn:hover:not(:disabled) {
-  background: var(--danger-solid-hover);
-  transform: translateY(-1px);
-  box-shadow: var(--elevation-danger-hover);
-}
-
-.danger-action-btn--delete:hover:not(:disabled) {
-  transform: none;
-}
-
-.danger-action-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 /* Animations & Transitions */
@@ -2553,10 +587,6 @@ async function deleteFamily() {
   to {
     opacity: 1;
   }
-}
-
-.animate-pop {
-  animation: tickPop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
 @keyframes tickPop {
@@ -2654,5 +684,89 @@ async function deleteFamily() {
   }
 }
 
+/* ─── Shared panel primitives ────────────────────────────────────────────
+   Rendered by the panel components under familySettings/, styled here so
+   there is one copy rather than five. :deep() is what lets this scoped block
+   reach past the child component boundary. */
 
+:deep(.success-icon-wrap) {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+:deep(.success-icon-wrap svg) {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  stroke-width: 3;
+  fill: none;
+}
+:deep(.panel-section) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+:deep(.panel-section-title) {
+  margin: 0;
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ui-text-muted);
+  font-weight: var(--weight-bold);
+}
+:deep(.panel-section-title.text-danger) {
+  color: var(--danger-text);
+}
+:deep(.panel-section-desc) {
+  margin: 0 0 0.25rem;
+  font-size: var(--text-sm);
+  color: var(--ui-text-muted);
+  line-height: 1.4;
+}
+
+/* Form Settings (Preferences) */
+:deep(.card-item) {
+  border: var(--border-width-thin) solid var(--ui-border-soft);
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  transition: all var(--transition-base) ease;
+}
+:deep(.card-item:focus-within) {
+  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--border-light));
+  box-shadow: var(--elevation-soft);
+}
+:deep(.card-item__form) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+/* Loaders and success checks */
+:deep(.btn-spinner) {
+  width: 14px;
+  height: 14px;
+  border: var(--border-width-thick) solid transparent;
+  border-top-color: var(--ui-text-strong);
+  border-radius: 50%;
+  animation: btnSpin 0.6s linear infinite;
+}
+:deep(.btn-spinner--accent) {
+  border-top-color: var(--color-primary);
+}
+:deep(.btn-spinner--light) {
+  border-top-color: var(--text-inverse);
+}
+:deep(.success-state) {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--color-primary-text);
+  font-weight: var(--weight-bold);
+}
+:deep(.animate-pop) {
+  animation: tickPop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
 </style>

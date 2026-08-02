@@ -8,6 +8,7 @@ import SkeletonBlock from './SkeletonBlock.vue'
 import { sortMembersForSwitcher } from '../lib/memberRoles'
 import type { FamilyMemberProfile } from '../lib/familyRealtime'
 import { DEFAULT_FAMILY_EMOJI } from '../lib/familyEmoji'
+import { FAMILY_MEMBERSHIP_CAP, ITEM_LIMIT_DEFAULT } from '../lib/limits'
 import { avatarSlotsForFamilyName } from '../lib/avatarStack'
 import chevronLeftRaw from '../assets/chevron-left.svg?raw'
 import checkRaw from '../assets/check-2.svg?raw'
@@ -18,6 +19,7 @@ import { forgetUser } from '../lib/session'
 import { clearFamilySnapshot } from '../lib/familyCache'
 import { clearOfflineQueue } from '../lib/offlineQueue'
 import { logoutPushUser } from '../lib/pushNotifications'
+import { captureException } from '../lib/errorReporting'
 
 // The settings modal is by far the heaviest part of the topbar; load its chunk
 // only when someone actually opens it.
@@ -38,7 +40,7 @@ const props = defineProps({
   // so the member count and avatars show a skeleton instead of a stale/empty one.
   membersLoading: { type: Boolean, default: false },
   inviteCode: { type: String, default: '' },
-  familyItemLimit: { type: Number, default: 50 },
+  familyItemLimit: { type: Number, default: ITEM_LIMIT_DEFAULT },
   familyEmoji: { type: String, default: '' },
   ownerUserId: { type: String, default: '' },
   currentUserId: { type: String, default: '' },
@@ -56,15 +58,13 @@ const emit = defineEmits([
   'add-family',
 ])
 
-// Keep in step with the DB cap (migration 025): at the cap there is nowhere to
-// add another, so the switcher hides the join/create action.
-const MAX_FAMILIES = 3
-
 const switcherOpen = ref(false)
 // Handed to PopoverMenu so the panel is placed from the button's real position
 // rather than a fixed offset down the page.
 const switcherBtnEl = ref(null)
-const canAddFamily = computed(() => props.families.length < MAX_FAMILIES)
+// At the DB cap (003_families_and_members.sql) there is nowhere to add another,
+// so the switcher hides the join/create action.
+const canAddFamily = computed(() => props.families.length < FAMILY_MEMBERSHIP_CAP)
 
 function toggleSwitcher() {
   switcherOpen.value = !switcherOpen.value
@@ -125,10 +125,14 @@ async function inviteMembersFromAccountMenu() {
   if (props.inviteCode) {
     try {
       await navigator.clipboard.writeText(props.inviteCode)
+      return
     } catch {
-      // no-op
+      // Clipboard access can be refused outright (permissions, a non-secure
+      // context, an older WebView). Swallowing that left the tap doing nothing
+      // at all — no copy, no message, no code on screen. Fall through to the
+      // overview panel instead, which shows the code with its own copy button:
+      // the same place this function already sends someone who has no code yet.
     }
-    return
   }
   openFamilySettingsTab('overview')
 }
@@ -148,7 +152,10 @@ async function handleSignOut() {
     await clerk.value?.signOut({ redirectUrl: `${window.location.origin}/login` })
     accountMenuOpen.value = false
   } catch (error) {
-    console.error('Failed to sign out:', error)
+    // The local data is already cleared by this point, so the session is
+    // effectively over either way; what failed is Clerk's own teardown, which
+    // is worth knowing about but not worth a dialog on the way out.
+    captureException(error)
   } finally {
     signingOut.value = false
   }
@@ -299,7 +306,7 @@ const avatarSlots = computed(() => avatarSlotsForFamilyName(props.familyName))
       Join or create a family
     </button>
     <p v-else class="family-switcher-cap-note">
-      You're in the maximum of {{ MAX_FAMILIES }} families. Leave one to join or create another.
+      You're in the maximum of {{ FAMILY_MEMBERSHIP_CAP }} families. Leave one to join or create another.
     </p>
   </PopoverMenu>
 

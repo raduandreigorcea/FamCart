@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Add a product the catalog doesn't have. This only builds the product and hands
 // it to the caller; contributing it to the catalog is HomeView's job, via the
-// add_custom_product RPC (migration 022) once the add itself succeeds. This is
+// add_custom_product RPC (006_product_catalog.sql) once the add itself succeeds. This is
 // also the only way to give a hand-typed item a maker, which otherwise arrives
 // solely from a catalog pick.
 import { ref, computed, watch, nextTick } from 'vue'
@@ -13,7 +13,7 @@ const props = defineProps({
   // What was already typed into the add form, so the modal continues that
   // thought instead of making the user type it a second time.
   initialName: { type: String, default: '' },
-  // Mirror the DB's length checks (migrations 010 and 023) so the form rejects
+  // Mirror the DB's length checks (004_shopping_list.sql) so the form rejects
   // what the row would reject anyway.
   nameMaxLength: { type: Number, default: 120 },
   makerMaxLength: { type: Number, default: 60 },

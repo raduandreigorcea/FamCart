@@ -100,7 +100,7 @@ function formatTime(iso: string) {
         <div class="history-modal__header">
           <div class="history-modal__title-wrap">
             <div class="history-modal__icon-bg">
-              <span class="header-icon" v-html="historyIconRaw"></span>
+              <span class="header-icon" aria-hidden="true" v-html="historyIconRaw"></span>
             </div>
             <div>
               <h3>Checkout history</h3>
