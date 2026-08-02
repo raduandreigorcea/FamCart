@@ -5,7 +5,13 @@ import App from './App.vue'
 import router from './router'
 import { startConnectivity } from './lib/connectivity'
 import { initPushNotifications } from './lib/pushNotifications'
-import { startErrorReporting } from './lib/errorReporting'
+import { captureEarlyErrors, startErrorReporting } from './lib/errorReporting'
+
+// First statement in the module on purpose: everything below can throw or reject,
+// and until the Sentry SDK loads (deferred to idle) nothing else is listening.
+// Dropped again as soon as reporting is live — see the call to
+// startErrorReporting near the bottom.
+const stopEarlyCapture = captureEarlyErrors()
 
 // Begin tracking real connectivity as early as possible so the router's first
 // navigation can make a trustworthy offline/online decision.
@@ -42,7 +48,11 @@ const app = createApp(App)
 // Error monitoring is opt-in per environment (no DSN in dev, CI or tests) and
 // loaded after the app is idle rather than as part of the initial download —
 // the SDK is about a third of the JavaScript here. See lib/errorReporting.
-void startErrorReporting(app, router)
+//
+// Once it resolves, reporting is live (or there is no DSN and never will be),
+// so the stand-in handlers installed at the top hand over. Without this they
+// would keep running alongside Sentry's own and report everything twice.
+void startErrorReporting(app, router).finally(stopEarlyCapture)
 
 app.use(clerkPlugin, {
   publishableKey: import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
