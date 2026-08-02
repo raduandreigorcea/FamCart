@@ -20,32 +20,32 @@
 --      them to a family the caller is actually in, other families cannot see
 --      them, and they go global only once enough distinct accounts (contributed_by)
 --      add the same product.
---   8. A user can own at most one family (migration 001) -- a complementary
+--   8. A user can own at most one family (003_families_and_members.sql) -- a complementary
 --      product rule alongside the contributed_by promotion gate.
 --   9. Bulk-imported catalog rows say where they came from, clients cannot reach
 --      the import path at all, and an import can never rewrite a curated
---      product or spend a product's earned popularity (migration 028).
+--      product or spend a product's earned popularity (006_product_catalog.sql).
 --  10. The security audit log is unreadable and unforgeable from a client role,
 --      invite-code guessing is capped per user, and privilege changes and member
---      removals leave a record (migrations 029, 030).
+--      removals leave a record (002_security_audit.sql, 003_families_and_members.sql).
 --  11. Catalog ranking cannot be inflated without limit: the global add_count
 --      stops climbing at the hourly ceiling, the counters are unreachable from a
---      client, and crossing the limit is audited once per window (migration 032).
+--      client, and crossing the limit is audited once per window (002_security_audit.sql).
 --
 -- Tests run inside a transaction that is rolled back, so they leave no data behind.
 
 begin;
-select plan(73);
+select plan(74);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 -- Three families, because promoting a contributed product to the global catalog
--- takes three distinct ones (migration 022).
+-- takes three distinct ones (006_product_catalog.sql).
 insert into public.families (id, name, invite_code, created_by) values
   ('00000000-0000-0000-0000-0000000000a1', 'Family A', 'AAAAAAA2', 'user_a'),
   ('00000000-0000-0000-0000-0000000000b1', 'Family B', 'BBBBBBB2', 'user_b'),
   ('00000000-0000-0000-0000-0000000000c1', 'Family C', 'CCCCCCC2', 'user_c');
 
--- Every family_members row now references a profiles row (migration 026's FK),
+-- Every family_members row now references a profiles row (003_families_and_members.sql's FK),
 -- so each test account needs a profile before its membership is seeded below.
 insert into public.profiles (user_id, display_name) values
   ('user_a', 'User A'),
@@ -80,7 +80,7 @@ insert into public.family_members (family_id, user_id, role) values
   ('00000000-0000-0000-0000-0000000000f1', 'attacker', 'member');
 
 -- 8. One family per owner. Asserted here as the superuser, so RLS is out of the
--- way and the unique index (migration 001) is the only thing that can reject the
+-- way and the unique index (003_families_and_members.sql) is the only thing that can reject the
 -- second family -- a complementary product rule alongside the contributed_by
 -- promotion gate. user_a already owns Family A above.
 select throws_ok(
@@ -102,7 +102,7 @@ set max_items_per_member = 1
 where id = '00000000-0000-0000-0000-0000000000a1';
 
 -- One catalog row, seeded the way scripts/seed-products.mjs would -- including
--- the provenance stamp (migration 028), which is what protects it from being
+-- the provenance stamp (006_product_catalog.sql), which is what protects it from being
 -- rewritten by a bulk import.
 insert into public.product_catalog (name, maker, search_text, source)
 values ('Apa Plata 2L', 'Dorna', 'apa plata 2l dorna', 'curated');
@@ -119,9 +119,12 @@ select is(
   'user_a cannot read Family B items'
 );
 
--- 2. The old unthrottled lookup oracle is gone (migration 030). It let any
--- signed-in caller test a guessed code for free; joining is now the only path
--- that resolves a code, and it is throttled and audited.
+-- 2. No unthrottled invite-code lookup exists. An earlier schema had a
+-- find_family_by_invite_code() RPC, which let any signed-in caller test a
+-- guessed code for free — the exact primitive a brute-forcer wants, and cheaper
+-- to call than joining. Nothing in supabase/migrations creates it now, and this
+-- asserts that stays true: joining is the only path that resolves a code, and it
+-- is throttled and audited (003_families_and_members.sql).
 select is(
   (select count(*)::int from pg_proc
    where proname = 'find_family_by_invite_code'
@@ -459,7 +462,7 @@ select is(
   'one account in three families cannot self-promote a product'
 );
 
--- ── 9. Provenance and bulk import (migration 028) ────────────────────────────
+-- ── 9. Provenance and bulk import (006_product_catalog.sql) ────────────────────────────
 -- The catalog now has a third kind of row: products imported in bulk from an
 -- external database. These assert the two guarantees that make that safe --
 -- clients cannot reach the import path at all, and an import cannot damage a row
@@ -683,7 +686,7 @@ select is(
   'the service-role import actually landed its row'
 );
 
--- ── 10. Security audit trail + invite throttle (migrations 029, 030) ─────────
+-- ── 10. Security audit trail + invite throttle (002_security_audit.sql, 003_families_and_members.sql) ─────────
 
 -- 10a. The audit log is unreachable from a client role. RLS with no policies
 -- would already return zero rows; the explicit revoke means it does not even get
@@ -759,7 +762,7 @@ select is(
 -- 10d. Privilege changes and removals are audited. These go through plain
 -- UPDATE/DELETE under RLS rather than an RPC, so only a trigger sees every path.
 --
--- user_a owns Family A, and only the owner may change roles (migration 011), so
+-- user_a owns Family A, and only the owner may change roles (003_families_and_members.sql), so
 -- the promotion below has to run as user_a against Family A.
 insert into public.profiles (user_id, display_name) values ('user_g', 'User G');
 insert into public.family_members (family_id, user_id, role)
@@ -767,11 +770,18 @@ values ('00000000-0000-0000-0000-0000000000a1', 'user_g', 'member');
 
 set local request.jwt.claims = '{"sub":"user_a"}';
 
--- Regression guard for migration 031. prevent_member_profile_tamper referenced
--- family_members.display_name / image_url, which migration 026 dropped, so every
--- promote/demote failed with 'record "new" has no field "display_name"'. Nothing
--- in the suite updated a role, so the whole feature was dead in production
--- unnoticed. Assert the update *works*, not merely that it is audited.
+-- Assert the update *works*, not merely that it is audited.
+--
+-- This exists because of a real outage. A trigger named
+-- prevent_member_profile_tamper once guarded family_members.display_name /
+-- image_url; a later migration moved both columns to profiles and dropped them,
+-- but left the trigger in place. PL/pgSQL resolves record fields at execution
+-- time, so it did not fail on deploy — it failed on the next UPDATE of any
+-- family_members row, which is every promote and demote. Nothing in this suite
+-- exercised a role change, so the feature was dead in production and unnoticed.
+--
+-- That trigger no longer exists in any migration here (profiles' own RLS gives
+-- the same guarantee one layer down). The lesson it left is this assertion.
 select lives_ok(
   $$ update public.family_members set role = 'moderator'
      where family_id = '00000000-0000-0000-0000-0000000000a1' and user_id = 'user_g' $$,
@@ -795,7 +805,27 @@ select is(
   'a removal records that it was not the member leaving voluntarily'
 );
 
--- ── 11. Catalog write rate limiting (migration 032) ──────────────────────────
+-- ── 10b. The families UPDATE policy constrains the new row ───────────────────
+-- An earlier revision of this policy carried `with check (true)`: USING
+-- correctly asked "may you touch this family", but nothing constrained the row
+-- the update produced, leaving the triggers as the only guard. The outage
+-- described just above is what that costs when a trigger drifts. Asserted
+-- against the catalog rather than by attempting an update, because what is being
+-- protected is the policy's own invariant: a future edit that drops back to
+-- `true` should fail here, whatever the triggers happen to cover that day. Same
+-- shape as assertion 2, which guards against a function coming back.
+reset role;
+
+select isnt(
+  (select with_check from pg_policies
+   where schemaname = 'public'
+     and tablename = 'families'
+     and policyname = 'family owner or moderator can update family'),
+  'true',
+  'the families UPDATE policy constrains the new row, not only the old one'
+);
+
+-- ── 11. Catalog write rate limiting (002_security_audit.sql) ──────────────────────────
 -- bump_product_popularity increments add_count on *global* rows, and add_count
 -- drives the suggestion ranking every family sees. Unlimited, it let one account
 -- push any product to the top of everyone's list. A Vercel firewall rule cannot
