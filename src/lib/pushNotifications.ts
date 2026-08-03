@@ -193,6 +193,52 @@ export async function enablePushNotifications(userId: string): Promise<EnablePus
   return enableWebPush(userId)
 }
 
+// Re-attach this device to the signed-in user, on every boot.
+//
+// login() is what ties a device to a Clerk id, and it used to run in exactly one
+// place: the moment somebody switched notifications on. That made the binding a
+// one-shot. Signing out calls logoutPushUser(), which detaches the device;
+// signing back in re-initialises the SDK but never re-binds, so the device stayed
+// subscribed to OneSignal while belonging to nobody. The symptom is invisible
+// from the client — the toggle still reads On, because that is a separate local
+// preference — and only shows up at the far end: the edge function targets the
+// right external ids, OneSignal matches no devices, and the REST call comes back
+// with an empty notification id and a non-zero `targeted` count.
+//
+// Idempotent on purpose. OneSignal no-ops a login for the id it already holds,
+// so calling this on every boot costs nothing in the normal case and repairs the
+// detached one. It stays out of the way of an explicit decision: with no stored
+// preference, or one set to off, it does nothing at all, so it can never
+// resurrect push for somebody who turned it off.
+export async function syncPushUser(
+  userId: string,
+  storage: Pick<Storage, 'getItem'>,
+): Promise<void> {
+  if (!userId) return
+  const appId = getOneSignalAppId()
+  if (!appId) return
+  if (getNotificationPreference(storage) !== 'on') return
+  if (!isPushSupported()) return
+
+  try {
+    if (Capacitor.isNativePlatform()) {
+      const { default: OneSignal } = await import('@onesignal/capacitor-plugin')
+      // Same init-before-use guard the enable path uses: the native SDK throws
+      // and takes the app down when touched before initialize.
+      await OneSignal.initialize(appId)
+      await OneSignal.login(userId)
+      return
+    }
+    // Short of the full cap: this is background repair, not a user waiting on a
+    // toggle, and the next boot will try again.
+    const sdk = await webSdk(5000)
+    await sdk?.login(userId)
+  } catch {
+    // Best-effort. A failed re-bind leaves push exactly as broken as it already
+    // was, and the toggle in Account settings is still there to force it.
+  }
+}
+
 export async function disablePushNotifications(): Promise<void> {
   try {
     if (Capacitor.isNativePlatform()) {
