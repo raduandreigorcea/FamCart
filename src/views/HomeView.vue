@@ -35,6 +35,7 @@ import { flushOfflineQueue, isOfflineError } from '../lib/offlineQueue'
 import { isCurrentlyOffline, onReconnect } from '../lib/connectivity'
 import { rememberUser, getRememberedUser } from '../lib/session'
 import { useFirstRunGreeting } from '../lib/firstRunGreeting'
+import { syncPushUser } from '../lib/pushNotifications'
 import { clampItemLimit, ITEM_LIMIT_DEFAULT, ITEM_NAME_MAX_LENGTH } from '../lib/limits'
 
 const { userId, isLoaded } = useAuth()
@@ -370,6 +371,11 @@ async function runInitializeHome() {
   // up across every family. Best-effort and non-blocking: boot must not wait on
   // it, and the next load reconciles if it fails.
   void upsertOwnProfile(db, userId.value, user.value)
+  // Re-bind this device to the account in OneSignal. Signing out detaches it and
+  // nothing used to put it back, so a device could stay subscribed while
+  // belonging to nobody and silently receive nothing. No-op unless notifications
+  // were actually turned on. See syncPushUser.
+  void syncPushUser(userId.value, localStorage)
   sanitizeAuthCallbackUrl()
   hydrateFromCachedSnapshot()
 
