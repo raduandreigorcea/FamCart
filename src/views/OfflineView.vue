@@ -1,16 +1,30 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import AppCard from '../components/AppCard.vue'
 import wifiOffIcon from '../assets/wifi-off.svg?raw'
 import { refreshConnectivity, onReconnect } from '../lib/connectivity'
 
 // Shown when the app opens with no connection. It recovers on its own the moment
 // connectivity returns, and offers a manual retry for flaky links.
-const router = useRouter()
 const checking = ref(false)
 const stillOffline = ref(false)
 let stopReconnect: (() => void) | null = null
+
+// Recovery is a full page load, not a router navigation.
+//
+// This screen is only ever reached by starting the app with no connection, and
+// that start already failed to fetch Clerk's script. Clerk does not retry, so
+// isLoaded stays false for the life of the page — a client-side
+// router.replace('/') therefore hands the guard a session it can never verify.
+// The guard waits out its Clerk timeout and sends us straight back here, which
+// is what made the retry look like it did nothing.
+//
+// Reloading re-runs main.ts against a working network, so the Clerk plugin
+// installs cleanly. Nothing on this screen is unsaved, so it costs nothing.
+// Same reasoning as goToApp() in LoginView.
+function reloadIntoApp() {
+  window.location.assign('/')
+}
 
 async function retry() {
   if (checking.value) return
@@ -19,9 +33,10 @@ async function retry() {
   // Poll the OS directly — the cached ref can be stale after the network returns.
   const online = await refreshConnectivity()
   if (online) {
-    checking.value = false
-    // Hand back to the router guard, which now sends us to the list or login.
-    await router.replace('/')
+    // The spinner deliberately stays up: the reload is what ends it. Clearing it
+    // first is what made a successful retry flash for a split second and then
+    // appear to do nothing while the guard was still working.
+    reloadIntoApp()
     return
   }
   // Still offline. Hold the spinner briefly so even an instant result reads as a
@@ -32,7 +47,9 @@ async function retry() {
 }
 
 onMounted(() => {
-  stopReconnect = onReconnect(() => { void router.replace('/') })
+  // The automatic path had the same defect as the manual one: connectivity
+  // returning on its own left Clerk just as unloaded.
+  stopReconnect = onReconnect(reloadIntoApp)
 })
 
 onBeforeUnmount(() => {
