@@ -1,0 +1,86 @@
+name: Version bump
+
+# Bumps the patch version on every push to master and commits it back, so the
+# number in Settings -> About moves on its own rather than by remembering to
+# edit package.json. vite.config.js reads that field at build time into
+# __APP_VERSION__, so nothing else has to know about this.
+#
+# WHY THIS DOES NOT LOOP
+#
+# A push made with GITHUB_TOKEN deliberately does not trigger workflows. That is
+# GitHub's own loop protection and it is what makes this safe: the bump commit
+# cannot start another bump, and it does not re-run CI or the APK build either.
+# The `if` below is belt and braces for the case where someone swaps in a PAT,
+# which does not get that protection.
+#
+# WHY THERE IS NO [skip ci] MARKER
+#
+# Vercel is not GitHub Actions. Its integration is a separate GitHub App
+# listening to push webhooks, so it redeploys on the bump commit even though the
+# Actions above stay quiet. That is the behaviour we want: the push you make
+# builds with the old number, and the bump that follows a few seconds later
+# redeploys with the new one, so what is actually live matches what About says.
+# Adding [skip ci] would suppress that redeploy and leave the deployed app one
+# version behind forever.
+#
+# KNOWN GAP
+#
+# The Android APK workflow does not re-run for the same reason CI does not, so
+# the APK attached to a merge carries the version from before its bump. The web
+# app is correct; the APK trails by one. Chaining release-apk.yml to this
+# workflow via `workflow_run` would close it if that ever matters.
+
+on:
+  push:
+    branches: [master]
+
+# Two merges landing close together would otherwise race: both read the same
+# version, both write the next one, and the second push is rejected as a
+# non-fast-forward. Serialised, the second waits and reads the first's result.
+concurrency:
+  group: version-bump
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    name: Bump patch version
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # A default checkout lands on a detached head, which cannot be pushed
+          # from. Name the branch so the commit below has somewhere to go.
+          ref: master
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # --no-git-tag-version keeps npm away from git entirely: no commit, no tag,
+      # and no refusal to run against a working tree it considers dirty. The
+      # commit below is ours to make. package-lock.json carries the version too,
+      # and npm updates both, so they cannot drift apart.
+      - name: Bump
+        id: bump
+        run: |
+          npm version patch --no-git-tag-version
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          # Nothing to do if the version somehow did not move. Committing an
+          # empty change would fail the job for no reason.
+          if git diff --staged --quiet; then
+            echo "Version unchanged, nothing to commit."
+            exit 0
+          fi
+          git commit -m "Bump version to ${{ steps.bump.outputs.version }}"
+          git push
