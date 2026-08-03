@@ -8,6 +8,7 @@ import BackButton from './BackButton.vue'
 import addIcon from '../assets/add.svg?raw'
 import checkIcon from '../assets/check.svg?raw'
 import xIcon from '../assets/x.svg?raw'
+import cartIcon from '../assets/shopping-cart.svg?raw'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -19,24 +20,34 @@ const emit = defineEmits(['close'])
 const step = ref(0)
 const copied = ref(false)
 
+// Written against what the app actually does. Tapping a suggestion adds it
+// outright (HomeView.selectSuggestion calls addItem directly), and checking a
+// row does not buy it: buy_items only runs once the bar is slid, which is the
+// beat this tour used to leave out entirely.
+//
+// No emoji field any more. Each step already opens with an illustration of the
+// thing it teaches, and a 🛒 sitting above a picture of the add form was the one
+// element saying nothing the picture had not already said.
 const steps = [
   {
     key: 'add',
-    emoji: '🛒',
-    title: 'Add anything, together',
-    body: 'Type an item and add it. Start typing and suggestions help you find the exact product fast.',
+    title: 'Add what you need',
+    body: 'Start typing and the matching products come up. Tap one and it goes straight onto the list.',
   },
   {
     key: 'swipe',
-    emoji: '👆',
     title: 'Swipe to check or remove',
-    body: 'Swipe a row right to check it off once it’s in the cart, or left to remove it. No tiny buttons to aim for.',
+    body: 'Swipe a row right once it is in your cart, or left to take it off the list. No small buttons to aim at.',
+  },
+  {
+    key: 'checkout',
+    title: 'Slide to check out',
+    body: 'Checked rows wait in the cart until you slide the bar at the bottom. That is what clears them and saves the trip to your history.',
   },
   {
     key: 'invite',
-    emoji: '💌',
     title: 'Bring your family in',
-    body: 'Share your invite code so everyone shops from the same list. Every change shows up for all of you instantly.',
+    body: 'Share your invite code so everyone shops from the same list. Every change shows up for all of you the moment it happens.',
   },
 ]
 
@@ -107,19 +118,37 @@ async function copyCode() {
                 </div>
               </div>
 
-              <!-- Swipe: green check zone · item · red remove zone. The icons come
-                   from the same assets ShoppingListItem uses, so what the tour
-                   teaches is what the gesture actually shows. -->
+              <!-- Swipe: the row makes the journey rather than sitting between two
+                   labelled boxes. It travels right to uncover the check, returns,
+                   then travels left to uncover the remove — the same directions and
+                   the same two icons ShoppingListItem reveals. A still picture is
+                   the weakest way to teach a gesture. -->
               <div v-else-if="current.key === 'swipe'" class="art-swipe">
                 <span class="art-swipe__zone art-swipe__zone--check" aria-hidden="true" v-html="checkIcon"></span>
+                <span class="art-swipe__zone art-swipe__zone--del" aria-hidden="true" v-html="xIcon"></span>
                 <div class="art-swipe__row">
                   <span class="art-swipe__emoji">🍞</span>
                   <span class="art-swipe__name">Bread</span>
                 </div>
-                <span class="art-swipe__zone art-swipe__zone--del" aria-hidden="true" v-html="xIcon"></span>
               </div>
 
-              <!-- Invite -->
+              <!-- Check out: the buy bar, with the thumb making the journey the
+                   user has to make. This step is new. Checking a row does not buy
+                   it, and nothing in the tour used to say so. -->
+              <div v-else-if="current.key === 'checkout'" class="art-checkout">
+                <div class="art-bar">
+                  <span class="art-bar__fill"></span>
+                  <span class="art-bar__label">Slide to check out</span>
+                  <!-- A white copy of the same words, clipped to the swept region,
+                       so the letters turn white as the thumb covers them. This is
+                       how the real bar does it, and without it the label just sat
+                       there while the trail passed under it. -->
+                  <span class="art-bar__label art-bar__label--inverse">Slide to check out</span>
+                  <span class="art-bar__thumb" aria-hidden="true" v-html="cartIcon"></span>
+                </div>
+              </div>
+
+              <!-- Invite: no gesture to teach here, so nothing moves. -->
               <div v-else class="art-invite">
                 <button
                   class="art-code"
@@ -136,7 +165,6 @@ async function copyCode() {
               </div>
             </div>
 
-            <span class="tour-emoji" aria-hidden="true">{{ current.emoji }}</span>
             <h3 id="tour-title" class="tour-title">{{ current.title }}</h3>
             <p class="tour-body">{{ current.body }}</p>
           </div>
@@ -228,8 +256,11 @@ async function copyCode() {
   width: 100%;
   height: 132px;
   border-radius: var(--radius-2xl);
-  background: var(--color-primary-bg);
-  border: var(--border-width-thin) solid color-mix(in srgb, var(--color-primary) 16%, transparent);
+  /* The app's own list background, not a tinted panel. A white row sitting on
+     this is the same white-on-grey the real list is, so the miniature reads as
+     the thing being taught rather than as a diagram of it. */
+  background: var(--bg-main);
+  border: var(--border-width-thin) solid var(--border-main);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -266,24 +297,140 @@ async function copyCode() {
   padding: var(--space-1) var(--space-2); font-size: var(--text-xs); color: var(--text-secondary);
 }
 
-/* Swipe: a static diagram — green check zone on the left, the item, red remove
-   zone on the right — so the two directions read at a glance without motion. */
-.art-swipe { display: flex; align-items: center; justify-content: center; gap: var(--space-3); width: 100%; }
+/* Swipe: the row travels, uncovering a zone at each end. The zones sit behind
+   it and never move, exactly as they do in ShoppingListItem. */
+.art-swipe { position: relative; width: 100%; max-width: 216px; height: 3rem; }
 .art-swipe__zone {
-  flex-shrink: 0; width: 2.4rem; height: 2.4rem; border-radius: var(--radius-lg);
+  position: absolute; top: 0; width: 3rem; height: 100%; border-radius: var(--radius-lg);
   display: inline-flex; align-items: center; justify-content: center; color: var(--text-inverse);
 }
 /* Same icons and weight the real swipe panels use, so the lesson matches. */
 .art-swipe__zone :deep(svg) {
   width: 20px; height: 20px; stroke: currentColor; stroke-width: 2.4;
 }
-.art-swipe__zone--check { background: var(--color-primary); }
-.art-swipe__zone--del { background: var(--danger-solid); }
+/* Right uncovers the check on the left, left uncovers remove on the right —
+   the mapping ShoppingListItem uses (offset > 0 shows check). */
+.art-swipe__zone--check { left: 0; background: var(--color-primary); }
+.art-swipe__zone--del { right: 0; background: var(--danger-solid); }
 .art-swipe__row {
+  position: absolute; inset: 0;
   display: flex; align-items: center; gap: var(--space-2);
+  padding: 0 var(--space-3);
   background: var(--bg-surface); border: var(--border-width-base) solid var(--border-main);
-  border-radius: var(--radius-lg); padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
   box-shadow: var(--elevation-soft);
+  animation: tour-swipe 4.4s var(--ease-rise) infinite;
+}
+
+/* Holds at each end long enough to be read, not just glimpsed. */
+@keyframes tour-swipe {
+  0%, 10% { transform: translateX(0); }
+  22%, 34% { transform: translateX(3.4rem); }
+  46%, 56% { transform: translateX(0); }
+  68%, 80% { transform: translateX(-3.4rem); }
+  92%, 100% { transform: translateX(0); }
+}
+
+/* Check out: the slide-to-confirm bar, performing its own slide.
+
+   Every value here is the real control's, scaled down. Getting these wrong is
+   what made an earlier version read as a different widget: the trail was full
+   --color-primary rather than the lighter mix, and the label never inverted
+   because there was only one copy of it.
+
+   Fixed pixels rather than rem or percentages, because three things have to
+   stay locked together — the thumb's travel, the trail's width, and the clip on
+   the white label — and they can only agree if they are measured from the same
+   numbers.
+
+   box-sizing is border-box globally, so the 232x44 track encloses its own
+   1.5px border and everything positioned inside it lives in a 229x41 padding
+   box. The thumb has to be 41, not 44: at 44 it was three pixels taller and
+   three wider than the space it sits in, and overflow:hidden trimmed it top,
+   bottom and right. The real control states the same rule outright —
+   THUMB_SIZE is "bar height minus its borders", 54 - 2x1.5 = 51.
+
+     inner   229 x 41
+     thumb   41
+     travel  229 - 41 = 188
+     fill    41 at rest, 229 at the end (thumb size + travel)
+     clip    thumb midline, 20.5 + travel, as an inset from the right edge */
+.art-checkout { width: 232px; }
+.art-bar {
+  position: relative; height: 44px; border-radius: var(--radius-pill);
+  background: var(--bg-surface); border: var(--border-width-base) solid var(--border-main);
+  color: var(--color-primary);
+  box-shadow: var(--elevation-primary);
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden; /* fill and thumb stay inside the pill */
+}
+/* Lighter than the thumb on purpose, exactly as .buy-bar__fill is: the trail is
+   the ground already covered, the thumb is the thing you are holding. */
+.art-bar__fill {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 41px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--color-primary) 80%, var(--bg-surface));
+  animation: tour-fill 3.8s var(--ease-rise) infinite;
+}
+.art-bar__label {
+  position: relative; z-index: 1;
+  padding: 0 2.9rem; /* keeps the words clear of the thumb's resting spot */
+  font-size: var(--text-xs); font-weight: var(--weight-extrabold);
+  letter-spacing: -0.01em; white-space: nowrap;
+}
+.art-bar__label--inverse {
+  position: absolute; inset: 0; z-index: 1;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-inverse);
+  clip-path: inset(0 208.5px 0 0);
+  animation: tour-reveal 3.8s var(--ease-rise) infinite;
+}
+.art-bar__thumb {
+  position: absolute; left: 0; top: 0; z-index: 2;
+  width: 41px; height: 41px;
+  border-radius: 50%; background: var(--color-primary); color: var(--text-inverse);
+  display: inline-flex; align-items: center; justify-content: center;
+  animation: tour-thumb 3.8s var(--ease-rise) infinite;
+}
+.art-bar__thumb :deep(svg) {
+  width: 16px; height: 16px; stroke: currentColor; stroke-width: 2.2;
+}
+
+/* All three share the timeline. The clip is taken at the thumb's midline
+   (22px + travel), not at the trail's leading edge: clipping at the edge flips
+   letters white a few pixels ahead of the knob, which is visible around its
+   rounded nose. The real bar makes the same adjustment for the same reason. */
+@keyframes tour-thumb {
+  0%, 14% { transform: translateX(0); }
+  60%, 78% { transform: translateX(188px); }
+  94%, 100% { transform: translateX(0); }
+}
+@keyframes tour-fill {
+  0%, 14% { width: 41px; }
+  60%, 78% { width: 229px; }
+  94%, 100% { width: 41px; }
+}
+@keyframes tour-reveal {
+  0%, 14% { clip-path: inset(0 208.5px 0 0); }
+  60%, 78% { clip-path: inset(0 20.5px 0 0); }
+  94%, 100% { clip-path: inset(0 208.5px 0 0); }
+}
+
+/* Everything above teaches by moving. Asked for stillness, each art parks at a
+   frame that still reads: the row half open on its check, the bar mid journey. */
+@media (prefers-reduced-motion: reduce) {
+  .art-swipe__row,
+  .art-bar__fill,
+  .art-bar__thumb,
+  .art-bar__label--inverse {
+    animation: none;
+  }
+  .art-swipe__row { transform: translateX(3.4rem); }
+  /* Parked mid journey, with all three still agreeing: thumb at 94px, trail to
+     its trailing edge, label inverted up to the thumb's midline. */
+  .art-bar__thumb { transform: translateX(94px); }
+  .art-bar__fill { width: 135px; }
+  .art-bar__label--inverse { clip-path: inset(0 114.5px 0 0); }
 }
 .art-swipe__emoji {
   width: 1.6rem; height: 1.6rem; display: inline-flex; align-items: center; justify-content: center;
@@ -311,7 +458,6 @@ async function copyCode() {
 .art-people { display: flex; gap: var(--space-2); font-size: var(--text-lg); }
 
 /* ── Copy ── */
-.tour-emoji { font-size: var(--text-2xl); line-height: 1; margin-bottom: var(--space-3); }
 .tour-title {
   margin: 0 0 var(--space-2); font-size: var(--text-xl); font-weight: var(--weight-extrabold);
   color: var(--text-primary); letter-spacing: -0.01em; text-wrap: balance;
