@@ -1,0 +1,246 @@
+-- ─── security audit trail and rate limiting ──────────────────────────────────
+-- Two locked-down tables and the functions that write them: what happened, and
+-- how often someone is allowed to make it happen.
+--
+-- This comes before families and the catalog because both depend on it —
+-- join_family_with_code() logs here and throttles against it, and the two
+-- catalog write RPCs throttle against it too.
+--
+-- Why any of this lives in the database rather than at the edge: the browser
+-- talks to Supabase directly (VITE_SUPABASE_URL), so a Vercel firewall rule only
+-- ever sees requests for the app shell, never a single PostgREST call. Anything
+-- that watches or throttles the API has to live where the API does. Sentry has
+-- the same blind spot — it only sees the browser, and someone hitting PostgREST
+-- with a valid token never loads our JavaScript.
+
+-- ─── the audit trail ─────────────────────────────────────────────────────────
+create table if not exists public.security_events (
+  id         bigint      generated always as identity primary key,
+  created_at timestamptz not null default now(),
+  kind       text        not null,
+  actor      text,        -- Clerk user id; null when the caller was unauthenticated
+  family_id  uuid,        -- deliberately no FK: see below
+  detail     jsonb       not null default '{}'::jsonb
+);
+
+-- No foreign key on family_id on purpose. "Owner deleted the family and removed
+-- everyone first" is exactly the sequence an audit log exists to preserve, and an
+-- ON DELETE CASCADE would erase it at the moment it became interesting.
+
+comment on table public.security_events is
+  'Append-only audit trail. Written only by SECURITY DEFINER functions and '
+  'triggers; unreadable by client roles. Read it from the SQL editor or with '
+  'the service role.';
+
+-- RLS on with *zero policies* means no client role can select, insert, update or
+-- delete: every row fails the (nonexistent) policy check. That is the whole
+-- access model — an attacker who reaches the API with a valid token still cannot
+-- read the log recording them, nor delete their own entries to cover the trail.
+alter table public.security_events enable row level security;
+
+-- Grants and RLS are separate gates, and hosted Supabase hands the API roles
+-- table privileges by default at provisioning. Revoke explicitly rather than
+-- relying on RLS alone; this closes both.
+revoke all on public.security_events from anon, authenticated;
+
+create index if not exists idx_security_events_kind_created_at
+  on public.security_events (kind, created_at desc);
+
+-- Serves the invite throttle in 003_families_and_members.sql: "how many events
+-- of this kind has this actor produced recently".
+create index if not exists idx_security_events_actor_kind_created_at
+  on public.security_events (actor, kind, created_at desc);
+
+-- The only way a row lands in this table. SECURITY DEFINER so it writes as the
+-- owner, past the RLS lockdown above; callers are other definer functions and
+-- triggers, never a client.
+--
+-- Never raises: a failure to log must not roll back the operation being logged.
+-- Losing an audit row is bad, but breaking a member removal because the audit
+-- write hiccuped is worse, and would turn the log into a denial-of-service knob.
+create or replace function public.log_security_event(
+  p_kind text,
+  p_family_id uuid default null,
+  p_detail jsonb default '{}'::jsonb
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.security_events (kind, actor, family_id, detail)
+  values (p_kind, requesting_user_id(), p_family_id, coalesce(p_detail, '{}'::jsonb));
+
+  -- Opportunistic retention: ~1 call in 100 also trims anything older than 90
+  -- days. Doing it inline on every write would put a delete scan on the hot path;
+  -- doing it never would grow the table forever. There is no cron on this project,
+  -- so this keeps retention self-contained in the one function that writes here.
+  if random() < 0.01 then
+    delete from public.security_events where created_at < now() - interval '90 days';
+  end if;
+exception
+  when others then
+    -- Swallow deliberately (see above).
+    return;
+end;
+$$;
+
+-- EXECUTE defaults to PUBLIC in Postgres. Nothing outside this schema's own
+-- definer functions and triggers has any reason to write audit rows, so no role
+-- is granted execute at all — the callers run as the owner already.
+revoke all on function public.log_security_event(text, uuid, jsonb) from public;
+
+-- ─── rate limiting ───────────────────────────────────────────────────────────
+-- The target is catalog write amplification. bump_product_popularity() and
+-- add_custom_product() (006_product_catalog.sql) both increment
+-- product_catalog.add_count on *global* rows, and add_count drives the
+-- suggestion ranking every family sees. Uncapped, one account in a loop could
+-- push any product to the top of everyone's suggestions. The catalog's own
+-- guards cap breadth (500 products per family, 3 distinct accounts to promote)
+-- but not repetition, which is the part that moves the ranking.
+--
+-- Why a counter table rather than counting security_events the way the invite
+-- throttle does: invite failures are rare and belong in the audit trail on their
+-- own merit. These calls fire on every item add — logging each one to build a
+-- count would bury the audit log in routine traffic. So the hot path gets a
+-- counter, and only crossing the limit reaches security_events.
+create table if not exists public.rate_limit_counters (
+  actor        text        not null,
+  kind         text        not null,
+  window_start timestamptz not null,
+  hits         integer     not null default 0,
+  primary key (actor, kind, window_start)
+);
+
+-- Same lockdown as security_events, for the same reason: a client that could
+-- edit its own counter has no rate limit.
+alter table public.rate_limit_counters enable row level security;
+revoke all on public.rate_limit_counters from anon, authenticated;
+
+comment on table public.rate_limit_counters is
+  'Fixed-window request counters. Written only by rate_limit_hit(); no client role '
+  'can read or modify it.';
+
+-- Records one hit and reports whether the caller is now over the limit.
+--
+-- Fixed window (via date_bin), not a sliding one: a caller can burst up to twice
+-- the limit across a window boundary. That is the standard trade for a limiter
+-- that costs a single upsert, and the limits are set far enough above real usage
+-- that a 2x boundary burst is still nowhere near abusive.
+--
+-- Logs to security_events exactly once per window — on the call that crosses the
+-- limit (hits = limit + 1) — so repeated hammering leaves one audit row per
+-- window rather than one per request.
+--
+-- Never raises: both callers are fire-and-forget from the client and must not
+-- surface an error on top of an add that already succeeded.
+create or replace function public.rate_limit_hit(
+  p_kind text,
+  p_limit integer,
+  p_window interval
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_actor text := requesting_user_id();
+  v_start timestamptz;
+  v_hits  integer;
+begin
+  if v_actor is null then
+    return true;  -- unauthenticated callers have no budget
+  end if;
+
+  v_start := date_bin(p_window, now(), timestamptz 'epoch');
+
+  insert into public.rate_limit_counters as rl (actor, kind, window_start, hits)
+  values (v_actor, p_kind, v_start, 1)
+  on conflict (actor, kind, window_start)
+  do update set hits = rl.hits + 1
+  returning rl.hits into v_hits;
+
+  -- Opportunistic cleanup of windows nobody will read again, same approach as
+  -- security_events: rare enough to stay off the hot path, frequent enough that
+  -- the table cannot grow without bound.
+  if random() < 0.01 then
+    delete from public.rate_limit_counters where window_start < now() - interval '1 day';
+  end if;
+
+  if v_hits = p_limit + 1 then
+    perform public.log_security_event(
+      'rate_limited',
+      null,
+      jsonb_build_object('for', p_kind, 'limit', p_limit)
+    );
+  end if;
+
+  return v_hits > p_limit;
+exception
+  when others then
+    -- A broken limiter must not break the app. Fail open and let the catalog's
+    -- breadth caps (500 products per family, the 3-account promotion gate) hold.
+    return false;
+end;
+$$;
+
+revoke all on function public.rate_limit_hit(text, integer, interval) from public;
+
+-- ─── reading the trail back ──────────────────────────────────────────────────
+-- security_events records the right things, but nothing surfaces them, so in
+-- practice it only gets read if someone goes looking. This is as much of that gap
+-- as the architecture closes.
+--
+-- What is deliberately NOT built here: a push alert. The database has no outbound
+-- path — pg_net is not installed on this project on purpose, because an
+-- owner-configurable webhook was an SSRF and exfiltration surface, and
+-- reintroducing it to send alerts would reopen exactly that hole. There is also
+-- no cron and no server-side app layer to poll from.
+--
+-- The remaining honest options are:
+--   • this: one query, run from the Supabase SQL editor when you want to look;
+--   • an external poller (a scheduled GitHub Action) holding a database
+--     credential. That is real alerting, but it puts a credential somewhere new,
+--     which is a trade worth making deliberately rather than by default. If you
+--     want it, give the poller a dedicated role with select on security_events
+--     only — never the service role.
+--
+-- Usage, in the Supabase SQL editor:
+--   select * from public.security_digest();     -- last 7 days
+--   select * from public.security_digest(30);   -- last 30 days
+--
+-- Read it as: anything with a nonzero rate_limited or invite_rate_limited count
+-- is someone hitting a ceiling, and distinct_actors tells you whether it is one
+-- account or many.
+create or replace function public.security_digest(p_days integer default 7)
+returns table (
+  kind            text,
+  events          bigint,
+  distinct_actors bigint,
+  first_seen      timestamptz,
+  last_seen       timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    e.kind,
+    count(*)                as events,
+    count(distinct e.actor) as distinct_actors,
+    min(e.created_at)       as first_seen,
+    max(e.created_at)       as last_seen
+  from public.security_events e
+  where e.created_at > now() - make_interval(days => greatest(p_days, 1))
+  group by e.kind
+  order by count(*) desc, e.kind;
+$$;
+
+-- Never reachable from the client. SECURITY DEFINER means this function *can*
+-- read the locked-down table, so the grant is the only thing standing between a
+-- signed-in user and the audit trail — it goes to service_role alone.
+revoke all on function public.security_digest(integer) from public;
+grant execute on function public.security_digest(integer) to service_role;

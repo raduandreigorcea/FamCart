@@ -1,12 +1,13 @@
-<script setup>
-import { computed, ref } from 'vue'
+<script setup lang="ts">
+import { computed, ref, type PropType } from 'vue'
 import { getProductEmoji } from '../lib/productEmoji'
+import type { ShoppingItemRow } from '../lib/familyRealtime'
 import checkIcon from '../assets/check.svg?raw'
 import xIcon from '../assets/x.svg?raw'
 
 const props = defineProps({
   item: {
-    type: Object,
+    type: Object as PropType<ShoppingItemRow>,
     required: true
   },
   // Set while a purchase animation is playing on this checked row: it drains
@@ -57,12 +58,14 @@ const offset = ref(0) // current horizontal translation of the face
 const dragging = ref(false) // true only while actively tracking a horizontal drag
 const armed = ref(false) // pulled far enough that releasing now commits
 
-let pointerId = null
+let pointerId: number | null = null
 let startX = 0
 let startY = 0
-let axis = null // 'x' once we've committed to a horizontal drag, 'y' for a scroll
+// 'x' once we've committed to a horizontal drag, 'y' for a scroll, null until
+// the gesture has moved far enough to tell which it is.
+let axis: 'x' | 'y' | null = null
 
-const triggerFor = (value) => (value > 0 ? TRIGGER_CHECK : TRIGGER_DELETE)
+const triggerFor = (value: number) => (value > 0 ? TRIGGER_CHECK : TRIGGER_DELETE)
 
 // 0..1 toward the active side's commit distance. Drives the icon and label, so
 // the panel reads as a gauge filling up rather than a fixed backdrop.
@@ -74,7 +77,7 @@ const pullProgress = computed(() => {
 // Follow the finger 1:1 up to the commit distance, then push back hard. The row
 // visibly slows at exactly the point where the action arms, so the threshold is
 // something you feel rather than something you guess at.
-function resist(dx) {
+function resist(dx: number): number {
   const dir = Math.sign(dx)
   const dist = Math.abs(dx)
   const trigger = triggerFor(dx)
@@ -94,7 +97,7 @@ function tick() {
   }
 }
 
-function onPointerDown(event) {
+function onPointerDown(event: PointerEvent) {
   // Ignore secondary buttons and anything mid-drain.
   if (props.draining || (event.pointerType === 'mouse' && event.button !== 0)) return
   pointerId = event.pointerId
@@ -103,7 +106,7 @@ function onPointerDown(event) {
   axis = null
 }
 
-function onPointerMove(event) {
+function onPointerMove(event: PointerEvent) {
   if (pointerId !== event.pointerId) return
   const dx = event.clientX - startX
   const dy = event.clientY - startY
@@ -116,7 +119,9 @@ function onPointerMove(event) {
     axis = Math.abs(dx) > Math.abs(dy) * AXIS_BIAS ? 'x' : 'y'
     if (axis === 'x') {
       dragging.value = true
-      event.currentTarget.setPointerCapture?.(pointerId)
+      // currentTarget is the row this handler is bound to; pointerId is set
+      // above on pointerdown, so both are present by here.
+      ;(event.currentTarget as Element).setPointerCapture?.(pointerId as number)
     }
   }
   if (axis !== 'x') return
@@ -132,7 +137,7 @@ function onPointerMove(event) {
   }
 }
 
-function onPointerUp(event) {
+function onPointerUp(event: PointerEvent) {
   if (pointerId !== event.pointerId) return
   const swiped = axis === 'x'
   const tapped = axis === null
@@ -170,7 +175,7 @@ function settle() {
   axis = null
 }
 
-function onKeydown(event) {
+function onKeydown(event: KeyboardEvent) {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault()
     emit('toggle', props.item)
@@ -192,7 +197,7 @@ function onKeydown(event) {
       :style="{ '--pull': pullProgress }"
       aria-hidden="true"
     >
-      <span class="item-action__icon" v-html="checkIcon"></span>
+      <span class="item-action__icon" aria-hidden="true" v-html="checkIcon"></span>
       <span class="item-action__label">{{ item.checked ? 'Uncheck' : 'Got it' }}</span>
     </div>
     <!-- Action revealed under a leftward swipe -->
@@ -204,7 +209,7 @@ function onKeydown(event) {
       aria-hidden="true"
     >
       <span class="item-action__label">Remove</span>
-      <span class="item-action__icon" v-html="xIcon"></span>
+      <span class="item-action__icon" aria-hidden="true" v-html="xIcon"></span>
     </div>
 
     <div
@@ -226,7 +231,7 @@ function onKeydown(event) {
         <span class="item-name">{{ item.name }}</span>
         <span v-if="item.maker" class="item-maker">{{ item.maker }}</span>
       </span>
-      <span v-if="item.quantity > 1" class="item-qty">x{{ item.quantity }}</span>
+      <span v-if="(item.quantity ?? 1) > 1" class="item-qty">x{{ item.quantity }}</span>
       <img
         v-if="avatarUrl"
         :src="avatarUrl"

@@ -93,8 +93,22 @@ export async function refreshConnectivity(): Promise<boolean> {
   return online.value
 }
 
+// The one answer to "are we offline right now", for every caller.
+//
+// Two signals, because neither alone is trustworthy on its own. The tracked
+// status is authoritative on native (Capacitor reads the OS), but it starts
+// optimistic — `online` defaults to true and stays that way until the first
+// getStatus() resolves, so a cold start that is genuinely offline would read as
+// online for that window. navigator.onLine closes it: a `false` there is a
+// reliable positive offline signal in every environment. The reverse does not
+// hold (a WebView happily reports `true` on a dead network), which is why it is
+// only ever consulted for a definite `false`.
+//
+// This composite lived in HomeView, which meant familyRealtime — the one place
+// that most needs the native signal — was left reading navigator directly.
 export function isCurrentlyOffline(): boolean {
-  return online.value === false
+  if (online.value === false) return true
+  return typeof navigator !== 'undefined' && navigator.onLine === false
 }
 
 // Register a handler to run each time connectivity is restored. Returns an

@@ -356,7 +356,7 @@ describe('adding a custom product', () => {
     // ...and the catalog itself saw nothing but reads. Contributing goes through
     // add_custom_product (see homeViewCustomProduct.component.test.js), which is
     // what scopes the product to this family and checks membership. RLS grants
-    // SELECT and nothing else (migration 022), so a direct write here would be
+    // SELECT and nothing else (006_product_catalog.sql), so a direct write here would be
     // rejected by the database anyway — this catches it at the source instead.
     expect(mocks.db.calls.filter((c) => c.table === 'product_catalog' && c.op !== 'select')).toEqual([])
   })
@@ -419,8 +419,9 @@ describe('addItem', () => {
     await submitAdd(wrapper, 'Milk', 2)
 
     expect(listedItems(wrapper)).toHaveLength(0)
-    // Second ErrorModal is the add-item one (first is the load error).
-    expect(wrapper.findAllComponents(ErrorModal)[1].props('message')).toBe('boom')
+    // One ErrorModal serves every channel now, so this is the add error itself.
+    // The raw Postgres text ('boom') is masked on the way out.
+    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('Failed to add item.')
     const form = wrapper.findComponent(AddItemForm)
     expect(form.props('name')).toBe('Milk')
     expect(form.props('quantity')).toBe(2)
@@ -488,7 +489,7 @@ describe('toggleItem', () => {
     await flushPromises()
 
     expect(listedItems(wrapper)[0].checked).toBe(false)
-    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('nope')
+    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('Could not update that item.')
   })
 
   it('merges an unchecked item into the existing active row with the same name', async () => {
@@ -528,7 +529,7 @@ describe('toggleItem', () => {
     expect(items).toHaveLength(2)
     expect(items.find((i) => i.id === 'item-b').quantity).toBe(3)
     expect(items.find((i) => i.id === 'item-a')).toBeTruthy()
-    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('delete failed')
+    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('Could not merge those items.')
   })
 
   it('moves a newly checked item to the top of the checked section', async () => {
@@ -548,7 +549,7 @@ describe('toggleItem', () => {
   it('shows the limit popup (not a raw error) when unchecking would exceed the cap', async () => {
     const item = makeItem({ id: 'item-1', name: 'Milk', checked: true, checked_at: '2026-01-01T00:00:00.000Z' })
     const wrapper = await mountHome({ items: [item] })
-    // The DB trigger (migration 010) now rejects an uncheck that breaks the cap.
+    // The DB trigger (004_shopping_list.sql) now rejects an uncheck that breaks the cap.
     mocks.db.handlers['shopping_list_items.update'] = () => ({
       data: null,
       error: { message: 'You reached your limit of 50 active items.', detail: 'member_active_item_limit_exceeded' },
@@ -686,7 +687,7 @@ describe('deleteItem', () => {
 
     const items = listedItems(wrapper)
     expect(items.map((i) => i.id)).toEqual(['item-1', 'item-2'])
-    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('cannot delete')
+    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('Could not delete that item.')
   })
 
   it('removes the row optimistically when the delete succeeds', async () => {

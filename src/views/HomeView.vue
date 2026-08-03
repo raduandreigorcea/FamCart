@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useAuth, useUser } from '@clerk/vue'
 import { useRouter } from 'vue-router'
@@ -12,20 +12,10 @@ import ShoppingList from '../components/ShoppingList.vue'
 import AddItemForm from '../components/AddItemForm.vue'
 import OnboardingTour from '../components/OnboardingTour.vue'
 import { useFamilyRealtime } from '../lib/familyRealtime'
-import {
-  findActiveItemByName,
-  countActiveItemsByMember,
-  sortItemsForDisplay,
-} from '../lib/shoppingList'
-import {
-  normalizeSearchText,
-  escapeIlikePattern,
-  buildFamilyProductStats,
-  matchFamilyStats,
-  productKey,
-  rankSuggestions,
-} from '../lib/productSearch'
-import { topFamilyProducts } from '../lib/productRecents'
+import { useProductSuggestions } from '../lib/productSuggestions'
+import type { ProductSuggestion } from '../lib/productSearch'
+import type { FamilyMemberProfile, ShoppingItemRow } from '../lib/familyRealtime'
+import { useShoppingListActions } from '../lib/shoppingListActions'
 import { upsertOwnProfile } from '../lib/profile'
 import { cleanAuthCallbackUrl } from '../lib/authCallbackUrl'
 import {
@@ -36,20 +26,18 @@ import {
   saveActiveFamilyId,
   clearActiveFamilyId,
 } from '../lib/familyCache'
-import { enqueueOfflineMutation, flushOfflineQueue, hasQueuedOfflineMutations, isOfflineError } from '../lib/offlineQueue'
+import { flushOfflineQueue, isOfflineError } from '../lib/offlineQueue'
+// isCurrentlyOffline is the app's one answer to "are we offline", handed to
+// every composable below that has to choose between writing and queueing. The
+// composite it computes (Capacitor status first, navigator.onLine as the
+// definite-offline backstop) used to be re-derived here, which left realtime
+// reading navigator directly — see the note in lib/connectivity.
 import { isCurrentlyOffline, onReconnect } from '../lib/connectivity'
 import { rememberUser, getRememberedUser } from '../lib/session'
-import { hasSeenTour, markTourSeen } from '../lib/onboarding'
-import {
-  enablePushNotifications,
-  getNotificationPreference,
-  setNotificationPreference,
-  getOneSignalAppId,
-  isDesktopBrowser,
-  isPushSupported,
-} from '../lib/pushNotifications'
+import { useFirstRunGreeting } from '../lib/firstRunGreeting'
+import { clampItemLimit, ITEM_LIMIT_DEFAULT, ITEM_NAME_MAX_LENGTH } from '../lib/limits'
 
-const { userId, isLoaded, getToken } = useAuth()
+const { userId, isLoaded } = useAuth()
 const { user } = useUser()
 const router = useRouter()
 const db = useSupabase()
@@ -57,33 +45,43 @@ const db = useSupabase()
 // Offline, Clerk hasn't loaded and userId is null, but we may have booted from a
 // remembered session. Fall back to that id so the cache, offline queue, and new
 // rows' authorship all key to the right user until Clerk confirms it online.
-const effectiveUserId = computed(() => userId.value || getRememberedUser(localStorage))
+// Always a string: every consumer keys storage or rows by it, and '' simply
+// finds nothing rather than forcing a null check at each call site.
+const effectiveUserId = computed(() => userId.value || getRememberedUser(localStorage) || '')
 
-const items = ref([])
+// The switcher's rows: every family the user belongs to.
+interface FamilyRow { id: string; name: string; emoji?: string | null }
+
+// PostgREST types an embedded to-one relation as an array, but these selects
+// each return a single joined row; the casts at the two call sites say so once.
+interface MemberRow {
+  user_id: string
+  role?: string | null
+  profiles?: { display_name?: string | null; image_url?: string | null } | null
+}
+interface MembershipRow {
+  family_id: string
+  families?: { name?: string | null; emoji?: string | null } | null
+}
+
+const items = ref<ShoppingItemRow[]>([])
 // Which rows the list shows: 'all' | 'active' | 'checked'. A view of `items`,
 // never a filter on what is fetched -- every other path (realtime, offline
 // queue, the item cap) keeps working on the whole list.
 //
 // Deliberately not persisted. Opening the app to a filtered list, with no memory
 // of having set one, is how items get declared missing.
-const listFilter = ref('all')
+const listFilter = ref<'all' | 'active' | 'checked'>('all')
 // Every family the user belongs to ({ id, name }), for the topbar switcher.
 // familyId below is whichever one is currently active.
-const families = ref([])
-// Ids of items with an online write in flight (a toggle, so far). A background
-// refetch — reconnect, focus, watchdog — reads the server's pre-write value, so
-// loadItems keeps the local optimistic row for these ids instead of clobbering
-// the change with a row the write hasn't reached yet. Not reactive: it only
-// gates loadItems, which reads it synchronously. Offline writes go through the
-// queue (ensureQueueFlushed) and need no entry here.
-const pendingItemWrites = new Set()
-const familyId = ref(null)
+const families = ref<FamilyRow[]>([])
+const familyId = ref<string | null>(null)
 const familyName = ref('')
 const familyInviteCode = ref('')
 const familyOwnerId = ref('')
-const familyItemLimit = ref(50)
+const familyItemLimit = ref(ITEM_LIMIT_DEFAULT)
 const familyEmoji = ref('')
-const familyMembers = ref([])
+const familyMembers = ref<FamilyMemberProfile[]>([])
 // Roster keyed by user id, so a list row can resolve its author's live avatar
 // from added_by (the row no longer carries a copied name/photo).
 const memberProfileMap = computed(
@@ -91,30 +89,95 @@ const memberProfileMap = computed(
 )
 const newItem = ref('')
 const newQty = ref(1)
-// Product-catalog matches for what's being typed, and the suggestion the user
-// picked (its maker is stored on the item and shown as a subtitle).
-const suggestions = ref([])
-const suggestionsLoading = ref(false)
-const selectedProduct = ref(null)
-// What this family actually buys, folded from purchase_history — the primary
-// ranking signal for suggestions (see rankSuggestions).
-const familyProductStats = ref(new Map())
+// Everything behind the search box: the catalog query, this family's purchase
+// habits (which rank it), and the regulars offered before anything is typed.
+// familyProductStats comes back out because the empty state reads it too — the
+// same numbers answer "what does this family buy" and "have they ever shopped".
+const {
+  suggestions,
+  suggestionsLoading,
+  selectedProduct,
+  searchExpanded,
+  canAddCustomProduct,
+  familyProductStats,
+  productStatsLoaded,
+  loadFamilyProductStats,
+  recentProducts,
+  restartProducts,
+  lastAdded,
+  reportAdded,
+  clearLastAdded,
+  recordProductAdd,
+  clearSuggestions,
+} = useProductSuggestions({ db, familyId, items, query: newItem, isOffline: isCurrentlyOffline })
+// A checkout that just succeeded is proof this family has shopped, available
+// immediately rather than after the stats refetch lands.
+const boughtThisSession = ref(false)
+// Which family the cached snapshot said had shopped, or '' for none. Offline
+// this is the only answer there is, since purchase history cannot be fetched.
+//
+// The family id rather than a bare boolean, because the snapshot is keyed to the
+// USER: after creating or joining a family, that family is active immediately
+// while the painted snapshot still describes the previous one. A boolean carried
+// the old family's answer straight onto the new family's empty list, which then
+// opened on "All bought" having bought nothing. Storing what the answer is ABOUT
+// makes it self-invalidating — no path can forget to clear it.
+const cachedShoppedFamilyId = ref('')
 const loadError = ref('')
-const addError = ref('')
 const customProductOpen = ref(false)
-const limitReachedPopupOpen = ref(false)
-const notificationPromptOpen = ref(false)
-const notificationError = ref('')
-// One-time first-run tour (add / swipe / invite). Shown once per device before
-// the notifications ask, so a new user learns the gestures first.
-const onboardingTourOpen = ref(false)
-const adding = ref(false)
+// The one-time first-run sequence: gesture tour, then the notifications ask.
+// Owns its own dialog state; the view renders them and passes the answers back.
+const {
+  onboardingTourOpen,
+  notificationPromptOpen,
+  notificationError,
+  start: startFirstRunGreeting,
+  closeTour: closeOnboardingTour,
+  acceptNotifications,
+  declineNotifications,
+} = useFirstRunGreeting({ userId, isOffline: isCurrentlyOffline })
 const hasInitialized = ref(false)
 // True while switchFamily is tearing down the old family and loading the new one.
 // Drives the skeleton (instead of the "no items" empty state) so a switch never
 // flashes the new family as empty.
 const switchingFamily = ref(false)
-const ITEM_NAME_MAX_LENGTH = 120
+
+// Every write the list can make, with the optimistic bookkeeping around them.
+// It owns the in-flight write set and the offline-queue flush, because both
+// exist only to keep those writes honest against a racing refetch.
+const {
+  pendingItemWrites,
+  addError,
+  limitReachedPopupOpen,
+  closeLimitReachedPopup,
+  ensureQueueFlushed,
+  loadItems,
+  addItem,
+  toggleItem,
+  deleteItem,
+  checkoutItems,
+} = useShoppingListActions({
+  db,
+  items,
+  familyId,
+  userId: effectiveUserId,
+  itemLimit: familyItemLimit,
+  isOffline: isCurrentlyOffline,
+  draftName: newItem,
+  draftQuantity: newQty,
+  selectedProduct,
+  loadError,
+  reportAdded,
+  clearLastAdded,
+  recordProductAdd,
+  onCheckedOut: () => {
+    // The list is empty because it was bought, not because it was never filled.
+    boughtThisSession.value = true
+    // The checkout just became history, which is the ranking signal — fold it in
+    // so what was bought ranks higher on the very next keystroke.
+    void loadFamilyProductStats()
+  },
+})
 
 // Realtime sync (channels, reconnects, watchdog) lives in the composable; it
 // registers its own lifecycle listeners and calls back into the loaders below.
@@ -145,215 +208,78 @@ const initialLoading = computed(
 // The skeleton shows on the first-ever load and while switching families.
 const listLoading = computed(() => initialLoading.value || switchingFamily.value)
 
-// Mutations check this at call time: on a definite offline signal they queue
-// the write instead of hitting the network. Mid-flight failures on a flaky
-// connection keep the existing rollback paths. The Capacitor connectivity ref
-// is authoritative on native; navigator.onLine is the web/test fallback.
-function isOffline() {
-  if (isCurrentlyOffline()) return true
-  return typeof navigator !== 'undefined' && navigator.onLine === false
-}
+// Has this family ever bought anything? Purchase history is the record, but a
+// checkout in this session counts before the refetch confirms it.
+const hasShopped = computed(
+  () =>
+    familyProductStats.value.size > 0
+    || boughtThisSession.value
+    // Only while the cached answer is about the family currently on screen.
+    || (!!familyId.value && cachedShoppedFamilyId.value === familyId.value),
+)
 
-// A live write can still fail at the network layer even when navigator.onLine
-// reports true (common in the Android WebView / on a dead Wi-Fi). When that
-// happens, treat it exactly like the up-front offline path: queue the mutation
-// and keep the optimistic state, rather than rolling back and popping a raw
-// "Failed to fetch" modal. Returns true when it handled the failure.
-function deferIfOffline(error, mutation) {
-  if (!isOfflineError(error)) return false
-  enqueueOfflineMutation(localStorage, effectiveUserId.value, mutation)
-  return true
-}
+// The three error channels are independent, so more than one can be set at once
+// — a background refresh failing while an add is also rejected, say. Rendering a
+// dialog each stacked two overlays on top of each other. Show the first that has
+// something to say and leave the rest queued behind it; dismissing reveals the
+// next, so nothing is silently dropped.
+const ERROR_CHANNELS = [
+  { ref: () => loadError, title: 'Something went wrong' },
+  { ref: () => addError, title: 'Something went wrong' },
+  { ref: () => notificationError, title: 'Notifications' },
+]
+const activeError = computed(() => {
+  const channel = ERROR_CHANNELS.find((c) => c.ref().value)
+  if (!channel) return { title: '', message: '', dismiss: () => {} }
+  return {
+    title: channel.title,
+    message: channel.ref().value,
+    dismiss: () => {
+      channel.ref().value = ''
+    },
+  }
+})
+// The empty list has two opposite readings — "All bought" for a family that
+// shops, "Nothing here yet" for one starting out — and picking the wrong one and
+// correcting it a moment later is worse than waiting. Hold the empty state until
+// the answer is actually known. There are no rows to delay in the meantime;
+// this gates nothing but the message itself.
+const emptyStateAnswerable = computed(() => productStatsLoaded.value || boughtThisSession.value)
 
-let stopReconnect = null
+let stopReconnect: (() => void) | null = null
 
 onMounted(() => {
   // Two reconnect signals: the reliable native one, plus the web 'online' event
   // for the browser and tests. Both funnel into the same idempotent sync.
   window.addEventListener('online', handleBackOnline)
   stopReconnect = onReconnect(handleBackOnline)
+  // The snapshot write is deferred to coalesce bursts, so it can still be
+  // outstanding when the app goes away — which on a phone is most of the time,
+  // and is exactly the moment the next cold boot depends on it. pagehide is the
+  // one teardown event that fires reliably on mobile Safari and in a WebView.
+  window.addEventListener('pagehide', flushSnapshot)
+  document.addEventListener('visibilitychange', flushSnapshotIfHidden)
   void initializeHome()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('online', handleBackOnline)
+  window.removeEventListener('pagehide', flushSnapshot)
+  document.removeEventListener('visibilitychange', flushSnapshotIfHidden)
   if (stopReconnect) stopReconnect()
-  if (suggestTimer) clearTimeout(suggestTimer)
+  flushSnapshot()
 })
-
-// ── Product suggestions ───────────────────────────────────────────────────────
-// Typing queries the read-only product catalog (debounced) and offers matches;
-// picking one fills the input with the product name and remembers its maker.
-// Best-effort: any failure just means no dropdown, never an error surface.
-//
-// The catalog is the only source of suggestions; this family's history only
-// decides their order. History is not a catalog — it holds whatever anyone typed
-// into the list, so a lazy "apa" entry would otherwise be offered as a product,
-// outrank every real one, and entrench itself by being picked again.
-//
-// So the catalog is queried for a candidate pool wider than the six shown, and
-// the final order is decided locally against familyProductStats.
-let suggestTimer = null
-let suggestRequestId = 0
-const SUGGEST_MIN_CHARS = 2
-const SUGGEST_LIMIT = 6
-// On a phone the form lifts to the top of the screen when focused, and the
-// dropdown gets the whole screen instead of a 275px slot. Twice the room is
-// worth twice the matches; the pool below already dwarfs both numbers, so this
-// costs nothing but stops throwing ranked matches away.
-const SUGGEST_LIMIT_EXPANDED = 12
-const searchExpanded = ref(false)
-const suggestLimit = computed(() =>
-  searchExpanded.value ? SUGGEST_LIMIT_EXPANDED : SUGGEST_LIMIT
-)
-// Wide enough that a common two-character prefix does not fill the pool with
-// globally-popular strangers before this family's own products get a look in.
-// The trigram index does the filtering either way, so the cost is the sort and
-// the payload, not the match.
-const SUGGEST_POOL = 100
-// Long enough to mean "stopped typing" on a phone. Thumb-typing runs ~300-400ms
-// per character, so a shorter pause than this elapses between ordinary
-// keystrokes and every character would cost its own request.
-const SUGGEST_DEBOUNCE_MS = 300
-
-// ─── The regulars ────────────────────────────────────────────────────────────
-// What the search screen opens on before anything is typed, and what the empty
-// list offers as one-tap adds. Groceries are mostly repeats, so the most useful
-// thing either space can hold is the shortcut past typing altogether.
-// familyProductStats is already loaded for ranking, so this costs no query.
-const RECENT_LIMIT = 8
-const recentProducts = computed(() =>
-  topFamilyProducts(familyProductStats.value, {
-    limit: RECENT_LIMIT,
-    // Already on the list is not something to add again.
-    exclude: items.value.map((item) => productKey(item.name, item.maker)),
-  })
-)
-
-// The same list, shorter. On the search screen these fill a screen the keyboard
-// is already up for; on the empty list they are a way to start rather than a
-// list to read through. A prefix rather than a second query, because the order
-// is the same one either way.
-const RESTART_LIMIT = 6
-const restartProducts = computed(() => recentProducts.value.slice(0, RESTART_LIMIT))
-
-// What just landed, for the search screen to confirm — while it is up, the list
-// is behind it and a tap would otherwise have no visible result. Reported at
-// the point the row is actually on the list rather than when the tap happened,
-// so a rejected add never claims to have worked. A fresh object each time, so
-// adding the same product twice reads as two adds.
-const lastAdded = ref(null)
-function reportAdded(name, maker) {
-  lastAdded.value = { name, maker: maker ?? null }
-}
-
-watch(newItem, (value) => {
-  const query = value.trim()
-  // Editing away from a picked suggestion drops its maker; retyping the exact
-  // product name without re-picking keeps it (same product, same subtitle).
-  if (selectedProduct.value && query !== selectedProduct.value.name) {
-    selectedProduct.value = null
-  }
-  if (suggestTimer) clearTimeout(suggestTimer)
-  if (query.length < SUGGEST_MIN_CHARS || selectedProduct.value) {
-    suggestions.value = []
-    suggestionsLoading.value = false
-    return
-  }
-  // The last query's matches are not this query's answers, so drop them and show
-  // the skeleton from the first keystroke — across the debounce as well as the
-  // request, since both are time the user spends waiting. Without this the
-  // dropdown would offer "Can't find it?" while the search is still running.
-  suggestions.value = []
-  suggestionsLoading.value = true
-  suggestTimer = setTimeout(() => void fetchSuggestions(query), SUGGEST_DEBOUNCE_MS)
-})
-
-async function fetchSuggestions(query) {
-  if (isOffline()) {
-    suggestionsLoading.value = false
-    return
-  }
-  const requestId = ++suggestRequestId
-  try {
-    const pattern = `%${escapeIlikePattern(normalizeSearchText(query))}%`
-    let pool = db
-      .from('product_catalog')
-      .select('name, maker, popularity')
-      .ilike('search_text', pattern)
-    // Scope to the global catalog plus THIS family's own contributions. RLS
-    // already blocks other families' rows, but a user in more than one family
-    // would otherwise see (and, via recordProductAdd, bump) the products they
-    // contributed elsewhere while shopping here. familyId is a server-issued
-    // uuid, never typed input, so it is safe to interpolate into the filter.
-    pool = familyId.value
-      ? pool.or(`family_id.is.null,family_id.eq.${familyId.value}`)
-      : pool.is('family_id', null)
-    const { data, error } = await pool
-      // Popularity decides which matches make the pool, then rankSuggestions
-      // reorders it around this family. Ordering here (rather than only locally)
-      // is what keeps the pool cap from cutting off globally-popular products.
-      .order('popularity', { ascending: false })
-      .order('name')
-      .limit(SUGGEST_POOL)
-    // Stale response: a newer keystroke queried already, and that request owns
-    // the dropdown now — including when its skeleton stops.
-    if (requestId !== suggestRequestId) return
-    // Late response: the input was cleared or a product picked meanwhile, so
-    // these matches must not reopen the list.
-    if (error || selectedProduct.value || newItem.value.trim().length < SUGGEST_MIN_CHARS) return
-    // The pool is capped and ordered globally, so a product this family buys
-    // every week can be crowded out of it entirely by a catalog this large.
-    // familyProductStats is already loaded, so recovering those matches costs no
-    // network. Catalog rows go first: rankSuggestions dedupes first-wins, so the
-    // catalog's spelling and popularity win wherever it did return the product.
-    const candidates = [
-      ...(data || []),
-      ...matchFamilyStats(query, familyProductStats.value, { limit: suggestLimit.value }),
-    ]
-    suggestions.value = rankSuggestions(candidates, familyProductStats.value, suggestLimit.value)
-  } catch {
-    // Suggestions are a convenience; a failed lookup changes nothing.
-  } finally {
-    // Only the newest request may stop the skeleton. A superseded one returning
-    // early must leave it spinning for the request that replaced it, or the
-    // dropdown would flash "Can't find it?" mid-search.
-    if (requestId === suggestRequestId) suggestionsLoading.value = false
-  }
-}
-
-// Fold this family's recent purchases into the ranking signal. Best-effort: on
-// failure suggestions just fall back to the global catalog order. Retention
-// (migration 019) already caps history at 60 checkouts / 30 days, so this is a
-// small, naturally-recent window and can be fetched whole.
-async function loadFamilyProductStats() {
-  if (!familyId.value || isOffline()) return
-  try {
-    const { data, error } = await db
-      .from('purchase_history')
-      .select('name, maker, purchased_at')
-      .eq('family_id', familyId.value)
-    if (error) return
-    familyProductStats.value = buildFamilyProductStats(data || [])
-  } catch {
-    // No stats just means suggestions rank globally, which is the old behaviour.
-  }
-}
 
 // Picking a suggestion adds it outright rather than filling the input: the pick
 // already says exactly which product was meant, so a second confirming tap is
 // just friction. The typed text is dropped by addItem clearing the input.
-function selectSuggestion(product) {
-  suggestions.value = []
+function selectSuggestion(product: ProductSuggestion) {
+  clearSuggestions()
   void addItem(product)
 }
 
-// The escape hatch, offered as soon as the query is long enough to have been
-// searched for — including when nothing matched, which is when it matters most.
-const canAddCustomProduct = computed(() => newItem.value.trim().length >= SUGGEST_MIN_CHARS)
-
 function openCustomProduct() {
-  suggestions.value = []
+  clearSuggestions()
   customProductOpen.value = true
 }
 
@@ -361,51 +287,9 @@ function openCustomProduct() {
 // pick — it is simply a product the catalog does not have yet. The tag rides
 // along so recordProductAdd knows to contribute it rather than bump it; it is
 // dropped before the insert, which builds its row from named fields only.
-function addCustomProduct(product) {
+function addCustomProduct(product: ProductSuggestion) {
   customProductOpen.value = false
   void addItem({ ...product, custom: true })
-}
-
-// Record that a product was added, so it ranks higher in future suggestions.
-// A catalog product just gets its popularity bumped. A custom one is contributed
-// to the catalog scoped to this family — suggested back to them straight away,
-// and promoted to a global suggestion only once enough other families have added
-// the same product (migration 022), so one family's spelling cannot leak into
-// everyone else's dropdown.
-//
-// Best-effort either way: fire-and-forget, never blocks or errors the add, and
-// skipped offline (neither is part of the offline queue).
-function recordProductAdd(product) {
-  if (!product || isOffline()) return
-  const call = product.custom
-    ? db.rpc('add_custom_product', {
-        p_family_id: familyId.value,
-        p_name: product.name,
-        p_maker: product.maker ?? null,
-      })
-    : db.rpc('bump_product_popularity', {
-        p_name: product.name,
-        p_maker: product.maker ?? null,
-        p_family_id: familyId.value,
-      })
-  void call.then(() => {}, () => {})
-}
-
-// Single-flight flush of the offline queue. Every list refetch funnels through
-// this first (see loadItems), so a reload triggered by realtime/watchdog on
-// reconnect can never paint the server's pre-sync state and drop the user's own
-// queued change — the write lands before we read it back. Concurrent callers
-// share one in-flight flush, so a mutation is never replayed twice.
-let flushPromise = null
-function ensureQueueFlushed() {
-  if (!effectiveUserId.value || !hasQueuedOfflineMutations(localStorage, effectiveUserId.value)) {
-    return Promise.resolve({ flushed: 0, failed: 0, interrupted: false })
-  }
-  if (!flushPromise) {
-    flushPromise = flushOfflineQueue(localStorage, effectiveUserId.value, db)
-      .finally(() => { flushPromise = null })
-  }
-  return flushPromise
 }
 
 // Back online: replay writes queued while offline, then re-fetch so local state
@@ -441,9 +325,24 @@ watch([isLoaded, userId], () => {
   void initializeHome()
 })
 
-async function initializeHome() {
-  if (hasInitialized.value) return
+// hasInitialized is only set once the whole sequence below has finished, so it
+// cannot keep a second run out while the first is still awaiting. Both entry
+// points (onMounted and the Clerk watcher) can fire inside that window — a
+// session resolving in another tab is enough — and two overlapping runs mean
+// duplicate loadFamilies/loadItems calls and two sets of realtime channels.
+let initializing = false
 
+async function initializeHome() {
+  if (hasInitialized.value || initializing) return
+  initializing = true
+  try {
+    await runInitializeHome()
+  } finally {
+    initializing = false
+  }
+}
+
+async function runInitializeHome() {
   // Clerk has not confirmed the session yet. A remembered user with a cached
   // snapshot still gets painted right now rather than staring at skeletons for
   // the whole Clerk warm-up: the router already vetted us here, and this is the
@@ -456,7 +355,7 @@ async function initializeHome() {
     if (uid && loadFamilySnapshot(localStorage, uid)) {
       sanitizeAuthCallbackUrl()
       hydrateFromCachedSnapshot()
-      if (isOffline()) hasInitialized.value = true
+      if (isCurrentlyOffline()) hasInitialized.value = true
     }
     return
   }
@@ -506,7 +405,7 @@ async function initializeHome() {
   const storedActiveId = loadActiveFamilyId(localStorage, userId.value)
   const activeFamily = families.value.find((f) => f.id === storedActiveId) || families.value[0]
   familyId.value = activeFamily.id
-  saveActiveFamilyId(localStorage, userId.value, activeFamily.id)
+  saveActiveFamilyId(localStorage, effectiveUserId.value, activeFamily.id)
   // Writes queued during a previous offline session land before the first
   // fetch, so the list below already reflects them. No-op when the queue is empty.
   await flushOfflineQueue(localStorage, effectiveUserId.value, db)
@@ -518,68 +417,24 @@ async function initializeHome() {
   await setupRealtimeSubscriptions()
   hasInitialized.value = true
   persistSnapshot()
-  maybeStartOnboarding()
+  startFirstRunGreeting()
 }
 
 // First run: teach the gestures with the tour, then (once it's dismissed) fall
 // through to the notifications ask. A returning user who's already seen the tour
 // skips straight to the notifications check.
-function maybeStartOnboarding() {
-  if (!userId.value) return
-  if (!hasSeenTour(localStorage)) {
-    onboardingTourOpen.value = true
-    return
-  }
-  maybePromptForNotifications()
-}
-
-function closeOnboardingTour() {
-  onboardingTourOpen.value = false
-  markTourSeen(localStorage)
-  maybePromptForNotifications()
-}
-
-// First-login greeting: users who never answered the notifications question get
-// asked once, right after their list is up. An unset preference is the signal —
-// both prompt buttons store a decision, so it never re-appears.
-function maybePromptForNotifications() {
-  if (!userId.value) return
-  if (getNotificationPreference(localStorage)) return
-  // No point asking where accepting could do nothing: unsupported browser,
-  // push not configured, or offline (the OneSignal subscription needs the
-  // network). Leaving the preference unset re-asks on the next login instead.
-  if (!isPushSupported() || !getOneSignalAppId() || isOffline()) return
-  // Desktop browsers never get greeted with a permission ask; the preference
-  // stays unset so the same account is still asked on a phone later.
-  if (isDesktopBrowser()) return
-  notificationPromptOpen.value = true
-}
-
-async function acceptNotifications() {
-  notificationPromptOpen.value = false
-  setNotificationPreference(localStorage, 'on')
-  const result = await enablePushNotifications(userId.value)
-  if (result === 'permission-denied') {
-    // The browser said no — reflect reality instead of a preference that lies.
-    setNotificationPreference(localStorage, 'off')
-    notificationError.value = 'Notifications are blocked for FamCart in your device or browser settings.'
-  } else if (result === 'error') {
-    setNotificationPreference(localStorage, 'off')
-    notificationError.value = 'Could not enable notifications. You can try again from Account Settings.'
-  }
-}
-
-function declineNotifications() {
-  notificationPromptOpen.value = false
-  setNotificationPreference(localStorage, 'off')
-}
-
 // Which user the painted cache belongs to. We paint before Clerk can confirm the
 // session, so if it then resolves to somebody else that paint is the wrong
 // person's list and has to be dropped.
 let hydratedUserId = ''
 
 // Throw away a cache painted for a different user than the one Clerk confirmed.
+// Clears exactly what hydrateFromCachedSnapshot below sets — the two have to
+// stay a matched pair, or a field the paint wrote survives into the next
+// account. familyItemLimit and the cached shopping answer were the two that did:
+// the previous user's item cap governed the add form until loadFamilyHeader
+// returned, and their shopping history decided whether a new user's empty list
+// read "All bought" or "Nothing here yet".
 function discardCachedPaint() {
   hydratedUserId = ''
   paintedFromCache.value = false
@@ -589,7 +444,9 @@ function discardCachedPaint() {
   familyName.value = ''
   familyInviteCode.value = ''
   familyOwnerId.value = ''
+  familyItemLimit.value = ITEM_LIMIT_DEFAULT
   familyEmoji.value = ''
+  cachedShoppedFamilyId.value = ''
 }
 
 // Paint the last known state immediately (stale-while-revalidate): a returning
@@ -608,6 +465,39 @@ function hydrateFromCachedSnapshot() {
   familyEmoji.value = snapshot.familyEmoji || ''
   familyMembers.value = snapshot.familyMembers
   items.value = snapshot.items
+  // Offline there is no purchase history to read, so the cached answer is the
+  // only one available. Without it an empty list tells a family that shops every
+  // week they have never started.
+  cachedShoppedFamilyId.value = snapshot.hasShopped ? snapshot.familyId : ''
+}
+
+// Writing the snapshot means JSON-stringifying the whole list and handing it to
+// localStorage, which is synchronous and blocks the main thread. The watcher
+// below is deep, so a quantity bump fires it per change — during a checkout,
+// once per row. Coalesce into one write on the next tick: nothing reads the
+// snapshot until a future page load, so it only has to be right when the dust
+// settles, not on every intermediate state.
+let snapshotTimer: ReturnType<typeof setTimeout> | null = null
+
+function schedulePersistSnapshot() {
+  if (snapshotTimer) return
+  snapshotTimer = setTimeout(() => {
+    snapshotTimer = null
+    persistSnapshot()
+  }, 0)
+}
+
+// Write now if a write is owed. Called on the way out, where "next tick" may
+// never come.
+function flushSnapshot() {
+  if (!snapshotTimer) return
+  clearTimeout(snapshotTimer)
+  snapshotTimer = null
+  persistSnapshot()
+}
+
+function flushSnapshotIfHidden() {
+  if (document.visibilityState === 'hidden') flushSnapshot()
 }
 
 function persistSnapshot() {
@@ -621,15 +511,18 @@ function persistSnapshot() {
     familyEmoji: familyEmoji.value,
     familyMembers: familyMembers.value,
     items: items.value,
+    hasShopped: hasShopped.value,
   })
 }
 
 // Keep the snapshot current as state changes (mutations, realtime events).
 // Guarded by hasInitialized inside persistSnapshot, so hydration itself and
 // partial init states are never written back.
-watch([items, familyMembers, familyName, familyInviteCode, familyItemLimit, familyEmoji], persistSnapshot, {
-  deep: true,
-})
+watch(
+  [items, familyMembers, familyName, familyInviteCode, familyItemLimit, familyEmoji],
+  schedulePersistSnapshot,
+  { deep: true },
+)
 
 function sanitizeAuthCallbackUrl() {
   const cleanedUrl = cleanAuthCallbackUrl(window.location.href)
@@ -638,7 +531,7 @@ function sanitizeAuthCallbackUrl() {
 
 async function loadFamilyHeader() {
   const [{ data: family, error: familyErr }, { data: members, error: membersErr }] = await Promise.all([
-    db.from('families').select('name, invite_code, created_by, max_items_per_member').eq('id', familyId.value).single(),
+    db.from('families').select('name, invite_code, created_by, max_items_per_member, emoji').eq('id', familyId.value).single(),
     // Name/avatar live in profiles now; embed them so the roster keeps the same
     // { user_id, display_name, image_url, role } shape every consumer expects.
     db.from('family_members').select('user_id, role, profiles(display_name, image_url)').eq('family_id', familyId.value),
@@ -648,24 +541,12 @@ async function loadFamilyHeader() {
     familyName.value = family.name
     familyInviteCode.value = family.invite_code || ''
     familyOwnerId.value = family.created_by || ''
-    familyItemLimit.value = Math.min(50, Math.max(1, Number(family.max_items_per_member) || 50))
-  }
-
-  // Best-effort, on its own query: the emoji column may not be migrated yet, and
-  // a missing-column error here must not take the family header down with it.
-  try {
-    const { data: emojiRow, error: emojiErr } = await db
-      .from('families')
-      .select('emoji')
-      .eq('id', familyId.value)
-      .maybeSingle()
-    if (!emojiErr) familyEmoji.value = emojiRow?.emoji || ''
-  } catch {
-    // Column absent → the family simply has no emoji.
+    familyItemLimit.value = clampItemLimit(family.max_items_per_member)
+    familyEmoji.value = family.emoji || ''
   }
 
   if (!membersErr && Array.isArray(members)) {
-    familyMembers.value = members.map((m) => ({
+    familyMembers.value = (members as unknown as MemberRow[]).map((m) => ({
       user_id: m.user_id,
       role: m.role,
       display_name: m.profiles?.display_name || m.user_id,
@@ -687,29 +568,18 @@ async function refreshFamilyAfterSettingsChange() {
 async function loadFamilies() {
   const { data, error } = await db
     .from('family_members')
-    .select('family_id, families(name)')
+    .select('family_id, families(name, emoji)')
     .eq('user_id', userId.value)
   if (error) return { error }
   // The switcher renders an emoji tile, a name and a tick, so that is all a row
-  // carries. It used to fetch every family's full roster here to draw composite
-  // member avatars; those are gone, and so is the extra round trip.
-  const list = (data || []).map((row) => ({
+  // carries, and the embed brings all of it back in this one query. It used to
+  // fetch every family's full roster here to draw composite member avatars;
+  // those are gone, and so is the extra round trip.
+  const list = ((data ?? []) as unknown as MembershipRow[]).map((row) => ({
     id: row.family_id,
     name: row.families?.name ?? '',
-    emoji: '',
+    emoji: row.families?.emoji ?? '',
   }))
-
-  // Best-effort family emoji (its column may be unmigrated), keyed by family id.
-  // RLS scopes families to this user, so one unfiltered select is enough.
-  try {
-    const { data: emojiRows, error: emojiErr } = await db.from('families').select('id, emoji')
-    if (!emojiErr && Array.isArray(emojiRows)) {
-      const emojiById = new Map(emojiRows.map((r) => [r.id, r.emoji || '']))
-      for (const fam of list) fam.emoji = emojiById.get(fam.id) || ''
-    }
-  } catch {
-    // Column absent → families just have no emoji.
-  }
 
   // Stable, name-ordered so the switcher never reshuffles between loads.
   families.value = list.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
@@ -718,12 +588,12 @@ async function loadFamilies() {
 
 // Switch which family is active: persist the choice, tear down the old realtime
 // channels, and reload everything scoped to the new family.
-async function switchFamily(id) {
+async function switchFamily(id: string) {
   if (!id || id === familyId.value) return
   if (!families.value.some((f) => f.id === id)) return
   switchingFamily.value = true
   familyId.value = id
-  saveActiveFamilyId(localStorage, userId.value, id)
+  saveActiveFamilyId(localStorage, effectiveUserId.value, id)
   cleanupRealtimeSubscriptions()
   // Drop the old family's data so none of it flashes under the new name.
   items.value = []
@@ -732,6 +602,11 @@ async function switchFamily(id) {
   listFilter.value = 'all'
   familyMembers.value = []
   familyProductStats.value = new Map()
+  // The new family's history is unknown until it loads. Without this reset the
+  // cleared Map reads as "never shopped" and an empty list flashes "Nothing here
+  // yet" before the refetch turns it into "All bought".
+  productStatsLoaded.value = false
+  boughtThisSession.value = false
   loadError.value = ''
   // Show the new name straight away (we already know it from the switcher list);
   // only the roster is unknown until loadFamilyHeader returns, so that's all the
@@ -782,473 +657,6 @@ async function refreshMembershipOrRedirect() {
 }
 
 
-async function loadItems() {
-  // Push any writes made offline before reading the list back, so a reload that
-  // races the flush (realtime/watchdog on reconnect) can't momentarily show the
-  // server's version without the user's own pending change.
-  await ensureQueueFlushed()
-
-  const [uncheckedRes, checkedRes] = await Promise.all([
-    db
-      .from('shopping_list_items')
-      .select('*')
-      .eq('family_id', familyId.value)
-      .eq('checked', false)
-      .order('created_at', { ascending: true }),
-    db
-      .from('shopping_list_items')
-      .select('*')
-      .eq('family_id', familyId.value)
-      .eq('checked', true)
-      // Most recently checked first, so the 30-row cap keeps the latest ticks.
-      // This is a "which rows survive the cap" order, not a display order:
-      // sortItemsForDisplay puts the merged list back into creation order.
-      .order('checked_at', { ascending: false, nullsFirst: false })
-      .limit(30)
-  ])
-
-  // Offline: keep the cached list on screen and let the 'online' handler refetch.
-  // Genuine server errors get a plain message, never a raw "Failed to fetch".
-  const readError = uncheckedRes.error || checkedRes.error
-  if (readError) {
-    if (!isOfflineError(readError)) loadError.value = 'Could not load your list. Please try again.'
-    return
-  }
-
-  // The checked query fetches newest-first so its 30-row cap keeps the most
-  // recent purchases, but the merged array goes into the one canonical display
-  // order. A locally toggled item keeps its array position, so if a refetch
-  // ordered things differently, rows would visibly swap on the next background
-  // sync (focus, reconnect, watchdog) — sorting every rebuild the same way is
-  // what keeps the list still.
-  const fresh = [...uncheckedRes.data, ...checkedRes.data]
-  if (pendingItemWrites.size) {
-    // A write is in flight for some rows: keep the local optimistic version of
-    // those, so this refetch can't momentarily revert a just-checked item to the
-    // server's pre-write state (the "check bounces back" bug). The kept row
-    // sorts by creation time like every other, so its position is unaffected.
-    const localById = new Map(items.value.map((i) => [i.id, i]))
-    for (let i = 0; i < fresh.length; i++) {
-      const local = pendingItemWrites.has(fresh[i].id) && localById.get(fresh[i].id)
-      if (local) fresh[i] = local
-    }
-  }
-  items.value = sortItemsForDisplay(fresh)
-}
-
-// `product` is set when a suggestion was tapped, and that product is then the
-// whole intent — name and maker both come from it, not from the input. A plain
-// form submit passes nothing and adds whatever was typed.
-async function addItem(product = null) {
-  const name = (product?.name ?? newItem.value).trim()
-  if (!name || adding.value) return
-  if (name.length > ITEM_NAME_MAX_LENGTH) {
-    addError.value = `Item name must be ${ITEM_NAME_MAX_LENGTH} characters or fewer.`
-    return
-  }
-  addError.value = ''
-
-  const quantity = newQty.value
-  // The maker comes from a product rather than the typed text: the catalog
-  // product just tapped, one restored after a failed add (the newItem watcher
-  // clears that as soon as the text stops matching it), or a custom one from the
-  // "Add your own" modal. Keep the whole product too, so a successful add can
-  // record itself against the catalog.
-  const picked = product ?? selectedProduct.value
-  const maker = picked?.maker ?? null
-
-  // If an unchecked item for the same product (name + maker) already exists,
-  // bump its quantity instead of adding a duplicate row. Checked (already-
-  // bought) items are left alone so re-adding them starts a fresh active item.
-  const existing = findActiveItemByName(items.value, name, { maker })
-  if (existing) {
-    newItem.value = ''
-    newQty.value = 1
-    const previousQty = Number(existing.quantity) || 1
-    existing.quantity = previousQty + quantity // optimistic
-    reportAdded(name, maker)
-    if (isOffline()) {
-      enqueueOfflineMutation(localStorage, effectiveUserId.value, {
-        kind: 'update',
-        id: existing.id,
-        patch: { quantity: existing.quantity },
-      })
-      return
-    }
-    const { error } = await db
-      .from('shopping_list_items')
-      .update({ quantity: existing.quantity })
-      .eq('id', existing.id)
-    if (error) {
-      // Keep the bumped quantity and sync it when connectivity returns.
-      if (deferIfOffline(error, { kind: 'update', id: existing.id, patch: { quantity: existing.quantity } })) return
-      existing.quantity = previousQty // rollback
-      lastAdded.value = null // it did not land after all
-      addError.value = error.message ?? 'Could not update that item.'
-      return
-    }
-    recordProductAdd(picked)
-    return
-  }
-
-  // Guard the per-member active-item cap locally so we never flash an optimistic
-  // row that the DB trigger would reject. The trigger (migration 010) stays the
-  // authoritative backstop for races or stale local state.
-  const activeCount = countActiveItemsByMember(items.value, effectiveUserId.value)
-  if (activeCount >= familyItemLimit.value) {
-    limitReachedPopupOpen.value = true
-    return
-  }
-  // Optimistic: show the item instantly and clear the form. The per-member cap
-  // is enforced authoritatively by the DB trigger (migration 010), so we don't
-  // pre-count here — a rejection rolls the row back below.
-  //
-  // Generate the id client-side and reuse it as the row's primary key so the
-  // optimistic row and the real row share the same TransitionGroup key. If the
-  // key changed when the insert echoed back, Vue would remount the element and
-  // restart the add animation mid-flight.
-  const id = crypto.randomUUID()
-  const row = {
-    id,
-    family_id: familyId.value,
-    name,
-    maker,
-    quantity,
-    added_by: effectiveUserId.value,
-  }
-  items.value.push({
-    ...row,
-    checked: false,
-    created_at: new Date().toISOString(),
-  })
-  newItem.value = ''
-  newQty.value = 1
-  reportAdded(name, maker)
-
-  if (isOffline()) {
-    enqueueOfflineMutation(localStorage, effectiveUserId.value, { kind: 'insert', id, row })
-    return
-  }
-
-  const { data, error } = await db
-    .from('shopping_list_items')
-    .insert(row)
-    .select()
-    .single()
-
-  if (error) {
-    // Lost a race: the DB already has an unchecked item for this product (our
-    // local check missed it). Fold this quantity into that row instead of erroring.
-    if (error.code === '23505') {
-      // The quantity still landed (folded into the existing row), so record the
-      // add against the catalog just as the direct-insert path does.
-      if (await incrementActiveItemByName(name, maker, quantity, id)) recordProductAdd(picked)
-      return
-    }
-    // Network failure (WebView reported online but the write never left): keep
-    // the optimistic row and queue the insert for the next sync.
-    if (deferIfOffline(error, { kind: 'insert', id, row })) return
-    // Roll back the optimistic row and surface the reason.
-    items.value = items.value.filter((i) => i.id !== id)
-    lastAdded.value = null // it did not land after all
-    if (error.message?.includes('member_active_item_limit_exceeded')
-      || error.message?.includes('limit of')) {
-      limitReachedPopupOpen.value = true
-    } else {
-      addError.value = error.message ?? 'Failed to add item.'
-      newItem.value = name
-      newQty.value = quantity
-      // Keep the catalog pick across the retry (the watcher sees the restored
-      // text matching it and leaves it in place). Preserve the custom tag too, so
-      // a retried "Add your own" item is still contributed rather than bumped.
-      selectedProduct.value = picked?.custom
-        ? { name, maker, custom: true }
-        : maker
-          ? { name, maker }
-          : null
-    }
-    return
-  }
-
-  // Refresh the row with server-authoritative fields. The id is unchanged, so no
-  // remount; the realtime INSERT echo dedupes on this same id and is a no-op.
-  const index = items.value.findIndex((i) => i.id === id)
-  if (index !== -1) {
-    items.value[index] = data
-    // The server's created_at replaces the optimistic client timestamp — a
-    // different sort key. Re-sort now so the row settles into its canonical spot
-    // immediately, instead of sitting at the append position until the next
-    // background sync abruptly moves it (the "rows jump on their own" bug).
-    items.value = sortItemsForDisplay(items.value)
-  }
-
-  recordProductAdd(picked)
-}
-
-// Increment the existing active row for this product (used when a concurrent
-// add beat us to it). Looks locally first, then fetches to reconcile stale state.
-// Returns whether the quantity actually landed, so the caller knows whether to
-// record the add against the catalog (a deferred offline update counts).
-async function incrementActiveItemByName(name, maker, quantity, optimisticId) {
-  items.value = items.value.filter((i) => i.id !== optimisticId)
-
-  let target = findActiveItemByName(items.value, name, { maker })
-  if (!target) {
-    const { data } = await db
-      .from('shopping_list_items')
-      .select('*')
-      .eq('family_id', familyId.value)
-      .eq('checked', false)
-    target = findActiveItemByName(data || [], name, { maker })
-    if (target && !items.value.some((i) => i.id === target.id)) {
-      // Place the fetched row by its (server) created_at, not on the end, or the
-      // next refetch would move it there.
-      items.value = sortItemsForDisplay([...items.value, target])
-    }
-  }
-  if (!target) {
-    addError.value = 'Could not add that item.'
-    return false
-  }
-
-  const previousQty = Number(target.quantity) || 1
-  target.quantity = previousQty + quantity
-  const { error } = await db
-    .from('shopping_list_items')
-    .update({ quantity: target.quantity })
-    .eq('id', target.id)
-  if (error) {
-    if (deferIfOffline(error, { kind: 'update', id: target.id, patch: { quantity: target.quantity } })) return true
-    target.quantity = previousQty
-    addError.value = error.message ?? 'Could not update that item.'
-    return false
-  }
-  return true
-}
-
-function closeLimitReachedPopup() {
-  limitReachedPopupOpen.value = false
-}
-
-async function toggleItem(item) {
-  const previous = item.checked
-  const previousCheckedAt = item.checked_at ?? null
-  const nextChecked = !previous
-
-  // Unchecking: if another unchecked item with the same name already exists,
-  // fold this one into it instead of leaving two active rows — same merge rule
-  // as adding.
-  if (!nextChecked) {
-    const target = findActiveItemByName(items.value, item.name, {
-      excludeId: item.id,
-      maker: item.maker,
-    })
-    if (target) {
-      await mergeItemInto(item, target)
-      return
-    }
-  }
-
-  // Optimistic: flip immediately, roll back if the write fails. checked_at is
-  // mirrored because the refetch's 30-row cap is taken on it, not because it
-  // affects position: display order is creation time, so a tick never moves the
-  // row. The DB trigger (migration 024) is the authority on the stored value, so
-  // we only send `checked` — the server stamps the time itself.
-  item.checked = nextChecked
-  item.checked_at = nextChecked ? new Date().toISOString() : null
-  const patch = { checked: nextChecked }
-
-  if (isOffline()) {
-    enqueueOfflineMutation(localStorage, effectiveUserId.value, {
-      kind: 'update',
-      id: item.id,
-      patch,
-    })
-    return
-  }
-
-  // Track the in-flight write so a background refetch that races it (reconnect,
-  // focus, watchdog) keeps this flip rather than reading back the server's
-  // pre-write value — see loadItems and pendingItemWrites.
-  pendingItemWrites.add(item.id)
-  try {
-    const { error } = await db
-      .from('shopping_list_items')
-      .update(patch)
-      .eq('id', item.id)
-
-    if (error) {
-      // Keep the flip and queue it when the failure is just lost connectivity.
-      if (deferIfOffline(error, { kind: 'update', id: item.id, patch })) return
-      item.checked = previous
-      item.checked_at = previousCheckedAt
-      // Unchecking would push the member over the active-item cap (migration 010
-      // now enforces it on uncheck too): show the same friendly popup as adding.
-      if (error.message?.includes('member_active_item_limit_exceeded')
-        || error.message?.includes('limit of')) {
-        limitReachedPopupOpen.value = true
-        return
-      }
-      // Unique-violation while unchecking: an active same-name row appeared (race).
-      // Merge into it rather than surfacing an error.
-      if (!nextChecked && error.code === '23505') {
-        let target = findActiveItemByName(items.value, item.name, {
-          excludeId: item.id,
-          maker: item.maker,
-        })
-        if (!target) {
-          const { data } = await db
-            .from('shopping_list_items')
-            .select('*')
-            .eq('family_id', familyId.value)
-            .eq('checked', false)
-          target = findActiveItemByName(data || [], item.name, {
-            excludeId: item.id,
-            maker: item.maker,
-          })
-          if (target && !items.value.some((i) => i.id === target.id)) {
-            items.value = sortItemsForDisplay([...items.value, target])
-          }
-        }
-        if (target) {
-          await mergeItemInto(item, target)
-          return
-        }
-      }
-      loadError.value = error.message ?? 'Could not update that item.'
-    }
-  } finally {
-    pendingItemWrites.delete(item.id)
-  }
-}
-
-// Fold `source`'s quantity into `target` (same-name unchecked row) and remove
-// `source`. Optimistic, with rollback if either write fails.
-async function mergeItemInto(source, target) {
-  const sourceIndex = items.value.findIndex((i) => i.id === source.id)
-  const previousTargetQty = Number(target.quantity) || 1
-  const addedQty = Number(source.quantity) || 1
-
-  target.quantity = previousTargetQty + addedQty
-  const removedSource = sourceIndex !== -1 ? items.value.splice(sourceIndex, 1)[0] : source
-
-  const rollback = (message) => {
-    target.quantity = previousTargetQty
-    if (sourceIndex !== -1) items.value.splice(sourceIndex, 0, removedSource)
-    loadError.value = message
-  }
-
-  if (isOffline()) {
-    // Queue both halves of the merge; if `source` was itself added offline, the
-    // queue coalesces the pair away entirely.
-    enqueueOfflineMutation(localStorage, effectiveUserId.value, {
-      kind: 'update',
-      id: target.id,
-      patch: { quantity: target.quantity },
-    })
-    enqueueOfflineMutation(localStorage, effectiveUserId.value, { kind: 'delete', id: source.id })
-    return
-  }
-
-  const { error: updateErr } = await db
-    .from('shopping_list_items')
-    .update({ quantity: target.quantity })
-    .eq('id', target.id)
-  if (updateErr) {
-    // Neither half reached the server: queue both and keep the merged state.
-    if (isOfflineError(updateErr)) {
-      enqueueOfflineMutation(localStorage, effectiveUserId.value, { kind: 'update', id: target.id, patch: { quantity: target.quantity } })
-      enqueueOfflineMutation(localStorage, effectiveUserId.value, { kind: 'delete', id: source.id })
-      return
-    }
-    rollback(updateErr.message ?? 'Could not merge those items.')
-    return
-  }
-
-  const { error: deleteErr } = await db
-    .from('shopping_list_items')
-    .delete()
-    .eq('id', source.id)
-  if (deleteErr) {
-    // The quantity bump already landed; only the delete is outstanding. Queue it
-    // rather than undoing a change the server has committed.
-    if (deferIfOffline(deleteErr, { kind: 'delete', id: source.id })) return
-    // Undo the quantity bump we already committed, then restore the row.
-    await db.from('shopping_list_items').update({ quantity: previousTargetQty }).eq('id', target.id)
-    rollback(deleteErr.message ?? 'Could not merge those items.')
-  }
-}
-
-// Check out every checked item: archive them to purchase history and drop them
-// from the active list. The animation has already played in ShoppingList by the
-// time this runs, so we just persist the outcome.
-async function checkoutItems(ids) {
-  const idSet = new Set(ids)
-  const bought = items.value.filter((i) => idSet.has(i.id) && i.checked)
-  if (!bought.length) return
-
-  // Optimistic removal. Only drop the rows actually bought (checked) — never an
-  // unchecked row that happened to be named in `ids` — mirroring the RPC's own
-  // `checked = true` guard. Keep the pre-removal array so a hard failure can
-  // restore the exact list, order included.
-  const boughtIds = new Set(bought.map((i) => i.id))
-  const snapshot = items.value
-  items.value = items.value.filter((i) => !boughtIds.has(i.id))
-
-  // Offline (or a WebView that lies about connectivity): there is no multi-table
-  // transaction to run here, so queue plain deletes. The rows leave the list but
-  // an offline checkout is not recorded in history — it is archived only when the
-  // checkout runs against the server.
-  if (isOffline()) {
-    for (const it of bought) {
-      enqueueOfflineMutation(localStorage, effectiveUserId.value, { kind: 'delete', id: it.id })
-    }
-    return
-  }
-
-  const { error } = await db.rpc('buy_items', { p_item_ids: bought.map((i) => i.id) })
-  if (error) {
-    // Never reached the server: keep them off the list and fall back to queued
-    // deletes, same as the offline path.
-    if (isOfflineError(error)) {
-      for (const it of bought) {
-        enqueueOfflineMutation(localStorage, effectiveUserId.value, { kind: 'delete', id: it.id })
-      }
-      return
-    }
-    items.value = snapshot
-    loadError.value = error.message ?? 'Could not complete the checkout.'
-    return
-  }
-
-  // The checkout just became history, which is the ranking signal — fold it in
-  // so what was bought ranks higher on the very next keystroke.
-  void loadFamilyProductStats()
-}
-
-async function deleteItem(item) {
-  // Optimistic: remove immediately, restore at its original position on failure.
-  const index = items.value.findIndex((i) => i.id === item.id)
-  if (index === -1) return
-  const [removed] = items.value.splice(index, 1)
-
-  if (isOffline()) {
-    enqueueOfflineMutation(localStorage, effectiveUserId.value, { kind: 'delete', id: item.id })
-    return
-  }
-
-  const { error } = await db
-    .from('shopping_list_items')
-    .delete()
-    .eq('id', item.id)
-
-  if (error) {
-    // Keep the row removed and queue the delete when it's just connectivity.
-    if (deferIfOffline(error, { kind: 'delete', id: item.id })) return
-    items.value.splice(index, 0, removed)
-    loadError.value = error.message ?? 'Could not delete that item.'
-  }
-}
 </script>
 
 <template>
@@ -1280,7 +688,6 @@ async function deleteItem(item) {
           v-model:name="newItem"
           v-model:quantity="newQty"
           v-model:expanded="searchExpanded"
-          :adding="adding"
           :max-length="ITEM_NAME_MAX_LENGTH"
           :suggestions="suggestions"
           :recents="recentProducts"
@@ -1297,8 +704,8 @@ async function deleteItem(item) {
           v-model:filter="listFilter"
           :member-profiles="memberProfileMap"
           :loading="listLoading"
-          :show-empty="hasInitialized && !items.length && !loadError && !switchingFamily"
-          :has-shopped="familyProductStats.size > 0"
+          :show-empty="hasInitialized && !items.length && !loadError && !switchingFamily && emptyStateAnswerable"
+          :has-shopped="hasShopped"
           :suggested-products="restartProducts"
           @add="selectSuggestion"
           @toggle="toggleItem"
@@ -1339,9 +746,11 @@ async function deleteItem(item) {
       @decline="declineNotifications"
     />
 
-    <ErrorModal :message="loadError" @dismiss="loadError = ''" />
-    <ErrorModal :message="addError" @dismiss="addError = ''" />
-    <ErrorModal title="Notifications" :message="notificationError" @dismiss="notificationError = ''" />
+    <ErrorModal
+      :title="activeError.title"
+      :message="activeError.message"
+      @dismiss="activeError.dismiss()"
+    />
   </div>
 </template>
 

@@ -2,6 +2,8 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { watch } from 'vue'
 import { useAuth } from '@clerk/vue'
 import { ensureOnlineStatus } from '../lib/connectivity'
+import { FAMILY_MEMBERSHIP_CAP } from '../lib/limits'
+import { getSupabase, setSupabaseTokenResolver } from '../supabase'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -68,36 +70,35 @@ function waitForClerkLoad(isClerkLoaded: () => boolean): Promise<void> {
   })
 }
 
-// A user can belong to at most this many families (migration 025).
-const FAMILY_MEMBERSHIP_CAP = 3
-
 // How many families this user belongs to, capped at the membership limit — enough
 // to answer both "brand-new user with none" and "already at the cap". On any error
 // we return 0 so the guard fails open: better to let a genuine new user reach setup
 // than to strand them, and a member who slips through only sees a page that can do
 // no harm.
+//
+// This used to hand-build the PostgREST URL and attach its own apikey and
+// Authorization headers, because useSupabase() needs a component context the
+// guard does not have. It now goes through the same client as everything else,
+// which means it also gets fetchWithRetry — the guard runs on cold start, which
+// is exactly when the first request tends to go out on a dead socket.
 async function fetchMembershipCount(
   getToken: ReturnType<typeof useAuth>['getToken'],
   userId: ReturnType<typeof useAuth>['userId'],
 ): Promise<number> {
   try {
-    const token = await getToken.value({ template: 'supabase' })
-    if (!token || !userId.value) return 0
+    if (!userId.value) return 0
+    // The guard can run before any component has installed a resolver, so it
+    // installs one from the Clerk instance it already holds.
+    setSupabaseTokenResolver(async () => getToken.value({ template: 'supabase' }))
     // Count only THIS user's memberships. RLS lets a member see every co-member
     // of their families, so without the user_id filter this would count other
     // people too and falsely report the cap once your families hold 3+ members.
-    const resp = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/family_members` +
-        `?select=family_id&user_id=eq.${encodeURIComponent(userId.value)}&limit=${FAMILY_MEMBERSHIP_CAP}`,
-      {
-        headers: {
-          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${token}`,
-        },
-      },
-    )
-    if (!resp.ok) return 0
-    const data = await resp.json()
+    const { data, error } = await getSupabase()
+      .from('family_members')
+      .select('family_id')
+      .eq('user_id', userId.value)
+      .limit(FAMILY_MEMBERSHIP_CAP)
+    if (error) return 0
     return Array.isArray(data) ? data.length : 0
   } catch {
     return 0

@@ -3,9 +3,14 @@
 
 export type NormalizedRole = 'moderator' | 'member'
 
+// The roster fields these helpers sort and label by. display_name and image_url
+// are not read here, but every caller passes rows that carry them and then reads
+// them off the sorted result, so leaving them out only pushed a cast onto each.
 export interface MemberLike {
   user_id: string
   role?: string | null
+  display_name?: string | null
+  image_url?: string | null
 }
 
 // Legacy rows may carry 'admin' (pre-rename of the moderator rank); anything

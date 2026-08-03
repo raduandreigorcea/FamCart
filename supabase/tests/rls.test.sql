@@ -5,7 +5,8 @@
 --
 -- These assert the guarantees the app leans on but can't verify from the client:
 --   1. A member of one family cannot read another family's items (no cross-tenant leak).
---   2. The invite-code RPC returns only id + name for an exact code match.
+--   2. The unthrottled invite-code lookup RPC is gone: joining is the only path
+--      that resolves a code, and it is throttled and audited.
 --   3. The per-member active-item cap is enforced by the DB trigger, not just the UI.
 --   4. Purchase history is written only by buy_items(): the RPC is scoped to
 --      the caller's families, and direct inserts (forged names/timestamps) are
@@ -19,26 +20,32 @@
 --      them to a family the caller is actually in, other families cannot see
 --      them, and they go global only once enough distinct accounts (contributed_by)
 --      add the same product.
---   8. A user can own at most one family (migration 001) -- a complementary
+--   8. A user can own at most one family (003_families_and_members.sql) -- a complementary
 --      product rule alongside the contributed_by promotion gate.
 --   9. Bulk-imported catalog rows say where they came from, clients cannot reach
 --      the import path at all, and an import can never rewrite a curated
---      product or spend a product's earned popularity (migration 028).
+--      product or spend a product's earned popularity (006_product_catalog.sql).
+--  10. The security audit log is unreadable and unforgeable from a client role,
+--      invite-code guessing is capped per user, and privilege changes and member
+--      removals leave a record (002_security_audit.sql, 003_families_and_members.sql).
+--  11. Catalog ranking cannot be inflated without limit: the global add_count
+--      stops climbing at the hourly ceiling, the counters are unreachable from a
+--      client, and crossing the limit is audited once per window (002_security_audit.sql).
 --
 -- Tests run inside a transaction that is rolled back, so they leave no data behind.
 
 begin;
-select plan(56);
+select plan(74);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 -- Three families, because promoting a contributed product to the global catalog
--- takes three distinct ones (migration 022).
+-- takes three distinct ones (006_product_catalog.sql).
 insert into public.families (id, name, invite_code, created_by) values
   ('00000000-0000-0000-0000-0000000000a1', 'Family A', 'AAAAAAA2', 'user_a'),
   ('00000000-0000-0000-0000-0000000000b1', 'Family B', 'BBBBBBB2', 'user_b'),
   ('00000000-0000-0000-0000-0000000000c1', 'Family C', 'CCCCCCC2', 'user_c');
 
--- Every family_members row now references a profiles row (migration 026's FK),
+-- Every family_members row now references a profiles row (003_families_and_members.sql's FK),
 -- so each test account needs a profile before its membership is seeded below.
 insert into public.profiles (user_id, display_name) values
   ('user_a', 'User A'),
@@ -73,7 +80,7 @@ insert into public.family_members (family_id, user_id, role) values
   ('00000000-0000-0000-0000-0000000000f1', 'attacker', 'member');
 
 -- 8. One family per owner. Asserted here as the superuser, so RLS is out of the
--- way and the unique index (migration 001) is the only thing that can reject the
+-- way and the unique index (003_families_and_members.sql) is the only thing that can reject the
 -- second family -- a complementary product rule alongside the contributed_by
 -- promotion gate. user_a already owns Family A above.
 select throws_ok(
@@ -95,7 +102,7 @@ set max_items_per_member = 1
 where id = '00000000-0000-0000-0000-0000000000a1';
 
 -- One catalog row, seeded the way scripts/seed-products.mjs would -- including
--- the provenance stamp (migration 028), which is what protects it from being
+-- the provenance stamp (006_product_catalog.sql), which is what protects it from being
 -- rewritten by a bulk import.
 insert into public.product_catalog (name, maker, search_text, source)
 values ('Apa Plata 2L', 'Dorna', 'apa plata 2l dorna', 'curated');
@@ -112,11 +119,18 @@ select is(
   'user_a cannot read Family B items'
 );
 
--- 2. Invite RPC returns only Family B's id + name for its code.
+-- 2. No unthrottled invite-code lookup exists. An earlier schema had a
+-- find_family_by_invite_code() RPC, which let any signed-in caller test a
+-- guessed code for free — the exact primitive a brute-forcer wants, and cheaper
+-- to call than joining. Nothing in supabase/migrations creates it now, and this
+-- asserts that stays true: joining is the only path that resolves a code, and it
+-- is throttled and audited (003_families_and_members.sql).
 select is(
-  (select name from public.find_family_by_invite_code('BBBBBBB2')),
-  'Family B',
-  'invite RPC resolves an exact code to family name'
+  (select count(*)::int from pg_proc
+   where proname = 'find_family_by_invite_code'
+     and pronamespace = 'public'::regnamespace),
+  0,
+  'the unthrottled invite-code lookup RPC no longer exists'
 );
 
 -- 3. Per-member active-item cap is enforced (limit is 1; second insert must fail).
@@ -448,7 +462,7 @@ select is(
   'one account in three families cannot self-promote a product'
 );
 
--- ── 9. Provenance and bulk import (migration 028) ────────────────────────────
+-- ── 9. Provenance and bulk import (006_product_catalog.sql) ────────────────────────────
 -- The catalog now has a third kind of row: products imported in bulk from an
 -- external database. These assert the two guarantees that make that safe --
 -- clients cannot reach the import path at all, and an import cannot damage a row
@@ -670,6 +684,236 @@ select is(
    where search_text = 'ceai verde 20 plicuri alevia'),
   'openfoodfacts|4',
   'the service-role import actually landed its row'
+);
+
+-- ── 10. Security audit trail + invite throttle (002_security_audit.sql, 003_families_and_members.sql) ─────────
+
+-- 10a. The audit log is unreachable from a client role. RLS with no policies
+-- would already return zero rows; the explicit revoke means it does not even get
+-- that far. An attacker with a valid token can neither read the log recording
+-- them nor delete their own entries.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"user_rl"}';
+
+select throws_ok(
+  $$ select * from public.security_events $$,
+  '42501',
+  null,
+  'a signed-in user cannot read the security audit log'
+);
+
+select throws_ok(
+  $$ insert into public.security_events (kind) values ('forged') $$,
+  '42501',
+  null,
+  'a signed-in user cannot forge audit rows'
+);
+
+-- 10b. A wrong code is recorded rather than passing silently.
+select lives_ok(
+  $$ select public.join_family_with_code('ZZZZZZZ9') $$,
+  'a wrong invite code returns cleanly rather than erroring'
+);
+
+reset role;
+
+select is(
+  (select count(*)::int from public.security_events
+   where actor = 'user_rl' and kind = 'invite_code_failed'),
+  1,
+  'a failed invite attempt is written to the audit log'
+);
+
+-- 10c. Past the ceiling, even a *valid* code stops resolving — and the caller
+-- cannot tell throttling apart from a bad code. Nine more failures puts user_rl
+-- at the limit of ten.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"user_rl"}';
+
+do $$
+begin
+  for i in 1..9 loop
+    perform public.join_family_with_code('ZZZZZZZ9');
+  end loop;
+end $$;
+
+select is(
+  (select count(*)::int from public.join_family_with_code('BBBBBBB2')),
+  0,
+  'a throttled caller gets no result even for a valid invite code'
+);
+
+reset role;
+
+select is(
+  (select count(*)::int from public.family_members
+   where user_id = 'user_rl'),
+  0,
+  'the throttled join really did not create a membership'
+);
+
+select is(
+  (select count(*)::int from public.security_events
+   where actor = 'user_rl' and kind = 'invite_rate_limited'),
+  1,
+  'hitting the ceiling is itself recorded, so the attempt is visible'
+);
+
+-- 10d. Privilege changes and removals are audited. These go through plain
+-- UPDATE/DELETE under RLS rather than an RPC, so only a trigger sees every path.
+--
+-- user_a owns Family A, and only the owner may change roles (003_families_and_members.sql), so
+-- the promotion below has to run as user_a against Family A.
+insert into public.profiles (user_id, display_name) values ('user_g', 'User G');
+insert into public.family_members (family_id, user_id, role)
+values ('00000000-0000-0000-0000-0000000000a1', 'user_g', 'member');
+
+set local request.jwt.claims = '{"sub":"user_a"}';
+
+-- Assert the update *works*, not merely that it is audited.
+--
+-- This exists because of a real outage. A trigger named
+-- prevent_member_profile_tamper once guarded family_members.display_name /
+-- image_url; a later migration moved both columns to profiles and dropped them,
+-- but left the trigger in place. PL/pgSQL resolves record fields at execution
+-- time, so it did not fail on deploy — it failed on the next UPDATE of any
+-- family_members row, which is every promote and demote. Nothing in this suite
+-- exercised a role change, so the feature was dead in production and unnoticed.
+--
+-- That trigger no longer exists in any migration here (profiles' own RLS gives
+-- the same guarantee one layer down). The lesson it left is this assertion.
+select lives_ok(
+  $$ update public.family_members set role = 'moderator'
+     where family_id = '00000000-0000-0000-0000-0000000000a1' and user_id = 'user_g' $$,
+  'the family owner can actually promote a member'
+);
+
+select is(
+  (select detail->>'to' from public.security_events
+   where kind = 'member_role_changed' and detail->>'target' = 'user_g'),
+  'moderator',
+  'a role change records what it changed to'
+);
+
+delete from public.family_members
+where family_id = '00000000-0000-0000-0000-0000000000a1' and user_id = 'user_g';
+
+select is(
+  (select detail->>'self' from public.security_events
+   where kind = 'member_removed' and detail->>'target' = 'user_g'),
+  'false',
+  'a removal records that it was not the member leaving voluntarily'
+);
+
+-- ── 10b. The families UPDATE policy constrains the new row ───────────────────
+-- An earlier revision of this policy carried `with check (true)`: USING
+-- correctly asked "may you touch this family", but nothing constrained the row
+-- the update produced, leaving the triggers as the only guard. The outage
+-- described just above is what that costs when a trigger drifts. Asserted
+-- against the catalog rather than by attempting an update, because what is being
+-- protected is the policy's own invariant: a future edit that drops back to
+-- `true` should fail here, whatever the triggers happen to cover that day. Same
+-- shape as assertion 2, which guards against a function coming back.
+reset role;
+
+select isnt(
+  (select with_check from pg_policies
+   where schemaname = 'public'
+     and tablename = 'families'
+     and policyname = 'family owner or moderator can update family'),
+  'true',
+  'the families UPDATE policy constrains the new row, not only the old one'
+);
+
+-- ── 11. Catalog write rate limiting (002_security_audit.sql) ──────────────────────────
+-- bump_product_popularity increments add_count on *global* rows, and add_count
+-- drives the suggestion ranking every family sees. Unlimited, it let one account
+-- push any product to the top of everyone's list. A Vercel firewall rule cannot
+-- reach this: the browser calls Supabase directly, so the limiter lives here.
+
+-- Dedicated fixtures: a global product and an account that no earlier assertion
+-- has touched, so the counts below are exact rather than relative to whatever
+-- budget section 7 already spent.
+insert into public.product_catalog (name, maker, search_text, source, family_id, add_count)
+values ('Throttle Probe', 'Acme', 'throttle probe acme', 'curated', null, 0);
+
+-- 11a. The counter table is as locked down as the audit log.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"user_rate"}';
+
+select throws_ok(
+  $$ select * from public.rate_limit_counters $$,
+  '42501',
+  null,
+  'a signed-in user cannot read the rate-limit counters'
+);
+
+select throws_ok(
+  $$ update public.rate_limit_counters set hits = 0 $$,
+  '42501',
+  null,
+  'a signed-in user cannot reset their own rate-limit counter'
+);
+
+reset role;
+
+-- 11b. Normal use is unaffected. A handful of bumps still lands.
+set local request.jwt.claims = '{"sub":"user_rate"}';
+
+do $$
+begin
+  for i in 1..5 loop
+    perform public.bump_product_popularity('Throttle Probe', 'Acme', null);
+  end loop;
+end $$;
+
+select is(
+  (select add_count::int from public.product_catalog
+   where search_text = 'throttle probe acme' and family_id is null),
+  5,
+  'ordinary bumps are counted, not throttled'
+);
+
+-- 11c. Past the ceiling the increments stop. 240/hour is the limit, so another
+-- 300 calls must leave add_count at 240 rather than 305.
+do $$
+begin
+  for i in 1..300 loop
+    perform public.bump_product_popularity('Throttle Probe', 'Acme', null);
+  end loop;
+end $$;
+
+select is(
+  (select add_count::int from public.product_catalog
+   where search_text = 'throttle probe acme' and family_id is null),
+  240,
+  'ranking inflation stops dead at the hourly ceiling'
+);
+
+-- 11d. Crossing the limit is audited exactly once per window, not once per call,
+-- so hammering leaves a readable trail rather than burying it.
+select is(
+  (select count(*)::int from public.security_events
+   where actor = 'user_rate' and kind = 'rate_limited'
+     and detail->>'for' = 'catalog_bump'),
+  1,
+  'crossing the ceiling logs one audit row per window, not one per request'
+);
+
+-- 11e. The digest rolls the log up for a human to read. It is service-role only:
+-- SECURITY DEFINER lets it read the locked-down table, so the grant is the only
+-- thing between a signed-in user and the audit trail.
+select throws_ok(
+  $$ set local role authenticated;
+     select * from public.security_digest() $$,
+  '42501',
+  null,
+  'a signed-in user cannot read the audit digest'
+);
+
+select ok(
+  (select count(*) from public.security_digest(7)) > 0,
+  'the digest summarizes the events recorded by this suite'
 );
 
 select * from finish();

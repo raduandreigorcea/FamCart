@@ -1,5 +1,5 @@
-<script setup>
-import { onBeforeUnmount, ref, watch } from 'vue'
+<script setup lang="ts">
+import { onBeforeUnmount, ref, watch, type PropType } from 'vue'
 
 // The menu shell: a panel that hangs off a button on a wide screen and comes up
 // as a bottom sheet on a phone. Owns the teleport, the overlay, the transition,
@@ -18,7 +18,7 @@ const open = defineModel({ type: Boolean, default: false })
 const props = defineProps({
   // The button that opens this. Measured to place the panel, so the panel
   // follows the button when the layout above it changes height.
-  trigger: { type: Object, default: null },
+  trigger: { type: Object as PropType<HTMLElement | null>, default: null },
   // Names the menu for assistive tech. Defaults to the visible heading, so a
   // caller only passes this when the two need to differ.
   label: { type: String, default: '' },
@@ -33,7 +33,7 @@ const props = defineProps({
   align: {
     type: String,
     default: 'left',
-    validator: (value) => ['left', 'right'].includes(value),
+    validator: (value: string) => ['left', 'right'].includes(value),
   },
   // Panel width on a wide screen. The sheet is always full width.
   width: { type: String, default: '264px' },
@@ -44,7 +44,8 @@ const emit = defineEmits(['close'])
 // Null on a phone: there the stylesheet owns the sheet's position entirely, and
 // an inline top/left measured from the button would beat the media query and
 // leave the sheet floating mid-screen.
-const anchor = ref(null)
+// Absolute placement for the wide-screen panel; null while it is a sheet.
+const anchor = ref<Record<string, string> | null>(null)
 
 const isWide = () =>
   typeof window !== 'undefined' &&
@@ -71,7 +72,7 @@ function close() {
   emit('close')
 }
 
-function onKeydown(e) {
+function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') close()
 }
 
@@ -110,7 +111,7 @@ onBeforeUnmount(() => {
         <div class="popover-panel" :style="anchor">
           <header v-if="heading" class="popover-header">
             <span v-if="icon" class="popover-header__icon-bg" aria-hidden="true">
-              <span class="popover-header__icon" v-html="icon"></span>
+              <span class="popover-header__icon" aria-hidden="true" v-html="icon"></span>
             </span>
             <span class="popover-header__text">
               <span class="popover-header__title">{{ heading }}</span>

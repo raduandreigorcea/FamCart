@@ -1,8 +1,9 @@
-<script setup>
+<script setup lang="ts">
 // One-time first-run tour. Three beats — add, swipe, invite — that teach the
 // gestures a new (or returning-after-the-redesign) user needs. Rendered by
 // HomeView over the real list; dismissing marks it seen.
 import { ref, computed, watch } from 'vue'
+import AppModal from './AppModal.vue'
 import BackButton from './BackButton.vue'
 import addIcon from '../assets/add.svg?raw'
 import checkIcon from '../assets/check.svg?raw'
@@ -74,9 +75,18 @@ async function copyCode() {
 </script>
 
 <template>
-  <Transition name="tour-fade">
-    <div v-if="open" class="tour-overlay" role="dialog" aria-modal="true" aria-labelledby="tour-title">
-      <div class="tour-card">
+  <!-- No backdrop dismissal, as before: a first-run tour is finished or skipped
+       on purpose, not clicked away by accident. Escape is new, and does what
+       Skip does — every other dialog answers to it, and a tour is the last
+       thing that should feel like a trap. -->
+  <AppModal
+    :open="open"
+    overlay-class="tour-overlay"
+    transition="tour-fade"
+    :close-on-backdrop="false"
+    @close="finish"
+  >
+      <div class="tour-card" role="dialog" aria-modal="true" aria-labelledby="tour-title">
         <div class="tour-top">
           <button class="tour-skip" type="button" @click="finish">Skip tour</button>
         </div>
@@ -89,7 +99,7 @@ async function copyCode() {
               <div v-if="current.key === 'add'" class="art-add">
                 <div class="art-addbar">
                   <span class="art-addbar__text">Avocados</span>
-                  <span class="art-addbar__btn" v-html="addIcon"></span>
+                  <span class="art-addbar__btn" aria-hidden="true" v-html="addIcon"></span>
                 </div>
                 <div class="art-suggest">
                   <span class="art-suggest__row"><span>🥑</span> Avocado</span>
@@ -148,8 +158,7 @@ async function copyCode() {
           </button>
         </div>
       </div>
-    </div>
-  </Transition>
+  </AppModal>
 </template>
 
 <style scoped>

@@ -37,12 +37,16 @@ export function sumCheckedQuantities(items: ShoppingItem[]): number {
 // optionally excluding one id. Returns undefined if none match. The maker is
 // part of the merge key — "Lapte 3.5% 1L" from Napolact and from LaDorna are
 // different products — mirroring the DB's unique active-item index
-// (migration 023). A null/absent maker only matches other maker-less items.
-export function findActiveItemByName(
-  items: ShoppingItem[],
+// (004_shopping_list.sql). A null/absent maker only matches other maker-less items.
+// Generic in the row type so a caller holding richer rows (ShoppingItemRow, with
+// created_at) gets one back rather than the narrow interface — otherwise feeding
+// the result into sortItemsForDisplay widens the whole array and the assignment
+// back to the list no longer typechecks.
+export function findActiveItemByName<T extends ShoppingItem>(
+  items: T[],
   name: string,
   { excludeId, maker }: { excludeId?: string; maker?: string | null } = {},
-): ShoppingItem | undefined {
+): T | undefined {
   const key = normalizeItemName(name)
   const makerKey = normalizeItemName(maker)
   return items.find(

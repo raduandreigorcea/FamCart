@@ -1,17 +1,19 @@
-<script setup>
-import { ref, computed, watch } from 'vue'
+<script setup lang="ts">
+import { ref, computed, watch, type PropType } from 'vue'
 import { useSupabase } from '../supabase'
+import AppModal from './AppModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { getProductEmoji } from '../lib/productEmoji'
-import { groupCheckouts, trimPartialTail } from '../lib/purchaseHistory'
+import { groupCheckouts, trimPartialTail, type CheckoutEntry } from '../lib/purchaseHistory'
+import type { FamilyMemberProfile } from '../lib/familyRealtime'
 import historyIconRaw from '../assets/history.svg?raw'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
   familyId: { type: String, default: '' },
   currentUserId: { type: String, default: '' },
-  memberProfiles: { type: Array, default: () => [] },
+  memberProfiles: { type: Array as PropType<FamilyMemberProfile[]>, default: () => [] },
 })
 
 const emit = defineEmits(['close'])
@@ -21,7 +23,7 @@ const db = useSupabase()
 // The server keeps at most 60 checkouts per family; this row cap comfortably
 // covers that many checkouts' worth of items.
 const HISTORY_LIMIT = 500
-const entries = ref([])
+const entries = ref<CheckoutEntry[]>([])
 const loading = ref(false)
 const error = ref('')
 
@@ -60,27 +62,27 @@ async function loadHistory() {
   } else {
     // If the fetch filled the row cap, the oldest checkout may have been cut
     // mid-way; trim it so every checkout shown is complete.
-    entries.value = trimPartialTail(data || [], HISTORY_LIMIT)
+    entries.value = trimPartialTail((data ?? []) as CheckoutEntry[], HISTORY_LIMIT)
   }
   loading.value = false
 }
 
 const days = computed(() => groupCheckouts(entries.value))
 
-function buyerProfile(userId) {
+function buyerProfile(userId: string | null | undefined) {
   return props.memberProfiles.find((m) => m.user_id === userId) || null
 }
 
-function buyerName(userId) {
+function buyerName(userId: string | null | undefined) {
   if (userId && userId === props.currentUserId) return 'You'
   return buyerProfile(userId)?.display_name || 'Someone'
 }
 
-function buyerInitial(userId) {
+function buyerInitial(userId: string | null | undefined) {
   return (buyerName(userId) || '?').slice(0, 1).toUpperCase()
 }
 
-function formatTime(iso) {
+function formatTime(iso: string) {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -88,13 +90,17 @@ function formatTime(iso) {
 </script>
 
 <template>
-  <Transition name="modal-fade" appear>
-    <div v-if="open" class="history-overlay" @click.self="emit('close')">
+  <AppModal
+    :open="open"
+    overlay-class="history-overlay"
+    transition="modal-fade"
+    @close="emit('close')"
+  >
       <div class="history-modal" role="dialog" aria-modal="true" aria-label="Purchase history">
         <div class="history-modal__header">
           <div class="history-modal__title-wrap">
             <div class="history-modal__icon-bg">
-              <span class="header-icon" v-html="historyIconRaw"></span>
+              <span class="header-icon" aria-hidden="true" v-html="historyIconRaw"></span>
             </div>
             <div>
               <h3>Checkout history</h3>
@@ -146,7 +152,7 @@ function formatTime(iso) {
                 <div class="checkout__head">
                   <img
                     v-if="buyerProfile(checkout.purchasedBy)?.image_url"
-                    :src="buyerProfile(checkout.purchasedBy).image_url"
+                    :src="buyerProfile(checkout.purchasedBy)?.image_url ?? ''"
                     :alt="buyerName(checkout.purchasedBy) + ' avatar'"
                     class="checkout__avatar"
                   />
@@ -159,12 +165,12 @@ function formatTime(iso) {
 
                 <ul class="history-list">
                   <li v-for="entry in checkout.items" :key="entry.id" class="history-row">
-                    <span class="history-emoji" aria-hidden="true">{{ getProductEmoji(entry.name, entry.maker || '') }}</span>
+                    <span class="history-emoji" aria-hidden="true">{{ getProductEmoji(entry.name ?? '', entry.maker || '') }}</span>
                     <span class="history-text">
                       <span class="history-name">{{ entry.name }}</span>
                       <span v-if="entry.maker" class="history-maker">{{ entry.maker }}</span>
                     </span>
-                    <span v-if="entry.quantity > 1" class="history-qty">x{{ entry.quantity }}</span>
+                    <span v-if="(entry.quantity ?? 1) > 1" class="history-qty">x{{ entry.quantity }}</span>
                     <img
                       v-if="entry.added_by_image_url"
                       :src="entry.added_by_image_url"
@@ -186,8 +192,7 @@ function formatTime(iso) {
           </dl>
         </div>
       </div>
-    </div>
-  </Transition>
+  </AppModal>
 </template>
 
 <style scoped>

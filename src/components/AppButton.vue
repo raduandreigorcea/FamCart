@@ -1,4 +1,5 @@
-<script setup>
+<script setup lang="ts">
+import type { PropType } from 'vue'
 // The one action button for the whole app. Encodes the primary/secondary/danger/
 // warning treatment that had been copied — identically — into every modal, plus a
 // ghost variant for toolbar-style actions. Layout (full-width, position in a row)
@@ -9,12 +10,13 @@ defineProps({
   variant: {
     type: String,
     default: 'primary',
-    validator: (v) => ['primary', 'secondary', 'danger', 'warning', 'ghost'].includes(v),
+    validator: (v: string) => ['primary', 'secondary', 'danger', 'warning', 'ghost'].includes(v),
   },
-  size: { type: String, default: 'md', validator: (v) => ['sm', 'md'].includes(v) },
+  size: { type: String, default: 'md', validator: (v: string) => ['sm', 'md'].includes(v) },
   // Fills the available width — flex:1 inside a button row, 100% otherwise.
   block: { type: Boolean, default: false },
-  type: { type: String, default: 'button' },
+  // Narrowed so it lands on <button type> without a cast.
+  type: { type: String as PropType<'button' | 'submit' | 'reset'>, default: 'button' },
   disabled: { type: Boolean, default: false },
 })
 

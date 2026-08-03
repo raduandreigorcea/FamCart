@@ -1,6 +1,7 @@
-<script setup>
+<script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useAuth } from '@clerk/vue'
+import AppModal from './AppModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
 import ErrorModal from './ErrorModal.vue'
 import userRoundIconRaw from '../assets/user-round.svg?raw'
@@ -9,7 +10,11 @@ import {
   disablePushNotifications,
   getNotificationPreference,
   setNotificationPreference,
+  type NotificationPreference,
 } from '../lib/pushNotifications'
+
+// The three theme choices the control offers; 'system' follows the OS.
+type ThemeMode = 'light' | 'dark' | 'system'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -26,10 +31,10 @@ const emit = defineEmits(['close', 'edit-account', 'sign-out', 'manage-family', 
 
 const { userId } = useAuth()
 
-const themeMode = ref('system')
-const notificationMode = ref('on')
+const themeMode = ref<ThemeMode>('system')
+const notificationMode = ref<NotificationPreference>('on')
 const notificationHint = ref('')
-let mediaQuery = null
+let mediaQuery: MediaQueryList | null = null
 
 function syncPreferencesFromStorage() {
   const savedTheme = localStorage.getItem('famcart-theme')
@@ -47,7 +52,7 @@ function syncPreferencesFromStorage() {
   notificationMode.value = getNotificationPreference(localStorage) === 'on' ? 'on' : 'off'
 }
 
-function applyResolvedTheme(mode) {
+function applyResolvedTheme(mode: ThemeMode) {
   const root = document.documentElement
   if (mode === 'system') {
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -67,19 +72,13 @@ function closeMenu() {
   emit('close')
 }
 
-function onKeydown(event) {
-  if (event.key === 'Escape' && props.open) {
-    closeMenu()
-  }
-}
-
-function applyTheme(mode) {
+function applyTheme(mode: ThemeMode) {
   themeMode.value = mode
   localStorage.setItem('famcart-theme', mode)
   applyResolvedTheme(mode)
 }
 
-async function applyNotifications(mode) {
+async function applyNotifications(mode: NotificationPreference) {
   notificationMode.value = mode
   setNotificationPreference(localStorage, mode)
   notificationHint.value = ''
@@ -106,14 +105,12 @@ async function applyNotifications(mode) {
 }
 
 onMounted(() => {
-  window.addEventListener('keydown', onKeydown)
   mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
   mediaQuery.addEventListener('change', handleSystemThemeChange)
   syncPreferencesFromStorage()
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKeydown)
   mediaQuery?.removeEventListener('change', handleSystemThemeChange)
 })
 
@@ -127,13 +124,17 @@ watch(
 </script>
 
 <template>
-  <Transition name="modal-fade">
-    <div v-if="open" class="account-overlay" @click.self="closeMenu">
+  <AppModal
+    :open="open"
+    overlay-class="account-overlay"
+    transition="modal-fade"
+    @close="closeMenu"
+  >
       <div class="account-dialog" role="dialog" aria-modal="true" aria-labelledby="account-modal-title">
         <div class="account-dialog__header">
           <div class="account-dialog__title-wrap">
             <div class="account-dialog__icon-bg">
-              <span class="account-header-icon" v-html="userRoundIconRaw"></span>
+              <span class="account-header-icon" aria-hidden="true" v-html="userRoundIconRaw"></span>
             </div>
             <div>
               <h3 id="account-modal-title">Account Settings</h3>
@@ -241,8 +242,7 @@ watch(
           </div>
         </div>
       </div>
-    </div>
-  </Transition>
+  </AppModal>
 
   <ErrorModal title="Notifications" :message="notificationHint" @dismiss="notificationHint = ''" />
 </template>

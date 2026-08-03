@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 //
-// HomeView's half of the catalog contribution flow (migration 022). The modal
+// HomeView's half of the catalog contribution flow (006_product_catalog.sql). The modal
 // only builds a product; HomeView decides what reaches the database, and the two
 // mistakes that matter are invisible from the UI: contributing a product the user
 // never confirmed, and letting the internal `custom` tag ride into the item row.

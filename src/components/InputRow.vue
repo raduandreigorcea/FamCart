@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import arrowRightIcon from '../assets/arrow-right.svg?raw'
 
 defineProps({
@@ -27,7 +27,7 @@ defineEmits(['update:modelValue'])
       :required="required"
       :autofocus="autofocus"
       :class="{ 'input--uppercase': uppercase }"
-      @input="$emit('update:modelValue', $event.target.value)"
+      @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
     />
     <button type="submit" class="submit-btn" :disabled="loading" aria-label="Continue">
       <span v-if="loading" class="spinner"></span>

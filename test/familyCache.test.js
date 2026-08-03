@@ -26,6 +26,7 @@ function makeSnapshot(overrides = {}) {
     familyEmoji: '🏠',
     familyMembers: [{ user_id: 'user-1', display_name: 'Me', image_url: null, role: 'moderator' }],
     items: [{ id: 'i1', name: 'Milk', quantity: 2, checked: false, created_at: '2026-01-01T00:00:00.000Z' }],
+    hasShopped: true,
     ...overrides,
   }
 }
@@ -42,6 +43,15 @@ describe('familyCache', () => {
     const { familyEmoji, ...withoutEmoji } = makeSnapshot()
     saveFamilySnapshot(storage, 'user-1', withoutEmoji)
     expect(loadFamilySnapshot(storage, 'user-1').familyEmoji).toBe('')
+  })
+
+  // Snapshots written before this field existed are still version 1, so they
+  // must survive rather than be discarded — false is the pre-existing reading.
+  it('defaults a snapshot saved before hasShopped existed to not shopped', () => {
+    const storage = makeStorage()
+    const { hasShopped, ...older } = makeSnapshot()
+    saveFamilySnapshot(storage, 'user-1', older)
+    expect(loadFamilySnapshot(storage, 'user-1').hasShopped).toBe(false)
   })
 
   it('never returns another user\'s snapshot', () => {

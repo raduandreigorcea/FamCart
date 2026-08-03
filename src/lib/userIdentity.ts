@@ -10,7 +10,7 @@ export interface UserLike {
 // The two identity fields the profiles table stores, derived from a Clerk user.
 // The one authority the client uses for both the create/join writes and the
 // keep-fresh upsert, so they can never disagree. Mirrors the clamping the DB
-// applies (migrations 020/026): name capped at 80 chars, avatar https-only.
+// applies (003_families_and_members.sql): name capped at 80 chars, avatar https-only.
 export interface ProfileFields {
   display_name: string
   image_url: string | null

@@ -1,11 +1,13 @@
-<script setup>
-import { computed, ref } from 'vue'
+<script setup lang="ts">
+import { computed, onBeforeUnmount, ref, type PropType } from 'vue'
 import ShoppingListItem from './ShoppingListItem.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import ListFilterMenu from './ListFilterMenu.vue'
 import { getProductEmoji } from '../lib/productEmoji'
 import { productKey } from '../lib/productSearch'
 import { sumActiveQuantities, sumCheckedQuantities } from '../lib/shoppingList'
+import type { ShoppingItemRow, FamilyMemberProfile } from '../lib/familyRealtime'
+import type { ProductSuggestion } from '../lib/productSearch'
 import cartIcon from '../assets/shopping-cart.svg?raw'
 import checkIcon from '../assets/check.svg?raw'
 
@@ -13,10 +15,13 @@ import checkIcon from '../assets/check.svg?raw'
 // skeleton, and the empty state. All mutations stay with the parent, which owns
 // the items.
 const props = defineProps({
-  items: { type: Array, default: () => [] },
+  items: { type: Array as PropType<ShoppingItemRow[]>, default: () => [] },
   // Map<user_id, { display_name, image_url }> — the family roster, used to
   // resolve each row's author avatar/name from item.added_by at render time.
-  memberProfiles: { type: Map, default: () => new Map() },
+  memberProfiles: {
+    type: Map as PropType<Map<string, FamilyMemberProfile>>,
+    default: () => new Map(),
+  },
   loading: { type: Boolean, default: false },
   showEmpty: { type: Boolean, default: false },
   // Whether this family has ever bought anything. An empty list means two
@@ -25,7 +30,7 @@ const props = defineProps({
   hasShopped: { type: Boolean, default: false },
   // The regulars, [{ name, maker }], offered as one-tap adds on the empty
   // list. Empty for a family with no history, which then gets the words alone.
-  suggestedProducts: { type: Array, default: () => [] },
+  suggestedProducts: { type: Array as PropType<ProductSuggestion[]>, default: () => [] },
 })
 
 // 'all' | 'active' | 'checked'. Applied to what is RENDERED only -- the counts
@@ -37,14 +42,6 @@ const props = defineProps({
 // component's header, but the value belongs to the view that owns the list.
 const filter = defineModel('filter', { type: String, default: 'all' })
 
-function avatarUrl(item) {
-  return props.memberProfiles.get(item.added_by)?.image_url || null
-}
-
-function avatarName(item) {
-  return props.memberProfiles.get(item.added_by)?.display_name || 'Member'
-}
-
 const emit = defineEmits(['toggle', 'delete', 'checkout', 'add'])
 
 const uncheckedItems = computed(() => props.items.filter((i) => !i.checked))
@@ -54,6 +51,27 @@ const visibleItems = computed(() => {
   if (filter.value === 'active') return uncheckedItems.value
   if (filter.value === 'checked') return checkedItems.value
   return props.items
+})
+
+// Everything each row needs, worked out once per render instead of four times
+// per row inside the v-for. The drain lookups were the reason: indexOf() per row
+// over the draining list is quadratic in the row count. Harmless at the 50-item
+// cap, but a map costs nothing and the template reads as data rather than calls.
+const visibleRows = computed(() => {
+  const drainOrder = new Map(drainingIds.value.map((id, index) => [id, index]))
+  return visibleItems.value.map((item) => {
+    const profile = props.memberProfiles.get(item.added_by ?? '')
+    return {
+      item,
+      avatarUrl: profile?.image_url || undefined,
+      avatarName: profile?.display_name || 'Member',
+      draining: drainOrder.has(item.id),
+      // Position among the draining rows, so they fall into the bar in a
+      // stagger. Checked rows sit wherever they were added, so the order comes
+      // from the drain list rather than from a contiguous checked section.
+      drainIndex: drainOrder.get(item.id) ?? 0,
+    }
+  })
 })
 
 // The header names whichever list is on screen. It stays put in every filter
@@ -103,18 +121,21 @@ const prefersReducedMotion =
 
 const buying = ref(false)
 const buttonSuccess = ref(false)
-const drainingIds = ref([])
-const isDraining = (id) => drainingIds.value.includes(id)
-// Position among the draining rows, so they fall into the bar in a stagger.
-// Checked rows now sit wherever they were added, so the order comes from the
-// drain list rather than from a contiguous checked section.
-const drainIndex = (id) => Math.max(0, drainingIds.value.indexOf(id))
+const drainingIds = ref<string[]>([])
+
+// The checkout the user has already confirmed, held until the drain finishes.
+// Non-null means the emit is still owed to the parent — the animation is the
+// only thing outstanding, so it must survive whatever interrupts it.
+let pendingCheckout: string[] | null = null
+let drainTimer: ReturnType<typeof setTimeout> | null = null
+let successTimer: ReturnType<typeof setTimeout> | null = null
 
 function startCheckout() {
   if (buying.value || !checkedItems.value.length) return
   const ids = checkedItems.value.map((i) => i.id)
   buying.value = true
   buttonSuccess.value = true
+  pendingCheckout = ids
   // Park the thumb at the end of the track for the success state, whichever
   // path got us here (a completed drag already has it there; the keyboard
   // path animates it across).
@@ -130,21 +151,39 @@ function startCheckout() {
   // Wait out the last row's fall (its delay + one drain duration) before the
   // parent removes them, so nothing pops out mid-animation.
   const total = DRAIN_MS + Math.min(ids.length - 1, 6) * STAGGER_MS
-  window.setTimeout(() => finishCheckout(ids), total)
+  drainTimer = setTimeout(() => finishCheckout(ids), total)
 }
 
-function finishCheckout(ids) {
+function finishCheckout(ids: string[]) {
+  // Idempotent: the drain timer and the unmount flush can both reach here, and
+  // archiving the same checkout twice would be a second RPC for nothing.
+  if (!pendingCheckout) return
+  pendingCheckout = null
+  if (drainTimer) {
+    clearTimeout(drainTimer)
+    drainTimer = null
+  }
   emit('checkout', ids)
   drainingIds.value = []
   buying.value = false
   // Let the success tick linger a beat; the bar usually unmounts before this
   // fires because the checked list just emptied. On a failed checkout the parent
   // restores the items and the bar reappears cleanly in its idle state.
-  window.setTimeout(() => {
+  successTimer = setTimeout(() => {
     buttonSuccess.value = false
     dragX.value = 0
   }, 260)
 }
+
+onBeforeUnmount(() => {
+  if (drainTimer) clearTimeout(drainTimer)
+  if (successTimer) clearTimeout(successTimer)
+  // Unmounting mid-drain (a route change, a family switch tearing the list
+  // down) used to drop the checkout on the floor: the timer died with the
+  // component and the rows stayed checked in the database, having told the user
+  // they were bought. The confirmation already happened — flush it.
+  if (pendingCheckout) finishCheckout(pendingCheckout)
+})
 
 // ─── Slide to confirm ─────────────────────────────────────────────────────────
 // Checking out archives the whole checked section, so the bar is a
@@ -156,11 +195,11 @@ const THUMB_SIZE = 51 // px; bar height minus its borders; keep in sync with .bu
 const THUMB_INSET = 0 // px gap between thumb and track edge; the thumb sits flush
 const COMPLETE_AT = 0.85 // fraction of the travel that counts as done
 
-const barEl = ref(null)
-const thumbEl = ref(null)
+const barEl = ref<HTMLElement | null>(null)
+const thumbEl = ref<HTMLElement | null>(null)
 const dragging = ref(false)
 const dragX = ref(0)
-let activePointerId = null
+let activePointerId: number | null = null
 let grabOffsetX = 0
 let maxTravel = 0
 
@@ -169,22 +208,22 @@ function measureTravel() {
   return Math.max(0, barEl.value.clientWidth - thumbEl.value.offsetWidth - THUMB_INSET * 2)
 }
 
-function onThumbDown(e) {
+function onThumbDown(e: PointerEvent) {
   if (buying.value) return
   maxTravel = measureTravel()
   if (!maxTravel) return
   dragging.value = true
   activePointerId = e.pointerId
   grabOffsetX = e.clientX - dragX.value
-  e.currentTarget.setPointerCapture?.(e.pointerId)
+  ;(e.currentTarget as Element).setPointerCapture?.(e.pointerId)
 }
 
-function onThumbMove(e) {
+function onThumbMove(e: PointerEvent) {
   if (!dragging.value || e.pointerId !== activePointerId) return
   dragX.value = Math.min(Math.max(e.clientX - grabOffsetX, 0), maxTravel)
 }
 
-function onThumbUp(e) {
+function onThumbUp(e: PointerEvent) {
   if (!dragging.value || e.pointerId !== activePointerId) return
   dragging.value = false
   activePointerId = null
@@ -203,7 +242,7 @@ function onThumbCancel() {
 
 // A pointer click must not check out — requiring the slide is the point. A
 // keyboard activation of the button arrives as a click with detail === 0.
-function onThumbClick(e) {
+function onThumbClick(e: MouseEvent) {
   if (e.detail === 0) startCheckout()
 }
 
@@ -256,13 +295,13 @@ const labelText = computed(() =>
        moving it to a section at the bottom. -->
   <TransitionGroup v-else tag="ul" name="row" class="item-list">
     <ShoppingListItem
-      v-for="item in visibleItems"
-      :key="item.id"
-      :item="item"
-      :avatar-url="avatarUrl(item)"
-      :avatar-name="avatarName(item)"
-      :draining="isDraining(item.id)"
-      :drain-index="drainIndex(item.id)"
+      v-for="row in visibleRows"
+      :key="row.item.id"
+      :item="row.item"
+      :avatar-url="row.avatarUrl"
+      :avatar-name="row.avatarName"
+      :draining="row.draining"
+      :drain-index="row.drainIndex"
       @toggle="$emit('toggle', $event)"
       @delete="$emit('delete', $event)"
     />
@@ -339,8 +378,8 @@ const labelText = computed(() =>
           @click="onThumbClick"
         >
           <span class="buy-bar__icon" aria-hidden="true">
-            <span class="buy-bar__cart" v-html="cartIcon"></span>
-            <span class="buy-bar__check" v-html="checkIcon"></span>
+            <span class="buy-bar__cart" aria-hidden="true" v-html="cartIcon"></span>
+            <span class="buy-bar__check" aria-hidden="true" v-html="checkIcon"></span>
           </span>
         </button>
       </div>

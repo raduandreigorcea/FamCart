@@ -24,6 +24,17 @@ vi.mock('../src/supabase', () => ({ useSupabase: () => ({}) }))
 function mountSettings(initialTab = 'about') {
   return mount(FamilySettingsModal, {
     shallow: true,
+    // The dialog renders through AppModal now, and a shallow mount stubs it
+    // along with everything else — which drops the slot, and with it the whole
+    // dialog body this file is here to inspect. The shell is structure rather
+    // than a child worth isolating from, so keep it real.
+    //
+    // AboutPanel for the same reason, since the tabs became components: it is
+    // not a collaborator to isolate from here, it is the thing under test — the
+    // credit itself lives in its template. Mounting it through the modal rather
+    // than on its own is deliberate: the obligation is that a user can reach
+    // the credit, so the tab wiring is part of what this asserts.
+    global: { stubs: { AppModal: false, AboutPanel: false } },
     props: {
       open: true,
       initialTab,

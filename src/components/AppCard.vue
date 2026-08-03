@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 defineProps({
   // 'default' → setup-card style, 'narrow' → login-card style
   variant: { type: String, default: 'default' },

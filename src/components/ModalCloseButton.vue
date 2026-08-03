@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import xIcon from '../assets/x.svg?raw'
 
 defineProps({
@@ -10,7 +10,7 @@ const emit = defineEmits(['click'])
 
 <template>
   <button class="modal-close" type="button" :aria-label="ariaLabel" @click="emit('click')">
-    <span class="modal-close__icon" v-html="xIcon"></span>
+    <span class="modal-close__icon" aria-hidden="true" v-html="xIcon"></span>
   </button>
 </template>
 
