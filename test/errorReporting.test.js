@@ -16,6 +16,7 @@ import { captureEarlyErrors, startErrorReporting } from '../src/lib/errorReporti
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllEnvs()
 })
 
 describe('captureEarlyErrors', () => {
@@ -63,6 +64,12 @@ describe('captureEarlyErrors', () => {
   // away — and main.ts drops the stand-ins on that resolution. This is the dev,
   // CI and test path: it must not leave listeners behind.
   it('is released immediately when there is no DSN to load', async () => {
+    // The DSN has to be stubbed off. Vitest loads .env like Vite does, so
+    // VITE_SENTRY_DSN is populated here, and without this the call takes the
+    // real path: a dynamic import of the whole SDK, five seconds, and a flake
+    // against the default 5s timeout. The branch being pinned is the other one.
+    vi.stubEnv('VITE_SENTRY_DSN', '')
+
     const remove = vi.spyOn(window, 'removeEventListener')
     const stop = captureEarlyErrors()
 
