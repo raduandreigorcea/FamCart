@@ -8,6 +8,7 @@ import {
   disablePushNotifications,
   getNotificationPreference,
   setNotificationPreference,
+  syncPushUser,
 } from '../src/lib/pushNotifications'
 
 function fakeSdk({ permission = 'granted' } = {}) {
@@ -145,5 +146,75 @@ describe('notification preference', () => {
 
   it('treats a corrupted stored value as undecided', () => {
     expect(getNotificationPreference(fakeStorage({ 'famcart-notifications': 'maybe' }))).toBe(null)
+  })
+})
+
+// The device-to-account binding.
+//
+// login() is what ties a device to a Clerk id, and it used to run only when
+// somebody switched notifications on. Signing out detaches the device and
+// nothing put it back, so a device could stay subscribed to OneSignal while
+// belonging to nobody. Nothing on the client showed it: the toggle reads from a
+// separate local preference, so it still said On. It only surfaced at the far
+// end, as an empty notification id with a non-zero targeted count.
+describe('re-binding the device on boot', () => {
+  const storage = (value) => ({ getItem: () => value })
+
+  it('logs the device back in when notifications are on', async () => {
+    vi.stubEnv('VITE_ONESIGNAL_APP_ID', 'app-123')
+    const win = stubPushCapableBrowser()
+    const sdk = fakeSdk()
+
+    const done = syncPushUser('user_42', storage('on'))
+    drainDeferred(win, sdk)
+    await done
+
+    expect(sdk.login).toHaveBeenCalledWith('user_42')
+  })
+
+  // The repair must not override a decision. Someone who turned notifications
+  // off is not re-subscribed just by opening the app.
+  it('does nothing when notifications were turned off', async () => {
+    vi.stubEnv('VITE_ONESIGNAL_APP_ID', 'app-123')
+    const win = stubPushCapableBrowser()
+    const sdk = fakeSdk()
+
+    await syncPushUser('user_42', storage('off'))
+    drainDeferred(win, sdk)
+
+    expect(sdk.login).not.toHaveBeenCalled()
+  })
+
+  it('does nothing before the user has ever been asked', async () => {
+    vi.stubEnv('VITE_ONESIGNAL_APP_ID', 'app-123')
+    const win = stubPushCapableBrowser()
+    const sdk = fakeSdk()
+
+    await syncPushUser('user_42', storage(null))
+    drainDeferred(win, sdk)
+
+    expect(sdk.login).not.toHaveBeenCalled()
+  })
+
+  it('does nothing without a signed-in user', async () => {
+    vi.stubEnv('VITE_ONESIGNAL_APP_ID', 'app-123')
+    const win = stubPushCapableBrowser()
+    const sdk = fakeSdk()
+
+    await syncPushUser('', storage('on'))
+    drainDeferred(win, sdk)
+
+    expect(sdk.login).not.toHaveBeenCalled()
+  })
+
+  it('does nothing when push is not configured', async () => {
+    vi.stubEnv('VITE_ONESIGNAL_APP_ID', '')
+    const win = stubPushCapableBrowser()
+    const sdk = fakeSdk()
+
+    await syncPushUser('user_42', storage('on'))
+    drainDeferred(win, sdk)
+
+    expect(sdk.login).not.toHaveBeenCalled()
   })
 })
