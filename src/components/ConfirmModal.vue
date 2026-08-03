@@ -1,7 +1,15 @@
-<script setup>
-import { computed } from 'vue'
+<script setup lang="ts">
+import { computed, useId } from 'vue'
 import AppButton from './AppButton.vue'
+import AppModal from './AppModal.vue'
 import triangleAlertIcon from '../assets/triangle-alert.svg?raw'
+
+// Per-instance, because this component is mounted several times over on one
+// screen (HomeView alone has an ErrorModal and a limit-reached ConfirmModal).
+// A hardcoded id put the same value on every copy, so aria-labelledby resolved
+// to whichever happened to be first in the DOM rather than to this dialog's own
+// title.
+const titleId = useId()
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -11,7 +19,7 @@ const props = defineProps({
   tone: {
     type: String,
     default: '',
-    validator: (value) => ['danger', 'warning', 'success', ''].includes(value),
+    validator: (value: string) => ['danger', 'warning', 'success', ''].includes(value),
   },
   confirmText: { type: String, default: 'Confirm' },
   cancelText: { type: String, default: 'Cancel' },
@@ -33,9 +41,13 @@ const emit = defineEmits(['confirm', 'cancel'])
 </script>
 
 <template>
-  <Transition name="confirm-fade">
-    <div v-if="open" class="confirm-overlay" @click.self="emit('cancel')">
-      <div class="confirm-dialog" :class="`confirm-dialog--${resolvedTone}`" role="alertdialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+  <AppModal
+    :open="open"
+    overlay-class="confirm-overlay"
+    transition="confirm-fade"
+    @close="emit('cancel')"
+  >
+      <div class="confirm-dialog" :class="`confirm-dialog--${resolvedTone}`" role="alertdialog" aria-modal="true" :aria-labelledby="titleId">
         <div class="confirm-dialog__icon-wrap" :class="`confirm-dialog__icon-wrap--${resolvedTone}`">
           <span
             v-if="resolvedTone === 'danger'"
@@ -56,7 +68,7 @@ const emit = defineEmits(['confirm', 'cancel'])
         </div>
 
         <div class="confirm-dialog__body">
-          <h4 id="confirm-modal-title" class="confirm-dialog__title">{{ title }}</h4>
+          <h4 :id="titleId" class="confirm-dialog__title">{{ title }}</h4>
           <p class="confirm-dialog__message">{{ message }}</p>
         </div>
 
@@ -65,8 +77,7 @@ const emit = defineEmits(['confirm', 'cancel'])
           <AppButton :variant="confirmVariant" :block="showCancel" @click="emit('confirm')">{{ confirmText }}</AppButton>
         </div>
       </div>
-    </div>
-  </Transition>
+  </AppModal>
 </template>
 
 <style scoped>

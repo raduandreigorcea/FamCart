@@ -1,8 +1,9 @@
-<script setup>
+<script setup lang="ts">
 // One-time greeting shown after login for users who never decided on
 // notifications. Explains the benefit up front so the browser/OS permission
 // prompt that follows an accept doesn't arrive cold.
 import AppButton from './AppButton.vue'
+import AppModal from './AppModal.vue'
 import bellIcon from '../assets/bell.svg?raw'
 
 defineProps({
@@ -13,8 +14,12 @@ const emit = defineEmits(['accept', 'decline'])
 </script>
 
 <template>
-  <Transition name="notify-fade">
-    <div v-if="open" class="notify-overlay" @click.self="emit('decline')">
+  <AppModal
+    :open="open"
+    overlay-class="notify-overlay"
+    transition="notify-fade"
+    @close="emit('decline')"
+  >
       <div class="notify-dialog" role="alertdialog" aria-modal="true" aria-labelledby="notify-prompt-title">
         <div class="notify-dialog__icon-wrap">
           <span class="notify-dialog__icon" aria-hidden="true" v-html="bellIcon"></span>
@@ -33,8 +38,7 @@ const emit = defineEmits(['accept', 'decline'])
           <AppButton variant="primary" block @click="emit('accept')">Turn on</AppButton>
         </div>
       </div>
-    </div>
-  </Transition>
+  </AppModal>
 </template>
 
 <style scoped>

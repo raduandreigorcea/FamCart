@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import chevronLeftIcon from '../assets/chevron-left.svg?raw'
 
 defineEmits(['click'])

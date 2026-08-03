@@ -11,8 +11,10 @@ node_modules
 dist
 dist-ssr
 *.local
-.env
-.env.*
+
+# Every env file, including .env.scripts (service-role key) and
+# .env.sentry-build-plugin (upload token). Nothing here is ever committed.
+.env*
 
 # Editor directories and files
 .vscode
@@ -30,9 +32,7 @@ CLAUDE.md
 .claude
 graphify-out
 .graphifyignore
-scripts
 .vercel
-.env*
 
 # Local state from `supabase db start` / `supabase test db`.
 supabase/.branches

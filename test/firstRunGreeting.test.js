@@ -1,0 +1,179 @@
+// The one-time first-run sequence: gesture tour, then the notifications ask.
+//
+// The order is the point. Being asked for a push permission before you know
+// what the app does is how you get a "no" that sticks, so the ask waits for the
+// tour to close. These pin that handoff and the conditions under which the ask
+// is skipped entirely — each of which exists so an unset preference re-asks
+// later rather than burning the one chance.
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { ref } from 'vue'
+import { useFirstRunGreeting } from '../src/lib/firstRunGreeting'
+
+const push = vi.hoisted(() => ({
+  supported: true,
+  appId: 'app-1',
+  desktop: false,
+  enableResult: 'subscribed',
+  enableCalls: [],
+}))
+
+vi.mock('../src/lib/pushNotifications', () => ({
+  isPushSupported: () => push.supported,
+  getOneSignalAppId: () => push.appId,
+  isDesktopBrowser: () => push.desktop,
+  enablePushNotifications: async (id) => {
+    push.enableCalls.push(id)
+    return push.enableResult
+  },
+  getNotificationPreference: (s) => {
+    const v = s.getItem('famcart-notifications')
+    return v === 'on' || v === 'off' ? v : null
+  },
+  setNotificationPreference: (s, mode) => s.setItem('famcart-notifications', mode),
+}))
+
+function makeStorage(seed = {}) {
+  const map = new Map(Object.entries(seed))
+  return {
+    getItem: (k) => (map.has(k) ? map.get(k) : null),
+    setItem: (k, v) => map.set(k, String(v)),
+    removeItem: (k) => map.delete(k),
+    map,
+  }
+}
+
+const greeting = (opts = {}) =>
+  useFirstRunGreeting({
+    userId: ref('user-1'),
+    isOffline: () => false,
+    storage: makeStorage(),
+    ...opts,
+  })
+
+beforeEach(() => {
+  push.supported = true
+  push.appId = 'app-1'
+  push.desktop = false
+  push.enableResult = 'subscribed'
+  push.enableCalls.length = 0
+})
+
+describe('the sequence', () => {
+  it('opens the tour first for someone who has never seen it', () => {
+    const g = greeting()
+    g.start()
+
+    expect(g.onboardingTourOpen.value).toBe(true)
+    // Not both at once: the ask waits its turn.
+    expect(g.notificationPromptOpen.value).toBe(false)
+  })
+
+  it('hands off to the notifications ask when the tour closes', () => {
+    const g = greeting()
+    g.start()
+    g.closeTour()
+
+    expect(g.onboardingTourOpen.value).toBe(false)
+    expect(g.notificationPromptOpen.value).toBe(true)
+  })
+
+  it('goes straight to the ask for someone who has seen the tour', () => {
+    const g = greeting({ storage: makeStorage({ 'famcart_tour_seen_v1': '1' }) })
+    g.start()
+
+    expect(g.onboardingTourOpen.value).toBe(false)
+    expect(g.notificationPromptOpen.value).toBe(true)
+  })
+
+  it('does nothing at all without a signed-in user', () => {
+    const g = greeting({ userId: ref(null) })
+    g.start()
+
+    expect(g.onboardingTourOpen.value).toBe(false)
+    expect(g.notificationPromptOpen.value).toBe(false)
+  })
+})
+
+// Every skip below leaves the preference unset on purpose, so the same account
+// is asked again somewhere the answer can actually stick.
+describe('when the ask would be pointless', () => {
+  const seen = () => makeStorage({ 'famcart_tour_seen_v1': '1' })
+
+  it('skips it where push is unsupported', () => {
+    push.supported = false
+    const g = greeting({ storage: seen() })
+    g.start()
+    expect(g.notificationPromptOpen.value).toBe(false)
+  })
+
+  it('skips it where push is not configured', () => {
+    push.appId = ''
+    const g = greeting({ storage: seen() })
+    g.start()
+    expect(g.notificationPromptOpen.value).toBe(false)
+  })
+
+  it('skips it offline, where subscribing needs the network', () => {
+    const g = greeting({ storage: seen(), isOffline: () => true })
+    g.start()
+    expect(g.notificationPromptOpen.value).toBe(false)
+  })
+
+  it('skips it on desktop, so the phone still gets to ask', () => {
+    push.desktop = true
+    const g = greeting({ storage: seen() })
+    g.start()
+    expect(g.notificationPromptOpen.value).toBe(false)
+  })
+
+  it('never re-asks once a decision is stored', () => {
+    const g = greeting({
+      storage: makeStorage({ 'famcart_tour_seen_v1': '1', 'famcart-notifications': 'off' }),
+    })
+    g.start()
+    expect(g.notificationPromptOpen.value).toBe(false)
+  })
+})
+
+describe('answering the ask', () => {
+  it('stores the decision on decline', () => {
+    const storage = makeStorage()
+    const g = greeting({ storage })
+    g.declineNotifications()
+
+    expect(g.notificationPromptOpen.value).toBe(false)
+    expect(storage.getItem('famcart-notifications')).toBe('off')
+  })
+
+  it('stores it and subscribes on accept', async () => {
+    const storage = makeStorage()
+    const g = greeting({ storage })
+    await g.acceptNotifications()
+
+    expect(storage.getItem('famcart-notifications')).toBe('on')
+    expect(push.enableCalls).toEqual(['user-1'])
+    expect(g.notificationError.value).toBe('')
+  })
+
+  // A preference saying "on" while the browser is blocking is a preference that
+  // lies, and the settings screen would then show a toggle that does nothing.
+  it('reverts the preference when the browser refuses', async () => {
+    push.enableResult = 'permission-denied'
+    const storage = makeStorage()
+    const g = greeting({ storage })
+    await g.acceptNotifications()
+
+    expect(storage.getItem('famcart-notifications')).toBe('off')
+    expect(g.notificationError.value).toContain('blocked')
+  })
+
+  it('reverts it on an outright failure too', async () => {
+    push.enableResult = 'error'
+    const storage = makeStorage()
+    const g = greeting({ storage })
+    await g.acceptNotifications()
+
+    expect(storage.getItem('famcart-notifications')).toBe('off')
+    expect(g.notificationError.value).toContain('try again')
+  })
+})

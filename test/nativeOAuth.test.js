@@ -216,6 +216,10 @@ describe('startNativeOAuth', () => {
     await untilBrowserOpened()
     mocks.listeners.appUrlOpen({ url: `${NATIVE_SSO_CALLBACK_URL}?rotating_token_nonce=x` })
 
-    await expect(result).rejects.toThrow('did not complete')
+    // Asserts the diagnostic, not the prose. The whole point of this error is
+    // that it names the state the attempt got stuck in — that is what separates
+    // "allowlist the redirect URL in Clerk" from a bug in startNativeOAuth. The
+    // wording around it is copy and may change; the stuck state may not.
+    await expect(result).rejects.toThrow('attempt: needs_first_factor')
   })
 })

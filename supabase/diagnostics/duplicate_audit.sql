@@ -8,9 +8,10 @@
 -- Convention: for most checks, EMPTY RESULT = CLEAN. Checks marked "[info]"
 -- can legitimately return rows — they surface state to eyeball, not a defect.
 --
--- Section A runs against the schema as it is today. Section B additionally needs
--- migration 026 (the profiles table) applied; it will error on "relation
--- profiles does not exist" until then.
+-- The two sections are grouped by subject rather than by prerequisite: A covers
+-- the catalog, families and list rows, B covers profiles. (B used to require a
+-- migration that had not landed everywhere; profiles is part of the base schema
+-- now — see 003_families_and_members.sql — so both sections always run.)
 -- ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -99,10 +100,10 @@ where not exists (
 )
 order by f.created_at;
 
--- A10. [info] How much the profile de-dup is worth: users who belong to more than
--- one family. Before migration 026 each of these stored their name+avatar once
--- PER row below; after 026 it is stored once. The sum of (copies - 1) is roughly
--- how many redundant profile copies 026 removes.
+-- A10. [info] What the profiles table is worth: users who belong to more than one
+-- family. A schema that copied name+avatar onto every membership would store one
+-- copy per row below; profiles stores one, full stop. The sum of (copies - 1) is
+-- roughly how many redundant copies that design avoids.
 select user_id, count(*) as copies_across_families
 from public.family_members
 group by user_id
@@ -110,11 +111,11 @@ having count(*) > 1
 order by copies_across_families desc;
 
 
--- ═══ SECTION B — requires migration 026 (profiles) applied ═══════════════════
+-- ═══ SECTION B — profiles ════════════════════════════════════════════════════
 
--- B1. family_members whose user has NO profile row. After 026 this must be EMPTY
--- (the FK family_members_user_id_profiles_fkey enforces it); running it is a
--- quick confirmation the backfill covered everyone.
+-- B1. family_members whose user has NO profile row. Must be EMPTY: the FK
+-- family_members_user_id_profiles_fkey enforces it. Running it is a quick
+-- confirmation that nothing has been inserted around the constraint.
 select fm.user_id, count(*) as memberships
 from public.family_members fm
 left join public.profiles p on p.user_id = fm.user_id

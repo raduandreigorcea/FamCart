@@ -1,9 +1,10 @@
-<script setup>
-import { computed } from 'vue'
+<script setup lang="ts">
+import { computed, type PropType } from 'vue'
 import SkeletonBlock from './SkeletonBlock.vue'
+import type { FamilyMemberProfile } from '../lib/familyRealtime'
 
 const props = defineProps({
-  members: { type: Array, default: () => [] },
+  members: { type: Array as PropType<FamilyMemberProfile[]>, default: () => [] },
   maxVisible: { type: Number, default: 4 },
   loading: { type: Boolean, default: false },
 })

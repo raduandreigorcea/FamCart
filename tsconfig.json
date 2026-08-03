@@ -1,6 +1,12 @@
 {
-  // Typechecks the incrementally-adopted TS code under src (lib, router). The
-  // Vue SFCs are still plain JS; switch to vue-tsc as they migrate.
+  // Typechecking runs through vue-tsc, so .vue files are in scope alongside the
+  // .ts under lib/ and router/. Every SFC declares lang="ts", so this is the
+  // whole of src — script blocks and templates both.
+  //
+  // It was not always: the SFCs were plain JS, and this config carried allowJs
+  // plus a second, looser tsconfig.sfc.json to triage them a file at a time.
+  // Both are gone now that the migration is done, along with the checkJs escape
+  // hatch — there is no JavaScript left in src for it to apply to.
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -11,5 +17,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.vue"]
 }

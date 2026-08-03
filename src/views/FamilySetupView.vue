@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
 import { useAuth, useUser } from '@clerk/vue'
 import { useRouter, useRoute } from 'vue-router'
@@ -16,6 +16,9 @@ import ChoiceButton from '../components/ChoiceButton.vue'
 import BackButton from '../components/BackButton.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import { isOfflineError } from '../lib/offlineQueue'
+import { UserFacingError, userMessage } from '../lib/errorMessages'
+import { isValidInviteCode, normalizeInviteCode, randomInviteCode } from '../lib/inviteCode'
+import { FAMILY_MEMBERSHIP_CAP, FAMILY_NAME_MAX_LENGTH } from '../lib/limits'
 
 const OFFLINE_MESSAGE = 'You appear to be offline. Check your connection and try again.'
 
@@ -29,7 +32,7 @@ const db = useSupabase()
 // (vs. a brand-new user with none): offer a way back to their list.
 const isAddingFamily = computed(() => route.query.add === '1')
 
-// Owning is capped at one family (migration 001). Someone adding a family while
+// Owning is capped at one family (003_families_and_members.sql). Someone adding a family while
 // they already own one can only join, so the create option is hidden. A brand-new
 // user (not adding) always sees it.
 const ownsFamily = ref(false)
@@ -58,18 +61,16 @@ onMounted(async () => {
 const welcomed = ref(false)
 const showWelcome = computed(() => !welcomed.value && !isAddingFamily.value)
 
-const mode = ref(null) // null | 'create' | 'join'
+const mode = ref<'create' | 'join' | null>(null)
 const familyName = ref('')
 const inviteCode = ref('')
 const error = ref('')
 const loading = ref(false)
-const FAMILY_NAME_MAX_LENGTH = 25
-const INVITE_CODE_REGEX = /^[A-HJ-NP-Z2-9]{8}$/
 const familyNameLength = computed(() => familyName.value.length)
 const familyNameOverLimit = computed(() => familyNameLength.value > FAMILY_NAME_MAX_LENGTH)
 const limitModal = ref({ open: false, title: '', message: '' })
 
-function openLimitModal(message) {
+function openLimitModal(message: string) {
   limitModal.value = {
     open: true,
     title: 'Name Too Long',
@@ -81,17 +82,10 @@ function closeLimitModal() {
   limitModal.value = { open: false, title: '', message: '' }
 }
 
-function randomInviteCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  // Use a CSPRNG, not Math.random(): the code is the only credential guarding
-  // family membership. The 32-char alphabet divides 256 evenly, so `byte & 31`
-  // maps to a character with no modulo bias.
-  const bytes = crypto.getRandomValues(new Uint8Array(8))
-  return Array.from(bytes, (b) => chars[b & 31]).join('')
-}
-
 async function createFamily() {
   if (loading.value) return
+  const uid = userId.value
+  if (!uid) return
   if (familyNameOverLimit.value) {
     openLimitModal(`Family name must be ${FAMILY_NAME_MAX_LENGTH} characters or fewer.`)
     return
@@ -109,21 +103,21 @@ async function createFamily() {
 
     // Establish the profile first: the membership insert below references it
     // (FK), and this is where the creator's Clerk name/avatar lands.
-    const { error: profileErr } = await upsertOwnProfile(db, userId.value, user.value)
+    const { error: profileErr } = await upsertOwnProfile(db, uid, user.value)
     if (profileErr) throw profileErr
 
     const { data: family, error: familyErr } = await db
       .from('families')
-      .insert({ name: nextFamilyName, invite_code: code, created_by: userId.value })
+      .insert({ name: nextFamilyName, invite_code: code, created_by: uid })
       .select('id')
-      .single()
+      .single<{ id: string }>()
 
-    // A user may own only one family (migration 001). The unique index rejects a
+    // A user may own only one family (003_families_and_members.sql). The unique index rejects a
     // second with a 23505; turn that one case into a message that explains it
     // rather than leaking the raw constraint text.
     if (familyErr) {
       if (familyErr.message?.includes('families_one_per_owner')) {
-        throw new Error('You can only own one family. Leave or delete your current one before creating another.')
+        throw new UserFacingError('You can only own one family. Leave or delete your current one before creating another.')
       }
       throw familyErr
     }
@@ -132,28 +126,31 @@ async function createFamily() {
       .from('family_members')
       .insert({
         family_id: family.id,
-        user_id: userId.value,
+        user_id: uid,
         role: 'moderator',
       })
 
     if (memberErr) {
       // The family row was created but the membership was rejected (e.g. the
-      // membership cap, migration 025). Remove the orphan so it can't linger
+      // membership cap, 003_families_and_members.sql). Remove the orphan so it
+      // can't linger
       // with no members, then explain the one case the user can act on.
       await db.from('families').delete().eq('id', family.id)
       // The sentinel is raised as the exception DETAIL, which supabase-js exposes
       // on error.details, not error.message.
       if ((memberErr.details ?? memberErr.message ?? '').includes('family_membership_limit_exceeded')) {
-        throw new Error('You can be part of at most 3 families. Leave one before creating another.')
+        throw new UserFacingError(
+          `You can be part of at most ${FAMILY_MEMBERSHIP_CAP} families. Leave one before creating another.`,
+        )
       }
       throw memberErr
     }
 
     // Make the new family the active one so HomeView opens straight to it.
-    saveActiveFamilyId(localStorage, userId.value, family.id)
+    saveActiveFamilyId(localStorage, uid, family.id)
     router.replace('/')
   } catch (e) {
-    error.value = isOfflineError(e) ? OFFLINE_MESSAGE : (e.message ?? 'Failed to create family.')
+    error.value = isOfflineError(e) ? OFFLINE_MESSAGE : userMessage(e, 'Failed to create family.')
   } finally {
     loading.value = false
   }
@@ -161,11 +158,13 @@ async function createFamily() {
 
 async function joinFamily() {
   if (loading.value || !inviteCode.value.trim()) return
+  const uid = userId.value
+  if (!uid) return
   error.value = ''
   loading.value = true
   try {
-    const code = inviteCode.value.trim().toUpperCase()
-    if (!INVITE_CODE_REGEX.test(code)) {
+    const code = normalizeInviteCode(inviteCode.value)
+    if (!isValidInviteCode(code)) {
       error.value = 'Invite code must be 8 characters, letters and numbers only.'
       return
     }
@@ -181,12 +180,12 @@ async function joinFamily() {
         p_display_name: display_name,
         p_image_url: image_url,
       })
-      .maybeSingle()
+      .maybeSingle<{ id: string; name: string }>()
 
     if (joinErr) {
       // The sentinel is raised as the exception DETAIL (error.details), not message.
       if ((joinErr.details ?? joinErr.message ?? '').includes('family_membership_limit_exceeded')) {
-        error.value = 'You can be part of at most 3 families. Leave one before joining another.'
+        error.value = `You can be part of at most ${FAMILY_MEMBERSHIP_CAP} families. Leave one before joining another.`
         return
       }
       throw joinErr
@@ -197,10 +196,10 @@ async function joinFamily() {
     }
 
     // Make the joined family the active one so HomeView opens straight to it.
-    saveActiveFamilyId(localStorage, userId.value, family.id)
+    saveActiveFamilyId(localStorage, uid, family.id)
     router.replace('/')
   } catch (e) {
-    error.value = isOfflineError(e) ? OFFLINE_MESSAGE : (e.message ?? 'Failed to join family.')
+    error.value = isOfflineError(e) ? OFFLINE_MESSAGE : userMessage(e, 'Failed to join family.')
   } finally {
     loading.value = false
   }
@@ -228,7 +227,7 @@ async function joinFamily() {
               <div class="wl-row wl-row--done">
                 <span class="wl-emoji">🥛</span>
                 <span class="wl-line wl-line--done"></span>
-                <span class="wl-dot wl-dot--done" v-html="checkIcon"></span>
+                <span class="wl-dot wl-dot--done" aria-hidden="true" v-html="checkIcon"></span>
               </div>
               <div class="wl-row">
                 <span class="wl-emoji">🍞</span>

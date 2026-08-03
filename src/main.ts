@@ -1,11 +1,17 @@
 import { createApp } from 'vue'
 import { clerkPlugin } from '@clerk/vue'
-import * as Sentry from '@sentry/vue'
 import './style.css'
 import App from './App.vue'
 import router from './router'
 import { startConnectivity } from './lib/connectivity'
 import { initPushNotifications } from './lib/pushNotifications'
+import { captureEarlyErrors, startErrorReporting } from './lib/errorReporting'
+
+// First statement in the module on purpose: everything below can throw or reject,
+// and until the Sentry SDK loads (deferred to idle) nothing else is listening.
+// Dropped again as soon as reporting is live — see the call to
+// startErrorReporting near the bottom.
+const stopEarlyCapture = captureEarlyErrors()
 
 // Begin tracking real connectivity as early as possible so the router's first
 // navigation can make a trustworthy offline/online decision.
@@ -39,32 +45,14 @@ if (savedTheme === 'light' || savedTheme === 'dark') {
 
 const app = createApp(App)
 
-// Error monitoring is opt-in per environment: without a DSN (local dev, CI)
-// Sentry never initializes and adds no runtime behavior.
-if (import.meta.env.VITE_SENTRY_DSN) {
-  Sentry.init({
-    app,
-    dsn: import.meta.env.VITE_SENTRY_DSN,
-    integrations: [Sentry.browserTracingIntegration({ router })],
-    tracesSampleRate: 0.1,
-    // A fetch/websocket aborted because the user navigated mid-request (e.g.
-    // Clerk during a login redirect) is expected teardown, not a fault we can
-    // act on. Keep it out of the issue stream.
-    ignoreErrors: ['AbortError: The connection was closed.'],
-    beforeSend(event) {
-      // Service-worker registration (vite-plugin-pwa's registerSW.js) can reject
-      // while the OAuth callback page is already unloading to redirect; the PWA
-      // re-registers on the next load, so there is nothing to fix here.
-      const frames = event.exception?.values?.flatMap(
-        (value) => value.stacktrace?.frames ?? [],
-      )
-      if (frames?.some((frame) => (frame.filename ?? '').includes('registerSW.js'))) {
-        return null
-      }
-      return event
-    },
-  })
-}
+// Error monitoring is opt-in per environment (no DSN in dev, CI or tests) and
+// loaded after the app is idle rather than as part of the initial download —
+// the SDK is about a third of the JavaScript here. See lib/errorReporting.
+//
+// Once it resolves, reporting is live (or there is no DSN and never will be),
+// so the stand-in handlers installed at the top hand over. Without this they
+// would keep running alongside Sentry's own and report everything twice.
+void startErrorReporting(app, router).finally(stopEarlyCapture)
 
 app.use(clerkPlugin, {
   publishableKey: import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,

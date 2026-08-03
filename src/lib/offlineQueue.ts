@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { findActiveItemByName, type ShoppingItem } from './shoppingList'
 
 // Write queue for shopping-list mutations made while offline. The views apply
@@ -31,9 +32,11 @@ interface StoredQueue {
   mutations: OfflineMutation[]
 }
 
-interface Db {
-  from(table: string): any
-}
+// Only the query-builder entry point is used here, and typing it as the real
+// client keeps the `any` out: SupabaseClient['from'] carries PostgREST's own
+// builder types, so a typo in a filter or a patch is caught rather than waved
+// through. Structural rather than the whole client so tests can hand in a fake.
+type Db = Pick<SupabaseClient, 'from'>
 
 const STORAGE_KEY = 'famcart-offline-queue'
 const VERSION = 1

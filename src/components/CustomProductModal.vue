@@ -1,18 +1,19 @@
-<script setup>
+<script setup lang="ts">
 // Add a product the catalog doesn't have. This only builds the product and hands
 // it to the caller; contributing it to the catalog is HomeView's job, via the
-// add_custom_product RPC (migration 022) once the add itself succeeds. This is
+// add_custom_product RPC (006_product_catalog.sql) once the add itself succeeds. This is
 // also the only way to give a hand-typed item a maker, which otherwise arrives
 // solely from a catalog pick.
 import { ref, computed, watch, nextTick } from 'vue'
 import AppButton from './AppButton.vue'
+import AppModal from './AppModal.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
   // What was already typed into the add form, so the modal continues that
   // thought instead of making the user type it a second time.
   initialName: { type: String, default: '' },
-  // Mirror the DB's length checks (migrations 010 and 023) so the form rejects
+  // Mirror the DB's length checks (004_shopping_list.sql) so the form rejects
   // what the row would reject anyway.
   nameMaxLength: { type: Number, default: 120 },
   makerMaxLength: { type: Number, default: 60 },
@@ -22,7 +23,7 @@ const emit = defineEmits(['submit', 'cancel'])
 
 const name = ref('')
 const maker = ref('')
-const nameInput = ref(null)
+const nameInput = ref<HTMLInputElement | null>(null)
 
 // Every open starts from the add form's text with a blank maker, so a previous
 // visit can never leave a stale manufacturer attached to a different product.
@@ -48,8 +49,13 @@ function submit() {
 </script>
 
 <template>
-  <Transition name="custom-product-fade">
-    <div v-if="open" class="custom-product-overlay" @click.self="emit('cancel')">
+  <AppModal
+    :open="open"
+    overlay-class="custom-product-overlay"
+    transition="custom-product-fade"
+    :autofocus="false"
+    @close="emit('cancel')"
+  >
       <div
         class="custom-product-dialog"
         role="dialog"
@@ -101,8 +107,7 @@ function submit() {
           </div>
         </form>
       </div>
-    </div>
-  </Transition>
+  </AppModal>
 </template>
 
 <style scoped>

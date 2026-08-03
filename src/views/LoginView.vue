@@ -1,10 +1,14 @@
-<script setup>
+<script setup lang="ts">
 import { useAuth, useClerk, useSignIn, useSignUp } from '@clerk/vue'
 import { Capacitor } from '@capacitor/core'
-import * as Sentry from '@sentry/vue'
+import { captureException } from '../lib/errorReporting'
 import { ref, nextTick, toRaw, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { startNativeOAuth } from '../lib/nativeOAuth'
+import {
+    startNativeOAuth,
+    type NativeOAuthSignIn,
+    type NativeOAuthSignUp,
+} from '../lib/nativeOAuth'
 import InputRow from '../components/InputRow.vue'
 import ErrorModal from '../components/ErrorModal.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
@@ -21,10 +25,10 @@ const router = useRouter()
 const step = ref('email') // 'email' | 'code'
 const email = ref('')
 const digits = ref(['', '', '', '', '', ''])
-const digitRefs = ref([])
+const digitRefs = ref<HTMLInputElement[]>([])
 const error = ref('')
 const loading = ref(false)
-const loadingProvider = ref(null)
+const loadingProvider = ref<string | null>(null)
 const alreadySignedInOpen = ref(false)
 
 // The router guard redirects signed-in users away from /login, but it can be
@@ -35,21 +39,30 @@ watch(isSignedIn, (signedIn) => {
     if (signedIn) router.replace('/')
 }, { immediate: true })
 
+// The two error shapes that reach this function: Clerk's, which carries an
+// `errors` array, and a network failure, which carries none. Structural rather
+// than imported — @clerk/types is not a direct dependency — and narrow enough
+// that reading a field off it is checked rather than waved through.
+interface ClerkErrorLike {
+    errors?: { code?: string; message?: string; longMessage?: string }[]
+}
+
 // Clerk rejects sign-in attempts with session_exists when a session is
 // already active. That is an account-level condition, not an input problem,
 // so it gets the app's announcement dialog instead of the inline field error.
-function handleSignInError(e, fallback) {
-    if (e?.errors?.some((err) => err.code === 'session_exists')) {
+function handleSignInError(e: unknown, fallback: string) {
+    const clerkErrors = (e as ClerkErrorLike | null | undefined)?.errors
+    if (clerkErrors?.some((err) => err.code === 'session_exists')) {
         alreadySignedInOpen.value = true
         return
     }
     // A network failure has no Clerk error array; show a plain offline message
     // rather than the raw "Failed to fetch".
-    if (isOfflineError(e) && !e?.errors?.length) {
+    if (isOfflineError(e) && !clerkErrors?.length) {
         error.value = 'You appear to be offline. Check your connection and try again.'
         return
     }
-    error.value = e?.errors?.[0]?.longMessage ?? e?.errors?.[0]?.message ?? fallback
+    error.value = clerkErrors?.[0]?.longMessage ?? clerkErrors?.[0]?.message ?? fallback
 }
 
 function goToApp() {
@@ -75,7 +88,7 @@ const oauthProviders = [
     },
 ]
 
-async function signInWithOAuth(providerId) {
+async function signInWithOAuth(providerId: string) {
     if (!signInLoaded.value || loadingProvider.value) return
     error.value = ''
     loadingProvider.value = providerId
@@ -86,7 +99,12 @@ async function signInWithOAuth(providerId) {
     // closed the browser — quietly re-arm the buttons.
     if (Capacitor.isNativePlatform()) {
         try {
-            const sessionId = await startNativeOAuth(signIn.value, signUp.value, providerId)
+            // Guarded by signInLoaded above, so both resources exist by here.
+            const sessionId = await startNativeOAuth(
+                signIn.value as unknown as NativeOAuthSignIn,
+                signUp.value as unknown as NativeOAuthSignUp,
+                providerId,
+            )
             if (sessionId) {
                 // Reaching here means the session already exists server-side
                 // (the attempt completed in the external browser); activating
@@ -97,9 +115,9 @@ async function signInWithOAuth(providerId) {
                 try {
                     // toRaw + calling on the instance: both the Vue proxy and
                     // a detached method crash on Clerk's private class fields.
-                    await toRaw(clerk.value).setActive({ session: sessionId })
+                    await toRaw(clerk.value)!.setActive({ session: sessionId })
                 } catch (activationError) {
-                    Sentry.captureException(activationError)
+                    captureException(activationError)
                 }
                 goToApp()
                 return
@@ -109,21 +127,24 @@ async function signInWithOAuth(providerId) {
             // cancellation resolves null instead) — worth a Sentry event
             // (no-op without a DSN). The dialog shows the diagnosis the
             // error carries: which state the attempt got stuck in.
-            Sentry.captureException(e)
-            handleSignInError(e, e?.message || 'OAuth sign-in failed.')
+            captureException(e)
+            handleSignInError(e, (e as Error)?.message || 'Could not sign in with that provider.')
         }
         loadingProvider.value = null
         return
     }
 
     try {
-        await signIn.value.authenticateWithRedirect({
-            strategy: providerId,
+        await signIn.value!.authenticateWithRedirect({
+            // The provider list below is the only caller, and every entry in it
+            // is a strategy Clerk accepts; @clerk/types is not a direct
+            // dependency, so the narrowing happens here rather than at the top.
+            strategy: providerId as 'oauth_google' | 'oauth_apple',
             redirectUrl: '/sso-callback',
             redirectUrlComplete: `${window.location.origin}/`,
         })
     } catch (e) {
-        handleSignInError(e, 'OAuth sign-in failed.')
+        handleSignInError(e, 'Could not sign in with that provider.')
         loadingProvider.value = null
     }
 }
@@ -133,17 +154,17 @@ async function handleEmailSubmit() {
     error.value = ''
     loading.value = true
     try {
-        const { supportedFirstFactors } = await signIn.value.create({
+        const { supportedFirstFactors } = await signIn.value!.create({
             identifier: email.value,
         })
         const otpFactor = supportedFirstFactors?.find(
             (f) => f.strategy === 'email_code',
         )
         if (!otpFactor) {
-            error.value = 'Email code sign-in is not enabled for this account.'
+            error.value = 'This account cannot sign in with an email code.'
             return
         }
-        await signIn.value.prepareFirstFactor({
+        await signIn.value!.prepareFirstFactor({
             strategy: 'email_code',
             emailAddressId: otpFactor.emailAddressId,
         })
@@ -165,7 +186,7 @@ async function handleCodeSubmit() {
     error.value = ''
     loading.value = true
     try {
-        const result = await signIn.value.attemptFirstFactor({
+        const result = await signIn.value!.attemptFirstFactor({
             strategy: 'email_code',
             code,
         })
@@ -184,8 +205,8 @@ async function handleCodeSubmit() {
     }
 }
 
-function onDigitInput(index, event) {
-    const val = event.target.value.replace(/\D/g, '')
+function onDigitInput(index: number, event: Event) {
+    const val = (event.target as HTMLInputElement).value.replace(/\D/g, '')
     digits.value[index] = val.slice(-1)
     if (val && index < 5) {
         digitRefs.value[index + 1]?.focus()
@@ -195,16 +216,16 @@ function onDigitInput(index, event) {
     }
 }
 
-function onDigitKeydown(index, event) {
+function onDigitKeydown(index: number, event: KeyboardEvent) {
     if (event.key === 'Backspace' && !digits.value[index] && index > 0) {
         digitRefs.value[index - 1]?.focus()
     }
 }
 
-function onDigitPaste(event) {
+function onDigitPaste(event: ClipboardEvent) {
     event.preventDefault()
-    const pasted = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6)
-    pasted.split('').forEach((ch, i) => { digits.value[i] = ch })
+    const pasted = (event.clipboardData?.getData('text') ?? '').replace(/\D/g, '').slice(0, 6)
+    pasted.split('').forEach((ch: string, i: number) => { digits.value[i] = ch })
     const next = Math.min(pasted.length, 5)
     nextTick(() => digitRefs.value[next]?.focus())
     if (pasted.length === 6) handleCodeSubmit()
@@ -241,7 +262,7 @@ function goBack() {
                     <input
                         v-for="(_, i) in digits"
                         :key="i"
-                        :ref="el => { if (el) digitRefs[i] = el }"
+                        :ref="(el) => { if (el) digitRefs[i] = el as HTMLInputElement }"
                         v-model="digits[i]"
                         type="text"
                         inputmode="numeric"
@@ -252,7 +273,7 @@ function goBack() {
                         @input="onDigitInput(i, $event)"
                         @keydown="onDigitKeydown(i, $event)"
                         @paste="onDigitPaste"
-                        @focus="$event.target.select()"
+                        @focus="($event.target as HTMLInputElement).select()"
                     />
                 </div>
                 <div class="otp-status">
@@ -271,7 +292,7 @@ function goBack() {
                     :disabled="!!loadingProvider"
                     :aria-label="provider.label" :title="provider.label" @click="signInWithOAuth(provider.id)">
                     <span v-if="loadingProvider === provider.id" class="oauth-spinner"></span>
-                    <span v-else class="oauth-icon" v-html="provider.icon"></span>
+                    <span v-else class="oauth-icon" aria-hidden="true" v-html="provider.icon"></span>
                 </button>
             </div>
         </AppCard>
@@ -286,7 +307,7 @@ function goBack() {
             @cancel="goToApp"
         />
 
-        <ErrorModal title="Sign-in failed" :message="error" @dismiss="error = ''" />
+        <ErrorModal title="Could not sign in" :message="error" @dismiss="error = ''" />
     </div>
 </template>
 

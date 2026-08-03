@@ -15,6 +15,11 @@ export interface FamilySnapshot {
   familyEmoji: string
   familyMembers: FamilyMemberProfile[]
   items: ShoppingItemRow[]
+  // Whether this family has ever bought anything. Cached because it decides
+  // between "All bought" and "Nothing here yet" on an empty list, and the
+  // purchase history that answers it cannot be read offline — without this, a
+  // family that shops every week is told they have never started.
+  hasShopped: boolean
 }
 
 interface StoredSnapshot extends FamilySnapshot {
@@ -54,6 +59,9 @@ export function loadFamilySnapshot(
       familyEmoji: stored.familyEmoji ?? '',
       familyMembers: stored.familyMembers,
       items: stored.items,
+      // Snapshots written before this field existed are still version 1, so
+      // default rather than discard them: false is the pre-existing behaviour.
+      hasShopped: stored.hasShopped === true,
     }
   } catch {
     return null
