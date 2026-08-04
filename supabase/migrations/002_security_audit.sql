@@ -44,6 +44,18 @@ alter table public.security_events enable row level security;
 -- relying on RLS alone; this closes both.
 revoke all on public.security_events from anon, authenticated;
 
+-- And the sequence, which the line above does not reach. `id` is an identity
+-- column, so it has its own sequence object with its own ACL, and provisioning
+-- granted anon SELECT/UPDATE/USAGE on it. SELECT on a sequence returns
+-- last_value — that is, roughly how many rows this table holds, which is the one
+-- fact it exists to keep from the person it is recording. Not reachable through
+-- PostgREST, which does not expose sequences, but the whole point of this table
+-- is that it stays shut from more than one direction.
+--
+-- Identity columns do not need sequence privileges to insert (unlike serial), and
+-- only the definer function below writes here, so nothing loses anything.
+revoke all on sequence public.security_events_id_seq from anon, authenticated, service_role;
+
 create index if not exists idx_security_events_kind_created_at
   on public.security_events (kind, created_at desc);
 
