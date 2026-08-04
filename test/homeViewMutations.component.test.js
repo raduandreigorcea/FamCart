@@ -15,7 +15,7 @@ import ConfirmModal from '../src/components/ConfirmModal.vue'
 import ErrorModal from '../src/components/ErrorModal.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
 import { saveFamilySnapshot } from '../src/lib/familyCache'
-import { loadOfflineQueue } from '../src/lib/offlineQueue'
+import { loadOfflineQueue, enqueueOfflineMutation } from '../src/lib/offlineQueue'
 import { __setOnlineForTest } from '../src/lib/connectivity'
 
 const mocks = vi.hoisted(() => ({
@@ -263,6 +263,30 @@ describe('picking a suggestion', () => {
     // Nothing added, and the full product name (not the typed "apa") is put back
     // so the add can simply be retried.
     expect(listedItems(wrapper)).toHaveLength(0)
+    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('Apa Plata 2L')
+  })
+
+  it('says to slow down (not "something went wrong") when the add is rate limited', async () => {
+    const wrapper = await mountHome()
+    // The hourly item ceiling in 004_shopping_list.sql.
+    mocks.db.handlers['shopping_list_items.insert'] = () => ({
+      data: null,
+      error: {
+        code: 'P0001',
+        message: 'Too many items added in a short time. Try again shortly.',
+        details: 'item_insert_rate_limit_exceeded',
+      },
+    })
+
+    await pick(wrapper, { name: 'Apa Plata 2L', maker: 'Dorna' }, { typed: 'apa' })
+
+    expect(listedItems(wrapper)).toHaveLength(0)
+    // The add was valid and will work again shortly, so it gets a deliberate
+    // message rather than the generic failure — and the product goes back into
+    // the form so retrying is one tap.
+    expect(wrapper.findComponent(ErrorModal).props('message')).toBe(
+      'You are adding items too quickly. Wait a minute and try again.',
+    )
     expect(wrapper.findComponent(AddItemForm).props('name')).toBe('Apa Plata 2L')
   })
 })
@@ -762,6 +786,64 @@ describe('offline queue', () => {
     const items = listedItems(wrapper)
     expect(items).toHaveLength(1)
     expect(items[0].checked).toBe(true)
+  })
+
+  // Regression: a throttled replay is the first transient failure that happens
+  // while the network is fine. The flush correctly keeps the mutation, but the
+  // re-fetch that follows returns a list without it — so the row used to vanish
+  // off the screen and sit invisibly in a queue that retries up to an hour later.
+  it('keeps a throttled offline add on screen instead of losing it to the re-fetch', async () => {
+    const wrapper = await mountHome()
+    goOffline()
+    await submitAdd(wrapper, 'Milk', 2)
+    expect(loadOfflineQueue(localStorage, 'user-1')).toHaveLength(1)
+
+    // Back online, but the server throttles the replay (004_shopping_list.sql).
+    mocks.db.handlers['shopping_list_items.insert'] = () => ({
+      data: null,
+      error: {
+        code: 'P0001',
+        message: 'Too many items added in a short time. Try again shortly.',
+        details: 'item_insert_rate_limit_exceeded',
+      },
+    })
+    // The insert never landed, so the re-fetch legitimately has nothing.
+    mocks.db.handlers['shopping_list_items.select'] = () => ({ data: [], error: null })
+    goOnline()
+    await flushPromises()
+
+    const items = listedItems(wrapper)
+    expect(items.map((i) => i.name)).toEqual(['Milk'])
+    expect(items[0].quantity).toBe(2)
+    // Still queued, so it syncs once the window clears.
+    expect(loadOfflineQueue(localStorage, 'user-1')).toHaveLength(1)
+    // And no error modal: the row is on screen and will send itself. A throttle
+    // that heals on its own is not something to interrupt the user about.
+    expect(wrapper.findComponent(ErrorModal).props('message')).toBeFalsy()
+  })
+
+  // The queue is keyed by user, not by family, and a user may belong to three.
+  // A write still queued for another family must not surface in this one's list.
+  it('never shows another family’s queued add in this family’s list', async () => {
+    const wrapper = await mountHome()
+    // A write queued while offline in a different family the user belongs to.
+    enqueueOfflineMutation(localStorage, 'user-1', {
+      kind: 'insert',
+      id: 'other-fam-row',
+      row: { id: 'other-fam-row', family_id: 'fam-2', name: 'Parents Milk', quantity: 1, added_by: 'user-1' },
+    })
+    // Throttled, so it stays queued rather than draining away.
+    mocks.db.handlers['shopping_list_items.insert'] = () => ({
+      data: null,
+      error: { code: 'P0001', details: 'item_insert_rate_limit_exceeded' },
+    })
+    mocks.db.handlers['shopping_list_items.select'] = () => ({ data: [], error: null })
+    goOnline()
+    await flushPromises()
+
+    // It is still queued for fam-2, and invisible here.
+    expect(listedItems(wrapper)).toHaveLength(0)
+    expect(loadOfflineQueue(localStorage, 'user-1')).toHaveLength(1)
   })
 
   it('runs from the cached snapshot without an error banner when opened offline', async () => {

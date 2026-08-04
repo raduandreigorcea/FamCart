@@ -31,11 +31,15 @@
 --  11. Catalog ranking cannot be inflated without limit: the global add_count
 --      stops climbing at the hourly ceiling, the counters are unreachable from a
 --      client, and crossing the limit is audited once per window (002_security_audit.sql).
+--  12. The list itself has a rate ceiling and not just the 50-item breadth cap:
+--      inserts stop at the hourly limit, crossing it leaves exactly one audit row
+--      that survives the rejection, and the seed/service-role path with no JWT is
+--      unaffected (004_shopping_list.sql).
 --
 -- Tests run inside a transaction that is rolled back, so they leave no data behind.
 
 begin;
-select plan(74);
+select plan(78);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 -- Three families, because promoting a contributed product to the global catalog
@@ -914,6 +918,87 @@ select throws_ok(
 select ok(
   (select count(*) from public.security_digest(7)) > 0,
   'the digest summarizes the events recorded by this suite'
+);
+
+-- ── 12. The item-insert ceiling (004_shopping_list.sql) ─────────────
+-- The list had a breadth cap (50 active items per member) but no rate cap, so an
+-- account could add, check out and re-add forever -- and every insert fires the
+-- push fan-out at everyone else in the family.
+--
+-- Note the fixtures use checked = true rows on purpose. The per-member active
+-- item cap (004_shopping_list.sql) returns early for checked rows, so this
+-- exercises the rate limiter against a ceiling of 300 without the 50-item cap
+-- rejecting everything first. The unique index is likewise partial on unchecked
+-- rows, so repeat names do not collide either.
+reset role;
+set local request.jwt.claims = '{"sub":"user_ins"}';
+
+-- 12a. Ordinary use is untouched. A normal shop is a few dozen adds.
+do $$
+begin
+  for i in 1..5 loop
+    insert into public.shopping_list_items (family_id, name, added_by, checked)
+    values ('00000000-0000-0000-0000-0000000000a1', 'RL Probe ' || i, 'user_ins', true);
+  end loop;
+end $$;
+
+select is(
+  (select count(*)::int from public.shopping_list_items where added_by = 'user_ins'),
+  5,
+  'ordinary item adds are not throttled'
+);
+
+-- 12b. Past the ceiling the inserts stop.
+--
+-- 301 rather than 300 is the designed behaviour, not an off-by-one. The call
+-- that crosses the limit is allowed to commit so that the audit row
+-- rate_limit_hit() writes on that same call survives -- raising there would roll
+-- the row back with the item and the throttle would fire forever leaving no
+-- trace. 12c is the assertion that this actually works.
+--
+-- Each rejected insert is caught in its own subtransaction, which also rolls
+-- back that attempt's counter increment; that is why the persisted count settles
+-- at limit + 1 rather than climbing with every attempt.
+do $$
+begin
+  for i in 6..400 loop
+    begin
+      insert into public.shopping_list_items (family_id, name, added_by, checked)
+      values ('00000000-0000-0000-0000-0000000000a1', 'RL Probe ' || i, 'user_ins', true);
+    exception when others then
+      null;  -- throttled; keep attempting so the count below is a ceiling, not a stop
+    end;
+  end loop;
+end $$;
+
+select is(
+  (select count(*)::int from public.shopping_list_items where added_by = 'user_ins'),
+  301,
+  'item inserts stop dead at the hourly ceiling however many are attempted'
+);
+
+-- 12c. The ceiling being hit is recorded. This is the assertion that the whole
+-- "let the crossing call commit" design exists for: without it the audit row
+-- rolls back with the rejected insert every single time, and the one signal that
+-- someone is hammering the list never reaches security_events.
+select is(
+  (select count(*)::int from public.security_events
+   where actor = 'user_ins' and kind = 'rate_limited'
+     and detail->>'for' = 'item_insert'),
+  1,
+  'crossing the item ceiling is audited once per window'
+);
+
+-- 12d. The limiter is for authenticated clients. The seed path, the service role
+-- and this suite insert with no JWT, and rate_limit_hit() refuses an actorless
+-- caller outright -- so without the early return in the trigger every superuser
+-- insert above would have failed.
+set local request.jwt.claims = '{}';
+
+select lives_ok(
+  $$ insert into public.shopping_list_items (family_id, name, added_by, checked)
+     values ('00000000-0000-0000-0000-0000000000a1', 'Seeded Row', 'user_seed', true) $$,
+  'an insert with no authenticated actor is not throttled'
 );
 
 select * from finish();
