@@ -1,10 +1,11 @@
 -- ─── security audit trail and rate limiting ──────────────────────────────────
--- Two locked-down tables and the functions that write them: what happened, and
--- how often someone is allowed to make it happen.
+-- Two locked-down tables and the functions that write them: what happened, how
+-- often someone is allowed to make it happen, and who may read that back.
 --
--- This comes before families and the catalog because both depend on it —
--- join_family_with_code() logs here and throttles against it, and the two
--- catalog write RPCs throttle against it too.
+-- This comes before the list, families and the catalog because all three depend
+-- on it — join_family_with_code() logs here and throttles against it, the list's
+-- insert trigger (004_shopping_list.sql) throttles against it, and so do the two
+-- catalog write RPCs.
 --
 -- Why any of this lives in the database rather than at the edge: the browser
 -- talks to Supabase directly (VITE_SUPABASE_URL), so a Vercel firewall rule only
@@ -201,11 +202,13 @@ revoke all on function public.rate_limit_hit(text, integer, interval) from publi
 --
 -- The remaining honest options are:
 --   • this: one query, run from the Supabase SQL editor when you want to look;
---   • an external poller (a scheduled GitHub Action) holding a database
---     credential. That is real alerting, but it puts a credential somewhere new,
---     which is a trade worth making deliberately rather than by default. If you
---     want it, give the poller a dedicated role with select on security_events
---     only — never the service role.
+--   • an external poller holding a database credential. That is real alerting,
+--     but it puts a credential somewhere new, which is a trade worth making
+--     deliberately rather than by default.
+--
+-- Both are now in use. The digest below is the manual read; the poller is
+-- .github/workflows/security-digest.yml, running daily as the narrow role
+-- defined at the bottom of this file.
 --
 -- Usage, in the Supabase SQL editor:
 --   select * from public.security_digest();     -- last 7 days
@@ -244,3 +247,86 @@ $$;
 -- signed-in user and the audit trail — it goes to service_role alone.
 revoke all on function public.security_digest(integer) from public;
 grant execute on function public.security_digest(integer) to service_role;
+
+-- ─── the poller's role ───────────────────────────────────────────────────────
+-- A login role that can read the digest and nothing else, so something other
+-- than a human opening the SQL editor notices an attack.
+--
+-- WHY NOT `grant select on security_events`
+--
+-- Because it does not work, though it looks like it should. This table has RLS
+-- enabled with zero policies, and RLS applies to every role except the table's
+-- owner — so a plain SELECT grant passes the privilege check and then matches no
+-- rows. That is a poller reporting "all quiet" forever, which is worse than no
+-- poller at all. security_digest() is SECURITY DEFINER, so it runs as the owner
+-- and can see the table; EXECUTE on it is the only grant that reads anything,
+-- and it hands back aggregates rather than the rows themselves.
+--
+-- So the role gets connect, usage on the schema, and execute on one function. It
+-- holds no SELECT on any table in this database, including the one it reports
+-- on, and cannot write at all. Raw-row triage stays where it was: the SQL
+-- editor, as the service role.
+do $$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'famcart_security_auditor') then
+    -- LOGIN with no password: under scram-sha-256 a passwordless role cannot
+    -- authenticate, so this is inert until the password is set out of band. That
+    -- is deliberate — a credential does not belong in a file that lives in git.
+    -- Set it once, from the Supabase SQL editor:
+    --
+    --   alter role famcart_security_auditor with password '<generated>';
+    --
+    -- then put the connection string in the GitHub repository secret
+    -- SECURITY_DIGEST_DB_URL (Settings → Secrets and variables → Actions).
+    --
+    -- NOINHERIT so it never picks up privileges from some future grant of
+    -- another role to it; anything it may do, it may do explicitly.
+    create role famcart_security_auditor with login noinherit;
+  end if;
+end;
+$$;
+
+-- Two concurrent connections is one more than a daily poller needs, and a cheap
+-- ceiling on what a leaked credential can occupy.
+alter role famcart_security_auditor connection limit 2;
+
+-- The digest scans at most 90 days of a small table. A statement running longer
+-- than this is not the digest.
+alter role famcart_security_auditor set statement_timeout = '30s';
+
+-- Nothing this role does should ever write, including implicitly.
+alter role famcart_security_auditor set default_transaction_read_only = on;
+
+-- current_database() rather than a literal: 'postgres' on hosted Supabase and on
+-- the local CLI stack today, but the grant should not be the thing that breaks
+-- if that ever differs.
+do $$
+begin
+  execute format('grant connect on database %I to famcart_security_auditor', current_database());
+end;
+$$;
+
+grant usage on schema public to famcart_security_auditor;
+
+-- The one capability. Note what is absent: no SELECT on any table, no execute on
+-- any other function. Postgres grants EXECUTE to PUBLIC by default, so the
+-- functions that matter are explicitly revoked from public in their own files —
+-- this role inherits that lockdown rather than needing its own revokes.
+grant execute on function public.security_digest(integer) to famcart_security_auditor;
+
+-- A role comment is a shared-object comment, and the `postgres` role that runs
+-- migrations on hosted Supabase is not a superuser — so this can fail where
+-- everything above it succeeded. Wrapped for the same reason 005 wraps the
+-- pg_cron sweep: a label is not worth failing a migration over.
+do $$
+begin
+  execute 'comment on role famcart_security_auditor is '
+    || quote_literal(
+         'Read-only poller for security_digest(). No table privileges; cannot '
+         || 'read security_events directly (RLS) nor write anything. Credential '
+         || 'lives in the GitHub secret SECURITY_DIGEST_DB_URL.'
+       );
+exception when others then
+  raise warning 'could not comment on famcart_security_auditor (%); role is otherwise configured.', sqlerrm;
+end;
+$$;

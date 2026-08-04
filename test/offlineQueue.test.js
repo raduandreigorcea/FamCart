@@ -9,6 +9,7 @@ import {
   hasQueuedOfflineMutations,
   clearOfflineQueue,
   flushOfflineQueue,
+  isRateLimitedError,
 } from '../src/lib/offlineQueue'
 import { createFakeDb } from './support/fakeSupabase.js'
 
@@ -179,5 +180,46 @@ describe('flushOfflineQueue', () => {
     expect(result).toEqual({ flushed: 1, failed: 1, interrupted: false })
     expect(db.calls.map((q) => q.op)).toEqual(['update', 'delete'])
     expect(hasQueuedOfflineMutations(storage, USER)).toBe(false)
+  })
+})
+
+// The item-insert ceiling in 004_shopping_list.sql. A throttled write
+// looks like a permanent rejection to the flush -- the server answered, so it
+// carries an error code -- and would be DROPPED by the rule directly above this.
+// That is the wrong call for a refusal that expires: replaying a long offline
+// trip is both the likeliest way to reach the ceiling and the costliest place to
+// lose writes.
+describe('rate-limited writes', () => {
+  const throttled = {
+    code: 'P0001',
+    message: 'Too many items added in a short time. Try again shortly.',
+    details: 'item_insert_rate_limit_exceeded',
+  }
+
+  it('recognises the throttle in either field the server may use', () => {
+    expect(isRateLimitedError(throttled)).toBe(true)
+    // PostgREST has moved DETAIL between fields across versions; the queue is
+    // not where a silent data-loss bug should hide behind one of them.
+    expect(isRateLimitedError({ message: 'item_insert_rate_limit_exceeded' })).toBe(true)
+    expect(isRateLimitedError({ code: '42501', message: 'permission denied' })).toBe(false)
+    expect(isRateLimitedError(null)).toBe(false)
+  })
+
+  it('keeps a throttled insert for the next attempt instead of dropping it', async () => {
+    const storage = makeStorage()
+    enqueueOfflineMutation(storage, USER, insertMutation('a'))
+    enqueueOfflineMutation(storage, USER, insertMutation('b'))
+
+    const db = createFakeDb()
+    db.handlers['shopping_list_items.insert'] = () => ({ data: null, error: throttled })
+
+    const result = await flushOfflineQueue(storage, USER, db)
+
+    // Interrupted, not failed: nothing was rejected on its merits.
+    expect(result).toEqual({ flushed: 0, failed: 0, interrupted: true })
+    expect(loadOfflineQueue(storage, USER)).toHaveLength(2)
+    // Stopped at the first one rather than burning the rest against a ceiling
+    // that is already refusing them.
+    expect(db.calls).toHaveLength(1)
   })
 })
