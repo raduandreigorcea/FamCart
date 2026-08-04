@@ -165,14 +165,31 @@ $$;
 
 revoke all on function public.rls_auto_enable() from public;
 
+-- Exactly one event trigger, whatever it was called before.
+--
+-- Production created this from the dashboard under the name `ensure_rls`, and an
+-- earlier version of this block added a second one under a different name — so a
+-- CREATE TABLE fired the same function twice. Harmless, because enabling RLS
+-- twice is a no-op, but two objects doing one job is the sprawl these
+-- consolidated files exist to prevent. Dropping by function rather than by name
+-- converges any database to one regardless of what its trigger was called.
 do $$
+declare
+  t text;
 begin
-  if not exists (select 1 from pg_event_trigger where evtname = 'rls_auto_enable_on_create') then
-    create event trigger rls_auto_enable_on_create
-      on ddl_command_end
-      when tag in ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO')
-      execute function public.rls_auto_enable();
-  end if;
+  for t in
+    select e.evtname
+    from pg_event_trigger e
+    join pg_proc p on p.oid = e.evtfoid
+    where p.proname = 'rls_auto_enable'
+  loop
+    execute format('drop event trigger if exists %I', t);
+  end loop;
+
+  create event trigger ensure_rls
+    on ddl_command_end
+    when tag in ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO')
+    execute function public.rls_auto_enable();
 exception when insufficient_privilege then
   -- Event triggers require superuser. Hosted Supabase runs migrations as a role
   -- that has it here, but a restricted environment may not; the explicit `alter
