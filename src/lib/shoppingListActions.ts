@@ -10,6 +10,8 @@ import {
   flushOfflineQueue,
   hasQueuedOfflineMutations,
   isOfflineError,
+  isRateLimitedError,
+  loadOfflineQueue,
   type FlushResult,
 } from './offlineQueue'
 import { userMessage } from './errorMessages'
@@ -172,6 +174,44 @@ export function useShoppingListActions(options: {
         if (local) fresh[i] = local
       }
     }
+
+    // Anything still in the queue never reached the server, so the refetch above
+    // cannot contain it — and replacing the list wholesale would take the user's
+    // row off the screen while it sat waiting to be sent.
+    //
+    // This used to be masked: a flush stops on a transient failure, and until the
+    // list gained a rate ceiling (004_shopping_list.sql) "transient" meant a dead
+    // network, which made the fetch above fail too, so loadItems returned early
+    // and left the cached list alone. A throttled replay is the first transient
+    // failure that happens while the network is perfectly fine, so the refetch
+    // succeeds and the row vanishes into a queue that retries up to an hour
+    // later. Re-merging is what makes a throttled add behave like an offline one:
+    // it stays on screen and syncs when it can.
+    //
+    // Only inserts: an update or delete refers to a row the server already has,
+    // so the fetched copy is the right thing to show until the queue drains.
+    //
+    // Scoped to this family, and that is load-bearing: the queue is keyed by
+    // user, not by family, and a user may belong to three. Without the
+    // family_id check, an add queued offline in one family renders in another
+    // family's list the moment you switch to it — the row is never written
+    // there, but showing it at all is the cross-tenant leak the whole RLS design
+    // exists to prevent.
+    const queued = userId.value ? loadOfflineQueue(localStorage, userId.value) : []
+    for (const mutation of queued) {
+      if (mutation.kind !== 'insert') continue
+      if (mutation.row.family_id !== familyId.value) continue
+      if (fresh.some((i) => i.id === mutation.id)) continue
+      fresh.push({
+        checked: false,
+        // The queue does not record when the row was created, and the server
+        // never saw it, so it sorts to the end — where an unsent add sat when it
+        // was made.
+        created_at: new Date().toISOString(),
+        ...mutation.row,
+      } as unknown as ShoppingItemRow)
+    }
+
     items.value = sortItemsForDisplay(fresh)
   }
 
@@ -352,7 +392,14 @@ export function useShoppingListActions(options: {
       ) {
         limitReachedPopupOpen.value = true
       } else {
-        addError.value = userMessage(error, 'Failed to add item.')
+        // The item-insert ceiling (004_shopping_list.sql) gets its own
+        // message: the add was valid and will work again shortly, which "Failed
+        // to add item." does not say. Deliberately NOT routed through
+        // userMessage() — that reports to Sentry, and a limit doing its job is
+        // not a fault. The server already audits it to security_events.
+        addError.value = isRateLimitedError(error)
+          ? 'You are adding items too quickly. Wait a minute and try again.'
+          : userMessage(error, 'Failed to add item.')
         draftName.value = name
         draftQuantity.value = quantity
         // Keep the catalog pick across the retry (the watcher sees the restored

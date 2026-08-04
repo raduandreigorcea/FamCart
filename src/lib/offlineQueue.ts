@@ -155,6 +155,26 @@ export function isOfflineError(error: unknown): boolean {
   )
 }
 
+// The item-insert ceiling in 004_shopping_list.sql, recognised by the
+// detail string that migration raises with.
+//
+// This matters most here rather than in the UI. A flush treats anything the
+// server actually answered as a permanent rejection and DROPS it, so that one
+// bad write can never wedge the queue — correct for a row the server will refuse
+// forever, and exactly wrong for one it is merely refusing right now. Replaying
+// a long offline trip is the case most likely to reach the ceiling and the case
+// where losing the writes is most expensive, so a throttled mutation is kept and
+// retried instead.
+//
+// Both `message` and `details` are checked: PostgREST surfaces a raised
+// exception's DETAIL in `details`, but the shape has moved between versions and
+// the queue is not where a silent data-loss bug should hide behind one field.
+export function isRateLimitedError(error: unknown): boolean {
+  if (!error) return false
+  const { message, details } = error as { message?: string; details?: string }
+  return `${message ?? ''} ${details ?? ''}`.includes('item_insert_rate_limit_exceeded')
+}
+
 async function applyMutation(
   db: Db,
   mutation: OfflineMutation,
@@ -162,6 +182,8 @@ async function applyMutation(
   if (mutation.kind === 'insert') {
     const { error } = await db.from(TABLE).insert(mutation.row)
     if (!error) return { ok: true, transient: false }
+    // Throttled, not rejected: keep it for the next attempt (see above).
+    if (isRateLimitedError(error)) return { ok: false, transient: true }
     // Someone added the same item while we were offline: fold our quantity into
     // their row, mirroring the insert-race handling in HomeView.
     if (error.code === '23505') {

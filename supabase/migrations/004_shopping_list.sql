@@ -211,6 +211,93 @@ begin
 end;
 $$;
 
+-- The cap above is breadth: how many active items a member may hold at once.
+-- This is rate: how fast they may create them. The two are different rules and
+-- only one of them was here — under the cap alone an account can add, check out
+-- and re-add forever, and every insert fires the push fan-out in
+-- supabase/functions/push-on-item-insert, so uncapped insert rate is also
+-- uncapped notification volume at everyone else in the family.
+--
+-- A trigger rather than an RPC because the list has several write paths — the
+-- direct insert in addItem(), the offline queue's replay
+-- (src/lib/offlineQueue.ts), and the 23505 merge after a lost race. A trigger
+-- sees all of them, including ones not written yet.
+--
+-- 300 per hour. Calibrated against the ceiling above it: a member may hold 50
+-- active items, so a full list plus a checkout plus a full re-add is 100
+-- inserts, and an offline queue flush after a long trip replays as one burst.
+-- Deliberately far looser than the catalog limiters in 006 (120 and 240/hour):
+-- those guard a ranking every family sees, where one account's repetition is the
+-- whole attack. This guards a family's own list, where a false positive costs a
+-- real person a grocery item, so it errs toward letting the shopper shop.
+--
+-- SECURITY DEFINER because rate_limit_hit() (002_security_audit.sql) is granted
+-- to no client role; the trigger runs as the owner, which holds the execute.
+create or replace function public.enforce_item_insert_rate_limit()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  insert_limit  constant integer  := 300;
+  window_length constant interval := interval '1 hour';
+  v_actor text := requesting_user_id();
+  v_hits  integer;
+begin
+  -- No JWT means no client: the seed path, the service role and the pgTAP suite
+  -- all insert with no claims set. rate_limit_hit() refuses an actorless caller
+  -- outright (it returns true — "no budget"), which would otherwise turn every
+  -- superuser seed into a failure. RLS already governs whether an
+  -- unauthenticated insert may happen at all.
+  if v_actor is null then
+    return new;
+  end if;
+
+  if not public.rate_limit_hit('item_insert', insert_limit, window_length) then
+    return new;
+  end if;
+
+  -- Over the limit. Now the part that is not obvious.
+  --
+  -- rate_limit_hit() logs the crossing to security_events on the call where hits
+  -- reaches limit + 1. That INSERT is in *this* transaction, so raising here
+  -- would roll it back along with the rejected item — the throttle would fire
+  -- forever and leave no trace of having fired. 003_families_and_members.sql
+  -- hits the same wall in the invite throttle and answers it by returning
+  -- quietly instead of raising; a trigger has no such option, because letting
+  -- the insert through IS the thing being prevented.
+  --
+  -- So the crossing call is allowed to commit and everything after it is
+  -- rejected. The counter row rate_limit_hit() just wrote tells the two apart.
+  -- One item over the ceiling per window buys an audit trail that actually
+  -- records the ceiling being hit, which is the whole reason it exists. Note
+  -- this also means the counter never climbs past limit + 1: a rejected insert
+  -- rolls its own increment back, so the persisted count is the number of
+  -- inserts that actually landed.
+  select rl.hits
+    into v_hits
+  from public.rate_limit_counters rl
+  where rl.actor = v_actor
+    and rl.kind = 'item_insert'
+    and rl.window_start = date_bin(window_length, now(), timestamptz 'epoch');
+
+  if coalesce(v_hits, 0) <= insert_limit + 1 then
+    return new;
+  end if;
+
+  -- The detail string is the client's cue: src/lib/shoppingListActions.ts shows
+  -- a "slow down" message on it rather than the generic add failure, and
+  -- src/lib/offlineQueue.ts treats it as retryable so a throttled replay is kept
+  -- rather than dropped as a permanent rejection.
+  raise exception 'Too many items added in a short time. Try again shortly.'
+    using errcode = 'P0001',
+          detail = 'item_insert_rate_limit_exceeded';
+end;
+$$;
+
+revoke all on function public.enforce_item_insert_rate_limit() from public;
+
 drop trigger if exists trg_prevent_item_ownership_change on public.shopping_list_items;
 create trigger trg_prevent_item_ownership_change
 before update on public.shopping_list_items
@@ -230,5 +317,17 @@ create trigger trg_enforce_member_active_item_limit
 before insert or update on public.shopping_list_items
 for each row
 execute function public.enforce_member_active_item_limit();
+
+-- INSERT only: the rate ceiling is about creating rows, and unchecking one is
+-- already governed by the breadth cap above. BEFORE triggers fire in name order,
+-- so this runs ahead of trg_enforce_member_active_item_limit — deliberate but
+-- not load-bearing, because a row rejected by either rolls the whole transaction
+-- back, counter increment included, so an insert refused for being over the
+-- 50-item cap costs no rate budget whichever runs first.
+drop trigger if exists trg_enforce_item_insert_rate_limit on public.shopping_list_items;
+create trigger trg_enforce_item_insert_rate_limit
+before insert on public.shopping_list_items
+for each row
+execute function public.enforce_item_insert_rate_limit();
 
 grant select, insert, update, delete on public.shopping_list_items to authenticated;
