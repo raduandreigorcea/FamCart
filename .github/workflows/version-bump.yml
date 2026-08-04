@@ -23,12 +23,19 @@ name: Version bump
 # Adding [skip ci] would suppress that redeploy and leave the deployed app one
 # version behind forever.
 #
-# KNOWN GAP
+# HOW THE APK KEEPS UP
 #
-# The Android APK workflow does not re-run for the same reason CI does not, so
-# the APK attached to a merge carries the version from before its bump. The web
-# app is correct; the APK trails by one. Chaining release-apk.yml to this
-# workflow via `workflow_run` would close it if that ever matters.
+# This used to be a known gap: release-apk.yml ran on push, so it built from the
+# commit *before* the bump and the published APK trailed the web app by one patch
+# forever. It no longer triggers on push at all — the last step here dispatches
+# it once the new version is pushed, so it builds a tree that already contains
+# the bump and the two agree.
+#
+# That works because workflow_dispatch is one of only two events (with
+# repository_dispatch) that GitHub exempts from the GITHUB_TOKEN loop protection
+# described above. The protection is what stops the bump commit re-running CI;
+# the exemption is what lets us ask for the one build we do want. No PAT needed,
+# and no loop: the APK workflow pushes nothing.
 
 on:
   push:
@@ -43,6 +50,7 @@ concurrency:
 
 permissions:
   contents: write
+  actions: write # dispatch the APK build once the bump is pushed
 
 jobs:
   bump:
@@ -72,6 +80,7 @@ jobs:
           echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
       - name: Commit
+        id: commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -80,7 +89,20 @@ jobs:
           # empty change would fail the job for no reason.
           if git diff --staged --quiet; then
             echo "Version unchanged, nothing to commit."
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git commit -m "Bump version to ${{ steps.bump.outputs.version }}"
           git push
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      # Only after the bump is on master, so the build picks it up. Skipped when
+      # nothing was committed: master is then unchanged, and whatever APK is
+      # already published is still the right one.
+      - name: Build the APK from the bumped commit
+        if: steps.commit.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run "Android APK" --ref master
+          echo "Dispatched the APK build for v${{ steps.bump.outputs.version }}."
