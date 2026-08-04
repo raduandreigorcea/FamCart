@@ -67,6 +67,26 @@ create table if not exists public.families (
     check (emoji is null or char_length(emoji) <= 16)
 );
 
+-- ─── bounds that have to be restated ─────────────────────────────────────────
+-- Everything inside `create table if not exists` above applies only when the
+-- table is created. On a database where families already exists — which is every
+-- database this file has run against more than once — that whole block is
+-- skipped, so changing a bound here never reaches it.
+--
+-- That is not hypothetical. Production allowed 40-character family names while
+-- this file said 25, and re-running the file could not converge it: the server
+-- was quietly more permissive than both this schema and the client, which caps
+-- the form at FAMILY_NAME_MAX_LENGTH (src/lib/limits.ts). A hand-crafted request
+-- could set a name longer than anything the UI is built to show.
+--
+-- Restating the bound as an explicit ALTER is what makes re-running this file
+-- actually converge it. Only this constraint is restated, because only this one
+-- has drifted — but any bound in the block above needs the same treatment the
+-- day it changes, or it will silently apply to new databases only.
+alter table public.families drop constraint if exists families_name_length_check;
+alter table public.families add constraint families_name_length_check
+  check (char_length(btrim(name)) between 1 and 25);
+
 alter table public.families enable row level security;
 
 -- One family owned per account. A unique index rather than a policy check, so
