@@ -1,0 +1,197 @@
+name: Security digest
+
+# Reads the audit trail and fails the run when something in it looks like an
+# attack, so a failure email is the alert.
+#
+# WHY THIS EXISTS
+#
+# supabase/migrations/002_security_audit.sql records the things worth recording —
+# invite-code guessing, rate limits being hit, role changes, member removals —
+# and then says outright that nothing surfaces them, "so in practice it only gets
+# read if someone goes looking". The database has no outbound path to fix that
+# itself: pg_net is deliberately not installed (an owner-configurable webhook was
+# an SSRF and exfiltration surface), and there is no server-side app layer to
+# poll from. An external poller is the remaining honest option, and 002 says so.
+#
+# WHY FAILING THE JOB IS THE ALERT
+#
+# GitHub already emails the repository owner when a scheduled workflow fails, so
+# this needs no token, no webhook and no third party — the notification path
+# exists and is already trusted. The run summary carries the digest either way,
+# so a green run is still a readable "here is what happened yesterday".
+#
+# WHAT IT CANNOT SEE
+#
+# The same blind spots 002 lists. Failed RLS denials never reach the table
+# (Postgres does not route them there), reads leave no trace at all, and sign-in
+# failures live in Clerk's logs rather than this one. This watches for abuse by
+# accounts that already authenticated.
+
+on:
+  schedule:
+    # 07:00 UTC daily. The window below is 1 day, so consecutive runs tile
+    # rather than overlap; a missed run shows up as a gap, not a silent loss.
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'How many days to summarize'
+        required: false
+        default: '1'
+
+# A digest run reads nothing from the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: security-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    name: Read the audit trail
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query security_digest()
+        id: query
+        env:
+          # Connection string for the famcart_security_auditor role created in
+          # supabase/migrations/002_security_audit.sql. That role can
+          # execute exactly one function and holds no table privileges, so this
+          # secret is not a database credential in the usual sense — it cannot
+          # read a single row of application data, and cannot write at all.
+          #
+          # SETTING IT UP (once):
+          #   1. In the Supabase SQL editor, give the role a password:
+          #        alter role famcart_security_auditor with password '<generated>';
+          #   2. Take the *Session pooler* connection string from
+          #      Project Settings → Database. Not the direct connection: direct
+          #      is IPv6-only on current projects and GitHub runners are
+          #      IPv4-only, so a direct URL fails here with "network unreachable".
+          #   3. In that string, replace the username `postgres.<project-ref>`
+          #      with `famcart_security_auditor.<project-ref>` — Supavisor takes
+          #      the role name before the dot — and the password with the one
+          #      from step 1.
+          #   4. Save it as the repository secret SECURITY_DIGEST_DB_URL
+          #      (Settings → Secrets and variables → Actions).
+          DIGEST_DB_URL: ${{ secrets.SECURITY_DIGEST_DB_URL }}
+          DAYS: ${{ github.event.inputs.days || '1' }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DIGEST_DB_URL:-}" ]; then
+            echo "::warning title=Security digest not configured::SECURITY_DIGEST_DB_URL is unset, so the audit trail is not being read. See the setup steps in this workflow file."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+          # DAYS reaches a SQL string below. It arrives from workflow_dispatch,
+          # so it is attacker-controlled in the weak sense that anyone who can
+          # trigger a workflow can set it. The blast radius is small — this role
+          # is read-only and may execute exactly one function — but "small blast
+          # radius" is not a reason to interpolate an unvalidated value into SQL.
+          # It also catches the ordinary typo ("7 days") with a clear message
+          # instead of a psql syntax error.
+          case "$DAYS" in
+            ''|*[!0-9]*)
+              echo "::error title=Security digest::days must be a positive integer, got '$DAYS'"
+              exit 1
+              ;;
+          esac
+
+          # Supabase terminates TLS; require it rather than letting libpq
+          # negotiate down.
+          export PGSSLMODE=require
+          export PGCONNECT_TIMEOUT=15
+
+          # -A -t -X: unaligned, tuples-only, no ~/.psqlrc. One JSON array out.
+          # The role is read-only and capped at a 30s statement timeout by
+          # 002_security_audit.sql, so nothing here can hold a lock or
+          # write anything.
+          psql "$DIGEST_DB_URL" -A -t -X -v ON_ERROR_STOP=1 \
+            -c "select coalesce(jsonb_agg(to_jsonb(d)), '[]'::jsonb) from public.security_digest(${DAYS}::int) d" \
+            > digest.json
+
+          echo "Digest rows: $(jq 'length' digest.json)"
+
+      - name: Evaluate and report
+        if: steps.query.outputs.configured == 'true'
+        env:
+          DAYS: ${{ github.event.inputs.days || '1' }}
+        run: |
+          set -euo pipefail
+
+          # What counts as worth waking up for.
+          #
+          # rate_limited and invite_rate_limited are zero in ordinary use — the
+          # ceilings are set far above real usage (002, 004, 006), so a single
+          # one means an account went past a limit that normal shopping does not
+          # approach. Both alert on the first occurrence.
+          #
+          # invite_code_failed and member_removed happen legitimately: people
+          # mistype codes and leave families. Those get a threshold rather than a
+          # tripwire, set where a plausible day of real use stays under it.
+          count() { jq -r --arg k "$1" '[.[] | select(.kind == $k) | .events] | add // 0' digest.json; }
+
+          RATE_LIMITED=$(count rate_limited)
+          INVITE_THROTTLED=$(count invite_rate_limited)
+          INVITE_FAILED=$(count invite_code_failed)
+          MEMBERS_REMOVED=$(count member_removed)
+          ROLES_CHANGED=$(count member_role_changed)
+
+          # Written as `if` blocks rather than `[ ... ] && ALERTS+=(...)`: under
+          # `set -e` a false test makes that one-liner the failing last command
+          # and kills the run, so the clean case would exit before writing the
+          # summary — a silent monitor, which is the failure mode this whole
+          # workflow exists to avoid.
+          ALERTS=()
+          if [ "$RATE_LIMITED" -gt 0 ]; then
+            ALERTS+=("**$RATE_LIMITED** rate-limit ceiling hit(s) — an account went past a per-hour write limit.")
+          fi
+          if [ "$INVITE_THROTTLED" -gt 0 ]; then
+            ALERTS+=("**$INVITE_THROTTLED** invite-code throttle trip(s) — 10+ wrong codes from one account inside 15 minutes.")
+          fi
+          if [ "$INVITE_FAILED" -gt 20 ]; then
+            ALERTS+=("**$INVITE_FAILED** failed invite codes — well above mistyping.")
+          fi
+          if [ "$MEMBERS_REMOVED" -gt 10 ]; then
+            ALERTS+=("**$MEMBERS_REMOVED** member removals — unusual volume; check whether they were self-initiated.")
+          fi
+
+          {
+            echo "## Security digest — last ${DAYS} day(s)"
+            echo
+            if [ "$(jq 'length' digest.json)" -eq 0 ]; then
+              echo "_No security events recorded in this window._"
+            else
+              echo "| Kind | Events | Distinct actors | First seen | Last seen |"
+              echo "|---|---:|---:|---|---|"
+              jq -r '.[] | "| \(.kind) | \(.events) | \(.distinct_actors) | \(.first_seen) | \(.last_seen) |"' digest.json
+            fi
+            echo
+            if [ ${#ALERTS[@]} -gt 0 ]; then
+              echo "### :rotating_light: Worth looking at"
+              echo
+              for a in "${ALERTS[@]}"; do echo "- $a"; done
+              echo
+              echo "The digest is aggregate only — this role cannot read individual rows."
+              echo "For detail, open the Supabase SQL editor as the service role:"
+              echo
+              echo '```sql'
+              echo "select * from public.security_events"
+              echo "where created_at > now() - interval '${DAYS} days'"
+              echo "order by created_at desc;"
+              echo '```'
+            else
+              echo "Nothing above threshold. ($ROLES_CHANGED role change(s) in window.)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ ${#ALERTS[@]} -gt 0 ]; then
+            for a in "${ALERTS[@]}"; do
+              echo "::error title=Security digest::${a//\*/}"
+            done
+            exit 1
+          fi
+          echo "Digest clean."

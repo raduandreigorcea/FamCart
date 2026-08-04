@@ -11,7 +11,7 @@
 -- They are ordered by dependency, and that order is load-bearing:
 --
 --   001 foundation           extensions, the JWT helper, the schema grant
---   002 security_audit       the audit trail and the throttle
+--   002 security_audit       the audit trail, the throttle, and who reads them
 --   003 families_and_members who exists and who may change what
 --   004 shopping_list        the list itself
 --   005 purchase_history     what was bought
