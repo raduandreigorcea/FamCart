@@ -96,13 +96,24 @@ jobs:
           git push
           echo "pushed=true" >> "$GITHUB_OUTPUT"
 
-      # Only after the bump is on master, so the build picks it up. Skipped when
-      # nothing was committed: master is then unchanged, and whatever APK is
-      # already published is still the right one.
-      - name: Build the APK from the bumped commit
-        if: steps.commit.outputs.pushed == 'true'
+      # Everything else runs from here, once the new version is on master, so all
+      # of it reports against the commit that ends up at the top of the branch
+      # rather than the one below it. That is the whole point: the checkmark
+      # GitHub shows above the file list is the bump commit's, and it should mean
+      # "tests, database tests and the APK all passed", not "Vercel deployed".
+      #
+      # Not gated on whether the bump actually committed. If it did not, master's
+      # tip is the commit that triggered this run, and dispatching against master
+      # still tests and builds exactly the right tree.
+      #
+      # Both of these work because workflow_dispatch is one of the two events
+      # GitHub exempts from the GITHUB_TOKEN loop protection described at the top
+      # of this file — a push made with that token starts nothing, which is what
+      # keeps the bump from bumping itself.
+      - name: Run the checks against the bumped commit
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          gh workflow run "CI" --ref master
           gh workflow run "Android APK" --ref master
-          echo "Dispatched the APK build for v${{ steps.bump.outputs.version }}."
+          echo "Dispatched CI and the APK build for v${{ steps.bump.outputs.version }}."

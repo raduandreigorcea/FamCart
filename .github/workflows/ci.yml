@@ -1,9 +1,24 @@
 name: CI
 
+# WHY THIS DOES NOT TRIGGER ON PUSH TO MASTER
+#
+# version-bump.yml commits the new version straight after any push to master, so
+# that bump commit — not yours — is what sits at the top of the commit list and
+# what the checkmark on GitHub's file header refers to. A push-triggered run
+# attaches to the commit you pushed, one below, and GitHub's own loop protection
+# stops the bump commit from starting anything. The result was a green tick on
+# master that showed only Vercel, with the real test results hidden one commit
+# down.
+#
+# So the bump workflow dispatches this the moment the new version is pushed, the
+# same way it dispatches the APK build. Everything then reports against the commit
+# actually at the top of the branch: unit tests, pgTAP, the APK, and Vercel.
+#
+# Pull requests are untouched and still run on every push to a branch — that is
+# the gate before merge; this is the record after it.
 on:
-  push:
-    branches: [master]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
