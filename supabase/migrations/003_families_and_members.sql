@@ -450,22 +450,28 @@ begin
 end;
 $$;
 
+-- Leaving and being removed are logged under different kinds, not one kind with
+-- a flag. security_digest() (002_security_audit.sql) groups by kind and cannot
+-- see inside detail, so a single 'member_removed' bucket mixed "three people left
+-- a family" with "someone is emptying a family" — and the poller alerting on that
+-- bucket could only ever cry wolf. The `self` flag is still recorded, because it
+-- is the thing to read when the digest sends you looking.
 create or replace function public.audit_member_removal()
 returns trigger
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_self boolean := old.user_id is not distinct from requesting_user_id();
 begin
   perform public.log_security_event(
-    'member_removed',
+    case when v_self then 'member_left' else 'member_removed' end,
     old.family_id,
     jsonb_build_object(
       'target', old.user_id,
       'role', old.role,
-      -- Distinguishes leaving voluntarily from being kicked, which is the part
-      -- worth knowing when reading this log back.
-      'self', old.user_id is not distinct from requesting_user_id()
+      'self', v_self
     )
   );
   return old;
@@ -507,6 +513,69 @@ create trigger trg_audit_member_removal
 after delete on public.family_members
 for each row
 execute function public.audit_member_removal();
+
+-- ─── the profile write ceiling ───────────────────────────────────────────────
+-- profiles is the one table a client may write freely about itself: the app
+-- upserts display_name and image_url on every boot to keep them fresh, so unlike
+-- the list there is no breadth cap to lean on — a member can rewrite their own
+-- row forever, and every rewrite is visible to everyone who shares a family with
+-- them (the roster and every list item render from here).
+--
+-- 120 an hour. HomeView upserts this on every app load, so the number has to
+-- clear a person reloading hard — during development, or on a flaky connection
+-- that keeps remounting — and not just ordinary use. Crossing a ceiling writes a
+-- rate_limited row that the daily digest alerts on, so a limit tight enough to
+-- trip on reloading would turn the alerting into noise, which is worse than not
+-- having this limit at all. A script rewriting a name in a loop still needs
+-- thousands. Same shape as the item ceiling in 004_shopping_list.sql, including
+-- why the crossing call is allowed through — see the long note there.
+create or replace function public.enforce_profile_write_rate_limit()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  write_limit   constant integer  := 120;
+  window_length constant interval := interval '1 hour';
+  v_actor text := requesting_user_id();
+  v_hits  integer;
+begin
+  -- No JWT means the seed path, the service role, or the pgTAP suite — not the
+  -- traffic this limits. Note join_family_with_code() does NOT land here with a
+  -- null actor: it is SECURITY DEFINER but still runs under the caller's JWT, so
+  -- its profile upsert costs the joiner one write, which is correct.
+  if v_actor is null then
+    return new;
+  end if;
+
+  if not public.rate_limit_hit('profile_write', write_limit, window_length) then
+    return new;
+  end if;
+
+  select rl.hits into v_hits
+  from public.rate_limit_counters rl
+  where rl.actor = v_actor
+    and rl.kind = 'profile_write'
+    and rl.window_start = date_bin(window_length, now(), timestamptz 'epoch');
+
+  if coalesce(v_hits, 0) <= write_limit + 1 then
+    return new;
+  end if;
+
+  raise exception 'Too many profile updates in a short time. Try again shortly.'
+    using errcode = 'P0001',
+          detail = 'profile_write_rate_limit_exceeded';
+end;
+$$;
+
+revoke all on function public.enforce_profile_write_rate_limit() from public;
+
+drop trigger if exists trg_enforce_profile_write_rate_limit on public.profiles;
+create trigger trg_enforce_profile_write_rate_limit
+before insert or update on public.profiles
+for each row
+execute function public.enforce_profile_write_rate_limit();
 
 -- ─── joining by invite code ──────────────────────────────────────────────────
 -- The invite code is a real credential, and this is the only thing that checks
@@ -619,5 +688,52 @@ grant execute on function public.join_family_with_code(text, text, text) to auth
 -- RLS above decides which rows; these decide that the role may reach the tables
 -- at all. Note profiles gets no DELETE: a profile is the FK target for every
 -- membership, and there is no product flow that removes one.
+-- Revoke first, then grant, so what these three tables allow is exactly what the
+-- next three lines say rather than that plus whatever the platform left behind.
+-- See the note below for what was left behind and why it mattered.
+revoke all on public.families, public.family_members, public.profiles
+  from anon, authenticated, service_role;
+
 grant select, insert, update, delete on public.families, public.family_members to authenticated;
 grant select, insert, update on public.profiles to authenticated;
+
+-- service_role reads for ops and triage, and because
+-- supabase/functions/push-on-item-insert resolves recipients from family_members
+-- and names from profiles. It writes none of them.
+grant select on public.families, public.family_members, public.profiles to service_role;
+
+-- ─── and the privileges nobody granted ───────────────────────────────────────
+-- Hosted Supabase hands anon, authenticated and service_role broad table
+-- privileges when a project is provisioned. Every file here only ever ADDS
+-- grants, so those defaults survived untouched: production had DELETE on
+-- profiles for authenticated, and full read/write for anon, on tables these
+-- files describe as tightly scoped. RLS blocked all of it, which is why nothing
+-- was ever wrong — but it meant the second gate this schema keeps talking about
+-- was open the whole time, and the files were describing an intent rather than a
+-- state.
+--
+-- Closing it, once, for the three roles:
+--
+--   anon          — nothing at all. Every policy here resolves through
+--                   requesting_user_id(), which is null without a JWT, so an
+--                   anonymous caller could already read nothing. The difference
+--                   is that it now gets a permission error instead of an empty
+--                   result, which is the honest answer: an unauthenticated read
+--                   is a bug, not an empty shopping list.
+--   authenticated — exactly what the grants above name, nothing more.
+--   service_role  — reads everything (it is the ops and triage identity, and
+--                   the push function reads family_members and profiles with
+--                   it), but writes only where a script genuinely writes:
+--                   product_catalog, in 006.
+--
+-- WHY THIS REVOKES ALL AND RE-GRANTS RATHER THAN SUBTRACTING
+--
+-- `revoke insert, update, delete` looks like enough and is not. The provisioning
+-- default also includes TRUNCATE, and TRUNCATE is not subject to row level
+-- security — a role holding it empties the table whatever the policies say. It
+-- is not reachable through PostgREST, which speaks CRUD and not raw SQL, and
+-- `authenticated` cannot log in directly, so nothing could actually use it. But
+-- "unreachable today" is a weak thing to rest a table's contents on when the
+-- alternative is one word. REFERENCES and TRIGGER came along for the same ride.
+--
+-- 004, 005 and 006 do the same for their own tables.
