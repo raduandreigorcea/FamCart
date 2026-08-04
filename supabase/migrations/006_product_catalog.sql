@@ -156,6 +156,17 @@ create policy "authenticated users can read the product catalog"
     )
   );
 
+-- Revoke first, then grant. The header of this file says "Clients never write
+-- this table. RLS grants SELECT and nothing else" — production had INSERT, UPDATE,
+-- DELETE and TRUNCATE granted to authenticated at provisioning, and only the
+-- absence of a write policy made the sentence true (TRUNCATE would not even have
+-- been stopped by a policy: it ignores RLS). See the long note at the end of
+-- 003_families_and_members.sql.
+--
+-- service_role is revoked here and re-granted at the bottom of this file, where
+-- the seed script's and importer's write access is declared.
+revoke all on public.product_catalog from anon, authenticated, service_role;
+
 grant select on public.product_catalog to authenticated;
 
 -- ─── the matching key ────────────────────────────────────────────────────────

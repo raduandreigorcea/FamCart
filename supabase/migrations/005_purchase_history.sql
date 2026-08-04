@@ -57,7 +57,21 @@ create policy "family members can read purchase history"
   );
 
 -- Select only. buy_items() writes as the table owner.
+--
+-- Revoke first, then grant: this is the table where the provisioning defaults
+-- mattered most. The header above says a direct insert path "would let any member
+-- forge author names and avatars, and post-date purchased_at" — and production had
+-- INSERT, UPDATE and DELETE granted to authenticated the whole time, plus TRUNCATE,
+-- which ignores RLS entirely. Only the absence of any write policy made the header
+-- true. Now both gates say the same thing. See the long note at the end of
+-- 003_families_and_members.sql.
+--
+-- service_role keeps SELECT because supabase/functions/push-on-item-insert reads
+-- this table to count the items in a checkout.
+revoke all on public.purchase_history from anon, authenticated, service_role;
+
 grant select on public.purchase_history to authenticated;
+grant select on public.purchase_history to service_role;
 
 -- ─── checking out ────────────────────────────────────────────────────────────
 -- Archive the given checked items and remove them from the active list in one

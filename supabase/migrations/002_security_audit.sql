@@ -119,6 +119,15 @@ create table if not exists public.rate_limit_counters (
 alter table public.rate_limit_counters enable row level security;
 revoke all on public.rate_limit_counters from anon, authenticated;
 
+-- service_role got the full provisioning grant on both of these as well, TRUNCATE
+-- included — and TRUNCATE ignores RLS, so on an append-only audit trail it is the
+-- one privilege that could erase the whole thing in a statement. Nothing should
+-- write these but the definer functions above, which run as the owner. Reads stay:
+-- reading the trail back with the service role is the documented triage path.
+-- See the long note at the end of 003_families_and_members.sql.
+revoke all on public.security_events, public.rate_limit_counters from service_role;
+grant select on public.security_events, public.rate_limit_counters to service_role;
+
 comment on table public.rate_limit_counters is
   'Fixed-window request counters. Written only by rate_limit_hit(); no client role '
   'can read or modify it.';
@@ -194,11 +203,18 @@ revoke all on function public.rate_limit_hit(text, integer, interval) from publi
 -- practice it only gets read if someone goes looking. This is as much of that gap
 -- as the architecture closes.
 --
--- What is deliberately NOT built here: a push alert. The database has no outbound
--- path — pg_net is not installed on this project on purpose, because an
--- owner-configurable webhook was an SSRF and exfiltration surface, and
--- reintroducing it to send alerts would reopen exactly that hole. There is also
--- no cron and no server-side app layer to poll from.
+-- What is deliberately NOT built here: a push alert from inside the database.
+--
+-- An earlier version of this note justified that by saying pg_net is not
+-- installed. That was simply wrong — pg_net is installed, and the push webhooks
+-- in 007_realtime.sql run on it. The real reason is narrower and worth stating
+-- honestly: an alert channel needs somewhere to send to, and the surface that was
+-- removed as an SSRF and exfiltration risk was an *owner-configurable* URL. A
+-- hardcoded alert endpoint would not reopen that hole, but it would mean a
+-- credential and a destination living in the schema, and an alerting path that
+-- fails silently inside a trigger nobody watches. An external poller that fails
+-- loudly is the better shape, which is what the role at the bottom of this file
+-- and .github/workflows/security-digest.yml provide.
 --
 -- The remaining honest options are:
 --   • this: one query, run from the Supabase SQL editor when you want to look;

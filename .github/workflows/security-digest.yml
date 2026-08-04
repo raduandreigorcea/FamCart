@@ -129,9 +129,15 @@ jobs:
           # one means an account went past a limit that normal shopping does not
           # approach. Both alert on the first occurrence.
           #
-          # invite_code_failed and member_removed happen legitimately: people
-          # mistype codes and leave families. Those get a threshold rather than a
-          # tripwire, set where a plausible day of real use stays under it.
+          # invite_code_failed happens legitimately -- people mistype codes -- so
+          # it gets a threshold rather than a tripwire.
+          #
+          # member_removed now counts involuntary removals only: someone leaving a
+          # family of their own accord is logged as member_left
+          # (003_families_and_members.sql). That split is what makes this
+          # threshold mean anything. While the two shared a kind, "three people
+          # left" and "someone is emptying a family" were the same number, and
+          # this alert could only cry wolf -- which it did, on its very first run.
           count() { jq -r --arg k "$1" '[.[] | select(.kind == $k) | .events] | add // 0' digest.json; }
 
           RATE_LIMITED=$(count rate_limited)
@@ -156,7 +162,7 @@ jobs:
             ALERTS+=("**$INVITE_FAILED** failed invite codes — well above mistyping.")
           fi
           if [ "$MEMBERS_REMOVED" -gt 10 ]; then
-            ALERTS+=("**$MEMBERS_REMOVED** member removals — unusual volume; check whether they were self-initiated.")
+            ALERTS+=("**$MEMBERS_REMOVED** members removed by someone else — voluntary leaves are counted separately as member_left, so this is all involuntary.")
           fi
 
           {

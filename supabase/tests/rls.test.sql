@@ -35,11 +35,20 @@
 --      inserts stop at the hourly limit, crossing it leaves exactly one audit row
 --      that survives the rejection, and the seed/service-role path with no JWT is
 --      unaffected (004_shopping_list.sql).
+--  13. Leaving a family and being removed from one are logged as different kinds,
+--      so the digest can tell "people left" from "someone is emptying a family"
+--      (003_families_and_members.sql).
+--  14. Profile writes have an hourly ceiling too -- it is the one table a client
+--      may rewrite about itself with no breadth cap above it
+--      (003_families_and_members.sql).
+--  15. Table privileges match what the policies describe: anon reaches nothing,
+--      and a signed-in user cannot write purchase_history or product_catalog even
+--      though hosted Supabase grants those at provisioning (003-006).
 --
 -- Tests run inside a transaction that is rolled back, so they leave no data behind.
 
 begin;
-select plan(78);
+select plan(84);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 -- Three families, because promoting a contributed product to the global catalog
@@ -999,6 +1008,102 @@ select lives_ok(
   $$ insert into public.shopping_list_items (family_id, name, added_by, checked)
      values ('00000000-0000-0000-0000-0000000000a1', 'Seeded Row', 'user_seed', true) $$,
   'an insert with no authenticated actor is not throttled'
+);
+
+-- ── 13. Leaving is not the same event as being removed ──────────────────────
+-- Both used to log 'member_removed' with a `self` flag in detail.
+-- security_digest() groups by kind and cannot see inside detail, so the poller
+-- reading it could only alert on the mixed bucket -- "three people left" looked
+-- exactly like "someone is emptying a family". 10a above still covers the kick.
+reset role;
+set local request.jwt.claims = '{"sub":"user_leave"}';
+
+insert into public.profiles (user_id, display_name) values ('user_leave', 'Leaver');
+insert into public.family_members (family_id, user_id, role)
+values ('00000000-0000-0000-0000-0000000000a1', 'user_leave', 'member');
+
+delete from public.family_members
+where family_id = '00000000-0000-0000-0000-0000000000a1' and user_id = 'user_leave';
+
+select is(
+  (select kind from public.security_events where detail->>'target' = 'user_leave'),
+  'member_left',
+  'a member removing themselves is logged as leaving, not as being removed'
+);
+
+-- ── 14. The profile write ceiling (003_families_and_members.sql) ─────────────
+-- profiles is the one table a client writes freely about itself -- the app
+-- refreshes display_name and image_url on every boot -- so there is no breadth
+-- cap to lean on, and everyone sharing a family renders from it.
+set local request.jwt.claims = '{"sub":"user_prof"}';
+
+-- Write 1 of the window.
+insert into public.profiles (user_id, display_name) values ('user_prof', 'P1');
+
+-- Writes 2..121. 121 is the ceiling plus the crossing call, which is allowed
+-- through so its audit row survives -- see 004_shopping_list.sql for why.
+do $$
+begin
+  for i in 2..121 loop
+    update public.profiles set display_name = 'P' || i where user_id = 'user_prof';
+  end loop;
+end $$;
+
+select is(
+  (select display_name from public.profiles where user_id = 'user_prof'),
+  'P121',
+  'ordinary profile writes are not throttled'
+);
+
+select throws_ok(
+  $$ update public.profiles set display_name = 'over the line' where user_id = 'user_prof' $$,
+  'P0001',
+  null,
+  'profile writes stop at the hourly ceiling'
+);
+
+-- ── 15. Table privileges match what the policies describe ───────────────────
+-- Grants and RLS are separate gates, and hosted Supabase opens the first one for
+-- anon, authenticated and service_role at provisioning. Every file here only ever
+-- added grants, so those defaults survived: production had INSERT/UPDATE/DELETE on
+-- purchase_history and product_catalog for authenticated, and full access for anon,
+-- on tables these files describe as read-only. Only the absence of a matching
+-- policy made the descriptions true.
+--
+-- These assertions are cheap insurance rather than a reproduction: a database built
+-- from these migrations alone never had the stray grants to begin with. What they
+-- catch is the next stray grant, whoever adds it.
+reset role;
+set local role anon;
+
+select throws_ok(
+  $$ select * from public.families $$,
+  '42501',
+  null,
+  'an anonymous caller cannot reach the families table at all'
+);
+
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"user_a"}';
+
+-- The header of 005 says a direct insert path would let a member forge author
+-- names and post-date purchased_at. buy_items() is the only writer.
+select throws_ok(
+  $$ insert into public.purchase_history (checkout_id, family_id, name, purchased_by)
+     values (gen_random_uuid(), '00000000-0000-0000-0000-0000000000a1', 'forged', 'user_a') $$,
+  '42501',
+  null,
+  'a signed-in user cannot write purchase history directly'
+);
+
+-- The header of 006 says "Clients never write this table."
+select throws_ok(
+  $$ insert into public.product_catalog (name, search_text, source)
+     values ('Smuggled', 'smuggled', 'community') $$,
+  '42501',
+  null,
+  'a signed-in user cannot write the product catalog directly'
 );
 
 select * from finish();

@@ -330,4 +330,12 @@ before insert on public.shopping_list_items
 for each row
 execute function public.enforce_item_insert_rate_limit();
 
+-- Revoke then grant, so the end state is exactly these two lines and not these
+-- plus the provisioning defaults — TRUNCATE among them, which ignores RLS. The
+-- long note at the end of 003_families_and_members.sql explains the whole thing.
+-- buy_items() deletes from this table as its owner, so service_role needs no
+-- write privilege of its own.
+revoke all on public.shopping_list_items from anon, authenticated, service_role;
+
 grant select, insert, update, delete on public.shopping_list_items to authenticated;
+grant select on public.shopping_list_items to service_role;
