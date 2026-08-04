@@ -1,0 +1,41 @@
+#!/bin/sh
+# Bump the patch version and fold it into the commit being made.
+#
+# WHY A HOOK RATHER THAN A WORKFLOW
+#
+# This used to be .github/workflows/version-bump.yml, which pushed a second
+# commit ("Bump version to 0.1.8") after every push to master. That worked, but
+# it meant two commits per change, and the bump commit -- being the newest -- is
+# the one GitHub shows above the file list and hangs the green tick on. It also
+# could not start CI or the APK build, because a push made with GITHUB_TOKEN
+# deliberately triggers nothing, so those had to be dispatched back at it.
+#
+# Bumping here instead removes all of that. The version lands inside the commit
+# you are already making, so there is one commit, the checks attach to it the
+# ordinary way, and nothing has to chase anything afterwards.
+#
+# SETUP (once per clone)
+#
+#   git config core.hooksPath .githooks
+#
+# Without that, git looks in .git/hooks and this file is simply never run -- the
+# version stops moving, which is a harmless failure rather than a broken commit.
+#
+# Nothing here may block a commit. A missing npm, an unreadable package.json, a
+# repo in a half-finished state: all of them exit 0 and leave the version alone.
+# Losing a version bump is a nuisance; refusing someone's commit is not.
+
+# Not in the project root (submodule, worktree, odd invocation) -- nothing to do.
+[ -f package.json ] || exit 0
+
+# npm is not on PATH in every GUI git client. Skip rather than fail.
+command -v npm >/dev/null 2>&1 || exit 0
+
+# --no-git-tag-version keeps npm away from git entirely: no commit, no tag, and
+# no refusal to run against a working tree it considers dirty. Staging the result
+# is what folds it into the commit already in progress.
+npm version patch --no-git-tag-version >/dev/null 2>&1 || exit 0
+
+git add package.json package-lock.json 2>/dev/null || true
+
+exit 0
