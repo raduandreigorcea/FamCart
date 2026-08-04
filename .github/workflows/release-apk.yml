@@ -1,22 +1,50 @@
 name: Android APK
 
-# Builds the debug APK on every push to master and pins it to the rolling
-# "latest" release, so the newest build is always at the same download URL:
+# Builds the debug APK and pins it to the rolling "latest" release, so the newest
+# build is always at the same download URL:
 # https://github.com/raduandreigorcea/FamCart/releases/latest
+#
+# WHY THIS DOES NOT RUN ON PUSH
+#
+# It used to, and that is exactly what made the APK trail the web app by one
+# patch. version-bump.yml commits the new version *after* a push, so a build
+# triggered by that same push reads the old number out of package.json — the web
+# app redeployed at N+1 while the APK said N, permanently.
+#
+# So the bump workflow dispatches this one once it has pushed the new version,
+# and this builds from the tip that includes it. Triggering on push as well would
+# mean two builds per merge racing to replace the same rolling release, with the
+# older version able to win.
 on:
-  push:
-    branches: [master]
   workflow_dispatch:
 
 permissions:
   contents: write # create/update the release and its APK asset
+
+# Two merges landing close together dispatch two builds that both publish to the
+# same rolling release. Serialise them so they cannot interleave.
+#
+# Deliberately NOT cancel-in-progress: publishing is a delete followed by a
+# re-create (see below), so cancelling a run mid-way can leave the release
+# deleted and nothing put back — no download URL at all until the next merge.
+# Queueing instead costs one redundant build and is never destructive. Ordering
+# still comes out right: GitHub keeps only the newest pending run, so the last
+# build to publish is the newest version.
+concurrency:
+  group: android-apk
+  cancel-in-progress: false
 
 jobs:
   apk:
     name: Build and release APK
     runs-on: ubuntu-latest
     steps:
+      # Named explicitly rather than relying on the dispatch ref, so this always
+      # builds the tip of master — which by the time we are dispatched includes
+      # the version bump.
       - uses: actions/checkout@v4
+        with:
+          ref: master
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -61,6 +89,17 @@ jobs:
       - name: Rename APK
         run: cp android/app/build/outputs/apk/debug/app-debug.apk FamCart.apk
 
+      # Read back what was actually built rather than reporting github.sha. On a
+      # workflow_dispatch that variable is the tip at dispatch time, which is not
+      # necessarily what the checkout above landed on, and the whole point of this
+      # change is that the version in the release notes matches the version in the
+      # app. Taken from the checked-out tree, so it cannot disagree.
+      - name: Identify the build
+        id: built
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
       # Editing a release in place keeps its original publish date, so the
       # releases page would claim the build is old forever. Delete and
       # re-publish: the shown date becomes the build time, and the "latest"
@@ -82,6 +121,7 @@ jobs:
             **Install:** download `FamCart.apk` on your phone and open it.
             Updating over an existing install keeps your data.
 
-            Commit: ${{ github.sha }}
+            Version: ${{ steps.built.outputs.version }}
+            Commit: ${{ steps.built.outputs.sha }}
           files: FamCart.apk
           make_latest: true
