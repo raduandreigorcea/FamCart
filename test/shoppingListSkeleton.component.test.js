@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 //
 // The skeleton and the real list are two separate <ul>s stacked in normal flow.
-// Nothing stopped them rendering at once, so during a family switch (which
+// Nothing stopped them rendering at once, so during a household switch (which
 // repopulates items while the switch is still marked in progress) the
 // placeholders sat on top of the very rows they stand in for, and the rows
 // jumped up as the skeletons unmounted. They are mutually exclusive now.
@@ -11,7 +11,7 @@ import ShoppingList from '../src/components/ShoppingList.vue'
 
 const item = (id, name) => ({
   id,
-  family_id: 'fam-1',
+  household_id: 'fam-1',
   name,
   quantity: 1,
   checked: false,

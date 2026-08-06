@@ -28,7 +28,7 @@ const emit = defineEmits(['accept', 'decline'])
         <div class="notify-dialog__body">
           <h4 id="notify-prompt-title" class="notify-dialog__title">Turn on notifications?</h4>
           <p class="notify-dialog__message">
-            Know the moment someone in your family adds something to the
+            Know the moment someone in your household adds something to the
             list or checks items off, so nothing gets forgotten at the store.
           </p>
         </div>

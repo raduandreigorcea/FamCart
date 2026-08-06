@@ -2,8 +2,8 @@
 -- Two locked-down tables and the functions that write them: what happened, how
 -- often someone is allowed to make it happen, and who may read that back.
 --
--- This comes before the list, families and the catalog because all three depend
--- on it — join_family_with_code() logs here and throttles against it, the list's
+-- This comes before the list, households and the catalog because all three depend
+-- on it — join_household_with_code() logs here and throttles against it, the list's
 -- insert trigger (004_shopping_list.sql) throttles against it, and so do the two
 -- catalog write RPCs.
 --
@@ -20,11 +20,11 @@ create table if not exists public.security_events (
   created_at timestamptz not null default now(),
   kind       text        not null,
   actor      text,        -- Clerk user id; null when the caller was unauthenticated
-  family_id  uuid,        -- deliberately no FK: see below
+  household_id  uuid,        -- deliberately no FK: see below
   detail     jsonb       not null default '{}'::jsonb
 );
 
--- No foreign key on family_id on purpose. "Owner deleted the family and removed
+-- No foreign key on household_id on purpose. "Owner deleted the household and removed
 -- everyone first" is exactly the sequence an audit log exists to preserve, and an
 -- ON DELETE CASCADE would erase it at the moment it became interesting.
 
@@ -59,7 +59,7 @@ revoke all on sequence public.security_events_id_seq from anon, authenticated, s
 create index if not exists idx_security_events_kind_created_at
   on public.security_events (kind, created_at desc);
 
--- Serves the invite throttle in 003_families_and_members.sql: "how many events
+-- Serves the invite throttle in 003_households_and_members.sql: "how many events
 -- of this kind has this actor produced recently".
 create index if not exists idx_security_events_actor_kind_created_at
   on public.security_events (actor, kind, created_at desc);
@@ -73,7 +73,7 @@ create index if not exists idx_security_events_actor_kind_created_at
 -- write hiccuped is worse, and would turn the log into a denial-of-service knob.
 create or replace function public.log_security_event(
   p_kind text,
-  p_family_id uuid default null,
+  p_household_id uuid default null,
   p_detail jsonb default '{}'::jsonb
 )
 returns void
@@ -82,8 +82,8 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.security_events (kind, actor, family_id, detail)
-  values (p_kind, requesting_user_id(), p_family_id, coalesce(p_detail, '{}'::jsonb));
+  insert into public.security_events (kind, actor, household_id, detail)
+  values (p_kind, requesting_user_id(), p_household_id, coalesce(p_detail, '{}'::jsonb));
 
   -- Opportunistic retention: ~1 call in 100 also trims anything older than 90
   -- days. Doing it inline on every write would put a delete scan on the hot path;
@@ -108,9 +108,9 @@ revoke all on function public.log_security_event(text, uuid, jsonb) from public;
 -- The target is catalog write amplification. bump_product_popularity() and
 -- add_custom_product() (006_product_catalog.sql) both increment
 -- product_catalog.add_count on *global* rows, and add_count drives the
--- suggestion ranking every family sees. Uncapped, one account in a loop could
+-- suggestion ranking every household sees. Uncapped, one account in a loop could
 -- push any product to the top of everyone's suggestions. The catalog's own
--- guards cap breadth (500 products per family, 3 distinct accounts to promote)
+-- guards cap breadth (500 products per household, 3 distinct accounts to promote)
 -- but not repetition, which is the part that moves the ranking.
 --
 -- Why a counter table rather than counting security_events the way the invite
@@ -136,7 +136,7 @@ revoke all on public.rate_limit_counters from anon, authenticated;
 -- one privilege that could erase the whole thing in a statement. Nothing should
 -- write these but the definer functions above, which run as the owner. Reads stay:
 -- reading the trail back with the service role is the documented triage path.
--- See the long note at the end of 003_families_and_members.sql.
+-- See the long note at the end of 003_households_and_members.sql.
 revoke all on public.security_events, public.rate_limit_counters from service_role;
 grant select on public.security_events, public.rate_limit_counters to service_role;
 
@@ -203,7 +203,7 @@ begin
 exception
   when others then
     -- A broken limiter must not break the app. Fail open and let the catalog's
-    -- breadth caps (500 products per family, the 3-account promotion gate) hold.
+    -- breadth caps (500 products per household, the 3-account promotion gate) hold.
     return false;
 end;
 $$;

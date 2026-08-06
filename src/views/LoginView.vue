@@ -247,7 +247,7 @@ function goBack() {
                     <img src="/icons/pwa-192.png" alt="FamCart logo" class="brand-logo" />
                     <!-- <span class="brand-name">Fam<span class="brand-name--accent">Cart</span></span> -->
                 </div>
-                <p class="brand-tagline">Family Groceries, <span class="brand-tagline--accent">fresh together daily</span></p>
+                <p class="brand-tagline">Household Groceries, <span class="brand-tagline--accent">fresh together daily</span></p>
             </div>
 
             <!-- Email form -->

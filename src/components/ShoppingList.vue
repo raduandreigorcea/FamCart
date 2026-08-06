@@ -6,7 +6,7 @@ import ListFilterMenu from './ListFilterMenu.vue'
 import { getProductEmoji } from '../lib/productEmoji'
 import { productKey } from '../lib/productSearch'
 import { sumActiveQuantities, sumCheckedQuantities } from '../lib/shoppingList'
-import type { ShoppingItemRow, FamilyMemberProfile } from '../lib/familyRealtime'
+import type { ShoppingItemRow, HouseholdMemberProfile } from '../lib/householdRealtime'
 import type { ProductSuggestion } from '../lib/productSearch'
 import cartIcon from '../assets/shopping-cart.svg?raw'
 import checkIcon from '../assets/check.svg?raw'
@@ -16,20 +16,20 @@ import checkIcon from '../assets/check.svg?raw'
 // the items.
 const props = defineProps({
   items: { type: Array as PropType<ShoppingItemRow[]>, default: () => [] },
-  // Map<user_id, { display_name, image_url }> — the family roster, used to
+  // Map<user_id, { display_name, image_url }> — the household roster, used to
   // resolve each row's author avatar/name from item.added_by at render time.
   memberProfiles: {
-    type: Map as PropType<Map<string, FamilyMemberProfile>>,
+    type: Map as PropType<Map<string, HouseholdMemberProfile>>,
     default: () => new Map(),
   },
   loading: { type: Boolean, default: false },
   showEmpty: { type: Boolean, default: false },
-  // Whether this family has ever bought anything. An empty list means two
+  // Whether this household has ever bought anything. An empty list means two
   // different things either side of that, and only one of them is a list
   // waiting to be started.
   hasShopped: { type: Boolean, default: false },
   // The regulars, [{ name, maker }], offered as one-tap adds on the empty
-  // list. Empty for a family with no history, which then gets the words alone.
+  // list. Empty for a household with no history, which then gets the words alone.
   suggestedProducts: { type: Array as PropType<ProductSuggestion[]>, default: () => [] },
 })
 
@@ -178,7 +178,7 @@ function finishCheckout(ids: string[]) {
 onBeforeUnmount(() => {
   if (drainTimer) clearTimeout(drainTimer)
   if (successTimer) clearTimeout(successTimer)
-  // Unmounting mid-drain (a route change, a family switch tearing the list
+  // Unmounting mid-drain (a route change, a household switch tearing the list
   // down) used to drop the checkout on the floor: the timer died with the
   // component and the rows stayed checked in the database, having told the user
   // they were bought. The confirmation already happened — flush it.
@@ -315,7 +315,7 @@ const labelText = computed(() =>
   <div v-if="checkedItems.length && !loading" class="buy-bar-spacer" aria-hidden="true"></div>
 
   <!-- An empty grocery list is usually a finished one, not a broken one: for a
-       family that shops, this screen is what checking out leaves behind. And
+       household that shops, this screen is what checking out leaves behind. And
        the thing they are most likely to want from it is not a message — it is
        the next list, which for groceries is largely the same as the last one.
        So the regulars are here as one tap each, and the screen is a way to
@@ -325,7 +325,7 @@ const labelText = computed(() =>
     <p class="empty-state__text">
       {{ hasShopped
         ? 'Nothing left to pick up.'
-        : 'Add the first thing and everyone in the family sees it straight away.' }}
+        : 'Add the first thing and everyone in the household sees it straight away.' }}
     </p>
 
     <!-- Same name as the search screen's section, because it is the same idea

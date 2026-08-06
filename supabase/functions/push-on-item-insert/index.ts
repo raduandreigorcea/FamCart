@@ -5,7 +5,7 @@
 // row; every row carries the same checkout_id, which doubles as the OneSignal
 // idempotency_key — duplicate calls collapse into a single sent notification.
 //
-// Recipients are every family member except the actor. Devices (web and
+// Recipients are every household member except the actor. Devices (web and
 // native) are registered by the client SDKs and keyed to Clerk user ids via
 // OneSignal.login(), so no subscription storage lives on our side.
 //
@@ -27,7 +27,7 @@ const supabase = createClient(
 
 interface ItemRecord {
   id: string
-  family_id: string
+  household_id: string
   name: string
   quantity: number | null
   added_by: string
@@ -35,7 +35,7 @@ interface ItemRecord {
 
 interface PurchaseRecord {
   checkout_id: string
-  family_id: string
+  household_id: string
   purchased_by: string
 }
 
@@ -60,13 +60,13 @@ function itemLabel(name: string, quantity: number | null): string {
   return qty > 1 ? `${name} ×${qty}` : name
 }
 
-// Family member ids for a family. Names live in profiles now, resolved
+// Household member ids for a household. Names live in profiles now, resolved
 // separately by fetchDisplayName when a message needs to name the actor.
-async function fetchMembers(familyId: string) {
+async function fetchMembers(householdId: string) {
   return await supabase
-    .from('family_members')
+    .from('household_members')
     .select('user_id')
-    .eq('family_id', familyId)
+    .eq('household_id', householdId)
 }
 
 // The actor's display name from their profile row; 'Someone' if it is missing.
@@ -82,12 +82,12 @@ async function fetchDisplayName(userId: string): Promise<string> {
 async function sendPush(options: {
   recipientIds: string[]
   body: string
-  familyId: string
+  householdId: string
   idempotencyKey: string
 }): Promise<Response> {
-  // One collapsing notification per family: web_push_topic (browsers) and
+  // One collapsing notification per household: web_push_topic (browsers) and
   // collapse_id (native) make a burst of changes update in place, not stack.
-  const tag = `famcart-${options.familyId}`
+  const tag = `famcart-${options.householdId}`
   const res = await fetch('https://api.onesignal.com/notifications?c=push', {
     method: 'POST',
     headers: {
@@ -121,7 +121,7 @@ async function sendPush(options: {
 }
 
 async function handleItemAdded(item: ItemRecord): Promise<Response> {
-  const { data: members, error } = await fetchMembers(item.family_id)
+  const { data: members, error } = await fetchMembers(item.household_id)
   if (error) return Response.json({ error: error.message }, { status: 500 })
   const recipientIds = (members ?? [])
     .map((m) => m.user_id)
@@ -132,7 +132,7 @@ async function handleItemAdded(item: ItemRecord): Promise<Response> {
   return sendPush({
     recipientIds,
     body: `${who} added ${itemLabel(item.name, item.quantity)}`,
-    familyId: item.family_id,
+    householdId: item.household_id,
     idempotencyKey: item.id,
   })
 }
@@ -140,7 +140,7 @@ async function handleItemAdded(item: ItemRecord): Promise<Response> {
 async function handleCheckout(purchase: PurchaseRecord): Promise<Response> {
   const [{ data: members, error: membersErr }, { data: items, error: itemsErr }] =
     await Promise.all([
-      fetchMembers(purchase.family_id),
+      fetchMembers(purchase.household_id),
       // The webhook fires after buy_items commits, so every row of this
       // checkout is already visible; the count is complete on the first call.
       supabase
@@ -166,7 +166,7 @@ async function handleCheckout(purchase: PurchaseRecord): Promise<Response> {
   return sendPush({
     recipientIds,
     body: `${who} bought ${bought}`,
-    familyId: purchase.family_id,
+    householdId: purchase.household_id,
     idempotencyKey: purchase.checkout_id,
   })
 }

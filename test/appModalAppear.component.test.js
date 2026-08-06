@@ -27,7 +27,7 @@ const overlayClasses = (w) => w.find('.app-modal-overlay').classes()
 
 describe('a dialog that mounts already open', () => {
   it('still runs its enter transition', () => {
-    // Exactly how AppTopbar mounts FamilySettingsModal the first time.
+    // Exactly how AppTopbar mounts HouseholdSettingsModal the first time.
     const wrapper = open({ open: true, transition: 'modal-fade' })
 
     expect(overlayClasses(wrapper)).toContain('modal-fade-enter-active')

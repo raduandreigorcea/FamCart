@@ -5,12 +5,11 @@ import AppModal from './AppModal.vue'
 import ConfirmModal from './ConfirmModal.vue'
 import ErrorModal from './ErrorModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
-import OverviewPanel from './familySettings/OverviewPanel.vue'
-import PreferencesPanel from './familySettings/PreferencesPanel.vue'
-import MembersPanel from './familySettings/MembersPanel.vue'
-import DangerPanel from './familySettings/DangerPanel.vue'
-import AboutPanel from './familySettings/AboutPanel.vue'
-import type { FamilyMemberProfile } from '../lib/familyRealtime'
+import OverviewPanel from './householdSettings/OverviewPanel.vue'
+import PreferencesPanel from './householdSettings/PreferencesPanel.vue'
+import MembersPanel from './householdSettings/MembersPanel.vue'
+import DangerPanel from './householdSettings/DangerPanel.vue'
+import type { HouseholdMemberProfile } from '../lib/householdRealtime'
 import { normalizeMemberRole } from '../lib/memberRoles'
 import { ITEM_LIMIT_DEFAULT } from '../lib/limits'
 import { useConfirm } from '../lib/useConfirm'
@@ -18,7 +17,7 @@ import { useConfirm } from '../lib/useConfirm'
 // The settings dialog's shell: which tab is showing, what the viewer is allowed
 // to do, and the two dialogs the panels share (confirm and error).
 //
-// Each tab is its own component under familySettings/. They were all inline
+// Each tab is its own component under householdSettings/. They were all inline
 // here once, which made this file 2,658 lines and meant every change to the
 // members list was a change to the same file as the emoji picker.
 
@@ -27,24 +26,23 @@ import layoutGridIcon from '../assets/layout-grid.svg?raw'
 import settingsIconRaw from '../assets/settings.svg?raw'
 import usersIcon from '../assets/users-round.svg?raw'
 import trashIcon from '../assets/trash-2.svg?raw'
-import infoIcon from '../assets/info.svg?raw'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
   initialTab: { type: String, default: 'overview' },
-  familyId: { type: String, default: '' },
-  familyName: { type: String, default: '' },
+  householdId: { type: String, default: '' },
+  householdName: { type: String, default: '' },
   inviteCode: { type: String, default: '' },
-  familyItemLimit: { type: Number, default: ITEM_LIMIT_DEFAULT },
-  familyEmoji: { type: String, default: '' },
+  householdItemLimit: { type: Number, default: ITEM_LIMIT_DEFAULT },
+  householdEmoji: { type: String, default: '' },
   ownerUserId: { type: String, default: '' },
   memberProfiles: {
-    type: Array as PropType<FamilyMemberProfile[]>,
+    type: Array as PropType<HouseholdMemberProfile[]>,
     default: () => [],
   },
 })
 
-const emit = defineEmits(['close', 'refresh-family', 'family-deleted', 'family-left'])
+const emit = defineEmits(['close', 'refresh-household', 'household-deleted', 'household-left'])
 
 const { userId } = useAuth()
 
@@ -120,7 +118,6 @@ interface SettingsTab {
   icon: string
   badge?: number
   danger?: boolean
-  about?: boolean
 }
 
 // The tabs this viewer can reach, in sidebar order. Built as data so the
@@ -129,14 +126,14 @@ interface SettingsTab {
 const tabs = computed<SettingsTab[]>(() => {
   const list: SettingsTab[] = [{ id: 'overview', label: 'Overview', icon: layoutGridIcon }]
   if (isOwnerOrModerator.value) {
-    list.push({ id: 'family', label: 'Preferences', icon: settingsIconRaw })
+    list.push({ id: 'household', label: 'Preferences', icon: settingsIconRaw })
   }
   list.push({ id: 'members', label: 'Members', icon: usersIcon, badge: memberCount.value })
   list.push({ id: 'danger', label: 'Danger Zone', icon: trashIcon, danger: true })
-  // Last, and pushed to the foot of the column on desktop: it is the only tab
-  // that changes nothing, so it belongs out of the way of the ones that do. On
-  // phones the sidebar is a horizontal scroller, where there is no bottom.
-  list.push({ id: 'about', label: 'About', icon: infoIcon, about: true })
+  // No About tab: an app's version and its data-licence credit are not a
+  // property of any one household. They live in AppSettingsModal, reached from
+  // the account dialog. Every tab here now changes something about THIS
+  // household, which is what the dialog claims to be.
   return list
 })
 
@@ -147,16 +144,16 @@ watch(tabs, (list) => {
   if (!list.some((tab) => tab.id === activeTab.value)) activeTab.value = 'overview'
 })
 
-// Leaving and deleting both take the user off this family, so the dialog goes
+// Leaving and deleting both take the user off this household, so the dialog goes
 // with it; HomeView decides where they land.
-function onFamilyLeft() {
+function onHouseholdLeft() {
   emit('close')
-  emit('family-left')
+  emit('household-left')
 }
 
-function onFamilyDeleted() {
+function onHouseholdDeleted() {
   emit('close')
-  emit('family-deleted')
+  emit('household-deleted')
 }
 </script>
 
@@ -176,8 +173,15 @@ function onFamilyDeleted() {
               <span class="header-icon" aria-hidden="true" v-html="settingsIconRaw"></span>
             </div>
             <div>
-              <h3>Family Settings</h3>
-              <p class="settings-modal__subtitle">Manage your family and members</p>
+              <h3>Household Settings</h3>
+              <!-- Which household this is. It used to read "Manage your
+                   household and members", which described the panels below
+                   rather than saying anything you could not already see — and
+                   left the one question the dialog has to answer unanswered.
+                   Renaming, removing members and deleting all happen in here,
+                   and someone in more than one household had nothing on screen
+                   confirming they were in the right one. -->
+              <p class="settings-modal__subtitle">{{ householdName || 'Your household' }}</p>
             </div>
           </div>
           <ModalCloseButton aria-label="Close settings" @click="requestClose()" />
@@ -203,7 +207,6 @@ function onFamilyDeleted() {
               :class="{
                 active: activeTab === tab.id,
                 'sidebar-tab-btn--danger': tab.danger,
-                'sidebar-tab-btn--about': tab.about,
               }"
               type="button"
               role="tab"
@@ -229,23 +232,23 @@ function onFamilyDeleted() {
               role="tabpanel"
               aria-labelledby="settings-tab-overview"
               :ghost="activeTab !== 'overview'"
-              :family-name="familyName"
+              :household-name="householdName"
               :invite-code="inviteCode"
               :member-count="memberCount"
               :owner-profile="ownerProfile"
             />
 
             <PreferencesPanel
-              v-if="activeTab === 'family' && isOwnerOrModerator"
-              id="settings-panel-family"
+              v-if="activeTab === 'household' && isOwnerOrModerator"
+              id="settings-panel-household"
               role="tabpanel"
-              aria-labelledby="settings-tab-family"
-              :family-id="familyId"
-              :family-name="familyName"
-              :family-item-limit="familyItemLimit"
-              :family-emoji="familyEmoji"
+              aria-labelledby="settings-tab-household"
+              :household-id="householdId"
+              :household-name="householdName"
+              :household-item-limit="householdItemLimit"
+              :household-emoji="householdEmoji"
               :is-owner="isOwner"
-              @refresh-family="emit('refresh-family')"
+              @refresh-household="emit('refresh-household')"
               @error="showError"
             />
 
@@ -255,13 +258,13 @@ function onFamilyDeleted() {
               role="tabpanel"
               aria-labelledby="settings-tab-members"
               v-model:open-menu-id="openMemberMenuId"
-              :family-id="familyId"
+              :household-id="householdId"
               :owner-user-id="ownerUserId"
               :is-owner="isOwner"
               :is-owner-or-moderator="isOwnerOrModerator"
               :member-profiles="memberProfiles"
               :confirm="confirm"
-              @refresh-family="emit('refresh-family')"
+              @refresh-household="emit('refresh-household')"
               @error="showError"
             />
 
@@ -270,22 +273,15 @@ function onFamilyDeleted() {
               id="settings-panel-danger"
               role="tabpanel"
               aria-labelledby="settings-tab-danger"
-              :family-id="familyId"
-              :family-name="familyName"
+              :household-id="householdId"
+              :household-name="householdName"
               :is-owner="isOwner"
               :is-owner-or-moderator="isOwnerOrModerator"
               :confirm="confirm"
-              @refresh-family="emit('refresh-family')"
-              @family-left="onFamilyLeft"
-              @family-deleted="onFamilyDeleted"
+              @refresh-household="emit('refresh-household')"
+              @household-left="onHouseholdLeft"
+              @household-deleted="onHouseholdDeleted"
               @error="showError"
-            />
-
-            <AboutPanel
-              v-if="activeTab === 'about'"
-              id="settings-panel-about"
-              role="tabpanel"
-              aria-labelledby="settings-tab-about"
             />
           </main>
         </div>
@@ -361,9 +357,18 @@ function onFamilyDeleted() {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  /* The subtitle carries a household name now, up to 25 characters of someone
+     else's choosing. Let the text block shrink so it ellipsizes instead of
+     shouldering the close button off the header. */
+  min-width: 0;
+}
+
+.settings-modal__title-wrap > div:last-child {
+  min-width: 0;
 }
 
 .settings-modal__icon-bg {
+  flex-shrink: 0;
   width: 38px;
   height: 38px;
   border-radius: var(--radius-md);
@@ -392,6 +397,9 @@ function onFamilyDeleted() {
   font-size: var(--text-sm);
   color: var(--ui-text-muted);
   font-weight: var(--weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 
@@ -431,14 +439,6 @@ function onFamilyDeleted() {
   }
   .settings-sidebar::-webkit-scrollbar {
     display: none;
-  }
-}
-
-/* Only on the desktop column layout: `auto` here would fight the horizontal
-   scroller the sidebar becomes on phones, pinning the button to the wrong edge. */
-@media (min-width: 581px) {
-  .sidebar-tab-btn--about {
-    margin-top: auto;
   }
 }
 
@@ -685,7 +685,7 @@ function onFamilyDeleted() {
 }
 
 /* ─── Shared panel primitives ────────────────────────────────────────────
-   Rendered by the panel components under familySettings/, styled here so
+   Rendered by the panel components under householdSettings/, styled here so
    there is one copy rather than five. :deep() is what lets this scoped block
    reach past the child component boundary. */
 

@@ -3,7 +3,7 @@ import { computed, ref, onMounted } from 'vue'
 import { useAuth, useUser } from '@clerk/vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSupabase } from '../supabase'
-import { saveActiveFamilyId } from '../lib/familyCache'
+import { saveActiveHouseholdId } from '../lib/householdCache'
 import { deriveProfileFields } from '../lib/userIdentity'
 import { upsertOwnProfile } from '../lib/profile'
 import AppTopbar from '../components/AppTopbar.vue'
@@ -17,7 +17,7 @@ import ConfirmModal from '../components/ConfirmModal.vue'
 import { isOfflineError } from '../lib/offlineQueue'
 import { UserFacingError, userMessage } from '../lib/errorMessages'
 import { isValidInviteCode, normalizeInviteCode, randomInviteCode } from '../lib/inviteCode'
-import { FAMILY_MEMBERSHIP_CAP, FAMILY_NAME_MAX_LENGTH } from '../lib/limits'
+import { HOUSEHOLD_MEMBERSHIP_CAP, HOUSEHOLD_NAME_MAX_LENGTH } from '../lib/limits'
 
 const OFFLINE_MESSAGE = 'You appear to be offline. Check your connection and try again.'
 
@@ -27,46 +27,46 @@ const router = useRouter()
 const route = useRoute()
 const db = useSupabase()
 
-// Reached from the switcher's "add" action while the user already has families
+// Reached from the account dialog's "join or create" action while the user already has households
 // (vs. a brand-new user with none): offer a way back to their list.
-const isAddingFamily = computed(() => route.query.add === '1')
+const isAddingHousehold = computed(() => route.query.add === '1')
 
-// Owning is capped at one family (003_families_and_members.sql). Someone adding a family while
+// Owning is capped at one household (003_households_and_members.sql). Someone adding a household while
 // they already own one can only join, so the create option is hidden. A brand-new
 // user (not adding) always sees it.
-const ownsFamily = ref(false)
+const ownsHousehold = ref(false)
 // Only known after the async check below. Until then, in add mode we don't yet
 // know whether create is allowed, so we withhold the create option rather than
 // flash it and yank it away for an owner.
 const ownershipChecked = ref(false)
-const showCreate = computed(() => !isAddingFamily.value || (ownershipChecked.value && !ownsFamily.value))
+const showCreate = computed(() => !isAddingHousehold.value || (ownershipChecked.value && !ownsHousehold.value))
 onMounted(async () => {
-  if (!isAddingFamily.value || !userId.value) return
+  if (!isAddingHousehold.value || !userId.value) return
   try {
     const { data } = await db
-      .from('families')
+      .from('households')
       .select('id')
       .eq('created_by', userId.value)
       .limit(1)
       .maybeSingle()
-    ownsFamily.value = !!data
+    ownsHousehold.value = !!data
   } finally {
     ownershipChecked.value = true
   }
 })
 
 // Brand-new users open on a warm welcome before the create/join picker; someone
-// adding a family from the switcher already knows the app, so they skip it.
+// adding a household from the account dialog already knows the app, so they skip it.
 const welcomed = ref(false)
-const showWelcome = computed(() => !welcomed.value && !isAddingFamily.value)
+const showWelcome = computed(() => !welcomed.value && !isAddingHousehold.value)
 
 const mode = ref<'create' | 'join' | null>(null)
-const familyName = ref('')
+const householdName = ref('')
 const inviteCode = ref('')
 const error = ref('')
 const loading = ref(false)
-const familyNameLength = computed(() => familyName.value.length)
-const familyNameOverLimit = computed(() => familyNameLength.value > FAMILY_NAME_MAX_LENGTH)
+const householdNameLength = computed(() => householdName.value.length)
+const householdNameOverLimit = computed(() => householdNameLength.value > HOUSEHOLD_NAME_MAX_LENGTH)
 const limitModal = ref({ open: false, title: '', message: '' })
 
 function openLimitModal(message: string) {
@@ -81,20 +81,20 @@ function closeLimitModal() {
   limitModal.value = { open: false, title: '', message: '' }
 }
 
-async function createFamily() {
+async function createHousehold() {
   if (loading.value) return
   const uid = userId.value
   if (!uid) return
-  if (familyNameOverLimit.value) {
-    openLimitModal(`Family name must be ${FAMILY_NAME_MAX_LENGTH} characters or fewer.`)
+  if (householdNameOverLimit.value) {
+    openLimitModal(`Household name must be ${HOUSEHOLD_NAME_MAX_LENGTH} characters or fewer.`)
     return
   }
-  const nextFamilyName = familyName.value.trim()
-  if (nextFamilyName.length > FAMILY_NAME_MAX_LENGTH) {
-    openLimitModal(`Family name must be ${FAMILY_NAME_MAX_LENGTH} characters or fewer.`)
+  const nextHouseholdName = householdName.value.trim()
+  if (nextHouseholdName.length > HOUSEHOLD_NAME_MAX_LENGTH) {
+    openLimitModal(`Household name must be ${HOUSEHOLD_NAME_MAX_LENGTH} characters or fewer.`)
     return
   }
-  if (!nextFamilyName) return
+  if (!nextHouseholdName) return
   error.value = ''
   loading.value = true
   try {
@@ -105,57 +105,57 @@ async function createFamily() {
     const { error: profileErr } = await upsertOwnProfile(db, uid, user.value)
     if (profileErr) throw profileErr
 
-    const { data: family, error: familyErr } = await db
-      .from('families')
-      .insert({ name: nextFamilyName, invite_code: code, created_by: uid })
+    const { data: household, error: householdErr } = await db
+      .from('households')
+      .insert({ name: nextHouseholdName, invite_code: code, created_by: uid })
       .select('id')
       .single<{ id: string }>()
 
-    // A user may own only one family (003_families_and_members.sql). The unique index rejects a
+    // A user may own only one household (003_households_and_members.sql). The unique index rejects a
     // second with a 23505; turn that one case into a message that explains it
     // rather than leaking the raw constraint text.
-    if (familyErr) {
-      if (familyErr.message?.includes('families_one_per_owner')) {
-        throw new UserFacingError('You can only own one family. Leave or delete your current one before creating another.')
+    if (householdErr) {
+      if (householdErr.message?.includes('households_one_per_owner')) {
+        throw new UserFacingError('You can only own one household. Leave or delete your current one before creating another.')
       }
-      throw familyErr
+      throw householdErr
     }
 
     const { error: memberErr } = await db
-      .from('family_members')
+      .from('household_members')
       .insert({
-        family_id: family.id,
+        household_id: household.id,
         user_id: uid,
         role: 'moderator',
       })
 
     if (memberErr) {
-      // The family row was created but the membership was rejected (e.g. the
-      // membership cap, 003_families_and_members.sql). Remove the orphan so it
+      // The household row was created but the membership was rejected (e.g. the
+      // membership cap, 003_households_and_members.sql). Remove the orphan so it
       // can't linger
       // with no members, then explain the one case the user can act on.
-      await db.from('families').delete().eq('id', family.id)
+      await db.from('households').delete().eq('id', household.id)
       // The sentinel is raised as the exception DETAIL, which supabase-js exposes
       // on error.details, not error.message.
-      if ((memberErr.details ?? memberErr.message ?? '').includes('family_membership_limit_exceeded')) {
+      if ((memberErr.details ?? memberErr.message ?? '').includes('membership_limit_exceeded')) {
         throw new UserFacingError(
-          `You can be part of at most ${FAMILY_MEMBERSHIP_CAP} families. Leave one before creating another.`,
+          `You can be part of at most ${HOUSEHOLD_MEMBERSHIP_CAP} households. Leave one before creating another.`,
         )
       }
       throw memberErr
     }
 
-    // Make the new family the active one so HomeView opens straight to it.
-    saveActiveFamilyId(localStorage, uid, family.id)
+    // Make the new household the active one so HomeView opens straight to it.
+    saveActiveHouseholdId(localStorage, uid, household.id)
     router.replace('/')
   } catch (e) {
-    error.value = isOfflineError(e) ? OFFLINE_MESSAGE : userMessage(e, 'Failed to create family.')
+    error.value = isOfflineError(e) ? OFFLINE_MESSAGE : userMessage(e, 'Failed to create household.')
   } finally {
     loading.value = false
   }
 }
 
-async function joinFamily() {
+async function joinHousehold() {
   if (loading.value || !inviteCode.value.trim()) return
   const uid = userId.value
   if (!uid) return
@@ -170,11 +170,11 @@ async function joinFamily() {
     const { display_name, image_url } = deriveProfileFields(user.value)
 
     // The RPC checks the code, upserts the joiner's profile, and inserts the
-    // membership in one server-side step; a direct family_members insert would
+    // membership in one server-side step; a direct household_members insert would
     // be rejected by RLS, so the code is a real credential (rotating it locks
     // out removed members).
-    const { data: family, error: joinErr } = await db
-      .rpc('join_family_with_code', {
+    const { data: household, error: joinErr } = await db
+      .rpc('join_household_with_code', {
         p_code: code,
         p_display_name: display_name,
         p_image_url: image_url,
@@ -183,22 +183,22 @@ async function joinFamily() {
 
     if (joinErr) {
       // The sentinel is raised as the exception DETAIL (error.details), not message.
-      if ((joinErr.details ?? joinErr.message ?? '').includes('family_membership_limit_exceeded')) {
-        error.value = `You can be part of at most ${FAMILY_MEMBERSHIP_CAP} families. Leave one before joining another.`
+      if ((joinErr.details ?? joinErr.message ?? '').includes('membership_limit_exceeded')) {
+        error.value = `You can be part of at most ${HOUSEHOLD_MEMBERSHIP_CAP} households. Leave one before joining another.`
         return
       }
       throw joinErr
     }
-    if (!family) {
-      error.value = 'No family found with that invite code.'
+    if (!household) {
+      error.value = 'No household found with that invite code.'
       return
     }
 
-    // Make the joined family the active one so HomeView opens straight to it.
-    saveActiveFamilyId(localStorage, uid, family.id)
+    // Make the joined household the active one so HomeView opens straight to it.
+    saveActiveHouseholdId(localStorage, uid, household.id)
     router.replace('/')
   } catch (e) {
-    error.value = isOfflineError(e) ? OFFLINE_MESSAGE : userMessage(e, 'Failed to join family.')
+    error.value = isOfflineError(e) ? OFFLINE_MESSAGE : userMessage(e, 'Failed to join household.')
   } finally {
     loading.value = false
   }
@@ -244,10 +244,10 @@ async function joinFamily() {
           </div>
           <div class="card-header card-header--welcome">
             <p class="card-eyebrow">Welcome to FamCart 🛒</p>
-            <h2 class="heading">The list your whole <span class="heading--accent">family</span> shares</h2>
+            <h2 class="heading">The list your whole <span class="heading--accent">household</span> shares</h2>
             <p class="sub">
               Everyone adds, everyone checks off, and it all updates for the whole
-              family the moment it happens, so nothing gets forgotten at the store.
+              household the moment it happens, so nothing gets forgotten at the store.
             </p>
           </div>
           <AppButton variant="primary" block @click="welcomed = true">Get started</AppButton>
@@ -255,33 +255,33 @@ async function joinFamily() {
 
         <!-- Picker -->
         <template v-else-if="!mode">
-          <div v-if="isAddingFamily" class="setup-back">
+          <div v-if="isAddingHousehold" class="setup-back">
             <BackButton @click="router.replace('/')" />
           </div>
           <div class="card-header">
-            <p class="card-eyebrow">{{ isAddingFamily ? 'Add a family' : 'Welcome aboard 👋' }}</p>
+            <p class="card-eyebrow">{{ isAddingHousehold ? 'Add a household' : 'Welcome aboard 👋' }}</p>
             <h2 class="heading">
-              <template v-if="isAddingFamily">Add another <span class="heading--accent">family</span></template>
-              <template v-else>Set up your <span class="heading--accent">family</span></template>
+              <template v-if="isAddingHousehold">Add another <span class="heading--accent">household</span></template>
+              <template v-else>Set up your <span class="heading--accent">household</span></template>
             </h2>
             <p class="sub">
-              {{ isAddingFamily
-                ? 'Join another family with their invite code' + (showCreate ? ', or create a new one.' : '.')
-                : 'Create a shared grocery list for your family, or join one using an invite code.' }}
+              {{ isAddingHousehold
+                ? 'Join another household with their invite code' + (showCreate ? ', or create a new one.' : '.')
+                : 'Create a shared grocery list for your household, or join one using an invite code.' }}
             </p>
           </div>
           <div class="choice-row">
             <ChoiceButton
               v-if="showCreate"
               icon="🏠"
-              label="Create a family"
+              label="Create a household"
               description="Start a new list and get a shareable invite code"
               @click="mode = 'create'"
             />
             <ChoiceButton
               icon="🔗"
-              label="Join a family"
-              description="Paste the invite code your family shared with you"
+              label="Join a household"
+              description="Paste the invite code your household shared with you"
               @click="mode = 'join'"
             />
           </div>
@@ -293,14 +293,14 @@ async function joinFamily() {
             <BackButton @click="mode = null; error = ''" />
           </div>
           <div class="card-header">
-            <p class="card-eyebrow">New family</p>
-            <h2 class="heading">What's your family name?</h2>
-            <p class="sub">This is how your family list will appear for everyone.</p>
+            <p class="card-eyebrow">New household</p>
+            <h2 class="heading">What's your household name?</h2>
+            <p class="sub">This is how your household list will appear for everyone.</p>
           </div>
-          <form @submit.prevent="createFamily" class="input-form">
-            <InputRow v-model="familyName" placeholder="e.g. The Smiths" :loading="loading" required autofocus />
-            <p class="field-counter" :class="{ 'field-counter--danger': familyNameOverLimit }">
-              {{ familyNameLength }}/{{ FAMILY_NAME_MAX_LENGTH }}
+          <form @submit.prevent="createHousehold" class="input-form">
+            <InputRow v-model="householdName" placeholder="e.g. The Smiths" :loading="loading" required autofocus />
+            <p class="field-counter" :class="{ 'field-counter--danger': householdNameOverLimit }">
+              {{ householdNameLength }}/{{ HOUSEHOLD_NAME_MAX_LENGTH }}
             </p>          </form>
         </template>
 
@@ -310,11 +310,11 @@ async function joinFamily() {
             <BackButton @click="mode = null; error = ''" />
           </div>
           <div class="card-header">
-            <p class="card-eyebrow">Join a family</p>
+            <p class="card-eyebrow">Join a household</p>
             <h2 class="heading">Enter your invite code</h2>
-            <p class="sub">Ask a family member for their invite code.</p>
+            <p class="sub">Ask a household member for their invite code.</p>
           </div>
-          <form @submit.prevent="joinFamily" class="input-form">
+          <form @submit.prevent="joinHousehold" class="input-form">
             <InputRow v-model="inviteCode" placeholder="e.g. AB3K7XYZ" maxlength="8" :loading="loading" :uppercase="true" required autofocus />          </form>
         </template>
 
@@ -537,7 +537,7 @@ async function joinFamily() {
   line-height: 1.55;
 }
 
-/* ── Back to families ────────────────────────────────────── */
+/* ── Back to households ────────────────────────────────────── */
 .setup-back {
   /* Pull the button up so its own padding lines it up with the card edge,
      then leave clear space before the heading below. */

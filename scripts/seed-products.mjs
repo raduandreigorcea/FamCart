@@ -13,9 +13,9 @@
 // typo away from publishing RLS-bypassing access to the whole database. Vite
 // never loads .env.scripts, so the mistake is impossible rather than unlikely.
 //
-// Re-running is safe: rows are upserted on (name, maker, family_id), so edits to
+// Re-running is safe: rows are upserted on (name, maker, household_id), so edits to
 // products.json update existing rows instead of duplicating them, and products
-// families contributed themselves (family_id not null) are left untouched.
+// households contributed themselves (household_id not null) are left untouched.
 
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -109,7 +109,7 @@ for (const [i, product] of products.entries()) {
   seen.add(key)
 
   // The DB enforces one global row per search_text (product_catalog_global_search,
-  // 006_product_catalog.sql), and the upsert's (name, maker, family_id) conflict target does
+  // 006_product_catalog.sql), and the upsert's (name, maker, household_id) conflict target does
   // NOT catch a collision there — two entries that differ only in case, accents, or
   // spacing normalize to the same key and the second would fail the whole chunk.
   // Skip it here, keeping the first (higher-priority) spelling, the same way an
@@ -129,10 +129,10 @@ for (const [i, product] of products.entries()) {
     maker,
     search_text: searchText,
     base_weight: weight,
-    // Seeded products are the global ones. A non-null family_id means a product
-    // one family contributed via add_custom_product() (006_product_catalog.sql), which the
+    // Seeded products are the global ones. A non-null household_id means a product
+    // one household contributed via add_custom_product() (006_product_catalog.sql), which the
     // seed must never create or overwrite.
-    family_id: null,
+    household_id: null,
     // Provenance (006_product_catalog.sql). Stamping it here is what protects these rows:
     // import_catalog_products() refuses to change the name, maker or weight of
     // any row whose source is not its own, so a curated product can only ever
@@ -151,7 +151,7 @@ for (let start = 0; start < rows.length; start += CHUNK_SIZE) {
   const chunk = rows.slice(start, start + CHUNK_SIZE)
   const { error } = await supabase
     .from('product_catalog')
-    .upsert(chunk, { onConflict: 'name,maker,family_id' })
+    .upsert(chunk, { onConflict: 'name,maker,household_id' })
   if (error) {
     console.error(`Seeding failed after ${seeded} rows: ${error.message}`)
     process.exit(1)

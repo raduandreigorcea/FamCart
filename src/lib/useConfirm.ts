@@ -8,7 +8,7 @@ import { ref, type Ref } from 'vue'
 // read in neither. This is the other way: `if (!(await confirm({...}))) return`
 // — the question and what depends on the answer stay on the same line.
 //
-// It lived inside FamilySettingsModal, which is where all seven of its callers
+// It lived inside HouseholdSettingsModal, which is where all seven of its callers
 // were. It is here so the settings panels can share one dialog once they are
 // separate components, and so the pattern is available to the views that still
 // do it the long way.
