@@ -1,12 +1,12 @@
 // @vitest-environment happy-dom
 //
-// Tests for the useFamilyRealtime composable's channel handlers: echo dedupe on
+// Tests for the useHouseholdRealtime composable's channel handlers: echo dedupe on
 // INSERT (optimistic rows share ids with their realtime echo), merge-or-reload
-// on UPDATE, removal on DELETE, and the family-deleted teardown.
+// on UPDATE, removal on DELETE, and the household-deleted teardown.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { defineComponent, ref } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
-import { useFamilyRealtime } from '../src/lib/familyRealtime'
+import { useHouseholdRealtime } from '../src/lib/householdRealtime'
 
 // Fake realtime client: channels record their postgres_changes listeners so
 // tests can fire payloads at them directly.
@@ -50,20 +50,20 @@ async function mountRealtime() {
   const db = createRealtimeFakeDb()
   const ctx = {
     db,
-    familyId: ref('fam-1'),
+    householdId: ref('fam-1'),
     hasInitialized: ref(true),
     items: ref([]),
-    familyMembers: ref([]),
+    householdMembers: ref([]),
     loadItems: vi.fn(async () => {}),
-    loadFamilyHeader: vi.fn(async () => {}),
+    loadHouseholdHeader: vi.fn(async () => {}),
     refreshMembershipOrRedirect: vi.fn(async () => {}),
-    onFamilyDeleted: vi.fn(),
+    onHouseholdDeleted: vi.fn(),
   }
 
   let api
   const Harness = defineComponent({
     setup() {
-      api = useFamilyRealtime(ctx)
+      api = useHouseholdRealtime(ctx)
       return () => null
     },
   })
@@ -77,8 +77,8 @@ async function mountRealtime() {
     api,
     wrapper,
     listChannel: channelByName('shopping-list:'),
-    membersChannel: channelByName('family-members:'),
-    familyChannel: channelByName('family:'),
+    membersChannel: channelByName('household-members:'),
+    householdChannel: channelByName('household:'),
   }
 }
 
@@ -145,26 +145,26 @@ describe('shopping list channel', () => {
 
 describe('members channel', () => {
   it('removes the member on DELETE and rechecks own membership', async () => {
-    const { membersChannel, familyMembers, refreshMembershipOrRedirect, wrapper } = await mountRealtime()
-    familyMembers.value = [
+    const { membersChannel, householdMembers, refreshMembershipOrRedirect, wrapper } = await mountRealtime()
+    householdMembers.value = [
       { user_id: 'user-1', display_name: 'Me' },
       { user_id: 'user-2', display_name: 'Them' },
     ]
 
     membersChannel.emit('DELETE', { eventType: 'DELETE', old: { user_id: 'user-2' } })
-    expect(familyMembers.value.map((m) => m.user_id)).toEqual(['user-1'])
+    expect(householdMembers.value.map((m) => m.user_id)).toEqual(['user-1'])
     expect(refreshMembershipOrRedirect).toHaveBeenCalled()
 
     wrapper.unmount()
   })
 })
 
-describe('family channel', () => {
-  it('tears down subscriptions and signals the caller when the family is deleted', async () => {
-    const { familyChannel, db, onFamilyDeleted, wrapper } = await mountRealtime()
+describe('household channel', () => {
+  it('tears down subscriptions and signals the caller when the household is deleted', async () => {
+    const { householdChannel, db, onHouseholdDeleted, wrapper } = await mountRealtime()
 
-    familyChannel.emit('DELETE', { eventType: 'DELETE', old: { id: 'fam-1' } })
-    expect(onFamilyDeleted).toHaveBeenCalled()
+    householdChannel.emit('DELETE', { eventType: 'DELETE', old: { id: 'fam-1' } })
+    expect(onHouseholdDeleted).toHaveBeenCalled()
     expect(db.removedChannels).toHaveLength(3)
 
     wrapper.unmount()

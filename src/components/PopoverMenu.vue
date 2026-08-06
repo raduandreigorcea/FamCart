@@ -5,13 +5,15 @@ import { onBeforeUnmount, ref, watch, type PropType } from 'vue'
 // as a bottom sheet on a phone. Owns the teleport, the overlay, the transition,
 // dismissal, and where the panel lands. Knows nothing about what is in it.
 //
-// Extracted from the family switcher and the list filter, which had grown the
-// same twenty lines each. The panel chrome and the row styling live here (see
+// Extracted from the household switcher and the list filter, which had grown the
+// same twenty lines each. The switcher is gone -- the list filter is the only
+// caller left -- but the split is still worth keeping: what lives here is the
+// sheet/popover behaviour, not anything about filtering. The panel chrome and the row styling live here (see
 // the :slotted rules below), so a menu added later looks like the two that
 // already exist instead of approximating them.
 //
 // Teleported to <body> because both callers sit inside a container that clips
-// or stacks: the topbar has overflow:hidden to ellipsize the family name, and
+// or stacks: the topbar has overflow:hidden to ellipsize the household name, and
 // the list header sits under the add form's dropdown.
 const open = defineModel({ type: Boolean, default: false })
 
@@ -140,7 +142,7 @@ onBeforeUnmount(() => {
   inset: 0;
   z-index: 1000;
   /* Dimmed for the sheet; the popover below turns this transparent, matching
-     how the switcher has always behaved on desktop. */
+     how these menus have always behaved on desktop. */
   background: var(--backdrop);
 }
 
@@ -161,7 +163,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 2px;
   padding: var(--space-2);
-  /* The scroll lives here rather than on the panel, so a long list of families
+  /* The scroll lives here rather than on the panel, so a long list of households
      moves under a header that stays put. */
   overflow-y: auto;
 }
@@ -274,7 +276,7 @@ onBeforeUnmount(() => {
 }
 
 /* A quiet neutral fill, not a colour wash — the check is the only accent, so
-   anything coloured inside the row (a family's emoji) stays readable on it. */
+   anything coloured inside the row (a household's emoji) stays readable on it. */
 :slotted(.menu-item--active) {
   background: var(--bg-hover);
 }

@@ -1,20 +1,20 @@
 import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
-  buildFamilyProductStats,
+  buildHouseholdProductStats,
   escapeIlikePattern,
-  matchFamilyStats,
+  matchHouseholdStats,
   normalizeSearchText,
   productKey,
   rankSuggestions,
-  type FamilyProductStat,
+  type HouseholdProductStat,
   type ProductSuggestion,
 } from './productSearch'
-import { topFamilyProducts } from './productRecents'
-import type { ShoppingItemRow } from './familyRealtime'
+import { topHouseholdProducts } from './productRecents'
+import type { ShoppingItemRow } from './householdRealtime'
 
 // Everything behind the add form's search box: what the catalog is asked, what
-// this family's history does to the order, and what the screen offers before
+// this household's history does to the order, and what the screen offers before
 // anything is typed.
 //
 // The catalog is the only SOURCE of suggestions; history only decides their
@@ -24,7 +24,7 @@ import type { ShoppingItemRow } from './familyRealtime'
 //
 // Extracted from HomeView, where it sat among six other concerns. It brings the
 // purchase-history fold with it, because the same numbers rank the suggestions
-// and answer "has this family ever shopped" for the empty list.
+// and answer "has this household ever shopped" for the empty list.
 
 export interface ProductSuggestions {
   suggestions: Ref<ProductSuggestion[]>
@@ -34,11 +34,11 @@ export interface ProductSuggestions {
   /** True while the phone's full-screen search is up, which earns more rows. */
   searchExpanded: Ref<boolean>
   canAddCustomProduct: Ref<boolean>
-  /** This family's purchase habits: the ranking signal, and the empty state's answer. */
-  familyProductStats: Ref<Map<string, FamilyProductStat>>
+  /** This household's purchase habits: the ranking signal, and the empty state's answer. */
+  householdProductStats: Ref<Map<string, HouseholdProductStat>>
   /** Whether the fold has run. An empty map means "none" only once it has. */
   productStatsLoaded: Ref<boolean>
-  loadFamilyProductStats: () => Promise<void>
+  loadHouseholdProductStats: () => Promise<void>
   /** The regulars, for the search screen before anything is typed. */
   recentProducts: Ref<ProductSuggestion[]>
   /** The same list, shorter, for the empty list's one-tap adds. */
@@ -63,7 +63,7 @@ const SUGGEST_LIMIT = 6
 // costs nothing but stops throwing ranked matches away.
 const SUGGEST_LIMIT_EXPANDED = 12
 // Wide enough that a common two-character prefix does not fill the pool with
-// globally-popular strangers before this family's own products get a look in.
+// globally-popular strangers before this household's own products get a look in.
 // The trigram index does the filtering either way, so the cost is the sort and
 // the payload, not the match.
 const SUGGEST_POOL = 100
@@ -72,19 +72,19 @@ const RESTART_LIMIT = 6
 
 export function useProductSuggestions(options: {
   db: SupabaseClient
-  familyId: Ref<string | null>
+  householdId: Ref<string | null>
   items: Ref<ShoppingItemRow[]>
   /** What is currently typed into the add form. */
   query: Ref<string>
   isOffline: () => boolean
 }): ProductSuggestions {
-  const { db, familyId, items, query, isOffline } = options
+  const { db, householdId, items, query, isOffline } = options
 
   const suggestions = ref<ProductSuggestion[]>([])
   const suggestionsLoading = ref(false)
   const selectedProduct = ref<ProductSuggestion | null>(null)
   const searchExpanded = ref(false)
-  const familyProductStats = ref<Map<string, FamilyProductStat>>(new Map())
+  const householdProductStats = ref<Map<string, HouseholdProductStat>>(new Map())
   const productStatsLoaded = ref(false)
   const lastAdded = ref<{ name: string; maker: string | null } | null>(null)
 
@@ -102,9 +102,9 @@ export function useProductSuggestions(options: {
   // What the search screen opens on before anything is typed, and what the empty
   // list offers as one-tap adds. Groceries are mostly repeats, so the most useful
   // thing either space can hold is the shortcut past typing altogether.
-  // familyProductStats is already loaded for ranking, so this costs no query.
+  // householdProductStats is already loaded for ranking, so this costs no query.
   const recentProducts = computed(() =>
-    topFamilyProducts(familyProductStats.value, {
+    topHouseholdProducts(householdProductStats.value, {
       limit: RECENT_LIMIT,
       // Already on the list is not something to add again.
       exclude: items.value.map((item) => productKey(item.name, item.maker as string | null)),
@@ -144,17 +144,17 @@ export function useProductSuggestions(options: {
         .from('product_catalog')
         .select('name, maker, popularity')
         .ilike('search_text', pattern)
-      // Scope to the global catalog plus THIS family's own contributions. RLS
-      // already blocks other families' rows, but a user in more than one family
+      // Scope to the global catalog plus THIS household's own contributions. RLS
+      // already blocks other households' rows, but a user in more than one household
       // would otherwise see (and, via recordProductAdd, bump) the products they
-      // contributed elsewhere while shopping here. familyId is a server-issued
+      // contributed elsewhere while shopping here. householdId is a server-issued
       // uuid, never typed input, so it is safe to interpolate into the filter.
-      pool = familyId.value
-        ? pool.or(`family_id.is.null,family_id.eq.${familyId.value}`)
-        : pool.is('family_id', null)
+      pool = householdId.value
+        ? pool.or(`household_id.is.null,household_id.eq.${householdId.value}`)
+        : pool.is('household_id', null)
       const { data, error } = await pool
         // Popularity decides which matches make the pool, then rankSuggestions
-        // reorders it around this family. Ordering here (rather than only
+        // reorders it around this household. Ordering here (rather than only
         // locally) is what keeps the pool cap from cutting off globally-popular
         // products.
         .order('popularity', { ascending: false })
@@ -166,17 +166,17 @@ export function useProductSuggestions(options: {
       // Late response: the input was cleared or a product picked meanwhile, so
       // these matches must not reopen the list.
       if (error || selectedProduct.value || query.value.trim().length < SUGGEST_MIN_CHARS) return
-      // The pool is capped and ordered globally, so a product this family buys
+      // The pool is capped and ordered globally, so a product this household buys
       // every week can be crowded out of it entirely by a catalog this large.
-      // familyProductStats is already loaded, so recovering those matches costs
+      // householdProductStats is already loaded, so recovering those matches costs
       // no network. Catalog rows go first: rankSuggestions dedupes first-wins,
       // so the catalog's spelling and popularity win wherever it did return the
       // product.
       const candidates = [
         ...((data ?? []) as ProductSuggestion[]),
-        ...matchFamilyStats(text, familyProductStats.value, { limit: suggestLimit.value }),
+        ...matchHouseholdStats(text, householdProductStats.value, { limit: suggestLimit.value }),
       ]
-      suggestions.value = rankSuggestions(candidates, familyProductStats.value, suggestLimit.value)
+      suggestions.value = rankSuggestions(candidates, householdProductStats.value, suggestLimit.value)
     } catch {
       // Suggestions are a convenience; a failed lookup changes nothing.
     } finally {
@@ -210,12 +210,12 @@ export function useProductSuggestions(options: {
     suggestTimer = setTimeout(() => void fetchSuggestions(text), SUGGEST_DEBOUNCE_MS)
   })
 
-  // Fold this family's recent purchases into the ranking signal. Best-effort: on
+  // Fold this household's recent purchases into the ranking signal. Best-effort: on
   // failure suggestions just fall back to the global catalog order. Retention
   // (005_purchase_history.sql) already caps history at 60 checkouts / 30 days, so this is a
   // small, naturally-recent window and can be fetched whole.
-  async function loadFamilyProductStats(): Promise<void> {
-    if (!familyId.value || isOffline()) {
+  async function loadHouseholdProductStats(): Promise<void> {
+    if (!householdId.value || isOffline()) {
       // Nothing is coming, so stop the empty list waiting on an answer it will
       // never get.
       productStatsLoaded.value = true
@@ -225,23 +225,23 @@ export function useProductSuggestions(options: {
       const { data, error } = await db
         .from('purchase_history')
         .select('name, maker, purchased_at')
-        .eq('family_id', familyId.value)
+        .eq('household_id', householdId.value)
       if (error) return
-      familyProductStats.value = buildFamilyProductStats(data ?? [])
+      householdProductStats.value = buildHouseholdProductStats(data ?? [])
     } catch {
       // No stats just means suggestions rank globally, which is the old behaviour.
     } finally {
-      // Every path resolves the question, including the failures above: a family
-      // whose history we could not read is not a family that never shopped, but
+      // Every path resolves the question, including the failures above: a household
+      // whose history we could not read is not a household that never shopped, but
       // it is one we cannot hold a blank screen for.
       productStatsLoaded.value = true
     }
   }
 
   // A catalog product just gets its popularity bumped. A custom one is
-  // contributed to the catalog scoped to this family — suggested back to them
+  // contributed to the catalog scoped to this household — suggested back to them
   // straight away, and promoted to a global suggestion only once enough other
-  // families have added the same product (006_product_catalog.sql), so one family's
+  // households have added the same product (006_product_catalog.sql), so one household's
   // spelling cannot leak into everyone else's dropdown.
   //
   // Best-effort either way: fire-and-forget, never blocks or errors the add, and
@@ -251,14 +251,14 @@ export function useProductSuggestions(options: {
     if (!product || isOffline()) return
     const call = product.custom
       ? db.rpc('add_custom_product', {
-          p_family_id: familyId.value,
+          p_household_id: householdId.value,
           p_name: product.name,
           p_maker: product.maker ?? null,
         })
       : db.rpc('bump_product_popularity', {
           p_name: product.name,
           p_maker: product.maker ?? null,
-          p_family_id: familyId.value,
+          p_household_id: householdId.value,
         })
     void call.then(
       () => {},
@@ -276,9 +276,9 @@ export function useProductSuggestions(options: {
     selectedProduct,
     searchExpanded,
     canAddCustomProduct,
-    familyProductStats,
+    householdProductStats,
     productStatsLoaded,
-    loadFamilyProductStats,
+    loadHouseholdProductStats,
     recentProducts,
     restartProducts,
     lastAdded,

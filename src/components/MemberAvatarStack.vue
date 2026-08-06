@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, type PropType } from 'vue'
 import SkeletonBlock from './SkeletonBlock.vue'
-import type { FamilyMemberProfile } from '../lib/familyRealtime'
+import type { HouseholdMemberProfile } from '../lib/householdRealtime'
 
 const props = defineProps({
-  members: { type: Array as PropType<FamilyMemberProfile[]>, default: () => [] },
+  members: { type: Array as PropType<HouseholdMemberProfile[]>, default: () => [] },
   maxVisible: { type: Number, default: 4 },
   loading: { type: Boolean, default: false },
 })
@@ -23,7 +23,14 @@ const extraMembers = computed(() => Math.max(0, props.members.length - visibleMe
 
 <template>
   <div v-if="loading" class="member-stack" aria-hidden="true">
-    <SkeletonBlock v-for="n in 3" :key="n" class="member-avatar" width="30px" height="30px" radius="var(--radius-pill)" />
+    <SkeletonBlock
+      v-for="n in 3"
+      :key="n"
+      class="member-avatar"
+      width="var(--member-avatar-size)"
+      height="var(--member-avatar-size)"
+      radius="var(--radius-pill)"
+    />
   </div>
   <div v-else-if="members.length" class="member-stack">
     <template v-for="(member, idx) in visibleMembers" :key="member.user_id || idx">
@@ -47,18 +54,24 @@ const extraMembers = computed(() => Math.max(0, props.members.length - visibleMe
 
 <style scoped>
 .member-stack {
+  /* Callers set this to size the whole stack; the overlap and the "+n" bubble
+     follow from it, so a stack never needs its parts adjusted one by one. */
+  --member-avatar-size: 30px;
+
   display: flex;
   align-items: center;
   flex-shrink: 0;
 }
 
 .member-avatar {
-  width: 30px;
-  height: 30px;
+  width: var(--member-avatar-size);
+  height: var(--member-avatar-size);
   border-radius: var(--radius-pill);
   object-fit: cover;
   border: var(--border-width-base) solid var(--bg-surface);
-  margin-left: -9px;
+  /* Just under a third of a circle, which is enough to read as a stack without
+     hiding the faces behind it. */
+  margin-left: calc(var(--member-avatar-size) * -0.3);
   background: var(--bg-hover);
 }
 

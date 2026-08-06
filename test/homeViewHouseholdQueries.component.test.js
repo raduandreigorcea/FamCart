@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 //
-// The family emoji arrived in 003_families_and_members.sql, but the client kept reading it
+// The household emoji arrived in 003_households_and_members.sql, but the client kept reading it
 // through two "the column might not be migrated yet" fallbacks: a second
-// `families` select per loadFamilyHeader(), and an UNFILTERED `families` select
-// per loadFamilies(). loadFamilyHeader runs on init, on focus, on reconnect, on
-// every realtime family/member event and on every 30s watchdog tick while the
+// `households` select per loadHouseholdHeader(), and an UNFILTERED `households` select
+// per loadHouseholds(). loadHouseholdHeader runs on init, on focus, on reconnect, on
+// every realtime household/member event and on every 30s watchdog tick while the
 // socket is down — so the spare round trip was paid over and over for a column
 // that has been there all along.
 //
@@ -22,8 +22,8 @@ const mocks = vi.hoisted(() => ({ db: null, userId: null, isLoaded: null }))
 
 vi.mock('../src/supabase', () => ({ useSupabase: () => mocks.db }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }))
-vi.mock('../src/lib/familyRealtime', () => ({
-  useFamilyRealtime: () => ({
+vi.mock('../src/lib/householdRealtime', () => ({
+  useHouseholdRealtime: () => ({
     realtimeHealthy: { value: false },
     setupRealtimeSubscriptions: async () => {},
     cleanupRealtimeSubscriptions: () => {},
@@ -42,17 +42,17 @@ vi.mock('@clerk/vue', async () => {
 
 const wrappers = []
 
-// One family, carrying an emoji, reachable only through the queries the view is
+// One household, carrying an emoji, reachable only through the queries the view is
 // allowed to make.
 function seedHandlers(db) {
   db.handlers['profiles.upsert'] = () => ({ data: null, error: null })
-  db.handlers['family_members.select'] = (q) =>
+  db.handlers['household_members.select'] = (q) =>
     q.filters.user_id
-      ? // loadFamilies: the membership list, with the family embedded.
-        { data: [{ family_id: 'fam-1', families: { name: 'Gorcea', emoji: '🏠' } }], error: null }
-      : // loadFamilyHeader: the roster for the active family.
+      ? // loadHouseholds: the membership list, with the household embedded.
+        { data: [{ household_id: 'fam-1', households: { name: 'Gorcea', emoji: '🏠' } }], error: null }
+      : // loadHouseholdHeader: the roster for the active household.
         { data: [{ user_id: 'user-1', role: 'moderator', profiles: { display_name: 'Radu' } }], error: null }
-  db.handlers['families.select'] = () => ({
+  db.handlers['households.select'] = () => ({
     data: {
       name: 'Gorcea',
       invite_code: 'ABCD2345',
@@ -66,7 +66,7 @@ function seedHandlers(db) {
   db.handlers['purchase_history.select'] = () => ({ data: [], error: null })
 }
 
-const familySelects = (db) => db.calls.filter((c) => c.table === 'families' && c.op === 'select')
+const householdSelects = (db) => db.calls.filter((c) => c.table === 'households' && c.op === 'select')
 
 beforeEach(() => {
   localStorage.clear()
@@ -90,23 +90,23 @@ async function bootHome() {
   return wrapper
 }
 
-describe('the family header and switcher queries', () => {
-  it('reads the active family exactly once, emoji included', async () => {
+describe('the household header and switcher queries', () => {
+  it('reads the active household exactly once, emoji included', async () => {
     const db = mocks.db
     await bootHome()
 
-    const selects = familySelects(db)
+    const selects = householdSelects(db)
     expect(selects).toHaveLength(1)
     expect(selects[0].columns).toContain('emoji')
   })
 
-  it('never selects families unfiltered', async () => {
+  it('never selects households unfiltered', async () => {
     const db = mocks.db
     await bootHome()
 
     // An unfiltered select leans entirely on RLS to scope the result; every
-    // read here names the family it wants.
-    for (const call of familySelects(db)) {
+    // read here names the household it wants.
+    for (const call of householdSelects(db)) {
       expect(call.filters.id).toBeTruthy()
     }
   })
@@ -116,16 +116,16 @@ describe('the family header and switcher queries', () => {
     await bootHome()
 
     const membership = db.calls.find(
-      (c) => c.table === 'family_members' && c.op === 'select' && c.filters.user_id,
+      (c) => c.table === 'household_members' && c.op === 'select' && c.filters.user_id,
     )
-    expect(membership.columns).toBe('family_id, families(name, emoji)')
+    expect(membership.columns).toBe('household_id, households(name, emoji)')
   })
 
   it('still surfaces the emoji to the topbar', async () => {
     const wrapper = await bootHome()
 
     const topbar = wrapper.findComponent(AppTopbar)
-    expect(topbar.props('familyEmoji')).toBe('🏠')
-    expect(topbar.props('families')[0].emoji).toBe('🏠')
+    expect(topbar.props('householdEmoji')).toBe('🏠')
+    expect(topbar.props('households')[0].emoji).toBe('🏠')
   })
 })

@@ -22,8 +22,8 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: (...args) => mocks.routerReplace(...args) }),
 }))
 
-vi.mock('../src/lib/familyRealtime', () => ({
-  useFamilyRealtime: () => ({
+vi.mock('../src/lib/householdRealtime', () => ({
+  useHouseholdRealtime: () => ({
     realtimeHealthy: { value: false },
     setupRealtimeSubscriptions: async () => {},
     cleanupRealtimeSubscriptions: () => {},
@@ -47,14 +47,14 @@ const mountedWrappers = []
 async function mountHome() {
   mocks.db = createFakeDb()
   mocks.routerReplace = vi.fn()
-  mocks.db.handlers['family_members.select'] = (q) =>
+  mocks.db.handlers['household_members.select'] = (q) =>
     q.filters.user_id
-      ? { data: [{ family_id: 'fam-1', families: { id: 'fam-1', name: 'Fam' } }], error: null }
+      ? { data: [{ household_id: 'fam-1', households: { id: 'fam-1', name: 'Fam' } }], error: null }
       : {
           data: [{ user_id: 'user-1', display_name: 'Test User', image_url: null, role: 'moderator' }],
           error: null,
         }
-  mocks.db.handlers['families.select'] = () => ({
+  mocks.db.handlers['households.select'] = () => ({
     data: { name: 'Fam', invite_code: 'ABCDEFGH', created_by: 'user-1', max_items_per_member: 50 },
     error: null,
   })
@@ -97,7 +97,7 @@ afterEach(() => {
 })
 
 describe('contributing a custom product to the catalog', () => {
-  it('contributes the product against the family that added it', async () => {
+  it('contributes the product against the household that added it', async () => {
     const wrapper = await mountHome()
 
     await addCustomProduct(wrapper, { name: 'Olive Oil 500ml', maker: 'Bertolli' })
@@ -105,7 +105,7 @@ describe('contributing a custom product to the catalog', () => {
     const calls = rpcCalls('add_custom_product')
     expect(calls).toHaveLength(1)
     expect(calls[0].params).toEqual({
-      p_family_id: 'fam-1',
+      p_household_id: 'fam-1',
       p_name: 'Olive Oil 500ml',
       p_maker: 'Bertolli',
     })

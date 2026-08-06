@@ -4,7 +4,7 @@
 -- Last, because every table named here has to exist first.
 --
 -- What is NOT here, precisely: no *owner-configurable* webhook. A settings screen
--- that let a family owner type any URL once lived alongside this publication and
+-- that let a household owner type any URL once lived alongside this publication and
 -- was removed as an SSRF and data-exfiltration surface. Nothing in this directory
 -- recreates it, so a replay cannot resurrect it.
 --
@@ -18,15 +18,15 @@
 -- function of ours; there it was whatever an owner typed.
 
 -- Realtime DELETE payloads carry only the primary key unless the table replicates
--- its full old row. The client's channels filter on family_id
--- (src/lib/familyRealtime.ts), and a filter cannot match a column the payload
+-- its full old row. The client's channels filter on household_id
+-- (src/lib/householdRealtime.ts), and a filter cannot match a column the payload
 -- does not include — so without this, deletes would either be missed entirely or
--- have to be broadcast to every family and discarded client-side.
+-- have to be broadcast to every household and discarded client-side.
 alter table public.shopping_list_items replica identity full;
-alter table public.family_members      replica identity full;
+alter table public.household_members      replica identity full;
 
 -- Add the three tables the dashboard subscribes to: list items, the roster, and
--- the family row itself (renames, emoji, item-limit changes).
+-- the household row itself (renames, emoji, item-limit changes).
 --
 -- Guarded per table rather than a bare `alter publication ... add table`, which
 -- errors if the table is already a member. purchase_history, product_catalog,
@@ -37,7 +37,7 @@ do $$
 declare
   t text;
 begin
-  foreach t in array array['shopping_list_items', 'family_members', 'families']
+  foreach t in array array['shopping_list_items', 'household_members', 'households']
   loop
     if not exists (
       select 1

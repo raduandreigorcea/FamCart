@@ -3,20 +3,20 @@
 -- the catalog grows.
 --
 -- Scope lives in one column:
---   family_id is null  - global. Seeded by scripts/seed-products.mjs with the
+--   household_id is null  - global. Seeded by scripts/seed-products.mjs with the
 --                        service role key, imported by catalog-importer, and
 --                        suggested to everyone.
---   family_id = <uuid> - contributed via add_custom_product(), suggested only
---                        back to that family until enough OTHER families add the
+--   household_id = <uuid> - contributed via add_custom_product(), suggested only
+--                        back to that household until enough OTHER households add the
 --                        same product, at which point it is promoted to global.
 --
 -- That promotion rule is what makes a user-writable catalog safe. A misspelling
--- one family types stays scoped to them forever; a product several families
+-- one household types stays scoped to them forever; a product several households
 -- independently ask for earns its way in on its own. No moderation queue, and no
--- way for one family's spelling to leak into everyone else's suggestions — the
+-- way for one household's spelling to leak into everyone else's suggestions — the
 -- threshold counts distinct contributing *accounts* (contributed_by), so
 -- crossing it takes three separate people who each added the product in their
--- own family. One account belonging to three families and typing the same junk
+-- own household. One account belonging to three households and typing the same junk
 -- into all three still counts as one and cannot self-promote.
 --
 -- Clients never write this table. RLS grants SELECT and nothing else; the two
@@ -38,8 +38,8 @@ create table if not exists public.product_catalog (
   -- so "apă" typed with or without accents finds "Apa Plata 2L Dorna". Derived by
   -- product_search_text() below — never supplied by a client.
   search_text text        not null,
-  -- Null for the global catalog; the contributing family otherwise.
-  family_id   uuid        references public.families(id) on delete cascade,
+  -- Null for the global catalog; the contributing household otherwise.
+  household_id   uuid        references public.households(id) on delete cascade,
   -- Who first contributed a scoped row; null for globals. Promotion counts
   -- distinct values of this, so it is the identity the anti-abuse gate measures.
   contributed_by text,
@@ -79,10 +79,10 @@ create table if not exists public.product_catalog (
   constraint product_catalog_source_version_length
     check (source_version is null or char_length(source_version) between 1 and 40),
   -- NULLS NOT DISTINCT so a maker-less product cannot be inserted twice within a
-  -- scope. family_id is part of the key so two families can each contribute their
+  -- scope. household_id is part of the key so two households can each contribute their
   -- own "Olive Oil". Also the conflict target the seed script upserts against.
-  constraint product_catalog_name_maker_family_unique
-    unique nulls not distinct (name, maker, family_id)
+  constraint product_catalog_name_maker_household_unique
+    unique nulls not distinct (name, maker, household_id)
 );
 
 alter table public.product_catalog enable row level security;
@@ -111,25 +111,25 @@ create index if not exists product_catalog_popularity
 
 -- The real key for contributed rows, and the arbiter add_custom_product() upserts
 -- against. Stricter than the unique constraint above: "Olive Oil" and "olive oil"
--- share a search_text, so this stops one family accumulating near-duplicate rows
+-- share a search_text, so this stops one household accumulating near-duplicate rows
 -- that would read as two identical suggestions.
-create unique index if not exists product_catalog_family_search
-  on public.product_catalog (family_id, search_text)
-  where family_id is not null;
+create unique index if not exists product_catalog_household_search
+  on public.product_catalog (household_id, search_text)
+  where household_id is not null;
 
 -- One global row per search key. Stops two seed rows — or a promotion landing
 -- beside an existing global — from creating two globals that normalize alike,
 -- which would both be bumped on every add and read as duplicates to everyone.
 create unique index if not exists product_catalog_global_search
   on public.product_catalog (search_text)
-  where family_id is null;
+  where household_id is null;
 
--- One global row per barcode. Partial on family_id because a contributed row
+-- One global row per barcode. Partial on household_id because a contributed row
 -- carries no barcode today, and a future "scan it onto the list" feature must not
 -- find itself blocked by a global that already claimed that code.
 create unique index if not exists product_catalog_global_barcode
   on public.product_catalog (barcode)
-  where family_id is null and barcode is not null;
+  where household_id is null and barcode is not null;
 
 -- "Has this upstream record already landed?" — scoped by source so two different
 -- upstream catalogs can share an identifier space without colliding.
@@ -140,18 +140,18 @@ create unique index if not exists product_catalog_source_ref_unique
 -- Deliberately no index on source alone: the one query that filters by it is a
 -- bulk delete of an entire import, which is a sequential scan either way.
 
--- Read-only for signed-in users, and contributed rows only for the family that
+-- Read-only for signed-in users, and contributed rows only for the household that
 -- owns them. There are no insert/update/delete policies at all. Scoping the reads
 -- here rather than in the client's query is what stops a hand-crafted request
--- from pulling another family's products.
+-- from pulling another household's products.
 drop policy if exists "authenticated users can read the product catalog" on public.product_catalog;
 create policy "authenticated users can read the product catalog"
   on public.product_catalog for select
   to authenticated
   using (
-    family_id is null
-    or family_id in (
-      select fm.family_id from public.family_members fm
+    household_id is null
+    or household_id in (
+      select fm.household_id from public.household_members fm
       where fm.user_id = requesting_user_id()
     )
   );
@@ -161,7 +161,7 @@ create policy "authenticated users can read the product catalog"
 -- DELETE and TRUNCATE granted to authenticated at provisioning, and only the
 -- absence of a write policy made the sentence true (TRUNCATE would not even have
 -- been stopped by a policy: it ignores RLS). See the long note at the end of
--- 003_families_and_members.sql.
+-- 003_households_and_members.sql.
 --
 -- service_role is revoked here and re-granted at the bottom of this file, where
 -- the seed script's and importer's write access is declared.
@@ -207,7 +207,7 @@ revoke all on function public.product_search_text(text, text) from public;
 -- member, overlong text): this is fire-and-forget from the client and must never
 -- surface an error on top of an add that already succeeded.
 create or replace function public.add_custom_product_unthrottled(
-  p_family_id uuid,
+  p_household_id uuid,
   p_name text,
   p_maker text default null
 )
@@ -222,8 +222,8 @@ declare
   -- account's spelling (or a two-account coincidence) cannot drag junk in.
   promote_at constant integer := 3;
 
-  -- Ceiling on distinct products one family may contribute, so a member cannot
-  -- bloat the catalog. Far above any real family's list; only repeat adds to
+  -- Ceiling on distinct products one household may contribute, so a member cannot
+  -- bloat the catalog. Far above any real household's list; only repeat adds to
   -- products already contributed are allowed past it.
   max_products constant integer := 500;
 
@@ -234,7 +234,7 @@ declare
   v_contributors integer;
   v_first  record;
 begin
-  if v_user is null or p_family_id is null then
+  if v_user is null or p_household_id is null then
     return;
   end if;
 
@@ -246,11 +246,11 @@ begin
     return;
   end if;
 
-  -- Contribute only to a family you are actually in. SECURITY DEFINER bypasses
+  -- Contribute only to a household you are actually in. SECURITY DEFINER bypasses
   -- RLS, so this is the whole tenancy check.
   if not exists (
-    select 1 from public.family_members fm
-    where fm.family_id = p_family_id and fm.user_id = v_user
+    select 1 from public.household_members fm
+    where fm.household_id = p_household_id and fm.user_id = v_user
   ) then
     return;
   end if;
@@ -261,9 +261,9 @@ begin
   end if;
 
   -- Serialize every contribution and promotion for this product key. Without it a
-  -- promotion's delete can race a concurrent contribution from another family: the
+  -- promotion's delete can race a concurrent contribution from another household: the
   -- contribution re-inserts a scoped row just after the delete removed it, leaving
-  -- that family looking at both the new global row and an orphaned scoped one.
+  -- that household looking at both the new global row and an orphaned scoped one.
   -- Transaction-scoped, so it releases on commit or rollback.
   perform pg_advisory_xact_lock(hashtext(v_search));
 
@@ -272,41 +272,41 @@ begin
   -- means a differently-accented spelling still finds it.
   if exists (
     select 1 from public.product_catalog
-    where family_id is null and search_text = v_search
+    where household_id is null and search_text = v_search
   ) then
     update public.product_catalog
     set add_count = add_count + 1
-    where family_id is null and search_text = v_search;
+    where household_id is null and search_text = v_search;
     return;
   end if;
 
-  -- Refuse a brand-new product once the family is at its ceiling; a repeat add to
+  -- Refuse a brand-new product once the household is at its ceiling; a repeat add to
   -- a product they already contributed still goes through (it is not a new row).
   if not exists (
     select 1 from public.product_catalog
-    where family_id = p_family_id and search_text = v_search
+    where household_id = p_household_id and search_text = v_search
   ) and (
-    select count(*) from public.product_catalog where family_id = p_family_id
+    select count(*) from public.product_catalog where household_id = p_household_id
   ) >= max_products then
     return;
   end if;
 
-  -- Contribute, or count a repeat add if this family already contributed it.
+  -- Contribute, or count a repeat add if this household already contributed it.
   -- contributed_by records who first added it and is left untouched on the repeat
   -- (do update only bumps add_count). base_weight stays 0: that column belongs to
   -- the seed script, so earned usage has to live in add_count or the next
   -- re-seed would wipe it.
   insert into public.product_catalog as pc
-    (name, maker, search_text, family_id, contributed_by, base_weight, add_count, source)
-  values (v_name, v_maker, v_search, p_family_id, v_user, 0, 1, 'community')
-  on conflict (family_id, search_text) where family_id is not null
+    (name, maker, search_text, household_id, contributed_by, base_weight, add_count, source)
+  values (v_name, v_maker, v_search, p_household_id, v_user, 0, 1, 'community')
+  on conflict (household_id, search_text) where household_id is not null
   do update set add_count = pc.add_count + 1;
 
-  -- Count distinct contributing *accounts*, not families or owners. This is the
+  -- Count distinct contributing *accounts*, not households or owners. This is the
   -- gate that actually resists abuse — see the header.
   select count(distinct pc.contributed_by) into v_contributors
   from public.product_catalog pc
-  where pc.family_id is not null and pc.search_text = v_search;
+  where pc.household_id is not null and pc.search_text = v_search;
 
   if v_contributors < promote_at then
     return;
@@ -316,13 +316,13 @@ begin
   -- search_text, so they differ only in case, accents, or spacing anyway.
   select name, maker into v_first
   from public.product_catalog
-  where family_id is not null and search_text = v_search
+  where household_id is not null and search_text = v_search
   order by created_at, id
   limit 1;
 
   -- Collapse the scoped rows into one global in a single statement, carrying
   -- their add_counts so the product arrives ranked by the usage it earned rather
-  -- than at zero. Leaving the scoped rows would show their families the same
+  -- than at zero. Leaving the scoped rows would show their households the same
   -- product twice.
   --
   -- ON CONFLICT folds the carried count into an existing global instead of
@@ -331,21 +331,21 @@ begin
   -- check above and this insert; without the DO UPDATE the delete would still
   -- fire and the earned counts would just vanish.
   --
-  -- Each family's share is capped at promote_at, for calibration as much as for
+  -- Each household's share is capped at promote_at, for calibration as much as for
   -- abuse: seeded base_weight is 10 for an ordinary product and 100 for a staple,
-  -- so an uncapped sum would let one family re-adding a niche product outrank
+  -- so an uncapped sum would let one household re-adding a niche product outrank
   -- bottled water for everyone.
   with scoped as (
     delete from public.product_catalog
-    where family_id is not null and search_text = v_search
+    where household_id is not null and search_text = v_search
     returning add_count
   )
   insert into public.product_catalog
-    (name, maker, search_text, family_id, base_weight, add_count, source)
+    (name, maker, search_text, household_id, base_weight, add_count, source)
   select v_first.name, v_first.maker, v_search, null::uuid, 0,
          coalesce(sum(least(add_count, promote_at)), 0)::integer, 'community'
   from scoped
-  on conflict (search_text) where family_id is null
+  on conflict (search_text) where household_id is null
   do update set add_count = public.product_catalog.add_count + excluded.add_count;
 end;
 $$;
@@ -367,7 +367,7 @@ revoke all on function public.add_custom_product_unthrottled(uuid, text, text) f
 
 -- The public entry point: 120 contributions per hour, then silence.
 create or replace function public.add_custom_product(
-  p_family_id uuid,
+  p_household_id uuid,
   p_name text,
   p_maker text default null
 )
@@ -380,7 +380,7 @@ begin
   if public.rate_limit_hit('catalog_contribute', 120, interval '1 hour') then
     return;
   end if;
-  perform public.add_custom_product_unthrottled(p_family_id, p_name, p_maker);
+  perform public.add_custom_product_unthrottled(p_household_id, p_name, p_maker);
 end;
 $$;
 
@@ -393,11 +393,11 @@ grant execute on function public.add_custom_product(uuid, text, text) to authent
 -- maker — so a null and an empty maker are treated alike. An unknown product is
 -- a silent no-op.
 --
--- The scope matters now that a name+maker can exist in more than one family. The
--- add happened in exactly one family (p_family_id), so bump only that family's
+-- The scope matters now that a name+maker can exist in more than one household. The
+-- add happened in exactly one household (p_household_id), so bump only that household's
 -- row and any global it matches — never the same product the caller happens to
--- have contributed in a *different* family they belong to, which would inflate
--- that family's count toward a promotion the add never earned.
+-- have contributed in a *different* household they belong to, which would inflate
+-- that household's count toward a promotion the add never earned.
 --
 -- 240 bumps per hour. A person adding groceries fires one per item; a busy shop
 -- is a few dozen. A script inflating a global ranking needs thousands, and the
@@ -405,7 +405,7 @@ grant execute on function public.add_custom_product(uuid, text, text) to authent
 create or replace function public.bump_product_popularity(
   p_name text,
   p_maker text default null,
-  p_family_id uuid default null
+  p_household_id uuid default null
 )
 returns void
 language plpgsql
@@ -424,12 +424,12 @@ begin
   where lower(btrim(pc.name)) = lower(btrim(p_name))
     and lower(btrim(coalesce(pc.maker, ''))) = lower(btrim(coalesce(p_maker, '')))
     and (
-      pc.family_id is null
+      pc.household_id is null
       or (
-        pc.family_id = p_family_id
+        pc.household_id = p_household_id
         and exists (
-          select 1 from public.family_members fm
-          where fm.family_id = p_family_id and fm.user_id = v_user
+          select 1 from public.household_members fm
+          where fm.household_id = p_household_id and fm.user_id = v_user
         )
       )
     );
@@ -446,7 +446,7 @@ grant execute on function public.bump_product_popularity(text, text, uuid) to au
 --
 -- PostgREST can only infer ON CONFLICT against a *total* unique constraint. Of
 -- the three keys that govern a global row, only
--- product_catalog_name_maker_family_unique qualifies —
+-- product_catalog_name_maker_household_unique qualifies —
 -- product_catalog_global_search and product_catalog_global_barcode are both
 -- partial indexes, and `.upsert({ onConflict: 'barcode' })` against either fails
 -- at runtime with "there is no unique or exclusion constraint matching the ON
@@ -486,7 +486,7 @@ set search_path = public, extensions
 as $$
 declare
   -- Same cap add_custom_product_unthrottled() uses when it folds scoped counts
-  -- into a global, for the same reason: one enthusiastic family must not outrank
+  -- into a global, for the same reason: one enthusiastic household must not outrank
   -- the editorial baseline on its own.
   promote_at constant integer := 3;
 
@@ -576,7 +576,7 @@ begin
   delete from catalog_import_staging s
   using public.product_catalog pc
   where s.barcode is not null
-    and pc.family_id is null
+    and pc.household_id is null
     and pc.barcode = s.barcode
     and pc.search_text <> s.search_text;
   get diagnostics v_skipped_barcode = row_count;
@@ -600,15 +600,15 @@ begin
     into v_inserted, v_updated_imported, v_updated_provenance
     from catalog_import_staging s
     left join public.product_catalog g
-      on g.family_id is null and g.search_text = s.search_text;
+      on g.household_id is null and g.search_text = s.search_text;
 
     select count(*) into v_collapsed_scoped
     from public.product_catalog pc
     join catalog_import_staging s on s.search_text = pc.search_text
-    where pc.family_id is not null
+    where pc.household_id is not null
       and not exists (
         select 1 from public.product_catalog g
-        where g.family_id is null and g.search_text = s.search_text
+        where g.household_id is null and g.search_text = s.search_text
       );
   else
     -- Rows this import already owns: fully refreshed, because a better normalizer
@@ -623,7 +623,7 @@ begin
         source_ref     = coalesce(s.source_ref, pc.source_ref),
         source_version = coalesce(p_source_version, pc.source_version)
     from catalog_import_staging s
-    where pc.family_id is null
+    where pc.household_id is null
       and pc.source = p_source
       and pc.search_text = s.search_text;
     get diagnostics v_updated_imported = row_count;
@@ -636,7 +636,7 @@ begin
     set barcode    = coalesce(pc.barcode, s.barcode),
         source_ref = coalesce(pc.source_ref, s.source_ref)
     from catalog_import_staging s
-    where pc.family_id is null
+    where pc.household_id is null
       and pc.source <> p_source
       and pc.search_text = s.search_text
       and (pc.barcode is null or pc.source_ref is null)
@@ -647,30 +647,30 @@ begin
 
     with ins as (
       insert into public.product_catalog
-        (name, maker, search_text, family_id, base_weight, barcode, source, source_ref, source_version)
+        (name, maker, search_text, household_id, base_weight, barcode, source, source_ref, source_version)
       select s.name, s.maker, s.search_text, null::uuid, s.base_weight, s.barcode,
              p_source, s.source_ref, p_source_version
       from catalog_import_staging s
       where not exists (
         select 1 from public.product_catalog pc
-        where pc.family_id is null and pc.search_text = s.search_text
+        where pc.household_id is null and pc.search_text = s.search_text
       )
-      on conflict (search_text) where family_id is null do nothing
+      on conflict (search_text) where household_id is null do nothing
       returning search_text
     )
     insert into catalog_import_inserted (search_text)
     select search_text from ins;
     get diagnostics v_inserted = row_count;
 
-    -- A family may have contributed this product before it was imported. Their
+    -- A household may have contributed this product before it was imported. Their
     -- scoped row and the new global read as the same product twice, forever, so
     -- collapse them the way a promotion would — and carry the counts they earned,
-    -- capped per family. This is the sole exception to "add_count is never
+    -- capped per household. This is the sole exception to "add_count is never
     -- written", and it only ever adds counts that already existed.
     with scoped as (
       delete from public.product_catalog pc
       using catalog_import_inserted i
-      where pc.family_id is not null
+      where pc.household_id is not null
         and pc.search_text = i.search_text
       returning pc.search_text, pc.add_count
     ),
@@ -685,7 +685,7 @@ begin
       update public.product_catalog pc
       set add_count = pc.add_count + f.carried
       from folded f
-      where pc.family_id is null and pc.search_text = f.search_text
+      where pc.household_id is null and pc.search_text = f.search_text
       returning f.scoped_rows
     )
     select coalesce(sum(scoped_rows), 0)::integer into v_collapsed_scoped from applied;

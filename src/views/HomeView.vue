@@ -11,21 +11,21 @@ import NotificationPromptModal from '../components/NotificationPromptModal.vue'
 import ShoppingList from '../components/ShoppingList.vue'
 import AddItemForm from '../components/AddItemForm.vue'
 import OnboardingTour from '../components/OnboardingTour.vue'
-import { useFamilyRealtime } from '../lib/familyRealtime'
+import { useHouseholdRealtime } from '../lib/householdRealtime'
 import { useProductSuggestions } from '../lib/productSuggestions'
 import type { ProductSuggestion } from '../lib/productSearch'
-import type { FamilyMemberProfile, ShoppingItemRow } from '../lib/familyRealtime'
+import type { HouseholdMemberProfile, ShoppingItemRow } from '../lib/householdRealtime'
 import { useShoppingListActions } from '../lib/shoppingListActions'
 import { upsertOwnProfile } from '../lib/profile'
 import { cleanAuthCallbackUrl } from '../lib/authCallbackUrl'
 import {
-  loadFamilySnapshot,
-  saveFamilySnapshot,
-  clearFamilySnapshot,
-  loadActiveFamilyId,
-  saveActiveFamilyId,
-  clearActiveFamilyId,
-} from '../lib/familyCache'
+  loadHouseholdSnapshot,
+  saveHouseholdSnapshot,
+  clearHouseholdSnapshot,
+  loadActiveHouseholdId,
+  saveActiveHouseholdId,
+  clearActiveHouseholdId,
+} from '../lib/householdCache'
 import { flushOfflineQueue, isOfflineError } from '../lib/offlineQueue'
 // isCurrentlyOffline is the app's one answer to "are we offline", handed to
 // every composable below that has to choose between writing and queueing. The
@@ -50,8 +50,8 @@ const db = useSupabase()
 // finds nothing rather than forcing a null check at each call site.
 const effectiveUserId = computed(() => userId.value || getRememberedUser(localStorage) || '')
 
-// The switcher's rows: every family the user belongs to.
-interface FamilyRow { id: string; name: string; emoji?: string | null }
+// Every household the user belongs to; the account dialog lists them to switch.
+interface HouseholdRow { id: string; name: string; emoji?: string | null }
 
 // PostgREST types an embedded to-one relation as an array, but these selects
 // each return a single joined row; the casts at the two call sites say so once.
@@ -61,8 +61,8 @@ interface MemberRow {
   profiles?: { display_name?: string | null; image_url?: string | null } | null
 }
 interface MembershipRow {
-  family_id: string
-  families?: { name?: string | null; emoji?: string | null } | null
+  household_id: string
+  households?: { name?: string | null; emoji?: string | null } | null
 }
 
 const items = ref<ShoppingItemRow[]>([])
@@ -73,36 +73,36 @@ const items = ref<ShoppingItemRow[]>([])
 // Deliberately not persisted. Opening the app to a filtered list, with no memory
 // of having set one, is how items get declared missing.
 const listFilter = ref<'all' | 'active' | 'checked'>('all')
-// Every family the user belongs to ({ id, name }), for the topbar switcher.
-// familyId below is whichever one is currently active.
-const families = ref<FamilyRow[]>([])
-const familyId = ref<string | null>(null)
-const familyName = ref('')
-const familyInviteCode = ref('')
-const familyOwnerId = ref('')
-const familyItemLimit = ref(ITEM_LIMIT_DEFAULT)
-const familyEmoji = ref('')
-const familyMembers = ref<FamilyMemberProfile[]>([])
+// Every household the user belongs to ({ id, name }), listed in the account
+// dialog. householdId below is whichever one is currently active.
+const households = ref<HouseholdRow[]>([])
+const householdId = ref<string | null>(null)
+const householdName = ref('')
+const householdInviteCode = ref('')
+const householdOwnerId = ref('')
+const householdItemLimit = ref(ITEM_LIMIT_DEFAULT)
+const householdEmoji = ref('')
+const householdMembers = ref<HouseholdMemberProfile[]>([])
 // Roster keyed by user id, so a list row can resolve its author's live avatar
 // from added_by (the row no longer carries a copied name/photo).
 const memberProfileMap = computed(
-  () => new Map(familyMembers.value.map((m) => [m.user_id, m])),
+  () => new Map(householdMembers.value.map((m) => [m.user_id, m])),
 )
 const newItem = ref('')
 const newQty = ref(1)
-// Everything behind the search box: the catalog query, this family's purchase
+// Everything behind the search box: the catalog query, this household's purchase
 // habits (which rank it), and the regulars offered before anything is typed.
-// familyProductStats comes back out because the empty state reads it too — the
-// same numbers answer "what does this family buy" and "have they ever shopped".
+// householdProductStats comes back out because the empty state reads it too — the
+// same numbers answer "what does this household buy" and "have they ever shopped".
 const {
   suggestions,
   suggestionsLoading,
   selectedProduct,
   searchExpanded,
   canAddCustomProduct,
-  familyProductStats,
+  householdProductStats,
   productStatsLoaded,
-  loadFamilyProductStats,
+  loadHouseholdProductStats,
   recentProducts,
   restartProducts,
   lastAdded,
@@ -110,20 +110,20 @@ const {
   clearLastAdded,
   recordProductAdd,
   clearSuggestions,
-} = useProductSuggestions({ db, familyId, items, query: newItem, isOffline: isCurrentlyOffline })
-// A checkout that just succeeded is proof this family has shopped, available
+} = useProductSuggestions({ db, householdId, items, query: newItem, isOffline: isCurrentlyOffline })
+// A checkout that just succeeded is proof this household has shopped, available
 // immediately rather than after the stats refetch lands.
 const boughtThisSession = ref(false)
-// Which family the cached snapshot said had shopped, or '' for none. Offline
+// Which household the cached snapshot said had shopped, or '' for none. Offline
 // this is the only answer there is, since purchase history cannot be fetched.
 //
-// The family id rather than a bare boolean, because the snapshot is keyed to the
-// USER: after creating or joining a family, that family is active immediately
+// The household id rather than a bare boolean, because the snapshot is keyed to the
+// USER: after creating or joining a household, that household is active immediately
 // while the painted snapshot still describes the previous one. A boolean carried
-// the old family's answer straight onto the new family's empty list, which then
+// the old household's answer straight onto the new household's empty list, which then
 // opened on "All bought" having bought nothing. Storing what the answer is ABOUT
 // makes it self-invalidating — no path can forget to clear it.
-const cachedShoppedFamilyId = ref('')
+const cachedShoppedHouseholdId = ref('')
 const loadError = ref('')
 const customProductOpen = ref(false)
 // The one-time first-run sequence: gesture tour, then the notifications ask.
@@ -138,10 +138,10 @@ const {
   declineNotifications,
 } = useFirstRunGreeting({ userId, isOffline: isCurrentlyOffline })
 const hasInitialized = ref(false)
-// True while switchFamily is tearing down the old family and loading the new one.
+// True while switchHousehold is tearing down the old household and loading the new one.
 // Drives the skeleton (instead of the "no items" empty state) so a switch never
-// flashes the new family as empty.
-const switchingFamily = ref(false)
+// flashes the new household as empty.
+const switchingHousehold = ref(false)
 
 // Every write the list can make, with the optimistic bookkeeping around them.
 // It owns the in-flight write set and the offline-queue flush, because both
@@ -160,9 +160,9 @@ const {
 } = useShoppingListActions({
   db,
   items,
-  familyId,
+  householdId,
   userId: effectiveUserId,
-  itemLimit: familyItemLimit,
+  itemLimit: householdItemLimit,
   isOffline: isCurrentlyOffline,
   draftName: newItem,
   draftQuantity: newQty,
@@ -176,22 +176,22 @@ const {
     boughtThisSession.value = true
     // The checkout just became history, which is the ranking signal — fold it in
     // so what was bought ranks higher on the very next keystroke.
-    void loadFamilyProductStats()
+    void loadHouseholdProductStats()
   },
 })
 
 // Realtime sync (channels, reconnects, watchdog) lives in the composable; it
 // registers its own lifecycle listeners and calls back into the loaders below.
-const { setupRealtimeSubscriptions, cleanupRealtimeSubscriptions } = useFamilyRealtime({
+const { setupRealtimeSubscriptions, cleanupRealtimeSubscriptions } = useHouseholdRealtime({
   db,
-  familyId,
+  householdId,
   hasInitialized,
   items,
-  familyMembers,
+  householdMembers,
   loadItems,
-  loadFamilyHeader,
+  loadHouseholdHeader,
   refreshMembershipOrRedirect,
-  onFamilyDeleted: () => void reconcileActiveFamily(),
+  onHouseholdDeleted: () => void reconcileActiveHousehold(),
   // A realtime UPDATE must not clobber a row whose own write is still in flight
   // (its authoritative echo is still coming) — same guard as loadItems.
   hasPendingWrite: (id) => pendingItemWrites.has(id),
@@ -206,17 +206,17 @@ const paintedFromCache = ref(false)
 const initialLoading = computed(
   () => !hasInitialized.value && !paintedFromCache.value && !items.value.length && !loadError.value,
 )
-// The skeleton shows on the first-ever load and while switching families.
-const listLoading = computed(() => initialLoading.value || switchingFamily.value)
+// The skeleton shows on the first-ever load and while switching households.
+const listLoading = computed(() => initialLoading.value || switchingHousehold.value)
 
-// Has this family ever bought anything? Purchase history is the record, but a
+// Has this household ever bought anything? Purchase history is the record, but a
 // checkout in this session counts before the refetch confirms it.
 const hasShopped = computed(
   () =>
-    familyProductStats.value.size > 0
+    householdProductStats.value.size > 0
     || boughtThisSession.value
-    // Only while the cached answer is about the family currently on screen.
-    || (!!familyId.value && cachedShoppedFamilyId.value === familyId.value),
+    // Only while the cached answer is about the household currently on screen.
+    || (!!householdId.value && cachedShoppedHouseholdId.value === householdId.value),
 )
 
 // The three error channels are independent, so more than one can be set at once
@@ -240,7 +240,7 @@ const activeError = computed(() => {
     },
   }
 })
-// The empty list has two opposite readings — "All bought" for a family that
+// The empty list has two opposite readings — "All bought" for a household that
 // shops, "Nothing here yet" for one starting out — and picking the wrong one and
 // correcting it a moment later is worse than waiting. Hold the empty state until
 // the answer is actually known. There are no rows to delay in the meantime;
@@ -299,7 +299,7 @@ function addCustomProduct(product: ProductSuggestion) {
 let syncInFlight = false
 let syncAgain = false
 async function handleBackOnline() {
-  if (!hasInitialized.value || !effectiveUserId.value || !familyId.value) return
+  if (!hasInitialized.value || !effectiveUserId.value || !householdId.value) return
   if (syncInFlight) { syncAgain = true; return }
   syncInFlight = true
   try {
@@ -307,7 +307,7 @@ async function handleBackOnline() {
       syncAgain = false
       const { failed } = await ensureQueueFlushed()
       if (failed) loadError.value = 'Some changes made offline could not be synced.'
-      await loadFamilyHeader()
+      await loadHouseholdHeader()
       await loadItems()
       await setupRealtimeSubscriptions()
     } while (syncAgain)
@@ -330,7 +330,7 @@ watch([isLoaded, userId], () => {
 // cannot keep a second run out while the first is still awaiting. Both entry
 // points (onMounted and the Clerk watcher) can fire inside that window — a
 // session resolving in another tab is enough — and two overlapping runs mean
-// duplicate loadFamilies/loadItems calls and two sets of realtime channels.
+// duplicate loadHouseholds/loadItems calls and two sets of realtime channels.
 let initializing = false
 
 async function initializeHome() {
@@ -353,7 +353,7 @@ async function runInitializeHome() {
   // resolves.
   if (!isLoaded.value || !userId.value) {
     const uid = effectiveUserId.value
-    if (uid && loadFamilySnapshot(localStorage, uid)) {
+    if (uid && loadHouseholdSnapshot(localStorage, uid)) {
       sanitizeAuthCallbackUrl()
       hydrateFromCachedSnapshot()
       if (isCurrentlyOffline()) hasInitialized.value = true
@@ -368,7 +368,7 @@ async function runInitializeHome() {
   // Confirmed signed in: remember this user so a later offline open can boot.
   rememberUser(localStorage, userId.value)
   // Keep our profile row (name + Clerk avatar) current, so a changed photo shows
-  // up across every family. Best-effort and non-blocking: boot must not wait on
+  // up across every household. Best-effort and non-blocking: boot must not wait on
   // it, and the next load reconciles if it fails.
   void upsertOwnProfile(db, userId.value, user.value)
   // Re-bind this device to the account in OneSignal. Signing out detaches it and
@@ -379,47 +379,47 @@ async function runInitializeHome() {
   sanitizeAuthCallbackUrl()
   hydrateFromCachedSnapshot()
 
-  // Fetch every family the user belongs to (the switcher lists them), only once
-  // Clerk has finished loading.
-  const { error: mErr } = await loadFamilies()
+  // Fetch every household the user belongs to (the account dialog lists them),
+  // only once Clerk has finished loading.
+  const { error: mErr } = await loadHouseholds()
 
   if (mErr) {
     // Offline with a cached snapshot already painted: run from local state and
     // let the reconnect handler flush queued writes and reconcile. Realtime is
     // still set up so its reconnect logic takes over once connectivity returns.
     // isOfflineError also catches the WebView case where navigator.onLine lies.
-    if (isOfflineError(mErr) && familyId.value) {
+    if (isOfflineError(mErr) && householdId.value) {
       await setupRealtimeSubscriptions()
       hasInitialized.value = true
       return
     }
     loadError.value = isOfflineError(mErr)
       ? 'You appear to be offline. Check your connection and try again.'
-      : 'Could not load your family.'
+      : 'Could not load your household.'
     return
   }
 
-  if (!families.value.length) {
-    clearFamilySnapshot(localStorage)
-    clearActiveFamilyId(localStorage)
-    router.replace('/family-setup')
+  if (!households.value.length) {
+    clearHouseholdSnapshot(localStorage)
+    clearActiveHouseholdId(localStorage)
+    router.replace('/household-setup')
     return
   }
 
-  // Restore the last active family if it is still one we belong to, else default
+  // Restore the last active household if it is still one we belong to, else default
   // to the first; persist the choice so it survives reloads.
-  const storedActiveId = loadActiveFamilyId(localStorage, userId.value)
-  const activeFamily = families.value.find((f) => f.id === storedActiveId) || families.value[0]
-  familyId.value = activeFamily.id
-  saveActiveFamilyId(localStorage, effectiveUserId.value, activeFamily.id)
+  const storedActiveId = loadActiveHouseholdId(localStorage, userId.value)
+  const activeHousehold = households.value.find((f) => f.id === storedActiveId) || households.value[0]
+  householdId.value = activeHousehold.id
+  saveActiveHouseholdId(localStorage, effectiveUserId.value, activeHousehold.id)
   // Writes queued during a previous offline session land before the first
   // fetch, so the list below already reflects them. No-op when the queue is empty.
   await flushOfflineQueue(localStorage, effectiveUserId.value, db)
-  await loadFamilyHeader()
+  await loadHouseholdHeader()
   await loadItems()
   // Not awaited: the list should paint without waiting on a ranking signal.
   // Until it lands, suggestions simply rank by the global catalog order.
-  void loadFamilyProductStats()
+  void loadHouseholdProductStats()
   await setupRealtimeSubscriptions()
   hasInitialized.value = true
   persistSnapshot()
@@ -437,44 +437,44 @@ let hydratedUserId = ''
 // Throw away a cache painted for a different user than the one Clerk confirmed.
 // Clears exactly what hydrateFromCachedSnapshot below sets — the two have to
 // stay a matched pair, or a field the paint wrote survives into the next
-// account. familyItemLimit and the cached shopping answer were the two that did:
-// the previous user's item cap governed the add form until loadFamilyHeader
+// account. householdItemLimit and the cached shopping answer were the two that did:
+// the previous user's item cap governed the add form until loadHouseholdHeader
 // returned, and their shopping history decided whether a new user's empty list
 // read "All bought" or "Nothing here yet".
 function discardCachedPaint() {
   hydratedUserId = ''
   paintedFromCache.value = false
   items.value = []
-  familyMembers.value = []
-  familyId.value = ''
-  familyName.value = ''
-  familyInviteCode.value = ''
-  familyOwnerId.value = ''
-  familyItemLimit.value = ITEM_LIMIT_DEFAULT
-  familyEmoji.value = ''
-  cachedShoppedFamilyId.value = ''
+  householdMembers.value = []
+  householdId.value = ''
+  householdName.value = ''
+  householdInviteCode.value = ''
+  householdOwnerId.value = ''
+  householdItemLimit.value = ITEM_LIMIT_DEFAULT
+  householdEmoji.value = ''
+  cachedShoppedHouseholdId.value = ''
 }
 
 // Paint the last known state immediately (stale-while-revalidate): a returning
 // user sees their list instead of skeletons while the fresh fetches above run.
 function hydrateFromCachedSnapshot() {
   if (items.value.length) return
-  const snapshot = loadFamilySnapshot(localStorage, effectiveUserId.value)
+  const snapshot = loadHouseholdSnapshot(localStorage, effectiveUserId.value)
   if (!snapshot) return
   hydratedUserId = effectiveUserId.value
   paintedFromCache.value = true
-  familyId.value = snapshot.familyId
-  familyName.value = snapshot.familyName
-  familyInviteCode.value = snapshot.familyInviteCode
-  familyOwnerId.value = snapshot.familyOwnerId
-  familyItemLimit.value = snapshot.familyItemLimit
-  familyEmoji.value = snapshot.familyEmoji || ''
-  familyMembers.value = snapshot.familyMembers
+  householdId.value = snapshot.householdId
+  householdName.value = snapshot.householdName
+  householdInviteCode.value = snapshot.householdInviteCode
+  householdOwnerId.value = snapshot.householdOwnerId
+  householdItemLimit.value = snapshot.householdItemLimit
+  householdEmoji.value = snapshot.householdEmoji || ''
+  householdMembers.value = snapshot.householdMembers
   items.value = snapshot.items
   // Offline there is no purchase history to read, so the cached answer is the
-  // only one available. Without it an empty list tells a family that shops every
+  // only one available. Without it an empty list tells a household that shops every
   // week they have never started.
-  cachedShoppedFamilyId.value = snapshot.hasShopped ? snapshot.familyId : ''
+  cachedShoppedHouseholdId.value = snapshot.hasShopped ? snapshot.householdId : ''
 }
 
 // Writing the snapshot means JSON-stringifying the whole list and handing it to
@@ -507,15 +507,15 @@ function flushSnapshotIfHidden() {
 }
 
 function persistSnapshot() {
-  if (!hasInitialized.value || !effectiveUserId.value || !familyId.value) return
-  saveFamilySnapshot(localStorage, effectiveUserId.value, {
-    familyId: familyId.value,
-    familyName: familyName.value,
-    familyInviteCode: familyInviteCode.value,
-    familyOwnerId: familyOwnerId.value,
-    familyItemLimit: familyItemLimit.value,
-    familyEmoji: familyEmoji.value,
-    familyMembers: familyMembers.value,
+  if (!hasInitialized.value || !effectiveUserId.value || !householdId.value) return
+  saveHouseholdSnapshot(localStorage, effectiveUserId.value, {
+    householdId: householdId.value,
+    householdName: householdName.value,
+    householdInviteCode: householdInviteCode.value,
+    householdOwnerId: householdOwnerId.value,
+    householdItemLimit: householdItemLimit.value,
+    householdEmoji: householdEmoji.value,
+    householdMembers: householdMembers.value,
     items: items.value,
     hasShopped: hasShopped.value,
   })
@@ -525,7 +525,7 @@ function persistSnapshot() {
 // Guarded by hasInitialized inside persistSnapshot, so hydration itself and
 // partial init states are never written back.
 watch(
-  [items, familyMembers, familyName, familyInviteCode, familyItemLimit, familyEmoji],
+  [items, householdMembers, householdName, householdInviteCode, householdItemLimit, householdEmoji],
   schedulePersistSnapshot,
   { deep: true },
 )
@@ -535,24 +535,24 @@ function sanitizeAuthCallbackUrl() {
   if (cleanedUrl) window.history.replaceState({}, '', cleanedUrl)
 }
 
-async function loadFamilyHeader() {
-  const [{ data: family, error: familyErr }, { data: members, error: membersErr }] = await Promise.all([
-    db.from('families').select('name, invite_code, created_by, max_items_per_member, emoji').eq('id', familyId.value).single(),
+async function loadHouseholdHeader() {
+  const [{ data: household, error: householdErr }, { data: members, error: membersErr }] = await Promise.all([
+    db.from('households').select('name, invite_code, created_by, max_items_per_member, emoji').eq('id', householdId.value).single(),
     // Name/avatar live in profiles now; embed them so the roster keeps the same
     // { user_id, display_name, image_url, role } shape every consumer expects.
-    db.from('family_members').select('user_id, role, profiles(display_name, image_url)').eq('family_id', familyId.value),
+    db.from('household_members').select('user_id, role, profiles(display_name, image_url)').eq('household_id', householdId.value),
   ])
 
-  if (!familyErr && family) {
-    familyName.value = family.name
-    familyInviteCode.value = family.invite_code || ''
-    familyOwnerId.value = family.created_by || ''
-    familyItemLimit.value = clampItemLimit(family.max_items_per_member)
-    familyEmoji.value = family.emoji || ''
+  if (!householdErr && household) {
+    householdName.value = household.name
+    householdInviteCode.value = household.invite_code || ''
+    householdOwnerId.value = household.created_by || ''
+    householdItemLimit.value = clampItemLimit(household.max_items_per_member)
+    householdEmoji.value = household.emoji || ''
   }
 
   if (!membersErr && Array.isArray(members)) {
-    familyMembers.value = (members as unknown as MemberRow[]).map((m) => ({
+    householdMembers.value = (members as unknown as MemberRow[]).map((m) => ({
       user_id: m.user_id,
       role: m.role,
       display_name: m.profiles?.display_name || m.user_id,
@@ -561,105 +561,105 @@ async function loadFamilyHeader() {
   }
 }
 
-// A family setting changed (name, item limit, emoji): refresh the active family's
-// header and the switcher list together, so a new name or emoji shows up in the
-// switcher right away rather than only after the next reload.
-async function refreshFamilyAfterSettingsChange() {
-  await loadFamilyHeader()
-  await loadFamilies()
+// A household setting changed (name, item limit, emoji): refresh the active household's
+// header and the household list together, so a new name or emoji shows up
+// everywhere right away rather than only after the next reload.
+async function refreshHouseholdAfterSettingsChange() {
+  await loadHouseholdHeader()
+  await loadHouseholds()
 }
 
-// Every family the user belongs to, with names for the switcher. Only refreshes
-// the roster; the active family is chosen by the caller.
-async function loadFamilies() {
+// Every household the user belongs to, with names for the account dialog's list.
+// Only refreshes the roster; the active household is chosen by the caller.
+async function loadHouseholds() {
   const { data, error } = await db
-    .from('family_members')
-    .select('family_id, families(name, emoji)')
+    .from('household_members')
+    .select('household_id, households(name, emoji)')
     .eq('user_id', userId.value)
   if (error) return { error }
-  // The switcher renders an emoji tile, a name and a tick, so that is all a row
+  // A household row renders an emoji tile, a name and a marker, so that is all it
   // carries, and the embed brings all of it back in this one query. It used to
-  // fetch every family's full roster here to draw composite member avatars;
+  // fetch every household's full roster here to draw composite member avatars;
   // those are gone, and so is the extra round trip.
   const list = ((data ?? []) as unknown as MembershipRow[]).map((row) => ({
-    id: row.family_id,
-    name: row.families?.name ?? '',
-    emoji: row.families?.emoji ?? '',
+    id: row.household_id,
+    name: row.households?.name ?? '',
+    emoji: row.households?.emoji ?? '',
   }))
 
-  // Stable, name-ordered so the switcher never reshuffles between loads.
-  families.value = list.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+  // Stable, name-ordered so the list never reshuffles between loads.
+  households.value = list.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
   return { error: null }
 }
 
-// Switch which family is active: persist the choice, tear down the old realtime
-// channels, and reload everything scoped to the new family.
-async function switchFamily(id: string) {
-  if (!id || id === familyId.value) return
-  if (!families.value.some((f) => f.id === id)) return
-  switchingFamily.value = true
-  familyId.value = id
-  saveActiveFamilyId(localStorage, effectiveUserId.value, id)
+// Switch which household is active: persist the choice, tear down the old realtime
+// channels, and reload everything scoped to the new household.
+async function switchHousehold(id: string) {
+  if (!id || id === householdId.value) return
+  if (!households.value.some((f) => f.id === id)) return
+  switchingHousehold.value = true
+  householdId.value = id
+  saveActiveHouseholdId(localStorage, effectiveUserId.value, id)
   cleanupRealtimeSubscriptions()
-  // Drop the old family's data so none of it flashes under the new name.
+  // Drop the old household's data so none of it flashes under the new name.
   items.value = []
   // A filter belongs to the list it was chosen for. Carrying "Checked" into a
-  // family whose cart is empty opens it on a blank list.
+  // household whose cart is empty opens it on a blank list.
   listFilter.value = 'all'
-  familyMembers.value = []
-  familyProductStats.value = new Map()
-  // The new family's history is unknown until it loads. Without this reset the
+  householdMembers.value = []
+  householdProductStats.value = new Map()
+  // The new household's history is unknown until it loads. Without this reset the
   // cleared Map reads as "never shopped" and an empty list flashes "Nothing here
   // yet" before the refetch turns it into "All bought".
   productStatsLoaded.value = false
   boughtThisSession.value = false
   loadError.value = ''
-  // Show the new name straight away (we already know it from the switcher list);
-  // only the roster is unknown until loadFamilyHeader returns, so that's all the
+  // Show the new name straight away (we already know it from the household list);
+  // only the roster is unknown until loadHouseholdHeader returns, so that's all the
   // topbar skeletons.
-  const next = families.value.find((f) => f.id === id)
-  if (next) familyName.value = next.name
+  const next = households.value.find((f) => f.id === id)
+  if (next) householdName.value = next.name
   try {
-    await loadFamilyHeader()
+    await loadHouseholdHeader()
     await loadItems()
   } finally {
     // The rows are on screen, so the skeleton has nothing left to stand in for.
     // Product stats and the realtime channel are background work; holding the
     // placeholder up behind a websocket handshake just delays the real list.
-    switchingFamily.value = false
+    switchingHousehold.value = false
   }
-  void loadFamilyProductStats()
+  void loadHouseholdProductStats()
   await setupRealtimeSubscriptions()
 }
 
-// The switcher's "add" action: the setup page handles join/create, and the guard
-// allows it while under the family cap.
-function openAddFamily() {
-  router.push({ name: 'family-setup', query: { add: '1' } })
+// The account dialog's "join or create" action: the setup page handles both, and
+// the guard allows it while under the household cap.
+function openAddHousehold() {
+  router.push({ name: 'household-setup', query: { add: '1' } })
 }
 
-// The active family vanished (deleted, left, or we were removed): move to another
-// family we still belong to, or fall back to setup when none remain.
-async function reconcileActiveFamily() {
-  const { error } = await loadFamilies()
+// The active household vanished (deleted, left, or we were removed): move to another
+// household we still belong to, or fall back to setup when none remain.
+async function reconcileActiveHousehold() {
+  const { error } = await loadHouseholds()
   // A failed lookup (network drop, transient server error) must not be read as
   // "no membership" and eject the user — leave them where they are.
   if (error) return
-  if (families.value.some((f) => f.id === familyId.value)) return
-  if (families.value.length) {
-    await switchFamily(families.value[0].id)
+  if (households.value.some((f) => f.id === householdId.value)) return
+  if (households.value.length) {
+    await switchHousehold(households.value[0].id)
     return
   }
   cleanupRealtimeSubscriptions()
-  clearFamilySnapshot(localStorage)
-  clearActiveFamilyId(localStorage)
-  router.replace('/family-setup')
+  clearHouseholdSnapshot(localStorage)
+  clearActiveHouseholdId(localStorage)
+  router.replace('/household-setup')
 }
 
 // Called when a member-removal realtime event lands: if it was us being removed
-// from the active family, reconcile moves us on.
+// from the active household, reconcile moves us on.
 async function refreshMembershipOrRedirect() {
-  await reconcileActiveFamily()
+  await reconcileActiveHousehold()
 }
 
 
@@ -668,22 +668,22 @@ async function refreshMembershipOrRedirect() {
 <template>
   <div class="dashboard">
     <AppTopbar
-      :family-id="familyId || ''"
-      :family-name="familyName"
-      :families="families"
+      :household-id="householdId || ''"
+      :household-name="householdName"
+      :households="households"
       :loading="initialLoading"
-      :members-loading="switchingFamily"
-      :invite-code="familyInviteCode"
-      :family-item-limit="familyItemLimit"
-      :family-emoji="familyEmoji"
-      :owner-user-id="familyOwnerId"
-      :member-profiles="familyMembers"
+      :members-loading="switchingHousehold"
+      :invite-code="householdInviteCode"
+      :household-item-limit="householdItemLimit"
+      :household-emoji="householdEmoji"
+      :owner-user-id="householdOwnerId"
+      :member-profiles="householdMembers"
       :current-user-id="effectiveUserId"
-      @refresh-family="refreshFamilyAfterSettingsChange"
-      @switch-family="switchFamily"
-      @add-family="openAddFamily"
-      @family-deleted="reconcileActiveFamily"
-      @family-left="reconcileActiveFamily"
+      @refresh-household="refreshHouseholdAfterSettingsChange"
+      @switch-household="switchHousehold"
+      @add-household="openAddHousehold"
+      @household-deleted="reconcileActiveHousehold"
+      @household-left="reconcileActiveHousehold"
     />
 
     <main class="dashboard-main">
@@ -710,7 +710,7 @@ async function refreshMembershipOrRedirect() {
           v-model:filter="listFilter"
           :member-profiles="memberProfileMap"
           :loading="listLoading"
-          :show-empty="hasInitialized && !items.length && !loadError && !switchingFamily && emptyStateAnswerable"
+          :show-empty="hasInitialized && !items.length && !loadError && !switchingHousehold && emptyStateAnswerable"
           :has-shopped="hasShopped"
           :suggested-products="restartProducts"
           @add="selectSuggestion"
@@ -725,7 +725,7 @@ async function refreshMembershipOrRedirect() {
     <ConfirmModal
       :open="limitReachedPopupOpen"
       title="Limit reached"
-      :message="`You reached your limit of ${familyItemLimit} active items. Check or delete items before adding more.`"
+      :message="`You reached your limit of ${householdItemLimit} active items. Check or delete items before adding more.`"
       confirm-text="Got it"
       :show-cancel="false"
       @confirm="closeLimitReachedPopup"
@@ -742,7 +742,7 @@ async function refreshMembershipOrRedirect() {
 
     <OnboardingTour
       :open="onboardingTourOpen"
-      :invite-code="familyInviteCode"
+      :invite-code="householdInviteCode"
       @close="closeOnboardingTour"
     />
 

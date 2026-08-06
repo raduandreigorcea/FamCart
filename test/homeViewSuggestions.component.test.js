@@ -22,8 +22,8 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: (...args) => mocks.routerReplace(...args) }),
 }))
 
-vi.mock('../src/lib/familyRealtime', () => ({
-  useFamilyRealtime: () => ({
+vi.mock('../src/lib/householdRealtime', () => ({
+  useHouseholdRealtime: () => ({
     realtimeHealthy: { value: false },
     setupRealtimeSubscriptions: async () => {},
     cleanupRealtimeSubscriptions: () => {},
@@ -52,11 +52,11 @@ const mountedWrappers = []
 async function mountHome({ history = [] } = {}) {
   mocks.db = createFakeDb()
   mocks.routerReplace = vi.fn()
-  mocks.db.handlers['family_members.select'] = (q) =>
+  mocks.db.handlers['household_members.select'] = (q) =>
     q.filters.user_id
-      ? { data: [{ family_id: 'fam-1', families: { id: 'fam-1', name: 'Fam' } }], error: null }
+      ? { data: [{ household_id: 'fam-1', households: { id: 'fam-1', name: 'Fam' } }], error: null }
       : { data: [{ user_id: 'user-1', display_name: 'Test User', image_url: null, role: 'moderator' }], error: null }
-  mocks.db.handlers['families.select'] = () => ({
+  mocks.db.handlers['households.select'] = () => ({
     data: { name: 'Fam', invite_code: 'ABCDEFGH', created_by: 'user-1', max_items_per_member: 50 },
     error: null,
   })
@@ -279,10 +279,10 @@ describe('suggestion loading state', () => {
 })
 
 // The catalog query is capped and ordered by GLOBAL popularity, so a big
-// imported catalog can fill the pool with strangers and leave this family's own
+// imported catalog can fill the pool with strangers and leave this household's own
 // staple out of it entirely — and ranking can only reorder what it is handed.
-describe('a family product the catalog pool left out', () => {
-  // Six globally-popular products, none of them the one this family actually
+describe('a household product the catalog pool left out', () => {
+  // Six globally-popular products, none of them the one this household actually
   // buys. Enough to fill the dropdown on their own.
   const STRANGERS = [
     { name: 'Apa Minerala 1.5L', maker: 'Perla Harghitei', popularity: 950 },
@@ -309,7 +309,7 @@ describe('a family product the catalog pool left out', () => {
 
     const names = form(wrapper).props('suggestions').map((p) => p.name)
     // Bought here twice, and the pool never returned it — without the merge it
-    // would be unreachable no matter how often this family buys it.
+    // would be unreachable no matter how often this household buys it.
     expect(names[0]).toBe('Apa Plata 2L')
     expect(names).toHaveLength(6)
   })
@@ -333,7 +333,7 @@ describe('a family product the catalog pool left out', () => {
     expect(suggestions[0]).toMatchObject({ name: 'Apa Plata 2L', popularity: 100 })
   })
 
-  it('leaves the dropdown alone for a family with no history', async () => {
+  it('leaves the dropdown alone for a household with no history', async () => {
     const wrapper = await mountHome()
     const pending = deferCatalogQueries()
 

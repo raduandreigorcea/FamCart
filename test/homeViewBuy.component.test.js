@@ -25,8 +25,8 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: (...args) => mocks.routerReplace(...args) }),
 }))
 
-vi.mock('../src/lib/familyRealtime', () => ({
-  useFamilyRealtime: () => ({
+vi.mock('../src/lib/householdRealtime', () => ({
+  useHouseholdRealtime: () => ({
     realtimeHealthy: { value: false },
     setupRealtimeSubscriptions: async () => {},
     cleanupRealtimeSubscriptions: () => {},
@@ -50,7 +50,7 @@ vi.mock('@clerk/vue', async () => {
 function makeItem(overrides = {}) {
   return {
     id: overrides.id ?? `item-${Math.random().toString(36).slice(2)}`,
-    family_id: 'fam-1',
+    household_id: 'fam-1',
     name: 'Milk',
     quantity: 1,
     checked: false,
@@ -63,14 +63,14 @@ function makeItem(overrides = {}) {
 }
 
 function setDefaultHandlers(db, { items = [] } = {}) {
-  db.handlers['family_members.select'] = (q) =>
+  db.handlers['household_members.select'] = (q) =>
     q.filters.user_id
-      ? { data: [{ family_id: 'fam-1', families: { id: 'fam-1', name: 'Fam' } }], error: null }
+      ? { data: [{ household_id: 'fam-1', households: { id: 'fam-1', name: 'Fam' } }], error: null }
       : {
           data: [{ user_id: 'user-1', display_name: 'Test User', image_url: null, role: 'moderator' }],
           error: null,
         }
-  db.handlers['families.select'] = () => ({
+  db.handlers['households.select'] = () => ({
     data: { name: 'Fam', invite_code: 'ABCDEFGH', created_by: 'user-1', max_items_per_member: 50 },
     error: null,
   })
@@ -157,7 +157,7 @@ describe('buyCheckedItems', () => {
 
   it('still archives a checkout whose rows have already left the list', async () => {
     // The buy bar defers its emit until the drain animation ends (~550ms).
-    // Switching family in that window replaces the whole array, so the ids
+    // Switching household in that window replaces the whole array, so the ids
     // arrive naming rows that are no longer here. This used to read as
     // "nothing to buy" and return, leaving them checked in the database after
     // the user had been told they were bought.
@@ -165,7 +165,7 @@ describe('buyCheckedItems', () => {
     const wrapper = await mountHome({ items })
     mocks.db.handlers['rpc.buy_items'] = (q) => ({ data: q.params.p_item_ids.length, error: null })
 
-    // The list is swapped for another family's, exactly as switchFamily does.
+    // The list is swapped for another household's, exactly as switchHousehold does.
     wrapper.findComponent(ShoppingList).props('items').splice(0)
     await flushPromises()
 
