@@ -11,7 +11,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import HomeView from '../src/views/HomeView.vue'
 import ShoppingList from '../src/components/ShoppingList.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
-import { saveFamilySnapshot } from '../src/lib/familyCache'
+import { saveHouseholdSnapshot } from '../src/lib/householdCache'
 import { rememberUser } from '../src/lib/session'
 import { markTourSeen } from '../src/lib/onboarding'
 import { __setOnlineForTest } from '../src/lib/connectivity'
@@ -22,8 +22,8 @@ vi.mock('../src/supabase', () => ({ useSupabase: () => mocks.db }))
 vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: (...a) => mocks.routerReplace(...a) }),
 }))
-vi.mock('../src/lib/familyRealtime', () => ({
-  useFamilyRealtime: () => ({
+vi.mock('../src/lib/householdRealtime', () => ({
+  useHouseholdRealtime: () => ({
     realtimeHealthy: { value: false },
     setupRealtimeSubscriptions: async () => {},
     cleanupRealtimeSubscriptions: () => {},
@@ -42,19 +42,19 @@ vi.mock('@clerk/vue', async () => {
 })
 
 const snapshot = (items) => ({
-  familyId: 'fam-1',
-  familyName: 'Fam',
-  familyInviteCode: 'ABCDEFGH',
-  familyOwnerId: 'user-1',
-  familyItemLimit: 50,
-  familyEmoji: '🏠',
-  familyMembers: [{ user_id: 'user-1', display_name: 'Me', image_url: null, role: 'moderator' }],
+  householdId: 'fam-1',
+  householdName: 'Fam',
+  householdInviteCode: 'ABCDEFGH',
+  householdOwnerId: 'user-1',
+  householdItemLimit: 50,
+  householdEmoji: '🏠',
+  householdMembers: [{ user_id: 'user-1', display_name: 'Me', image_url: null, role: 'moderator' }],
   items,
 })
 
 const cachedItem = {
   id: 'c1',
-  family_id: 'fam-1',
+  household_id: 'fam-1',
   name: 'Milk',
   quantity: 1,
   checked: false,
@@ -88,7 +88,7 @@ afterEach(() => {
 describe('painting the cached list while Clerk warms up', () => {
   it('shows the cached list instead of skeletons when online', async () => {
     rememberUser(localStorage, 'user-1')
-    saveFamilySnapshot(localStorage, 'user-1', snapshot([cachedItem]))
+    saveHouseholdSnapshot(localStorage, 'user-1', snapshot([cachedItem]))
 
     const wrapper = trackMount(HomeView, { shallow: true })
     await flushPromises()
@@ -101,7 +101,7 @@ describe('painting the cached list while Clerk warms up', () => {
 
   it('does not skeleton over a cached list that is legitimately empty', async () => {
     rememberUser(localStorage, 'user-1')
-    saveFamilySnapshot(localStorage, 'user-1', snapshot([]))
+    saveHouseholdSnapshot(localStorage, 'user-1', snapshot([]))
 
     const wrapper = trackMount(HomeView, { shallow: true })
     await flushPromises()
@@ -121,7 +121,7 @@ describe('painting the cached list while Clerk warms up', () => {
 
   it('drops the painted list when Clerk resolves to a different account', async () => {
     rememberUser(localStorage, 'user-1')
-    saveFamilySnapshot(localStorage, 'user-1', snapshot([cachedItem]))
+    saveHouseholdSnapshot(localStorage, 'user-1', snapshot([cachedItem]))
 
     const wrapper = trackMount(HomeView, { shallow: true })
     await flushPromises()
@@ -137,7 +137,7 @@ describe('painting the cached list while Clerk warms up', () => {
 
   it('keeps the painted list when Clerk resolves to the same account', async () => {
     rememberUser(localStorage, 'user-1')
-    saveFamilySnapshot(localStorage, 'user-1', snapshot([cachedItem]))
+    saveHouseholdSnapshot(localStorage, 'user-1', snapshot([cachedItem]))
 
     const wrapper = trackMount(HomeView, { shallow: true })
     await flushPromises()

@@ -6,21 +6,21 @@ import ModalCloseButton from './ModalCloseButton.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { getProductEmoji } from '../lib/productEmoji'
 import { groupCheckouts, trimPartialTail, type CheckoutEntry } from '../lib/purchaseHistory'
-import type { FamilyMemberProfile } from '../lib/familyRealtime'
+import type { HouseholdMemberProfile } from '../lib/householdRealtime'
 import historyIconRaw from '../assets/history.svg?raw'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
-  familyId: { type: String, default: '' },
+  householdId: { type: String, default: '' },
   currentUserId: { type: String, default: '' },
-  memberProfiles: { type: Array as PropType<FamilyMemberProfile[]>, default: () => [] },
+  memberProfiles: { type: Array as PropType<HouseholdMemberProfile[]>, default: () => [] },
 })
 
 const emit = defineEmits(['close'])
 
 const db = useSupabase()
 
-// The server keeps at most 60 checkouts per family; this row cap comfortably
+// The server keeps at most 60 checkouts per household; this row cap comfortably
 // covers that many checkouts' worth of items.
 const HISTORY_LIMIT = 500
 const entries = ref<CheckoutEntry[]>([])
@@ -40,13 +40,13 @@ watch(
 )
 
 async function loadHistory() {
-  if (!props.familyId) return
+  if (!props.householdId) return
   loading.value = true
   error.value = ''
   const { data, error: fetchError } = await db
     .from('purchase_history')
     .select('id, name, maker, quantity, checkout_id, purchased_by, purchased_at, added_by_name, added_by_image_url')
-    .eq('family_id', props.familyId)
+    .eq('household_id', props.householdId)
     // Rows in one checkout share a single purchased_at, and Postgres returns
     // tied rows in no particular order — without tiebreakers every open could
     // shuffle them. checkout_id keeps a checkout's rows contiguous (which the

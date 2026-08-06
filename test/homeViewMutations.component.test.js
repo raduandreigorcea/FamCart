@@ -14,7 +14,7 @@ import AppTopbar from '../src/components/AppTopbar.vue'
 import ConfirmModal from '../src/components/ConfirmModal.vue'
 import ErrorModal from '../src/components/ErrorModal.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
-import { saveFamilySnapshot } from '../src/lib/familyCache'
+import { saveHouseholdSnapshot } from '../src/lib/householdCache'
 import { loadOfflineQueue, enqueueOfflineMutation } from '../src/lib/offlineQueue'
 import { __setOnlineForTest } from '../src/lib/connectivity'
 
@@ -33,8 +33,8 @@ vi.mock('vue-router', () => ({
 
 // Realtime lifecycle is owned by its own composable (tested separately); here
 // it must simply not interfere.
-vi.mock('../src/lib/familyRealtime', () => ({
-  useFamilyRealtime: () => ({
+vi.mock('../src/lib/householdRealtime', () => ({
+  useHouseholdRealtime: () => ({
     realtimeHealthy: { value: false },
     setupRealtimeSubscriptions: async () => {},
     cleanupRealtimeSubscriptions: () => {},
@@ -58,7 +58,7 @@ vi.mock('@clerk/vue', async () => {
 function makeItem(overrides = {}) {
   return {
     id: overrides.id ?? `item-${Math.random().toString(36).slice(2)}`,
-    family_id: 'fam-1',
+    household_id: 'fam-1',
     name: 'Milk',
     quantity: 1,
     checked: false,
@@ -71,14 +71,14 @@ function makeItem(overrides = {}) {
 }
 
 function setDefaultHandlers(db, { items = [], maxItemsPerMember = 50 } = {}) {
-  db.handlers['family_members.select'] = (q) =>
+  db.handlers['household_members.select'] = (q) =>
     q.filters.user_id
-      ? { data: [{ family_id: 'fam-1', families: { id: 'fam-1', name: 'Fam' } }], error: null }
+      ? { data: [{ household_id: 'fam-1', households: { id: 'fam-1', name: 'Fam' } }], error: null }
       : {
           data: [{ user_id: 'user-1', display_name: 'Test User', image_url: null, role: 'moderator' }],
           error: null,
         }
-  db.handlers['families.select'] = () => ({
+  db.handlers['households.select'] = () => ({
     data: {
       name: 'Fam',
       invite_code: 'ABCDEFGH',
@@ -153,13 +153,13 @@ function goOnline() {
 
 describe('cached snapshot', () => {
   it('paints the cached list instantly while the real fetches are still in flight', async () => {
-    saveFamilySnapshot(localStorage, 'user-1', {
-      familyId: 'fam-1',
-      familyName: 'Fam',
-      familyInviteCode: 'ABCDEFGH',
-      familyOwnerId: 'user-1',
-      familyItemLimit: 50,
-      familyMembers: [{ user_id: 'user-1', display_name: 'Me', image_url: null, role: 'moderator' }],
+    saveHouseholdSnapshot(localStorage, 'user-1', {
+      householdId: 'fam-1',
+      householdName: 'Fam',
+      householdInviteCode: 'ABCDEFGH',
+      householdOwnerId: 'user-1',
+      householdItemLimit: 50,
+      householdMembers: [{ user_id: 'user-1', display_name: 'Me', image_url: null, role: 'moderator' }],
       items: [makeItem({ id: 'cached-1', name: 'Milk' })],
     })
 
@@ -167,8 +167,8 @@ describe('cached snapshot', () => {
     mocks.routerReplace = vi.fn()
     // Simulate a cold, slow network: nothing ever resolves.
     const never = () => new Promise(() => {})
-    mocks.db.handlers['family_members.select'] = never
-    mocks.db.handlers['families.select'] = never
+    mocks.db.handlers['household_members.select'] = never
+    mocks.db.handlers['households.select'] = never
     mocks.db.handlers['shopping_list_items.select'] = never
 
     const wrapper = trackMount(HomeView, { shallow: true })
@@ -379,7 +379,7 @@ describe('adding a custom product', () => {
     expect(mocks.db.calls.some((c) => c.table === 'shopping_list_items' && c.op === 'insert')).toBe(true)
     // ...and the catalog itself saw nothing but reads. Contributing goes through
     // add_custom_product (see homeViewCustomProduct.component.test.js), which is
-    // what scopes the product to this family and checks membership. RLS grants
+    // what scopes the product to this household and checks membership. RLS grants
     // SELECT and nothing else (006_product_catalog.sql), so a direct write here would be
     // rejected by the database anyway — this catches it at the source instead.
     expect(mocks.db.calls.filter((c) => c.table === 'product_catalog' && c.op !== 'select')).toEqual([])
@@ -652,21 +652,21 @@ describe('list ordering', () => {
   })
 })
 
-describe('multiple families', () => {
-  it('loads every family and switches the active one from the topbar', async () => {
+describe('multiple households', () => {
+  it('loads every household and switches the active one from the topbar', async () => {
     mocks.db = createFakeDb()
     mocks.routerReplace = vi.fn()
-    mocks.db.handlers['family_members.select'] = (q) =>
+    mocks.db.handlers['household_members.select'] = (q) =>
       q.filters.user_id
         ? {
             data: [
-              { family_id: 'fam-1', families: { id: 'fam-1', name: 'Home' } },
-              { family_id: 'fam-2', families: { id: 'fam-2', name: 'Parents' } },
+              { household_id: 'fam-1', households: { id: 'fam-1', name: 'Home' } },
+              { household_id: 'fam-2', households: { id: 'fam-2', name: 'Parents' } },
             ],
             error: null,
           }
         : { data: [{ user_id: 'user-1', display_name: 'Me', image_url: null, role: 'moderator' }], error: null }
-    mocks.db.handlers['families.select'] = (q) => ({
+    mocks.db.handlers['households.select'] = (q) => ({
       data: {
         name: q.filters.id === 'fam-2' ? 'Parents' : 'Home',
         invite_code: 'ABCDEFGH',
@@ -683,16 +683,16 @@ describe('multiple families', () => {
     await flushPromises()
 
     const topbar = wrapper.findComponent(AppTopbar)
-    // Both families reach the switcher, name-ordered, with the first active.
-    expect(topbar.props('families').map((f) => f.name)).toEqual(['Home', 'Parents'])
-    expect(topbar.props('familyName')).toBe('Home')
+    // Both households reach the switcher, name-ordered, with the first active.
+    expect(topbar.props('households').map((f) => f.name)).toEqual(['Home', 'Parents'])
+    expect(topbar.props('householdName')).toBe('Home')
 
-    topbar.vm.$emit('switch-family', 'fam-2')
+    topbar.vm.$emit('switch-household', 'fam-2')
     await flushPromises()
 
-    // The active family (name + id) reloads to the chosen one.
-    expect(topbar.props('familyId')).toBe('fam-2')
-    expect(topbar.props('familyName')).toBe('Parents')
+    // The active household (name + id) reloads to the chosen one.
+    expect(topbar.props('householdId')).toBe('fam-2')
+    expect(topbar.props('householdName')).toBe('Parents')
   })
 })
 
@@ -822,15 +822,15 @@ describe('offline queue', () => {
     expect(wrapper.findComponent(ErrorModal).props('message')).toBeFalsy()
   })
 
-  // The queue is keyed by user, not by family, and a user may belong to three.
-  // A write still queued for another family must not surface in this one's list.
-  it('never shows another family’s queued add in this family’s list', async () => {
+  // The queue is keyed by user, not by household, and a user may belong to three.
+  // A write still queued for another household must not surface in this one's list.
+  it('never shows another household’s queued add in this household’s list', async () => {
     const wrapper = await mountHome()
-    // A write queued while offline in a different family the user belongs to.
+    // A write queued while offline in a different household the user belongs to.
     enqueueOfflineMutation(localStorage, 'user-1', {
       kind: 'insert',
       id: 'other-fam-row',
-      row: { id: 'other-fam-row', family_id: 'fam-2', name: 'Parents Milk', quantity: 1, added_by: 'user-1' },
+      row: { id: 'other-fam-row', household_id: 'fam-2', name: 'Parents Milk', quantity: 1, added_by: 'user-1' },
     })
     // Throttled, so it stays queued rather than draining away.
     mocks.db.handlers['shopping_list_items.insert'] = () => ({
@@ -847,13 +847,13 @@ describe('offline queue', () => {
   })
 
   it('runs from the cached snapshot without an error banner when opened offline', async () => {
-    saveFamilySnapshot(localStorage, 'user-1', {
-      familyId: 'fam-1',
-      familyName: 'Fam',
-      familyInviteCode: 'ABCDEFGH',
-      familyOwnerId: 'user-1',
-      familyItemLimit: 50,
-      familyMembers: [{ user_id: 'user-1', display_name: 'Me', image_url: null, role: 'moderator' }],
+    saveHouseholdSnapshot(localStorage, 'user-1', {
+      householdId: 'fam-1',
+      householdName: 'Fam',
+      householdInviteCode: 'ABCDEFGH',
+      householdOwnerId: 'user-1',
+      householdItemLimit: 50,
+      householdMembers: [{ user_id: 'user-1', display_name: 'Me', image_url: null, role: 'moderator' }],
       items: [makeItem({ id: 'cached-1', name: 'Milk' })],
     })
     goOffline()
@@ -861,7 +861,7 @@ describe('offline queue', () => {
     mocks.db = createFakeDb()
     mocks.routerReplace = vi.fn()
     // The membership fetch dies at the network layer, like a dead connection.
-    mocks.db.handlers['family_members.select'] = () => ({
+    mocks.db.handlers['household_members.select'] = () => ({
       data: null,
       error: { message: 'TypeError: Failed to fetch' },
     })
@@ -936,11 +936,11 @@ describe('network failure while reported online', () => {
     mocks.db = createFakeDb()
     mocks.routerReplace = vi.fn()
     // Membership and header resolve, but the items fetch dies at the network.
-    mocks.db.handlers['family_members.select'] = (q) =>
+    mocks.db.handlers['household_members.select'] = (q) =>
       q.filters.user_id
-        ? { data: [{ family_id: 'fam-1', families: { id: 'fam-1', name: 'Fam' } }], error: null }
+        ? { data: [{ household_id: 'fam-1', households: { id: 'fam-1', name: 'Fam' } }], error: null }
         : { data: [{ user_id: 'user-1', display_name: 'Me', image_url: null, role: 'moderator' }], error: null }
-    mocks.db.handlers['families.select'] = () => ({
+    mocks.db.handlers['households.select'] = () => ({
       data: { name: 'Fam', invite_code: 'ABCDEFGH', created_by: 'user-1', max_items_per_member: 50 },
       error: null,
     })

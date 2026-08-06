@@ -104,7 +104,7 @@ export async function refreshConnectivity(): Promise<boolean> {
 // hold (a WebView happily reports `true` on a dead network), which is why it is
 // only ever consulted for a definite `false`.
 //
-// This composite lived in HomeView, which meant familyRealtime — the one place
+// This composite lived in HomeView, which meant householdRealtime — the one place
 // that most needs the native signal — was left reading navigator directly.
 export function isCurrentlyOffline(): boolean {
   if (online.value === false) return true

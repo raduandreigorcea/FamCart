@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 //
-// Component test for PurchaseHistoryModal: opening it fetches the family's
+// Component test for PurchaseHistoryModal: opening it fetches the household's
 // purchase history and renders the rows grouped under day headers.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -40,7 +40,7 @@ describe('PurchaseHistoryModal', () => {
     })
 
     const wrapper = mount(PurchaseHistoryModal, {
-      props: { open: true, familyId: 'fam-1', currentUserId: 'user-1', memberProfiles: [] },
+      props: { open: true, householdId: 'fam-1', currentUserId: 'user-1', memberProfiles: [] },
     })
     await flushPromises()
 
@@ -53,7 +53,7 @@ describe('PurchaseHistoryModal', () => {
     const now = new Date().toISOString()
     const { db, wrapper } = mountModal({
       open: false,
-      familyId: 'fam-1',
+      householdId: 'fam-1',
       currentUserId: 'user-1',
       memberProfiles: [{ user_id: 'user-2', display_name: 'Ana', image_url: null }],
     })
@@ -68,9 +68,9 @@ describe('PurchaseHistoryModal', () => {
     await wrapper.setProps({ open: true })
     await flushPromises()
 
-    // Queried the right family's history.
+    // Queried the right household's history.
     const call = db.calls.find((c) => c.table === 'purchase_history' && c.op === 'select')
-    expect(call.filters.family_id).toBe('fam-1')
+    expect(call.filters.household_id).toBe('fam-1')
 
     const text = wrapper.text()
     expect(text).toContain('Today')
@@ -94,7 +94,7 @@ describe('PurchaseHistoryModal', () => {
   it('labels the current user\'s own checkout as "You"', async () => {
     const { db, wrapper } = mountModal({
       open: false,
-      familyId: 'fam-1',
+      householdId: 'fam-1',
       currentUserId: 'user-1',
       memberProfiles: [],
     })
@@ -112,7 +112,7 @@ describe('PurchaseHistoryModal', () => {
   })
 
   it('shows an empty state when there is no history', async () => {
-    const { db, wrapper } = mountModal({ open: false, familyId: 'fam-1', memberProfiles: [] })
+    const { db, wrapper } = mountModal({ open: false, householdId: 'fam-1', memberProfiles: [] })
     db.handlers['purchase_history.select'] = () => ({ data: [], error: null })
 
     await wrapper.setProps({ open: true })
@@ -122,7 +122,7 @@ describe('PurchaseHistoryModal', () => {
   })
 
   it('shows an error message when the fetch fails', async () => {
-    const { db, wrapper } = mountModal({ open: false, familyId: 'fam-1', memberProfiles: [] })
+    const { db, wrapper } = mountModal({ open: false, householdId: 'fam-1', memberProfiles: [] })
     db.handlers['purchase_history.select'] = () => ({ data: null, error: { message: 'boom' } })
 
     await wrapper.setProps({ open: true })

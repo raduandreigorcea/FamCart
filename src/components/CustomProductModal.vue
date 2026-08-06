@@ -70,7 +70,7 @@ function submit() {
           <h4 id="custom-product-title" class="custom-product-dialog__title">Add your own</h4>
           <p class="custom-product-dialog__message">
             Describe it and it goes straight on your list. We'll suggest it to
-            your family next time.
+            your household next time.
           </p>
         </div>
 

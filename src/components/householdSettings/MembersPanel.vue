@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, type PropType } from 'vue'
 import { useAuth } from '@clerk/vue'
 import { useSupabase } from '../../supabase'
 import { userMessage } from '../../lib/errorMessages'
-import type { FamilyMemberProfile } from '../../lib/familyRealtime'
+import type { HouseholdMemberProfile } from '../../lib/householdRealtime'
 import type { ConfirmOptions } from '../../lib/useConfirm'
 import {
   normalizeMemberRole,
@@ -21,12 +21,12 @@ import userRoundIcon from '../../assets/user-round.svg?raw'
 // The roster, and what can be done to a row on it. The rules themselves live in
 // lib/memberRoles — this decides only what to render and what to write.
 const props = defineProps({
-  familyId: { type: String, default: '' },
+  householdId: { type: String, default: '' },
   ownerUserId: { type: String, default: '' },
   isOwner: { type: Boolean, default: false },
   isOwnerOrModerator: { type: Boolean, default: false },
   memberProfiles: {
-    type: Array as PropType<FamilyMemberProfile[]>,
+    type: Array as PropType<HouseholdMemberProfile[]>,
     default: () => [],
   },
   // The modal's shared confirm dialog (see DangerPanel for the same argument).
@@ -37,7 +37,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits<{
-  (e: 'refresh-family'): void
+  (e: 'refresh-household'): void
   (e: 'error', message: string, title?: string): void
 }>()
 
@@ -53,7 +53,7 @@ const memberActionPendingId = ref('')
 
 const sortedMembers = computed(() => sortMembersForDisplay(props.memberProfiles, props.ownerUserId))
 
-function canManageMember(member: FamilyMemberProfile) {
+function canManageMember(member: HouseholdMemberProfile) {
   return canManageMemberRule(member, {
     actorIsOwnerOrModerator: props.isOwnerOrModerator,
     ownerUserId: props.ownerUserId,
@@ -61,11 +61,11 @@ function canManageMember(member: FamilyMemberProfile) {
   })
 }
 
-function canPromoteToModerator(member: FamilyMemberProfile) {
+function canPromoteToModerator(member: HouseholdMemberProfile) {
   return canPromoteRule(member, props.isOwner)
 }
 
-function canDemoteFromModerator(member: FamilyMemberProfile) {
+function canDemoteFromModerator(member: HouseholdMemberProfile) {
   return canDemoteRule(member, props.isOwner)
 }
 
@@ -114,49 +114,49 @@ onBeforeUnmount(() => {
 
 async function setMemberRole(memberUserId: string, role: string) {
   if (!props.isOwner) return
-  if (!props.familyId || memberActionPendingId.value) return
+  if (!props.householdId || memberActionPendingId.value) return
   memberActionPendingId.value = memberUserId
   // Dismiss on tap; the row's spinner carries the pending state from here.
   closeMemberMenu()
   try {
     const { error } = await db
-      .from('family_members')
+      .from('household_members')
       .update({ role })
-      .eq('family_id', props.familyId)
+      .eq('household_id', props.householdId)
       .eq('user_id', memberUserId)
     if (error) {
       emit('error', userMessage(error, "Could not update that member's role."))
       return
     }
-    emit('refresh-family')
+    emit('refresh-household')
   } finally {
     memberActionPendingId.value = ''
   }
 }
 
 async function removeMember(memberUserId: string) {
-  if (!props.familyId || memberActionPendingId.value) return
+  if (!props.householdId || memberActionPendingId.value) return
   // Dismiss first: on mobile the action sheet covers the confirm dialog.
   closeMemberMenu()
   const confirmed = await props.confirm({
     title: 'Remove Member?',
     message:
-      'This person will immediately lose access to the family shopping list. They can join again with the invite code.',
+      'This person will immediately lose access to the household shopping list. They can join again with the invite code.',
     danger: true,
   })
   if (!confirmed) return
   memberActionPendingId.value = memberUserId
   try {
     const { error } = await db
-      .from('family_members')
+      .from('household_members')
       .delete()
-      .eq('family_id', props.familyId)
+      .eq('household_id', props.householdId)
       .eq('user_id', memberUserId)
     if (error) {
       emit('error', userMessage(error, 'Could not remove that member.'))
       return
     }
-    emit('refresh-family')
+    emit('refresh-household')
   } finally {
     memberActionPendingId.value = ''
   }
@@ -166,7 +166,7 @@ async function removeMember(memberUserId: string) {
 <template>
   <div class="tab-panel tab-panel--overlay">
     <div class="panel-section">
-      <h4 class="panel-section-title">Family Members ({{ memberProfiles.length }})</h4>
+      <h4 class="panel-section-title">Household Members ({{ memberProfiles.length }})</h4>
       <p class="panel-section-desc">Below are the people who have access to this shopping list.</p>
 
       <div class="members-list-wrapper">
@@ -249,7 +249,7 @@ async function removeMember(memberUserId: string) {
                   >
                     <span class="member-action-icon" aria-hidden="true" v-html="trashIcon"></span>
                     <span class="member-action-text">
-                      <span class="member-action-label">Remove from family</span>
+                      <span class="member-action-label">Remove from household</span>
                       <span class="member-action-hint">Loses access to the shopping list</span>
                     </span>
                   </button>
@@ -327,7 +327,7 @@ async function removeMember(memberUserId: string) {
               >
                 <span class="member-sheet__action-icon" aria-hidden="true" v-html="trashIcon"></span>
                 <span class="member-sheet__action-text">
-                  <span class="member-sheet__action-label">Remove from family</span>
+                  <span class="member-sheet__action-label">Remove from household</span>
                   <span class="member-sheet__action-hint">Loses access to the shopping list</span>
                 </span>
               </button>

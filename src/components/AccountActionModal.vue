@@ -1,21 +1,24 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useAuth } from '@clerk/vue'
+import { computed, type PropType } from 'vue'
 import AppModal from './AppModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
-import ErrorModal from './ErrorModal.vue'
 import userRoundIconRaw from '../assets/user-round.svg?raw'
-import {
-  enablePushNotifications,
-  disablePushNotifications,
-  getNotificationPreference,
-  setNotificationPreference,
-  type NotificationPreference,
-} from '../lib/pushNotifications'
+import { DEFAULT_HOUSEHOLD_EMOJI } from '../lib/householdEmoji'
+import { HOUSEHOLD_MEMBERSHIP_CAP } from '../lib/limits'
 
-// The three theme choices the control offers; 'system' follows the OS.
-type ThemeMode = 'light' | 'dark' | 'system'
-
+// Who is signed in, and the ways out of here. Appearance and notifications used
+// to live in this dialog; they are settings for the app on this device rather
+// than for the person, so they moved to AppSettingsModal and this now offers a
+// row leading there.
+//
+// Switching households lives here too. It used to be the topbar's own popover,
+// hung off the household name -- but a user may belong to at most three
+// households and may own only one, so most people have exactly one for the life
+// of the account. That made the most prominent control in the app a menu whose
+// only real content, nearly always, was a single already-ticked row. The name up
+// there now opens that household's settings directly, and switching sits in the
+// dialog you open when you want to move between things rather than act on the
+// one in front of you.
 const props = defineProps({
   open: { type: Boolean, default: false },
   loadingSignOut: { type: Boolean, default: false },
@@ -23,104 +26,46 @@ const props = defineProps({
   displayName: { type: String, default: 'Account' },
   email: { type: String, default: '' },
   initial: { type: String, default: '?' },
-  familyName: { type: String, default: '' },
-  familyMemberCount: { type: Number, default: 0 },
-})
-
-const emit = defineEmits(['close', 'edit-account', 'sign-out', 'manage-family', 'invite-members'])
-
-const { userId } = useAuth()
-
-const themeMode = ref<ThemeMode>('system')
-const notificationMode = ref<NotificationPreference>('on')
-const notificationHint = ref('')
-let mediaQuery: MediaQueryList | null = null
-
-function syncPreferencesFromStorage() {
-  const savedTheme = localStorage.getItem('famcart-theme')
-  if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system') {
-    themeMode.value = savedTheme
-    applyResolvedTheme(savedTheme)
-  } else {
-    themeMode.value = 'system'
-    applyResolvedTheme('system')
-  }
-
-  // Only an explicit opt-in shows On. An unset preference means the user was
-  // never asked (or never answered) — showing On there would claim a push
-  // subscription that doesn't exist.
-  notificationMode.value = getNotificationPreference(localStorage) === 'on' ? 'on' : 'off'
-}
-
-function applyResolvedTheme(mode: ThemeMode) {
-  const root = document.documentElement
-  if (mode === 'system') {
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    root.setAttribute('data-theme', prefersDark ? 'dark' : 'light')
-    return
-  }
-  root.setAttribute('data-theme', mode)
-}
-
-function handleSystemThemeChange() {
-  if (themeMode.value === 'system') {
-    applyResolvedTheme('system')
-  }
-}
-
-function closeMenu() {
-  emit('close')
-}
-
-function applyTheme(mode: ThemeMode) {
-  themeMode.value = mode
-  localStorage.setItem('famcart-theme', mode)
-  applyResolvedTheme(mode)
-}
-
-async function applyNotifications(mode: NotificationPreference) {
-  notificationMode.value = mode
-  setNotificationPreference(localStorage, mode)
-  notificationHint.value = ''
-
-  if (mode === 'off') {
-    await disablePushNotifications()
-    return
-  }
-
-  if (!userId.value) return
-  const result = await enablePushNotifications(userId.value)
-  if (result === 'permission-denied') {
-    // The browser said no — reflect reality instead of a toggle that lies.
-    notificationMode.value = 'off'
-    setNotificationPreference(localStorage, 'off')
-    notificationHint.value = 'Notifications are blocked for FamCart in your device or browser settings.'
-  } else if (result === 'error') {
-    notificationMode.value = 'off'
-    setNotificationPreference(localStorage, 'off')
-    notificationHint.value = 'Could not enable notifications. Please try again.'
-  }
-  // 'unsupported' / 'not-configured': push is unavailable in this environment;
-  // the preference is still saved and the toggle stays on.
-}
-
-onMounted(() => {
-  mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-  mediaQuery.addEventListener('change', handleSystemThemeChange)
-  syncPreferencesFromStorage()
-})
-
-onBeforeUnmount(() => {
-  mediaQuery?.removeEventListener('change', handleSystemThemeChange)
-})
-
-watch(
-  () => props.open,
-  (isOpen) => {
-    if (!isOpen) return
-    syncPreferencesFromStorage()
+  householdName: { type: String, default: '' },
+  householdMemberCount: { type: Number, default: 0 },
+  // Every household the user belongs to, and which one is active.
+  households: {
+    type: Array as PropType<{ id: string; name: string; emoji?: string | null }[]>,
+    default: () => [],
   },
-)
+  householdId: { type: String, default: '' },
+})
+
+// The household rows below lead somewhere the topbar also reaches directly. That
+// is deliberate: people look for the same thing in different places, and a
+// second route costs a row here while saving someone a hunt.
+const emit = defineEmits([
+  'close',
+  'edit-account',
+  'sign-out',
+  'manage-household',
+  'invite-members',
+  'app-settings',
+  'switch-household',
+  'add-household',
+])
+
+// Only worth listing when there is somewhere to go: with one household the rows
+// would be a single row you are already on.
+const canSwitch = computed(() => props.households.length > 1)
+// At the cap there is nowhere to add another.
+const canAddHousehold = computed(() => props.households.length < HOUSEHOLD_MEMBERSHIP_CAP)
+// The section earns its heading and divider only if it has something in it.
+const showHouseholdSection = computed(() => canSwitch.value || canAddHousehold.value)
+
+function switchHousehold(id: string) {
+  if (id === props.householdId) {
+    emit('close')
+    return
+  }
+  emit('switch-household', id)
+}
+
 </script>
 
 <template>
@@ -128,7 +73,7 @@ watch(
     :open="open"
     overlay-class="account-overlay"
     transition="modal-fade"
-    @close="closeMenu"
+    @close="emit('close')"
   >
       <div class="account-dialog" role="dialog" aria-modal="true" aria-labelledby="account-modal-title">
         <div class="account-dialog__header">
@@ -141,7 +86,7 @@ watch(
               <p class="account-dialog__subtitle">Manage your profile and preferences</p>
             </div>
           </div>
-          <ModalCloseButton aria-label="Close account modal" @click="closeMenu" />
+          <ModalCloseButton aria-label="Close account modal" @click="emit('close')" />
         </div>
 
         <div class="account-dialog__body">
@@ -158,73 +103,59 @@ watch(
 
           <div class="account-section">
             <button class="account-menu-item" type="button" @click="emit('edit-account')">
-              <span class="account-menu-item__label">Account</span>
-              <span class="account-menu-item__hint">Manage profile</span>
+              <span class="account-menu-item__label">Profile</span>
+              <span class="account-menu-item__hint">Name, photo, password</span>
             </button>
-            <button class="account-menu-item" type="button" @click="emit('manage-family')">
-              <span class="account-menu-item__label">Manage family</span>
-              <span class="account-menu-item__hint">{{ familyName || 'Family' }}</span>
+            <button class="account-menu-item" type="button" @click="emit('manage-household')">
+              <span class="account-menu-item__label">Manage household</span>
+              <span class="account-menu-item__hint">{{ householdName || 'Household' }}</span>
             </button>
             <button class="account-menu-item" type="button" @click="emit('invite-members')">
-              <span class="account-menu-item__label">Invite members</span>
-              <span class="account-menu-item__hint">{{ familyMemberCount }} members</span>
+              <span class="account-menu-item__label">Invite people</span>
+              <span class="account-menu-item__hint">
+                {{ householdMemberCount }} {{ householdMemberCount === 1 ? 'member' : 'members' }}
+              </span>
             </button>
 
-            <div class="account-divider"></div>
+            <button class="account-menu-item" type="button" @click="emit('app-settings')">
+              <span class="account-menu-item__label">App settings</span>
+              <span class="account-menu-item__hint">Appearance, notifications, about</span>
+            </button>
 
-            <div class="theme-control" role="group" aria-label="Theme mode">
-              <button
-                class="theme-control__btn"
-                :class="{ 'theme-control__btn--active': themeMode === 'light' }"
-                type="button"
-                @click="applyTheme('light')"
-              >
-                <span class="control-icon control-icon--theme-light" aria-hidden="true"></span>
-                <span>Light</span>
-              </button>
-              <button
-                class="theme-control__btn"
-                :class="{ 'theme-control__btn--active': themeMode === 'dark' }"
-                type="button"
-                @click="applyTheme('dark')"
-              >
-                <span class="control-icon control-icon--theme-dark" aria-hidden="true"></span>
-                <span>Dark</span>
-              </button>
-              <button
-                class="theme-control__btn"
-                :class="{ 'theme-control__btn--active': themeMode === 'system' }"
-                type="button"
-                @click="applyTheme('system')"
-              >
-                <span class="control-icon control-icon--theme-system" aria-hidden="true"></span>
-                <span>System</span>
-              </button>
-            </div>
+            <!-- Households you can move to, and the way to gain another. Absent
+                 entirely for someone with one household and no room for more,
+                 which is the only state where neither row has anything to do. -->
+            <template v-if="showHouseholdSection">
+              <div class="account-divider"></div>
+              <p class="account-section-label">Households</p>
 
-            <div class="account-divider"></div>
-
-            <div class="theme-control theme-control--two" role="group" aria-label="Notification mode">
               <button
-                class="theme-control__btn"
-                :class="{ 'theme-control__btn--active': notificationMode === 'on' }"
+                v-for="household in (canSwitch ? households : [])"
+                :key="household.id"
+                class="account-menu-item account-household-item"
                 type="button"
-                @click="applyNotifications('on')"
+                role="menuitemradio"
+                :aria-checked="household.id === householdId"
+                @click="switchHousehold(household.id)"
               >
-                <span class="control-icon control-icon--notify-all" aria-hidden="true"></span>
-                <span>On</span>
+                <span class="account-menu-item__label">
+                  <span class="account-household-emoji" aria-hidden="true">
+                    {{ household.emoji || DEFAULT_HOUSEHOLD_EMOJI }}
+                  </span>
+                  <span class="account-household-name">{{ household.name || 'Household' }}</span>
+                </span>
+                <span v-if="household.id === householdId" class="account-menu-item__hint">Current</span>
               </button>
-              <button
-                class="theme-control__btn"
-                :class="{ 'theme-control__btn--active': notificationMode === 'off' }"
-                type="button"
-                @click="applyNotifications('off')"
-              >
-                <span class="control-icon control-icon--notify-off" aria-hidden="true"></span>
-                <span>Off</span>
-              </button>
-            </div>
 
+              <button
+                v-if="canAddHousehold"
+                class="account-menu-item account-household-add"
+                type="button"
+                @click="emit('add-household')"
+              >
+                <span class="account-menu-item__label">Join or create a household</span>
+              </button>
+            </template>
 
             <div class="account-divider"></div>
 
@@ -243,8 +174,6 @@ watch(
         </div>
       </div>
   </AppModal>
-
-  <ErrorModal title="Notifications" :message="notificationHint" @dismiss="notificationHint = ''" />
 </template>
 
 <style scoped>
@@ -396,6 +325,7 @@ watch(
   text-overflow: ellipsis;
 }
 
+
 .account-divider {
   height: 1px;
   background: var(--border-main);
@@ -446,6 +376,59 @@ watch(
 .account-menu-item__hint {
   font-size: var(--text-xs);
   color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+/* Names what the rows under it are, in the same voice as the list header on the
+   dashboard. */
+.account-section-label {
+  margin: 0 0 -0.1rem 0.15rem;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-disabled);
+}
+
+/* A household row is a label like any other row here; the emoji rides inside it
+   so the row keeps the shape the rest of the dialog uses. */
+.account-household-item .account-menu-item__label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.account-household-emoji {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-lg);
+  line-height: 1;
+  background: var(--bg-surface-alt);
+}
+
+.account-household-item:hover .account-household-emoji {
+  background: var(--bg-surface);
+}
+
+/* Names run to 25 characters and "Current" must survive beside them. */
+.account-household-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Gaining a household is not one of the households, so the row is quieter than
+   the ones above it -- the same distinction the panel it replaces drew with a
+   dashed tile. */
+.account-household-add .account-menu-item__label {
+  color: var(--text-secondary);
+  font-weight: var(--weight-semibold);
 }
 
 .account-menu-item--danger {
@@ -465,84 +448,16 @@ watch(
   opacity: 0.5;
 }
 
-.theme-control {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.35rem;
-  background: var(--bg-surface-alt);
-  border: var(--border-width-thin) solid var(--border-main);
-  border-radius: var(--radius-md);
-  padding: 0.25rem;
-}
 
-.theme-control--two {
-  grid-template-columns: repeat(2, 1fr);
-}
 
-.theme-control__btn {
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  border-radius: var(--radius-sm);
-  padding: 0.42rem 0.2rem;
-  cursor: pointer;
-  transition: all var(--transition-fast) ease;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.28rem;
-}
 
-.theme-control__btn:hover:not(.theme-control__btn--active) {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
 
-.theme-control__btn--active {
-  background: var(--bg-surface);
-  color: var(--color-primary);
-  box-shadow: var(--elevation-soft);
-}
 
-.control-icon {
-  width: 12px;
-  height: 12px;
-  display: inline-block;
-  background-color: currentColor;
-  mask-repeat: no-repeat;
-  mask-position: center;
-  mask-size: contain;
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-position: center;
-  -webkit-mask-size: contain;
-}
 
-.control-icon--theme-light {
-  mask-image: url('../assets/sun-medium.svg');
-  -webkit-mask-image: url('../assets/sun-medium.svg');
-}
 
-.control-icon--theme-dark {
-  mask-image: url('../assets/moon.svg');
-  -webkit-mask-image: url('../assets/moon.svg');
-}
 
-.control-icon--theme-system {
-  mask-image: url('../assets/sun-moon.svg');
-  -webkit-mask-image: url('../assets/sun-moon.svg');
-}
 
-.control-icon--notify-all {
-  mask-image: url('../assets/bell.svg');
-  -webkit-mask-image: url('../assets/bell.svg');
-}
 
-.control-icon--notify-off {
-  mask-image: url('../assets/bell-off.svg');
-  -webkit-mask-image: url('../assets/bell-off.svg');
-}
 
 .account-spinner {
   width: 14px;

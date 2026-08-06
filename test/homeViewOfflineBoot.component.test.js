@@ -12,7 +12,7 @@ import HomeView from '../src/views/HomeView.vue'
 import ShoppingList from '../src/components/ShoppingList.vue'
 import ErrorModal from '../src/components/ErrorModal.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
-import { saveFamilySnapshot } from '../src/lib/familyCache'
+import { saveHouseholdSnapshot } from '../src/lib/householdCache'
 import { rememberUser } from '../src/lib/session'
 import { __setOnlineForTest } from '../src/lib/connectivity'
 
@@ -22,8 +22,8 @@ vi.mock('../src/supabase', () => ({ useSupabase: () => mocks.db }))
 vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: (...a) => mocks.routerReplace(...a) }),
 }))
-vi.mock('../src/lib/familyRealtime', () => ({
-  useFamilyRealtime: () => ({
+vi.mock('../src/lib/householdRealtime', () => ({
+  useHouseholdRealtime: () => ({
     realtimeHealthy: { value: false },
     setupRealtimeSubscriptions: async () => {},
     cleanupRealtimeSubscriptions: () => {},
@@ -61,15 +61,15 @@ afterEach(() => {
 describe('offline boot with a cached session', () => {
   it('renders the cached list without redirecting to login or showing an error', async () => {
     rememberUser(localStorage, 'user-1')
-    saveFamilySnapshot(localStorage, 'user-1', {
-      familyId: 'fam-1',
-      familyName: 'Fam',
-      familyInviteCode: 'ABCDEFGH',
-      familyOwnerId: 'user-1',
-      familyItemLimit: 50,
-      familyMembers: [{ user_id: 'user-1', display_name: 'Me', image_url: null, role: 'moderator' }],
+    saveHouseholdSnapshot(localStorage, 'user-1', {
+      householdId: 'fam-1',
+      householdName: 'Fam',
+      householdInviteCode: 'ABCDEFGH',
+      householdOwnerId: 'user-1',
+      householdItemLimit: 50,
+      householdMembers: [{ user_id: 'user-1', display_name: 'Me', image_url: null, role: 'moderator' }],
       items: [
-        { id: 'c1', family_id: 'fam-1', name: 'Milk', quantity: 1, checked: false, added_by: 'user-1', created_at: '2026-01-01T00:00:00.000Z' },
+        { id: 'c1', household_id: 'fam-1', name: 'Milk', quantity: 1, checked: false, added_by: 'user-1', created_at: '2026-01-01T00:00:00.000Z' },
       ],
     })
     __setOnlineForTest(false)

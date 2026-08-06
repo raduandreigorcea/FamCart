@@ -1,10 +1,10 @@
-// The invite code: how someone joins a family, and the only credential guarding
+// The invite code: how someone joins a household, and the only credential guarding
 // that. Both the code generator and the shape check live here because the two
-// have to agree — a generated code that the join form would reject is a family
+// have to agree — a generated code that the join form would reject is a household
 // nobody can be invited to.
 //
-// This was duplicated character-for-character in FamilySetupView (which mints
-// one when creating a family) and FamilySettingsModal (which mints one when
+// This was duplicated character-for-character in HouseholdSetupView (which mints
+// one when creating a household) and HouseholdSettingsModal (which mints one when
 // regenerating). Two copies of a security-relevant helper is one copy too many:
 // a fix to the alphabet or the entropy in one would silently not reach the
 // other.
@@ -20,7 +20,7 @@ export const INVITE_CODE_LENGTH = 8
 export const INVITE_CODE_REGEX = /^[A-HJ-NP-Z2-9]{8}$/
 
 // A fresh code. Uses a CSPRNG rather than Math.random(): this is the credential
-// that admits someone to a family's list, so a predictable one is a way in.
+// that admits someone to a household's list, so a predictable one is a way in.
 // The 32-character alphabet divides 256 evenly, so `byte & 31` maps onto it
 // with no modulo bias — every character is equally likely.
 export function randomInviteCode(): string {

@@ -3,8 +3,8 @@ import {
   normalizeSearchText,
   escapeIlikePattern,
   productKey,
-  buildFamilyProductStats,
-  matchFamilyStats,
+  buildHouseholdProductStats,
+  matchHouseholdStats,
   rankSuggestions,
 } from '../src/lib/productSearch'
 
@@ -52,7 +52,7 @@ describe('productKey', () => {
   })
 })
 
-describe('buildFamilyProductStats', () => {
+describe('buildHouseholdProductStats', () => {
   const rows = [
     { name: 'Apa Plata 2L', maker: 'Dorna', purchased_at: '2026-07-01T10:00:00Z' },
     { name: 'apa plata 2l', maker: 'dorna', purchased_at: '2026-07-05T10:00:00Z' },
@@ -60,7 +60,7 @@ describe('buildFamilyProductStats', () => {
   ]
 
   it('counts purchase occasions per product and keeps the latest date', () => {
-    const stats = buildFamilyProductStats(rows)
+    const stats = buildHouseholdProductStats(rows)
     expect(stats.size).toBe(2)
 
     const apa = stats.get(productKey('Apa Plata 2L', 'Dorna'))
@@ -72,16 +72,16 @@ describe('buildFamilyProductStats', () => {
   })
 
   it('ignores rows with no usable name', () => {
-    expect(buildFamilyProductStats([{ name: '   ' }, { maker: 'Dorna' }]).size).toBe(0)
+    expect(buildHouseholdProductStats([{ name: '   ' }, { maker: 'Dorna' }]).size).toBe(0)
   })
 
   it('survives an unparseable timestamp', () => {
-    const stats = buildFamilyProductStats([{ name: 'Sare de Masa 1kg', purchased_at: 'nonsense' }])
+    const stats = buildHouseholdProductStats([{ name: 'Sare de Masa 1kg', purchased_at: 'nonsense' }])
     expect(stats.get(productKey('Sare de Masa 1kg', null)).lastPurchasedAt).toBe(0)
   })
 })
 
-// The ordering contract: this family's habits outrank the world's, and the
+// The ordering contract: this household's habits outrank the world's, and the
 // global catalog score only settles products they have never bought.
 describe('rankSuggestions', () => {
   const catalog = [
@@ -92,7 +92,7 @@ describe('rankSuggestions', () => {
 
   const noStats = new Map()
 
-  it('falls back to global popularity, then name, with no family history', () => {
+  it('falls back to global popularity, then name, with no household history', () => {
     expect(rankSuggestions(catalog, noStats, 6).map((p) => p.name)).toEqual([
       'Apa Minerala 1.5L', // ties on popularity, wins on name
       'Apa Plata 2L',
@@ -100,8 +100,8 @@ describe('rankSuggestions', () => {
     ])
   })
 
-  it('puts a product the family buys above a more globally popular one', () => {
-    const stats = buildFamilyProductStats([
+  it('puts a product the household buys above a more globally popular one', () => {
+    const stats = buildHouseholdProductStats([
       { name: 'Apa de Gura 500ml', maker: 'Listerine', purchased_at: '2026-07-01T10:00:00Z' },
     ])
     expect(rankSuggestions(catalog, stats, 6).map((p) => p.name)).toEqual([
@@ -111,8 +111,8 @@ describe('rankSuggestions', () => {
     ])
   })
 
-  it('orders the family favourites by how often, then how recently', () => {
-    const stats = buildFamilyProductStats([
+  it('orders the household favourites by how often, then how recently', () => {
+    const stats = buildHouseholdProductStats([
       // Perla bought once, most recently; Dorna bought twice, longer ago.
       { name: 'Apa Plata 2L', maker: 'Dorna', purchased_at: '2026-07-01T10:00:00Z' },
       { name: 'Apa Plata 2L', maker: 'Dorna', purchased_at: '2026-07-02T10:00:00Z' },
@@ -126,7 +126,7 @@ describe('rankSuggestions', () => {
   })
 
   it('breaks an equal-count tie on recency', () => {
-    const stats = buildFamilyProductStats([
+    const stats = buildHouseholdProductStats([
       { name: 'Apa Plata 2L', maker: 'Dorna', purchased_at: '2026-07-01T10:00:00Z' },
       { name: 'Apa Minerala 1.5L', maker: 'Perla Harghitei', purchased_at: '2026-07-08T10:00:00Z' },
     ])
@@ -138,7 +138,7 @@ describe('rankSuggestions', () => {
   // and over must never be offered as a product — it would outrank every real
   // one and then entrench itself by being picked again.
   it('never suggests a hand-typed history entry that is not a catalog product', () => {
-    const stats = buildFamilyProductStats([
+    const stats = buildHouseholdProductStats([
       { name: 'apa', maker: null, purchased_at: '2026-07-01T10:00:00Z' },
       { name: 'apa', maker: null, purchased_at: '2026-07-08T10:00:00Z' },
       { name: 'apa', maker: null, purchased_at: '2026-07-14T10:00:00Z' },
@@ -170,11 +170,11 @@ describe('rankSuggestions', () => {
 })
 
 // The other half of the suggestion pool. The catalog query is capped and ordered
-// globally, so once the catalog is imported at scale a family's own staple can
+// globally, so once the catalog is imported at scale a household's own staple can
 // be crowded out of it before ranking ever sees it. These matches come from
 // memory and close that gap.
-describe('matchFamilyStats', () => {
-  const stats = buildFamilyProductStats([
+describe('matchHouseholdStats', () => {
+  const stats = buildHouseholdProductStats([
     { name: 'Apa Plata 2L', maker: 'Dorna', purchased_at: '2026-07-01T10:00:00Z' },
     { name: 'Apa Plata 2L', maker: 'Dorna', purchased_at: '2026-07-02T10:00:00Z' },
     { name: 'Apa Minerala 1.5L', maker: 'Perla Harghitei', purchased_at: '2026-07-08T10:00:00Z' },
@@ -182,78 +182,78 @@ describe('matchFamilyStats', () => {
   ])
 
   it('finds a bought product by name', () => {
-    expect(matchFamilyStats('plata', stats, { limit: 6 }).map((p) => p.name)).toEqual([
+    expect(matchHouseholdStats('plata', stats, { limit: 6 }).map((p) => p.name)).toEqual([
       'Apa Plata 2L',
     ])
   })
 
   it('matches the maker too, the way the server ilike does', () => {
-    expect(matchFamilyStats('dorna', stats, { limit: 6 }).map((p) => p.name)).toEqual([
+    expect(matchHouseholdStats('dorna', stats, { limit: 6 }).map((p) => p.name)).toEqual([
       'Apa Plata 2L',
     ])
   })
 
   it('ignores the accents the user typed', () => {
-    expect(matchFamilyStats('apă plată', stats, { limit: 6 }).map((p) => p.name)).toEqual([
+    expect(matchHouseholdStats('apă plată', stats, { limit: 6 }).map((p) => p.name)).toEqual([
       'Apa Plata 2L',
     ])
   })
 
   it('stays quiet until the query is worth searching', () => {
-    expect(matchFamilyStats('a', stats, { limit: 6 })).toEqual([])
-    expect(matchFamilyStats('   ', stats, { limit: 6 })).toEqual([])
+    expect(matchHouseholdStats('a', stats, { limit: 6 })).toEqual([])
+    expect(matchHouseholdStats('   ', stats, { limit: 6 })).toEqual([])
   })
 
   it('orders by how often, then how recently, like the ranking does', () => {
-    expect(matchFamilyStats('apa', stats, { limit: 6 }).map((p) => p.name)).toEqual([
+    expect(matchHouseholdStats('apa', stats, { limit: 6 }).map((p) => p.name)).toEqual([
       'Apa Plata 2L', // bought twice
       'Apa Minerala 1.5L', // bought once
     ])
   })
 
   it('caps the list at the limit', () => {
-    expect(matchFamilyStats('apa', stats, { limit: 1 })).toHaveLength(1)
+    expect(matchHouseholdStats('apa', stats, { limit: 1 })).toHaveLength(1)
   })
 
   // The guard that stops history becoming a source of junk: purchase_history
   // records whatever was typed, so a hand-typed bare word must never be offered
   // back as if it were a product.
   it('refuses a hand-typed one-word entry with no maker', () => {
-    const typed = buildFamilyProductStats([
+    const typed = buildHouseholdProductStats([
       { name: 'apa', purchased_at: '2026-07-10T10:00:00Z' },
       { name: 'apa', purchased_at: '2026-07-11T10:00:00Z' },
       { name: 'apa', purchased_at: '2026-07-12T10:00:00Z' },
     ])
-    expect(matchFamilyStats('apa', typed, { limit: 6 })).toEqual([])
+    expect(matchHouseholdStats('apa', typed, { limit: 6 })).toEqual([])
   })
 
   it('accepts a maker-less entry that still reads as a product', () => {
-    const typed = buildFamilyProductStats([
+    const typed = buildHouseholdProductStats([
       { name: 'Rosii Cherry 250g', purchased_at: '2026-07-10T10:00:00Z' },
     ])
-    expect(matchFamilyStats('rosii', typed, { limit: 6 }).map((p) => p.name)).toEqual([
+    expect(matchHouseholdStats('rosii', typed, { limit: 6 }).map((p) => p.name)).toEqual([
       'Rosii Cherry 250g',
     ])
   })
 
   it('can be told to skip the specificity guard', () => {
-    const typed = buildFamilyProductStats([{ name: 'apa', purchased_at: '2026-07-10T10:00:00Z' }])
+    const typed = buildHouseholdProductStats([{ name: 'apa', purchased_at: '2026-07-10T10:00:00Z' }])
     expect(
-      matchFamilyStats('apa', typed, { limit: 6, requireSpecific: false }).map((p) => p.name),
+      matchHouseholdStats('apa', typed, { limit: 6, requireSpecific: false }).map((p) => p.name),
     ).toEqual(['apa'])
   })
 
   // popularity 0 rather than undefined, so these take the identical path through
   // rankSuggestions' comparison and a catalog row with real popularity wins.
   it('returns a zero popularity so the catalog row outranks it on a tie', () => {
-    const [match] = matchFamilyStats('plata', stats, { limit: 6 })
+    const [match] = matchHouseholdStats('plata', stats, { limit: 6 })
     expect(match).toEqual({ name: 'Apa Plata 2L', maker: 'Dorna', popularity: 0 })
   })
 
   it('yields to the catalog spelling when both have the product', () => {
     const fromCatalog = { name: 'Apa Plata 2L', maker: 'Dorna', popularity: 100 }
     const merged = rankSuggestions(
-      [fromCatalog, ...matchFamilyStats('plata', stats, { limit: 6 })],
+      [fromCatalog, ...matchHouseholdStats('plata', stats, { limit: 6 })],
       stats,
       6,
     )
