@@ -8,11 +8,11 @@ import type { ConfirmOptions } from '../../lib/useConfirm'
 import checkIcon from '../../assets/check.svg?raw'
 
 // The actions that cannot be undone: rotating the invite code, leaving, and
-// deleting the family. An owner sees delete, everyone else sees leave — the
-// owner cannot leave a family they still own.
+// deleting the household. An owner sees delete, everyone else sees leave — the
+// owner cannot leave a household they still own.
 const props = defineProps({
-  familyId: { type: String, default: '' },
-  familyName: { type: String, default: '' },
+  householdId: { type: String, default: '' },
+  householdName: { type: String, default: '' },
   isOwner: { type: Boolean, default: false },
   isOwnerOrModerator: { type: Boolean, default: false },
   // The modal's own confirm dialog, handed down so every destructive action in
@@ -24,9 +24,9 @@ const props = defineProps({
 })
 
 const emit = defineEmits<{
-  (e: 'refresh-family'): void
-  (e: 'family-deleted'): void
-  (e: 'family-left'): void
+  (e: 'refresh-household'): void
+  (e: 'household-deleted'): void
+  (e: 'household-left'): void
   (e: 'error', message: string, title?: string): void
 }>()
 
@@ -35,8 +35,8 @@ const db = useSupabase()
 
 const regenerating = ref(false)
 const codeRegenerated = ref(false)
-const leavingFamily = ref(false)
-const deletingFamily = ref(false)
+const leavingHousehold = ref(false)
+const deletingHousehold = ref(false)
 
 let regeneratedTimer: ReturnType<typeof setTimeout> | null = null
 onBeforeUnmount(() => {
@@ -44,7 +44,7 @@ onBeforeUnmount(() => {
 })
 
 async function regenerateInviteCode() {
-  if (!props.familyId || regenerating.value) return
+  if (!props.householdId || regenerating.value) return
   const confirmed = await props.confirm({
     title: 'Regenerate Invite Code?',
     message:
@@ -55,16 +55,16 @@ async function regenerateInviteCode() {
   regenerating.value = true
   try {
     const { error } = await db
-      .from('families')
+      .from('households')
       .update({ invite_code: randomInviteCode() })
-      .eq('id', props.familyId)
+      .eq('id', props.householdId)
     if (error) {
       // Includes the rare unique-index collision on the new code; retrying
       // draws a different one, which is what the message asks for.
       emit('error', userMessage(error, 'Could not regenerate the invite code. Please try again.'))
       return
     }
-    emit('refresh-family')
+    emit('refresh-household')
     codeRegenerated.value = true
     if (regeneratedTimer) clearTimeout(regeneratedTimer)
     regeneratedTimer = setTimeout(() => {
@@ -75,51 +75,51 @@ async function regenerateInviteCode() {
   }
 }
 
-async function leaveFamily() {
-  if (!props.familyId || leavingFamily.value) return
+async function leaveHousehold() {
+  if (!props.householdId || leavingHousehold.value) return
   const confirmed = await props.confirm({
-    title: 'Leave Family?',
+    title: 'Leave Household?',
     message: 'You will lose access to the shopping list and will need a new invite code to rejoin.',
     danger: true,
   })
   if (!confirmed) return
-  leavingFamily.value = true
+  leavingHousehold.value = true
   try {
     const { error } = await db
-      .from('family_members')
+      .from('household_members')
       .delete()
-      .eq('family_id', props.familyId)
+      .eq('household_id', props.householdId)
       .eq('user_id', userId.value)
     if (error) {
-      emit('error', userMessage(error, 'Could not leave the family.'))
+      emit('error', userMessage(error, 'Could not leave the household.'))
       return
     }
-    // HomeView moves to another family, or to setup if none remain.
-    emit('family-left')
+    // HomeView moves to another household, or to setup if none remain.
+    emit('household-left')
   } finally {
-    leavingFamily.value = false
+    leavingHousehold.value = false
   }
 }
 
-async function deleteFamily() {
-  if (!props.familyId || deletingFamily.value) return
+async function deleteHousehold() {
+  if (!props.householdId || deletingHousehold.value) return
   const confirmed = await props.confirm({
-    title: 'Delete Family Group?',
-    message: `Deleting "${props.familyName}" will permanently remove all members, shopping list items, and history. This action cannot be undone.`,
+    title: 'Delete Household?',
+    message: `Deleting "${props.householdName}" will permanently remove all members, shopping list items, and history. This action cannot be undone.`,
     danger: true,
   })
   if (!confirmed) return
-  deletingFamily.value = true
+  deletingHousehold.value = true
   try {
-    const { error } = await db.from('families').delete().eq('id', props.familyId)
+    const { error } = await db.from('households').delete().eq('id', props.householdId)
     if (error) {
-      emit('error', userMessage(error, 'Could not delete the family.'))
+      emit('error', userMessage(error, 'Could not delete the household.'))
       return
     }
-    // HomeView reconciles: switch to another family, or setup if none remain.
-    emit('family-deleted')
+    // HomeView reconciles: switch to another household, or setup if none remain.
+    emit('household-deleted')
   } finally {
-    deletingFamily.value = false
+    deletingHousehold.value = false
   }
 }
 </script>
@@ -151,30 +151,30 @@ async function deleteFamily() {
 
     <!-- Leave (non-owners) -->
     <div class="panel-section" v-if="!isOwner">
-      <h4 class="panel-section-title text-danger">Leave Family</h4>
+      <h4 class="panel-section-title text-danger">Leave Household</h4>
       <div class="card-item card-item--action">
         <div class="card-item__info">
-          <p>This will remove you from the family group. You will no longer have access to the shopping list.</p>
+          <p>This will remove you from the household. You will no longer have access to the shopping list.</p>
         </div>
-        <button class="danger-action-btn" type="button" :disabled="leavingFamily" @click="leaveFamily">Leave Family</button>
+        <button class="danger-action-btn" type="button" :disabled="leavingHousehold" @click="leaveHousehold">Leave Household</button>
       </div>
     </div>
 
     <!-- Delete (owner only) -->
     <div class="panel-section" v-if="isOwner">
-      <h4 class="panel-section-title text-danger">Delete Family Group</h4>
+      <h4 class="panel-section-title text-danger">Delete Household</h4>
       <div class="card-item card-item--action card-item--danger">
         <div class="card-item__info">
-          <p>Permanently deletes <strong>{{ familyName }}</strong>, removes all members, and erases all shopping list data. This cannot be undone.</p>
+          <p>Permanently deletes <strong>{{ householdName }}</strong>, removes all members, and erases all shopping list data. This cannot be undone.</p>
         </div>
         <button
           class="danger-action-btn danger-action-btn--delete"
           type="button"
-          :disabled="deletingFamily"
-          @click="deleteFamily"
+          :disabled="deletingHousehold"
+          @click="deleteHousehold"
         >
-          <span v-if="deletingFamily" class="btn-spinner btn-spinner--light"></span>
-          <span v-else>Delete Family</span>
+          <span v-if="deletingHousehold" class="btn-spinner btn-spinner--light"></span>
+          <span v-else>Delete Household</span>
         </button>
       </div>
     </div>
@@ -232,6 +232,10 @@ async function deleteFamily() {
   align-items: center;
   justify-content: center;
   min-width: 100px;
+  /* Same reason as .danger-action-btn below: nowrap without flex-shrink:0 spills
+     rather than wraps. "Regenerated" is wider than "Regenerate", so this one can
+     overflow at the moment it succeeds. */
+  flex-shrink: 0;
 }
 
 .panel-action-btn:hover:not(:disabled) {
@@ -266,6 +270,12 @@ async function deleteFamily() {
   align-items: center;
   justify-content: center;
   min-width: 100px;
+  /* Pairs with white-space:nowrap. Without it this is an ordinary flex item and
+     will shrink under its own label, which nowrap then spills outside the button
+     rather than wrapping. The paragraph beside it is the part meant to give way.
+     Latent until "Delete Family" became "Delete Household" and the label got
+     wide enough to cross the threshold. */
+  flex-shrink: 0;
 }
 
 .danger-action-btn:hover:not(:disabled) {

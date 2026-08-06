@@ -6,13 +6,13 @@
 
 <p align="center"><b>One shopping list for the whole family — always in sync.</b></p>
 
-Ever bought milk on the way home, only to find your partner already got some an hour ago? FamCart fixes that. It's a shared grocery list that every member of your family sees and edits together, live: when someone adds, checks off, or buys an item, everyone's screen updates in the same second.
+Ever bought milk on the way home, only to find your partner already got some an hour ago? FamCart fixes that. It's a shared grocery list that everyone in your household sees and edits together, live: when someone adds, checks off, or buys an item, everyone's screen updates in the same second.
 
 ## What it does
 
-- 🛒 **One live list per family.** Add an item on your phone, and it appears on everyone else's instantly — no refresh, no "did you get my message?".
+- 🛒 **One live list per household.** Add an item on your phone, and it appears on everyone else's instantly — no refresh, no "did you get my message?".
 
-- 👨‍👩‍👧‍👦 **Easy to join.** Start a family, share a short invite code, done. The family owner decides who can manage the list and its members.
+- 👨‍👩‍👧‍👦 **Easy to join.** Start a household, share a short invite code, done. The household owner decides who can manage the list and its members.
 
 - ✅ **Check, then buy.** Tick items off as you find them in the store, then slide to confirm your checkout. Bought items move into a purchase history, neatly grouped by shopping trip — so "didn't we just buy this?" always has an answer.
 

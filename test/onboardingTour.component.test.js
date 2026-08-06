@@ -32,7 +32,7 @@ describe('OnboardingTour', () => {
     await wrapper.find('.tour-next').trigger('click') // → check out
     await wrapper.find('.tour-next').trigger('click') // → invite (last)
     expect(wrapper.find('.tour-next').text()).toBe('Start shopping')
-    // The invite step surfaces the family's code.
+    // The invite step surfaces the household's code.
     expect(wrapper.text()).toContain('ABCDEFGH')
 
     await wrapper.find('.tour-next').trigger('click') // finish

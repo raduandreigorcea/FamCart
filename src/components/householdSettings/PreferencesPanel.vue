@@ -2,10 +2,10 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useSupabase } from '../../supabase'
 import { userMessage } from '../../lib/errorMessages'
-import { DEFAULT_FAMILY_EMOJI, FAMILY_EMOJIS } from '../../lib/familyEmoji'
+import { DEFAULT_HOUSEHOLD_EMOJI, HOUSEHOLD_EMOJIS } from '../../lib/householdEmoji'
 import {
   clampItemLimit,
-  FAMILY_NAME_MAX_LENGTH,
+  HOUSEHOLD_NAME_MAX_LENGTH,
   ITEM_LIMIT_DEFAULT,
   ITEM_LIMIT_MAX,
   ITEM_LIMIT_MIN,
@@ -15,24 +15,24 @@ import squarePenIcon from '../../assets/square-pen.svg?raw'
 import stickerIcon from '../../assets/sticker.svg?raw'
 import shoppingCartIcon from '../../assets/shopping-cart.svg?raw'
 
-// The three settings an owner can change: the family's name, its emoji, and how
+// The three settings an owner can change: the household's name, its emoji, and how
 // many active items each member may hold. Each is edited locally and committed
 // by its own Save button, so a half-typed name is never written.
 //
 // The item limit is the one a moderator can also change, which is why it sits
 // outside the isOwner sections rather than in a panel of its own.
 const props = defineProps({
-  familyId: { type: String, default: '' },
-  familyName: { type: String, default: '' },
-  familyItemLimit: { type: Number, default: ITEM_LIMIT_DEFAULT },
-  familyEmoji: { type: String, default: '' },
+  householdId: { type: String, default: '' },
+  householdName: { type: String, default: '' },
+  householdItemLimit: { type: Number, default: ITEM_LIMIT_DEFAULT },
+  householdEmoji: { type: String, default: '' },
   isOwner: { type: Boolean, default: false },
 })
 
 // `error` carries the message up to the modal's single ErrorModal rather than
 // opening one per panel — one dialog, wherever the failure came from.
 const emit = defineEmits<{
-  (e: 'refresh-family'): void
+  (e: 'refresh-household'): void
   (e: 'error', message: string, title?: string): void
 }>()
 
@@ -42,7 +42,7 @@ const renameValue = ref('')
 const savingName = ref(false)
 const nameSaved = ref(false)
 const renameLength = computed(() => renameValue.value.length)
-const renameOverLimit = computed(() => renameLength.value > FAMILY_NAME_MAX_LENGTH)
+const renameOverLimit = computed(() => renameLength.value > HOUSEHOLD_NAME_MAX_LENGTH)
 
 const itemLimitValue = ref(ITEM_LIMIT_DEFAULT)
 const savingItemLimit = ref(false)
@@ -55,7 +55,7 @@ const emojiSaved = ref(false)
 // Re-seed the editable fields whenever the source values change — which
 // includes the moment this panel mounts, and a refresh landing underneath it.
 watch(
-  () => [props.familyName, props.familyItemLimit, props.familyEmoji] as const,
+  () => [props.householdName, props.householdItemLimit, props.householdEmoji] as const,
   ([name, limit, emoji]) => {
     renameValue.value = name || ''
     itemLimitValue.value = clampItemLimit(limit)
@@ -82,22 +82,22 @@ onBeforeUnmount(() => {
   savedTimers.clear()
 })
 
-async function renameFamily() {
+async function renameHousehold() {
   if (!props.isOwner) return
   const nextName = renameValue.value.trim()
-  if (!nextName || !props.familyId || savingName.value) return
+  if (!nextName || !props.householdId || savingName.value) return
   if (renameOverLimit.value) {
-    emit('error', `Family name must be ${FAMILY_NAME_MAX_LENGTH} characters or fewer.`, 'Name too long')
+    emit('error', `Household name must be ${HOUSEHOLD_NAME_MAX_LENGTH} characters or fewer.`, 'Name too long')
     return
   }
   savingName.value = true
   try {
-    const { error } = await db.from('families').update({ name: nextName }).eq('id', props.familyId)
+    const { error } = await db.from('households').update({ name: nextName }).eq('id', props.householdId)
     if (error) {
-      emit('error', userMessage(error, 'Could not rename the family.'))
+      emit('error', userMessage(error, 'Could not rename the household.'))
       return
     }
-    emit('refresh-family')
+    emit('refresh-household')
     flashSaved(nameSaved)
   } finally {
     savingName.value = false
@@ -105,18 +105,18 @@ async function renameFamily() {
 }
 
 async function saveEmoji() {
-  if (!props.isOwner || !props.familyId || savingEmoji.value) return
+  if (!props.isOwner || !props.householdId || savingEmoji.value) return
   savingEmoji.value = true
   try {
     const { error } = await db
-      .from('families')
+      .from('households')
       .update({ emoji: emojiValue.value || null })
-      .eq('id', props.familyId)
+      .eq('id', props.householdId)
     if (error) {
-      emit('error', userMessage(error, 'Could not save the family emoji.'))
+      emit('error', userMessage(error, 'Could not save the household emoji.'))
       return
     }
-    emit('refresh-family')
+    emit('refresh-household')
     flashSaved(emojiSaved)
   } finally {
     savingEmoji.value = false
@@ -131,7 +131,7 @@ function pickEmoji(emoji: string) {
 }
 
 async function saveItemLimit() {
-  if (!props.familyId || savingItemLimit.value) return
+  if (!props.householdId || savingItemLimit.value) return
 
   const normalizedLimit = clampItemLimit(itemLimitValue.value)
   itemLimitValue.value = normalizedLimit
@@ -139,14 +139,14 @@ async function saveItemLimit() {
   savingItemLimit.value = true
   try {
     const { error } = await db
-      .from('families')
+      .from('households')
       .update({ max_items_per_member: normalizedLimit })
-      .eq('id', props.familyId)
+      .eq('id', props.householdId)
     if (error) {
       emit('error', userMessage(error, 'Could not save the item limit.'))
       return
     }
-    emit('refresh-family')
+    emit('refresh-household')
     flashSaved(itemLimitSaved)
   } finally {
     savingItemLimit.value = false
@@ -164,7 +164,7 @@ async function saveItemLimit() {
           <div class="pref-card__head">
             <span class="pref-card__icon" aria-hidden="true" v-html="squarePenIcon"></span>
             <div class="pref-card__meta">
-              <h5>Family Name</h5>
+              <h5>Household Name</h5>
               <p>Choose a name everyone in your household can recognize quickly.</p>
             </div>
           </div>
@@ -173,11 +173,11 @@ async function saveItemLimit() {
             <div class="input-action-group">
               <div class="input-wrapper">
                 <input
-                  id="familyNameInput"
+                  id="householdNameInput"
                   v-model="renameValue"
                   class="panel-input"
                   type="text"
-                  placeholder="My Awesome Family"
+                  placeholder="My Awesome Household"
                 />
               </div>
               <div class="panel-save-stack">
@@ -185,7 +185,7 @@ async function saveItemLimit() {
                   class="panel-save-btn"
                   type="button"
                   :disabled="savingName"
-                  @click="renameFamily"
+                  @click="renameHousehold"
                 >
                   <span v-if="savingName" class="btn-spinner"></span>
                   <span v-else-if="nameSaved" class="success-state animate-pop">
@@ -195,7 +195,7 @@ async function saveItemLimit() {
                   <span v-else>Save</span>
                 </button>
                 <p class="panel-counter panel-counter--under-save" :class="{ 'panel-counter--danger': renameOverLimit }">
-                  {{ renameLength }}/{{ FAMILY_NAME_MAX_LENGTH }}
+                  {{ renameLength }}/{{ HOUSEHOLD_NAME_MAX_LENGTH }}
                 </p>
               </div>
             </div>
@@ -206,24 +206,24 @@ async function saveItemLimit() {
           <div class="pref-card__head">
             <span class="pref-card__icon" aria-hidden="true" v-html="stickerIcon"></span>
             <div class="pref-card__meta">
-              <h5>Family Emoji</h5>
-              <p>Pick an emoji to represent your family in the switcher.</p>
+              <h5>Household Emoji</h5>
+              <p>Pick an emoji for your household. It shows in the top bar.</p>
             </div>
             <span
               class="pref-card__value pref-card__value--emoji"
               :class="{ 'pref-card__value--emoji-default': !emojiValue }"
-            >{{ emojiValue || DEFAULT_FAMILY_EMOJI }}</span>
+            >{{ emojiValue || DEFAULT_HOUSEHOLD_EMOJI }}</span>
           </div>
 
           <div class="emoji-picker">
             <button
-              v-for="e in FAMILY_EMOJIS"
+              v-for="e in HOUSEHOLD_EMOJIS"
               :key="e"
               type="button"
               class="emoji-option"
               :class="{ 'emoji-option--active': emojiValue === e }"
               :aria-pressed="emojiValue === e"
-              :aria-label="`Use ${e} for this family`"
+              :aria-label="`Use ${e} for this household`"
               @click="pickEmoji(e)"
             >{{ e }}</button>
           </div>
@@ -350,7 +350,7 @@ async function saveItemLimit() {
   border-radius: var(--radius-md);
 }
 
-/* Nothing picked yet: the tile previews the fallback the switcher will use,
+/* Nothing picked yet: the tile previews the fallback the topbar will use,
    dimmed so it still reads as a placeholder rather than a choice. */
 .pref-card__value--emoji-default {
   opacity: 0.45;

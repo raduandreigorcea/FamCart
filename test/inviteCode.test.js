@@ -1,4 +1,4 @@
-// The invite code is the only credential guarding family membership, and it was
+// The invite code is the only credential guarding household membership, and it was
 // duplicated across two components before it lived here. These pin the two
 // properties that make it worth anything: it is unguessable, and it always
 // passes the check the join form applies to it.

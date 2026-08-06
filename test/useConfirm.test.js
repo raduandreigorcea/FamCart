@@ -14,9 +14,9 @@ describe('useConfirm', () => {
   it('opens with the question and resolves true when confirmed', async () => {
     const { state, confirm, resolveWith } = useConfirm()
 
-    const answer = confirm({ title: 'Delete family?', message: 'Gone for good.', danger: true })
+    const answer = confirm({ title: 'Delete household?', message: 'Gone for good.', danger: true })
     expect(state.value.open).toBe(true)
-    expect(state.value.title).toBe('Delete family?')
+    expect(state.value.title).toBe('Delete household?')
     expect(state.value.danger).toBe(true)
 
     resolveWith(true)

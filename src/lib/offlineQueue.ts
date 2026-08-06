@@ -5,7 +5,7 @@ import { findActiveItemByName, type ShoppingItem } from './shoppingList'
 // every mutation optimistically already; when the browser reports no
 // connectivity they enqueue the write here instead of hitting the network, and
 // replay the queue in order once connectivity returns. The queue is keyed to
-// one user (like the family snapshot) and survives restarts via localStorage,
+// one user (like the household snapshot) and survives restarts via localStorage,
 // pairing with the snapshot cache: the snapshot restores what the list looked
 // like, the queue restores what still has to reach the server.
 
@@ -42,6 +42,18 @@ const STORAGE_KEY = 'famcart-offline-queue'
 const VERSION = 1
 const TABLE = 'shopping_list_items'
 
+// A queued insert carries the literal row it will POST, so a mutation enqueued
+// before the families→households rename still says `family_id` — a column that
+// no longer exists. Replaying it would fail permanently, and this queue drops
+// permanent failures by design, so the user would silently lose whatever they
+// added while offline during the upgrade. Rewriting the key on the way out is
+// the whole fix.
+function renameLegacyRowKeys(row: Record<string, unknown>): Record<string, unknown> {
+  if (!('family_id' in row)) return row
+  const { family_id: legacyId, ...rest } = row
+  return { ...rest, household_id: rest.household_id ?? legacyId }
+}
+
 export function loadOfflineQueue(storage: Storage, userId: string): OfflineMutation[] {
   try {
     const raw = storage.getItem(STORAGE_KEY)
@@ -51,7 +63,11 @@ export function loadOfflineQueue(storage: Storage, userId: string): OfflineMutat
     // Never replay one account's writes as another account on the same browser.
     if (stored.userId !== userId) return []
     if (!Array.isArray(stored.mutations)) return []
-    return stored.mutations
+    return stored.mutations.map((mutation) =>
+      mutation.kind === 'insert'
+        ? { ...mutation, row: renameLegacyRowKeys(mutation.row) }
+        : mutation,
+    )
   } catch {
     return []
   }
@@ -190,7 +206,7 @@ async function applyMutation(
       const { data, error: selectErr } = await db
         .from(TABLE)
         .select('*')
-        .eq('family_id', mutation.row.family_id)
+        .eq('household_id', mutation.row.household_id)
         .eq('checked', false)
       if (selectErr) return { ok: false, transient: isOfflineError(selectErr) }
       const target = findActiveItemByName((data ?? []) as ShoppingItem[], String(mutation.row.name))

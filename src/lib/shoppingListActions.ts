@@ -16,7 +16,7 @@ import {
 } from './offlineQueue'
 import { userMessage } from './errorMessages'
 import { ITEM_NAME_MAX_LENGTH } from './limits'
-import type { ShoppingItemRow } from './familyRealtime'
+import type { ShoppingItemRow } from './householdRealtime'
 import type { ProductSuggestion } from './productSearch'
 
 // Every write the list can make, and the optimistic bookkeeping around them.
@@ -47,7 +47,7 @@ export interface ShoppingListActions {
 export function useShoppingListActions(options: {
   db: SupabaseClient
   items: Ref<ShoppingItemRow[]>
-  familyId: Ref<string | null>
+  householdId: Ref<string | null>
   /** The Clerk id, or the remembered one while Clerk is still loading offline. */
   userId: Ref<string>
   itemLimit: Ref<number>
@@ -59,7 +59,7 @@ export function useShoppingListActions(options: {
   selectedProduct: Ref<(ProductSuggestion & { custom?: boolean }) | null>
   // The view's shared error surface. addError below is this composable's own
   // because only the add path writes it; loadError is passed in because the
-  // family loaders and the reconnect sync write it too.
+  // household loaders and the reconnect sync write it too.
   loadError: Ref<string>
   // From the suggestions composable: what to tell the search screen landed, and
   // what to record against the catalog once it has.
@@ -72,7 +72,7 @@ export function useShoppingListActions(options: {
   const {
     db,
     items,
-    familyId,
+    householdId,
     userId,
     itemLimit,
     isOffline,
@@ -133,13 +133,13 @@ export function useShoppingListActions(options: {
       db
         .from('shopping_list_items')
         .select('*')
-        .eq('family_id', familyId.value)
+        .eq('household_id', householdId.value)
         .eq('checked', false)
         .order('created_at', { ascending: true }),
       db
         .from('shopping_list_items')
         .select('*')
-        .eq('family_id', familyId.value)
+        .eq('household_id', householdId.value)
         .eq('checked', true)
         // Most recently checked first, so the 30-row cap keeps the latest ticks.
         // This is a "which rows survive the cap" order, not a display order:
@@ -191,16 +191,16 @@ export function useShoppingListActions(options: {
     // Only inserts: an update or delete refers to a row the server already has,
     // so the fetched copy is the right thing to show until the queue drains.
     //
-    // Scoped to this family, and that is load-bearing: the queue is keyed by
-    // user, not by family, and a user may belong to three. Without the
-    // family_id check, an add queued offline in one family renders in another
-    // family's list the moment you switch to it — the row is never written
+    // Scoped to this household, and that is load-bearing: the queue is keyed by
+    // user, not by household, and a user may belong to three. Without the
+    // household_id check, an add queued offline in one household renders in another
+    // household's list the moment you switch to it — the row is never written
     // there, but showing it at all is the cross-tenant leak the whole RLS design
     // exists to prevent.
     const queued = userId.value ? loadOfflineQueue(localStorage, userId.value) : []
     for (const mutation of queued) {
       if (mutation.kind !== 'insert') continue
-      if (mutation.row.family_id !== familyId.value) continue
+      if (mutation.row.household_id !== householdId.value) continue
       if (fresh.some((i) => i.id === mutation.id)) continue
       fresh.push({
         checked: false,
@@ -232,7 +232,7 @@ export function useShoppingListActions(options: {
       const { data } = await db
         .from('shopping_list_items')
         .select('*')
-        .eq('family_id', familyId.value)
+        .eq('household_id', householdId.value)
         .eq('checked', false)
       target = findActiveItemByName((data ?? []) as ShoppingItemRow[], name, { maker })
       if (target && !items.value.some((i) => i.id === target!.id)) {
@@ -343,7 +343,7 @@ export function useShoppingListActions(options: {
     const id = crypto.randomUUID()
     const row = {
       id,
-      family_id: familyId.value,
+      household_id: householdId.value,
       name,
       maker,
       quantity,
@@ -566,7 +566,7 @@ export function useShoppingListActions(options: {
             const { data } = await db
               .from('shopping_list_items')
               .select('*')
-              .eq('family_id', familyId.value)
+              .eq('household_id', householdId.value)
               .eq('checked', false)
             target = findActiveItemByName((data ?? []) as ShoppingItemRow[], item.name, {
               excludeId: item.id,
@@ -602,7 +602,7 @@ export function useShoppingListActions(options: {
     // row that happened to be named, mirroring the RPC's own `checked = true`
     // guard.
     //
-    // None of them being here is a different situation: switching family
+    // None of them being here is a different situation: switching household
     // replaces the whole array while that animation is still running. This used
     // to read as "nothing to buy" and return, leaving the rows checked in the
     // database after the user had been told they were bought. There is nothing

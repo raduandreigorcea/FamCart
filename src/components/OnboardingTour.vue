@@ -46,7 +46,7 @@ const steps = [
   },
   {
     key: 'invite',
-    title: 'Bring your family in',
+    title: 'Bring your household in',
     body: 'Share your invite code so everyone shops from the same list. Every change shows up for all of you the moment it happens.',
   },
 ]

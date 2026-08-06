@@ -37,7 +37,7 @@ const props = defineProps({
   maxLength: { type: Number, default: 120 },
   // Product catalog matches for the current input: [{ name, maker }].
   suggestions: { type: Array as PropType<ProductSuggestion[]>, default: () => [] },
-  // What this family buys most, same shape as suggestions. Shown on the phone
+  // What this household buys most, same shape as suggestions. Shown on the phone
   // search screen before anything is typed; ignored everywhere else, where
   // there is no screen to fill.
   recents: { type: Array as PropType<ProductSuggestion[]>, default: () => [] },
@@ -88,7 +88,7 @@ function selectSuggestion(product: ProductSuggestion) {
   emit('select', product)
 }
 
-// Before anything is typed the screen shows what this family buys, so the
+// Before anything is typed the screen shows what this household buys, so the
 // common case — the same bread as last week — is one tap and no typing. Once
 // there is a query it is the matches' screen, and these step aside.
 const showingRecents = computed(
@@ -106,7 +106,7 @@ const hasResults = computed(
 )
 const panelOpen = computed(() => inputFocused.value && (expanded.value || hasResults.value))
 
-// A family with no history yet gets a line telling them what to do rather than
+// A household with no history yet gets a line telling them what to do rather than
 // a blank screen. Only on an empty query: telling someone who has typed a
 // character to type a product name is worse than saying nothing, and that
 // single keystroke before the search starts is the only other time this would
@@ -500,7 +500,7 @@ function decreaseQty() {
             </template>
           </ul>
 
-          <!-- A family with nothing bought yet has no usuals to open on. An
+          <!-- A household with nothing bought yet has no usuals to open on. An
                empty screen should say what to do with it. -->
           <p v-if="showingHint" class="suggestions-hint">Type a product name to search.</p>
         </div>

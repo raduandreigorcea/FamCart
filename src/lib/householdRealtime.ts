@@ -11,47 +11,47 @@ export interface ShoppingItemRow extends ShoppingItem {
   [key: string]: unknown
 }
 
-export interface FamilyMemberProfile {
+export interface HouseholdMemberProfile {
   user_id: string
   display_name?: string | null
   image_url?: string | null
   role?: string | null
 }
 
-export interface UseFamilyRealtimeOptions {
+export interface UseHouseholdRealtimeOptions {
   db: SupabaseClient
-  familyId: Ref<string | null>
+  householdId: Ref<string | null>
   hasInitialized: Ref<boolean>
   items: Ref<ShoppingItemRow[]>
-  familyMembers: Ref<FamilyMemberProfile[]>
+  householdMembers: Ref<HouseholdMemberProfile[]>
   loadItems: () => Promise<void>
-  loadFamilyHeader: () => Promise<void>
+  loadHouseholdHeader: () => Promise<void>
   refreshMembershipOrRedirect: () => Promise<void>
-  onFamilyDeleted: () => void
+  onHouseholdDeleted: () => void
   // True while the given item id has a local write in flight; its realtime echo
   // must not be overwritten by an unrelated concurrent update.
   hasPendingWrite?: (id: string) => boolean
 }
 
-// Owns the realtime lifecycle for the family dashboard: the three Postgres
-// change channels (items, members, family), reconnect scheduling with
+// Owns the realtime lifecycle for the household dashboard: the three Postgres
+// change channels (items, members, household), reconnect scheduling with
 // throttling, the visibility/online/user-activity wake-ups, and the watchdog
 // interval that reconciles state whenever the socket is down.
 //
-// The caller keeps ownership of the data (items/familyMembers refs and the
+// The caller keeps ownership of the data (items/householdMembers refs and the
 // load/refresh callbacks); this composable decides when to call them.
-export function useFamilyRealtime({
+export function useHouseholdRealtime({
   db,
-  familyId,
+  householdId,
   hasInitialized,
   items,
-  familyMembers,
+  householdMembers,
   loadItems,
-  loadFamilyHeader,
+  loadHouseholdHeader,
   refreshMembershipOrRedirect,
-  onFamilyDeleted,
+  onHouseholdDeleted,
   hasPendingWrite,
-}: UseFamilyRealtimeOptions) {
+}: UseHouseholdRealtimeOptions) {
   const realtimeHealthy = ref(false)
   const reconnectInProgress = ref(false)
   const channelsRefreshing = ref(false)
@@ -70,7 +70,7 @@ export function useFamilyRealtime({
     if (document.visibilityState === 'visible') {
       if (!isCurrentlyOffline()) {
         void loadItems()
-        void loadFamilyHeader()
+        void loadHouseholdHeader()
         scheduleRealtimeReconnect('focus/online', 0)
       }
     } else {
@@ -92,7 +92,7 @@ export function useFamilyRealtime({
   // socket dead on the one platform the Capacitor status was added to serve.
   function shouldKeepRealtimeActive() {
     return hasInitialized.value
-      && !!familyId.value
+      && !!householdId.value
       && document.visibilityState === 'visible'
       && !isCurrentlyOffline()
   }
@@ -108,7 +108,7 @@ export function useFamilyRealtime({
       if (realtimeHealthy.value) return
       scheduleRealtimeReconnect('watchdog tick', 0)
       void loadItems()
-      void loadFamilyHeader()
+      void loadHouseholdHeader()
     }, FALLBACK_REFRESH_MS)
   }
 
@@ -141,7 +141,7 @@ export function useFamilyRealtime({
       db.realtime.setAuth()
       db.realtime.connect()
       await setupRealtimeSubscriptions()
-      await Promise.all([loadItems(), loadFamilyHeader()])
+      await Promise.all([loadItems(), loadHouseholdHeader()])
     } catch (error) {
       // A reconnect that throws is a real fault, unlike the ordinary CLOSED /
       // TIMED_OUT statuses the watchdog already handles by retrying. `reason`
@@ -176,8 +176,8 @@ export function useFamilyRealtime({
       // was down, so each one pulls back whatever it is responsible for.
       if (hasInitialized.value) {
         if (channelName === 'listChannel') void loadItems()
-        if (channelName === 'membersChannel' || channelName === 'familyChannel') {
-          void loadFamilyHeader()
+        if (channelName === 'membersChannel' || channelName === 'householdChannel') {
+          void loadHouseholdHeader()
         }
       }
       return
@@ -200,7 +200,7 @@ export function useFamilyRealtime({
   }
 
   async function setupRealtimeSubscriptions() {
-    if (!familyId.value) return
+    if (!householdId.value) return
 
     // Revert Realtime auth to use the dynamic accessToken callback function configured in supabase.ts,
     // preventing static token expiration during automatic WebSocket reconnects.
@@ -211,14 +211,14 @@ export function useFamilyRealtime({
 
     try {
       const listChannel = db
-        .channel(`shopping-list:${familyId.value}`)
+        .channel(`shopping-list:${householdId.value}`)
         .on(
           'postgres_changes',
           {
             event: 'INSERT',
             schema: 'public',
             table: 'shopping_list_items',
-            filter: `family_id=eq.${familyId.value}`,
+            filter: `household_id=eq.${householdId.value}`,
           },
           (payload) => {
             const newRecord = payload.new as ShoppingItemRow
@@ -236,7 +236,7 @@ export function useFamilyRealtime({
             event: 'UPDATE',
             schema: 'public',
             table: 'shopping_list_items',
-            filter: `family_id=eq.${familyId.value}`,
+            filter: `household_id=eq.${householdId.value}`,
           },
           (payload) => {
             const newRecord = payload.new as ShoppingItemRow
@@ -265,10 +265,10 @@ export function useFamilyRealtime({
             // 007_realtime.sql set `replica identity full` for — without the full
             // old row a DELETE payload carries only the primary key and the
             // filter cannot match. The members channel below already did this;
-            // this one was left unscoped, so a user in several families
-            // received every family's item deletions here and discarded them
+            // this one was left unscoped, so a user in several households
+            // received every household's item deletions here and discarded them
             // client-side.
-            filter: `family_id=eq.${familyId.value}`,
+            filter: `household_id=eq.${householdId.value}`,
           },
           (payload) => {
             const oldRecord = payload.old as Partial<ShoppingItemRow>
@@ -285,21 +285,21 @@ export function useFamilyRealtime({
         })
 
       const membersChannel = db
-        .channel(`family-members:${familyId.value}`)
+        .channel(`household-members:${householdId.value}`)
         .on(
           'postgres_changes',
           {
             event: 'INSERT',
             schema: 'public',
-            table: 'family_members',
-            filter: `family_id=eq.${familyId.value}`,
+            table: 'household_members',
+            filter: `household_id=eq.${householdId.value}`,
           },
           () => {
-            // Refetch rather than patch. The payload is a family_members row,
-            // which since the profiles split (003_families_and_members.sql) carries no name or
+            // Refetch rather than patch. The payload is a household_members row,
+            // which since the profiles split (003_households_and_members.sql) carries no name or
             // avatar — it could only ever seed a placeholder that the refetch
             // below immediately overwrote a moment later.
-            void loadFamilyHeader()
+            void loadHouseholdHeader()
           },
         )
         .on(
@@ -307,13 +307,13 @@ export function useFamilyRealtime({
           {
             event: 'DELETE',
             schema: 'public',
-            table: 'family_members',
-            filter: `family_id=eq.${familyId.value}`,
+            table: 'household_members',
+            filter: `household_id=eq.${householdId.value}`,
           },
           (payload) => {
-            const removedUserId = (payload.old as Partial<FamilyMemberProfile>)?.user_id
+            const removedUserId = (payload.old as Partial<HouseholdMemberProfile>)?.user_id
             if (removedUserId) {
-              familyMembers.value = familyMembers.value.filter((m) => m.user_id !== removedUserId)
+              householdMembers.value = householdMembers.value.filter((m) => m.user_id !== removedUserId)
             }
             void refreshMembershipOrRedirect()
           },
@@ -323,41 +323,41 @@ export function useFamilyRealtime({
           {
             event: 'UPDATE',
             schema: 'public',
-            table: 'family_members',
-            filter: `family_id=eq.${familyId.value}`,
+            table: 'household_members',
+            filter: `household_id=eq.${householdId.value}`,
           },
           () => {
-            void loadFamilyHeader()
+            void loadHouseholdHeader()
           },
         )
         .subscribe((status) => {
           handleChannelStatus('membersChannel', status)
         })
 
-      const familyChannel = db
-        .channel(`family:${familyId.value}`)
+      const householdChannel = db
+        .channel(`household:${householdId.value}`)
         .on(
           'postgres_changes',
           {
             event: '*',
             schema: 'public',
-            table: 'families',
-            filter: `id=eq.${familyId.value}`,
+            table: 'households',
+            filter: `id=eq.${householdId.value}`,
           },
           (payload) => {
             if (payload.eventType === 'DELETE') {
               cleanupRealtimeSubscriptions()
-              onFamilyDeleted()
+              onHouseholdDeleted()
               return
             }
-            void loadFamilyHeader()
+            void loadHouseholdHeader()
           },
         )
         .subscribe((status) => {
-          handleChannelStatus('familyChannel', status)
+          handleChannelStatus('householdChannel', status)
         })
 
-      realtimeChannels.push(listChannel, membersChannel, familyChannel)
+      realtimeChannels.push(listChannel, membersChannel, householdChannel)
     } finally {
       channelsRefreshing.value = false
     }

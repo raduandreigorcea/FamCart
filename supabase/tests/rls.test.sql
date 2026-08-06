@@ -4,30 +4,34 @@
 --   supabase test db
 --
 -- These assert the guarantees the app leans on but can't verify from the client:
---   1. A member of one family cannot read another family's items (no cross-tenant leak).
+--   1. A member of one household cannot read another household's items (no cross-tenant leak).
 --   2. The unthrottled invite-code lookup RPC is gone: joining is the only path
 --      that resolves a code, and it is throttled and audited.
 --   3. The per-member active-item cap is enforced by the DB trigger, not just the UI.
 --   4. Purchase history is written only by buy_items(): the RPC is scoped to
---      the caller's families, and direct inserts (forged names/timestamps) are
+--      the caller's households, and direct inserts (forged names/timestamps) are
 --      rejected outright.
 --   5. The invite code is checked by the database at join time: a direct
---      membership insert fails even with a known family uuid (the removed-
---      member-rejoin vector), and join_family_with_code() is the only way in.
+--      membership insert fails even with a known household uuid (the removed-
+--      member-rejoin vector), and join_household_with_code() is the only way in.
+--      Nor can an existing membership row be rewritten into one: a moderator
+--      cannot repoint another member's row -- the owner's included -- at a
+--      different account, which would be an eviction and an uninvited join in
+--      one unaudited statement (003_households_and_members.sql).
 --   6. The product catalog is readable by any signed-in user but writable
 --      only by the service role (the seed script) and the catalog RPCs.
---   7. A family's contributed products stay theirs: add_custom_product() scopes
---      them to a family the caller is actually in, other families cannot see
+--   7. A household's contributed products stay theirs: add_custom_product() scopes
+--      them to a household the caller is actually in, other households cannot see
 --      them, and they go global only once enough distinct accounts (contributed_by)
 --      add the same product.
---   8. A user can own at most one family (003_families_and_members.sql) -- a complementary
+--   8. A user can own at most one household (003_households_and_members.sql) -- a complementary
 --      product rule alongside the contributed_by promotion gate.
 --   9. Bulk-imported catalog rows say where they came from, clients cannot reach
 --      the import path at all, and an import can never rewrite a curated
 --      product or spend a product's earned popularity (006_product_catalog.sql).
 --  10. The security audit log is unreadable and unforgeable from a client role,
 --      invite-code guessing is capped per user, and privilege changes and member
---      removals leave a record (002_security_audit.sql, 003_families_and_members.sql).
+--      removals leave a record (002_security_audit.sql, 003_households_and_members.sql).
 --  11. Catalog ranking cannot be inflated without limit: the global add_count
 --      stops climbing at the hourly ceiling, the counters are unreachable from a
 --      client, and crossing the limit is audited once per window (002_security_audit.sql).
@@ -35,12 +39,12 @@
 --      inserts stop at the hourly limit, crossing it leaves exactly one audit row
 --      that survives the rejection, and the seed/service-role path with no JWT is
 --      unaffected (004_shopping_list.sql).
---  13. Leaving a family and being removed from one are logged as different kinds,
---      so the digest can tell "people left" from "someone is emptying a family"
---      (003_families_and_members.sql).
+--  13. Leaving a household and being removed from one are logged as different kinds,
+--      so the digest can tell "people left" from "someone is emptying a household"
+--      (003_households_and_members.sql).
 --  14. Profile writes have an hourly ceiling too -- it is the one table a client
 --      may rewrite about itself with no breadth cap above it
---      (003_families_and_members.sql).
+--      (003_households_and_members.sql).
 --  15. Table privileges match what the policies describe: anon reaches nothing,
 --      and a signed-in user cannot write purchase_history or product_catalog even
 --      though hosted Supabase grants those at provisioning (003-006).
@@ -48,17 +52,17 @@
 -- Tests run inside a transaction that is rolled back, so they leave no data behind.
 
 begin;
-select plan(84);
+select plan(88);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
--- Three families, because promoting a contributed product to the global catalog
+-- Three households, because promoting a contributed product to the global catalog
 -- takes three distinct ones (006_product_catalog.sql).
-insert into public.families (id, name, invite_code, created_by) values
-  ('00000000-0000-0000-0000-0000000000a1', 'Family A', 'AAAAAAA2', 'user_a'),
-  ('00000000-0000-0000-0000-0000000000b1', 'Family B', 'BBBBBBB2', 'user_b'),
-  ('00000000-0000-0000-0000-0000000000c1', 'Family C', 'CCCCCCC2', 'user_c');
+insert into public.households (id, name, invite_code, created_by) values
+  ('00000000-0000-0000-0000-0000000000a1', 'Household A', 'AAAAAAA2', 'user_a'),
+  ('00000000-0000-0000-0000-0000000000b1', 'Household B', 'BBBBBBB2', 'user_b'),
+  ('00000000-0000-0000-0000-0000000000c1', 'Household C', 'CCCCCCC2', 'user_c');
 
--- Every family_members row now references a profiles row (003_families_and_members.sql's FK),
+-- Every household_members row now references a profiles row (003_households_and_members.sql's FK),
 -- so each test account needs a profile before its membership is seeded below.
 insert into public.profiles (user_id, display_name) values
   ('user_a', 'User A'),
@@ -69,22 +73,22 @@ insert into public.profiles (user_id, display_name) values
   ('user_f', 'User F'),
   ('attacker', 'Attacker');
 
-insert into public.family_members (family_id, user_id, role) values
+insert into public.household_members (household_id, user_id, role) values
   ('00000000-0000-0000-0000-0000000000a1', 'user_a', 'moderator'),
   ('00000000-0000-0000-0000-0000000000b1', 'user_b', 'moderator'),
   ('00000000-0000-0000-0000-0000000000c1', 'user_c', 'moderator');
 
--- Fixture for 7i: three more families, each owned by a distinct account, plus one
+-- Fixture for 7i: three more households, each owned by a distinct account, plus one
 -- "attacker" account that is a member of all three. Promotion counts distinct
 -- contributed_by, so this account contributing the same product to all three still
 -- counts as one -- under the old distinct-owner count these three owners would have
 -- crossed the threshold.
-insert into public.families (id, name, invite_code, created_by) values
-  ('00000000-0000-0000-0000-0000000000d1', 'Family D', 'DDDDDDD2', 'user_d'),
-  ('00000000-0000-0000-0000-0000000000e1', 'Family E', 'EEEEEEE2', 'user_e'),
-  ('00000000-0000-0000-0000-0000000000f1', 'Family F', 'FFFFFFF2', 'user_f');
+insert into public.households (id, name, invite_code, created_by) values
+  ('00000000-0000-0000-0000-0000000000d1', 'Household D', 'DDDDDDD2', 'user_d'),
+  ('00000000-0000-0000-0000-0000000000e1', 'Household E', 'EEEEEEE2', 'user_e'),
+  ('00000000-0000-0000-0000-0000000000f1', 'Household F', 'FFFFFFF2', 'user_f');
 
-insert into public.family_members (family_id, user_id, role) values
+insert into public.household_members (household_id, user_id, role) values
   ('00000000-0000-0000-0000-0000000000d1', 'user_d', 'moderator'),
   ('00000000-0000-0000-0000-0000000000e1', 'user_e', 'moderator'),
   ('00000000-0000-0000-0000-0000000000f1', 'user_f', 'moderator'),
@@ -92,25 +96,25 @@ insert into public.family_members (family_id, user_id, role) values
   ('00000000-0000-0000-0000-0000000000e1', 'attacker', 'member'),
   ('00000000-0000-0000-0000-0000000000f1', 'attacker', 'member');
 
--- 8. One family per owner. Asserted here as the superuser, so RLS is out of the
--- way and the unique index (003_families_and_members.sql) is the only thing that can reject the
--- second family -- a complementary product rule alongside the contributed_by
--- promotion gate. user_a already owns Family A above.
+-- 8. One household per owner. Asserted here as the superuser, so RLS is out of the
+-- way and the unique index (003_households_and_members.sql) is the only thing that can reject the
+-- second household -- a complementary product rule alongside the contributed_by
+-- promotion gate. user_a already owns Household A above.
 select throws_ok(
-  $$ insert into public.families (name, invite_code, created_by)
-     values ('Family A2', 'AAAAAAA3', 'user_a') $$,
+  $$ insert into public.households (name, invite_code, created_by)
+     values ('Household A2', 'AAAAAAA3', 'user_a') $$,
   '23505',
   null,
-  'a user can own at most one family'
+  'a user can own at most one household'
 );
 
 -- Checked, so only the membership check in buy_items() can protect it.
-insert into public.shopping_list_items (id, family_id, name, added_by, checked) values
+insert into public.shopping_list_items (id, household_id, name, added_by, checked) values
   ('00000000-0000-0000-0000-0000000000b2',
-   '00000000-0000-0000-0000-0000000000b1', 'family B secret', 'user_b', true);
+   '00000000-0000-0000-0000-0000000000b1', 'household B secret', 'user_b', true);
 
--- Cap Family A at one active item so the trigger is easy to trip.
-update public.families
+-- Cap Household A at one active item so the trigger is easy to trip.
+update public.households
 set max_items_per_member = 1
 where id = '00000000-0000-0000-0000-0000000000a1';
 
@@ -127,31 +131,31 @@ set local request.jwt.claims = '{"sub":"user_a"}';
 -- 1. Cross-tenant read is blocked.
 select is(
   (select count(*)::int from public.shopping_list_items
-   where family_id = '00000000-0000-0000-0000-0000000000b1'),
+   where household_id = '00000000-0000-0000-0000-0000000000b1'),
   0,
-  'user_a cannot read Family B items'
+  'user_a cannot read Household B items'
 );
 
 -- 2. No unthrottled invite-code lookup exists. An earlier schema had a
--- find_family_by_invite_code() RPC, which let any signed-in caller test a
+-- find_household_by_invite_code() RPC, which let any signed-in caller test a
 -- guessed code for free — the exact primitive a brute-forcer wants, and cheaper
 -- to call than joining. Nothing in supabase/migrations creates it now, and this
 -- asserts that stays true: joining is the only path that resolves a code, and it
--- is throttled and audited (003_families_and_members.sql).
+-- is throttled and audited (003_households_and_members.sql).
 select is(
   (select count(*)::int from pg_proc
-   where proname = 'find_family_by_invite_code'
+   where proname = 'find_household_by_invite_code'
      and pronamespace = 'public'::regnamespace),
   0,
   'the unthrottled invite-code lookup RPC no longer exists'
 );
 
 -- 3. Per-member active-item cap is enforced (limit is 1; second insert must fail).
-insert into public.shopping_list_items (family_id, name, added_by)
+insert into public.shopping_list_items (household_id, name, added_by)
 values ('00000000-0000-0000-0000-0000000000a1', 'first item', 'user_a');
 
 select throws_ok(
-  $$ insert into public.shopping_list_items (family_id, name, added_by)
+  $$ insert into public.shopping_list_items (household_id, name, added_by)
      values ('00000000-0000-0000-0000-0000000000a1', 'second item', 'user_a') $$,
   'P0001',
   'You reached your limit of 1 active items.',
@@ -160,23 +164,23 @@ select throws_ok(
 
 -- ── 4. Purchase history is written only through buy_items ────────────────────
 
--- 4a. buy_items is scoped to the caller's families, even for checked items
+-- 4a. buy_items is scoped to the caller's households, even for checked items
 -- named by id (buy_items is SECURITY DEFINER, so this guard is all there is).
 select is(
   public.buy_items(array['00000000-0000-0000-0000-0000000000b2']::uuid[]),
   0,
-  'buy_items ignores items in families the caller is not a member of'
+  'buy_items ignores items in households the caller is not a member of'
 );
 
 -- 4b. Buying own checked item archives it...
 update public.shopping_list_items
 set checked = true
-where family_id = '00000000-0000-0000-0000-0000000000a1' and added_by = 'user_a';
+where household_id = '00000000-0000-0000-0000-0000000000a1' and added_by = 'user_a';
 
 select is(
   public.buy_items(array(
     select id from public.shopping_list_items
-    where family_id = '00000000-0000-0000-0000-0000000000a1' and added_by = 'user_a'
+    where household_id = '00000000-0000-0000-0000-0000000000a1' and added_by = 'user_a'
   )),
   1,
   'buy_items archives the caller''s checked item'
@@ -185,7 +189,7 @@ select is(
 -- 4c. ...into history, server-stamped with a checkout id.
 select is(
   (select count(*)::int from public.purchase_history
-   where family_id = '00000000-0000-0000-0000-0000000000a1'
+   where household_id = '00000000-0000-0000-0000-0000000000a1'
      and purchased_by = 'user_a'
      and checkout_id is not null),
   1,
@@ -194,7 +198,7 @@ select is(
 
 -- 4d. Direct inserts (forged author fields / future timestamps) are rejected.
 select throws_ok(
-  $$ insert into public.purchase_history (checkout_id, family_id, name, purchased_by)
+  $$ insert into public.purchase_history (checkout_id, household_id, name, purchased_by)
      values (gen_random_uuid(), '00000000-0000-0000-0000-0000000000a1', 'forged', 'user_a') $$,
   '42501',
   null,
@@ -203,33 +207,33 @@ select throws_ok(
 
 -- ── 5. The invite code is a real credential at join time ─────────────────────
 
--- 5a. Knowing a family uuid is not enough to (re)join it: the direct insert a
+-- 5a. Knowing a household uuid is not enough to (re)join it: the direct insert a
 -- removed member could replay is blocked by RLS.
 select throws_ok(
-  $$ insert into public.family_members (family_id, user_id, role)
+  $$ insert into public.household_members (household_id, user_id, role)
      values ('00000000-0000-0000-0000-0000000000b1', 'user_a', 'member') $$,
   '42501',
   null,
-  'direct membership insert without being the family creator is rejected'
+  'direct membership insert without being the household creator is rejected'
 );
 
 -- 5b. The join RPC admits a valid code...
 select is(
-  (select name from public.join_family_with_code('BBBBBBB2', 'User A', null)),
-  'Family B',
-  'join RPC resolves a valid invite code and returns the family'
+  (select name from public.join_household_with_code('BBBBBBB2', 'User A', null)),
+  'Household B',
+  'join RPC resolves a valid invite code and returns the household'
 );
 
 select is(
-  (select count(*)::int from public.family_members
-   where family_id = '00000000-0000-0000-0000-0000000000b1' and user_id = 'user_a'),
+  (select count(*)::int from public.household_members
+   where household_id = '00000000-0000-0000-0000-0000000000b1' and user_id = 'user_a'),
   1,
   'join RPC created the membership row'
 );
 
 -- 5c. ...and an unknown code joins nothing.
 select is(
-  (select count(*)::int from public.join_family_with_code('ZZZZZZZ2', 'User A', null)),
+  (select count(*)::int from public.join_household_with_code('ZZZZZZZ2', 'User A', null)),
   0,
   'join RPC returns nothing for an unknown code'
 );
@@ -281,9 +285,9 @@ select is(
 );
 
 -- ── 7. Contributed products are scoped, and go global only on merit ──────────
--- Still acting as user_a, who is now in Family A and (since 5b) Family B.
+-- Still acting as user_a, who is now in Household A and (since 5b) Household B.
 
--- 7a. Contributing creates a row scoped to the family, not a global one.
+-- 7a. Contributing creates a row scoped to the household, not a global one.
 select public.add_custom_product(
   '00000000-0000-0000-0000-0000000000a1', 'Olive Oil 500ml', 'Bertolli'
 );
@@ -291,14 +295,14 @@ select public.add_custom_product(
 select is(
   (select count(*)::int from public.product_catalog
    where search_text = 'olive oil 500ml bertolli'
-     and family_id = '00000000-0000-0000-0000-0000000000a1'),
+     and household_id = '00000000-0000-0000-0000-0000000000a1'),
   1,
-  'add_custom_product contributes a product scoped to the caller''s family'
+  'add_custom_product contributes a product scoped to the caller''s household'
 );
 
 select is(
   (select count(*)::int from public.product_catalog
-   where search_text = 'olive oil 500ml bertolli' and family_id is null),
+   where search_text = 'olive oil 500ml bertolli' and household_id is null),
   0,
   'a freshly contributed product is not global'
 );
@@ -311,14 +315,14 @@ select public.add_custom_product(
 
 select is(
   (select search_text from public.product_catalog
-   where family_id = '00000000-0000-0000-0000-0000000000a1'
+   where household_id = '00000000-0000-0000-0000-0000000000a1'
      and name = 'Ulei de Măsline'),
   'ulei de masline',
   'the server derives search_text and folds diacritics'
 );
 
 -- 7c. Re-adding the same product (here in a different case) counts a repeat
--- rather than splitting the family's suggestions across near-duplicate rows.
+-- rather than splitting the household's suggestions across near-duplicate rows.
 select public.add_custom_product(
   '00000000-0000-0000-0000-0000000000a1', 'OLIVE OIL 500ML', 'bertolli'
 );
@@ -326,21 +330,21 @@ select public.add_custom_product(
 select is(
   (select count(*)::int from public.product_catalog
    where search_text = 'olive oil 500ml bertolli'
-     and family_id = '00000000-0000-0000-0000-0000000000a1'),
+     and household_id = '00000000-0000-0000-0000-0000000000a1'),
   1,
-  'a differently-cased spelling folds into the family''s existing row'
+  'a differently-cased spelling folds into the household''s existing row'
 );
 
 select is(
   (select add_count from public.product_catalog
    where search_text = 'olive oil 500ml bertolli'
-     and family_id = '00000000-0000-0000-0000-0000000000a1'),
+     and household_id = '00000000-0000-0000-0000-0000000000a1'),
   2,
   'contributing the same product again counts an add instead of duplicating it'
 );
 
--- Push Family A past the per-family cap that promotion applies (7g), so the sum
--- carried global cannot be inflated by one family re-adding a product.
+-- Push Household A past the per-household cap that promotion applies (7g), so the sum
+-- carried global cannot be inflated by one household re-adding a product.
 select public.add_custom_product(
   '00000000-0000-0000-0000-0000000000a1', 'Olive Oil 500ml', 'Bertolli'
 );
@@ -351,69 +355,69 @@ select public.add_custom_product(
 select is(
   (select add_count from public.product_catalog
    where search_text = 'olive oil 500ml bertolli'
-     and family_id = '00000000-0000-0000-0000-0000000000a1'),
+     and household_id = '00000000-0000-0000-0000-0000000000a1'),
   4,
-  'a family''s own add_count keeps climbing past the cap while scoped'
+  'a household''s own add_count keeps climbing past the cap while scoped'
 );
 
--- 7d. Contributing into a family you are not in. SECURITY DEFINER bypasses RLS,
+-- 7d. Contributing into a household you are not in. SECURITY DEFINER bypasses RLS,
 -- so the membership check inside the RPC is the only thing stopping this;
 -- user_c asserts below that it wrote nothing.
 select public.add_custom_product(
   '00000000-0000-0000-0000-0000000000c1', 'Smuggled Product', null
 );
 
--- ── Act as user_c (Family C only) ────────────────────────────────────────────
+-- ── Act as user_c (Household C only) ────────────────────────────────────────────
 set local request.jwt.claims = '{"sub":"user_c"}';
 
 select is(
   (select count(*)::int from public.product_catalog
    where search_text = 'smuggled product'),
   0,
-  'add_custom_product writes nothing for a family the caller is not in'
+  'add_custom_product writes nothing for a household the caller is not in'
 );
 
--- 7e. Family A's contribution is invisible to a family that did not make it —
+-- 7e. Household A's contribution is invisible to a household that did not make it —
 -- the property that makes opening this write path safe.
 select is(
   (select count(*)::int from public.product_catalog
    where search_text = 'olive oil 500ml bertolli'),
   0,
-  'another family''s contributed product is not visible'
+  'another household''s contributed product is not visible'
 );
 
--- 7f. Two families wanting a product is not enough to inflict it on everyone.
+-- 7f. Two households wanting a product is not enough to inflict it on everyone.
 select public.add_custom_product(
   '00000000-0000-0000-0000-0000000000c1', 'Olive Oil 500ml', 'Bertolli'
 );
 
 select is(
   (select count(*)::int from public.product_catalog
-   where search_text = 'olive oil 500ml bertolli' and family_id is null),
+   where search_text = 'olive oil 500ml bertolli' and household_id is null),
   0,
-  'two families are not enough to promote a product'
+  'two households are not enough to promote a product'
 );
 
--- ── Act as user_b (Family B) ─────────────────────────────────────────────────
+-- ── Act as user_b (Household B) ─────────────────────────────────────────────────
 set local request.jwt.claims = '{"sub":"user_b"}';
 
--- 7g. The third distinct family promotes it to the global catalog.
+-- 7g. The third distinct household promotes it to the global catalog.
 select public.add_custom_product(
   '00000000-0000-0000-0000-0000000000b1', 'olive oil 500ml', 'BERTOLLI'
 );
 
 select is(
   (select count(*)::int from public.product_catalog
-   where search_text = 'olive oil 500ml bertolli' and family_id is null),
+   where search_text = 'olive oil 500ml bertolli' and household_id is null),
   1,
-  'a third distinct family promotes the product to the global catalog'
+  'a third distinct household promotes the product to the global catalog'
 );
 
 select is(
   (select count(*)::int from public.product_catalog
-   where search_text = 'olive oil 500ml bertolli' and family_id is not null),
+   where search_text = 'olive oil 500ml bertolli' and household_id is not null),
   0,
-  'promotion collapses the family-scoped rows into the global one'
+  'promotion collapses the household-scoped rows into the global one'
 );
 
 -- The promoted row keeps one of the contributed spellings. Which one is the
@@ -424,19 +428,19 @@ select is(
 -- calls are separate transactions with distinct timestamps, so the earliest wins.
 select is(
   lower((select name from public.product_catalog
-         where search_text = 'olive oil 500ml bertolli' and family_id is null)),
+         where search_text = 'olive oil 500ml bertolli' and household_id is null)),
   'olive oil 500ml',
   'promotion keeps a contributed spelling'
 );
 
 -- The product arrives ranked by the usage it earned rather than at zero, but
--- each family's share is capped at 3: Family A's four adds count as three, plus
--- one each from Families C and B.
+-- each household's share is capped at 3: Household A's four adds count as three, plus
+-- one each from Households C and B.
 select is(
   (select add_count from public.product_catalog
-   where search_text = 'olive oil 500ml bertolli' and family_id is null),
+   where search_text = 'olive oil 500ml bertolli' and household_id is null),
   5,
-  'the promoted product carries its contributors'' adds, capped per family'
+  'the promoted product carries its contributors'' adds, capped per household'
 );
 
 -- 7h. Now that it is global, contributing it again just counts against it.
@@ -453,13 +457,13 @@ select is(
 
 select is(
   (select add_count from public.product_catalog
-   where search_text = 'olive oil 500ml bertolli' and family_id is null),
+   where search_text = 'olive oil 500ml bertolli' and household_id is null),
   6,
   'contributing an already-global product counts an add against it'
 );
 
 -- ── 7i. Membership breadth is not contributor count ──────────────────────────
--- The attacker account is a member of Families D, E and F (three distinct
+-- The attacker account is a member of Households D, E and F (three distinct
 -- owners). Contributing the same product to each creates three scoped rows that
 -- all share one contributed_by, so the distinct-contributor count is 1 and it is
 -- never promoted -- the self-promotion vector the contributed_by gate closes.
@@ -470,9 +474,9 @@ select public.add_custom_product('00000000-0000-0000-0000-0000000000f1', 'Attack
 
 select is(
   (select count(*)::int from public.product_catalog
-   where search_text = 'attacker junk' and family_id is null),
+   where search_text = 'attacker junk' and household_id is null),
   0,
-  'one account in three families cannot self-promote a product'
+  'one account in three households cannot self-promote a product'
 );
 
 -- ── 9. Provenance and bulk import (006_product_catalog.sql) ────────────────────────────
@@ -538,7 +542,7 @@ select is(
 
 select is(
   (select source from public.product_catalog
-   where search_text = 'olive oil 500ml bertolli' and family_id is null),
+   where search_text = 'olive oil 500ml bertolli' and household_id is null),
   'community',
   'a promoted product is still community once global'
 );
@@ -638,29 +642,29 @@ select is(
   'a dry run writes nothing'
 );
 
--- 9r-9t. Families D, E and F each contributed "Attacker Junk" (7i), so three
+-- 9r-9t. Households D, E and F each contributed "Attacker Junk" (7i), so three
 -- scoped rows exist and no global. An import of the same product has to collapse
--- them the way a promotion would, or those families see it twice forever.
+-- them the way a promotion would, or those households see it twice forever.
 select is(
   (select (public.import_catalog_products(
     '[{"barcode":"5941000000050","name":"Attacker Junk","base_weight":2}]'::jsonb,
     'openfoodfacts', 'off-test-6') ->> 'collapsed_scoped')::int),
   3,
-  'importing a product families already contributed collapses their scoped rows'
+  'importing a product households already contributed collapses their scoped rows'
 );
 
 select is(
   (select count(*)::int from public.product_catalog
-   where search_text = 'attacker junk' and family_id is not null),
+   where search_text = 'attacker junk' and household_id is not null),
   0,
   'no scoped duplicate survives the import'
 );
 
 select is(
   (select add_count from public.product_catalog
-   where search_text = 'attacker junk' and family_id is null),
+   where search_text = 'attacker junk' and household_id is null),
   3,
-  'the import folds the contributors'' earned adds, capped per family, into the global row'
+  'the import folds the contributors'' earned adds, capped per household, into the global row'
 );
 
 -- 9u. The canary for the normalizer that exists in four places: this SQL
@@ -699,7 +703,7 @@ select is(
   'the service-role import actually landed its row'
 );
 
--- ── 10. Security audit trail + invite throttle (002_security_audit.sql, 003_families_and_members.sql) ─────────
+-- ── 10. Security audit trail + invite throttle (002_security_audit.sql, 003_households_and_members.sql) ─────────
 
 -- 10a. The audit log is unreachable from a client role. RLS with no policies
 -- would already return zero rows; the explicit revoke means it does not even get
@@ -724,7 +728,7 @@ select throws_ok(
 
 -- 10b. A wrong code is recorded rather than passing silently.
 select lives_ok(
-  $$ select public.join_family_with_code('ZZZZZZZ9') $$,
+  $$ select public.join_household_with_code('ZZZZZZZ9') $$,
   'a wrong invite code returns cleanly rather than erroring'
 );
 
@@ -746,12 +750,12 @@ set local request.jwt.claims = '{"sub":"user_rl"}';
 do $$
 begin
   for i in 1..9 loop
-    perform public.join_family_with_code('ZZZZZZZ9');
+    perform public.join_household_with_code('ZZZZZZZ9');
   end loop;
 end $$;
 
 select is(
-  (select count(*)::int from public.join_family_with_code('BBBBBBB2')),
+  (select count(*)::int from public.join_household_with_code('BBBBBBB2')),
   0,
   'a throttled caller gets no result even for a valid invite code'
 );
@@ -759,7 +763,7 @@ select is(
 reset role;
 
 select is(
-  (select count(*)::int from public.family_members
+  (select count(*)::int from public.household_members
    where user_id = 'user_rl'),
   0,
   'the throttled join really did not create a membership'
@@ -775,10 +779,10 @@ select is(
 -- 10d. Privilege changes and removals are audited. These go through plain
 -- UPDATE/DELETE under RLS rather than an RPC, so only a trigger sees every path.
 --
--- user_a owns Family A, and only the owner may change roles (003_families_and_members.sql), so
--- the promotion below has to run as user_a against Family A.
+-- user_a owns Household A, and only the owner may change roles (003_households_and_members.sql), so
+-- the promotion below has to run as user_a against Household A.
 insert into public.profiles (user_id, display_name) values ('user_g', 'User G');
-insert into public.family_members (family_id, user_id, role)
+insert into public.household_members (household_id, user_id, role)
 values ('00000000-0000-0000-0000-0000000000a1', 'user_g', 'member');
 
 set local request.jwt.claims = '{"sub":"user_a"}';
@@ -786,19 +790,19 @@ set local request.jwt.claims = '{"sub":"user_a"}';
 -- Assert the update *works*, not merely that it is audited.
 --
 -- This exists because of a real outage. A trigger named
--- prevent_member_profile_tamper once guarded family_members.display_name /
+-- prevent_member_profile_tamper once guarded household_members.display_name /
 -- image_url; a later migration moved both columns to profiles and dropped them,
 -- but left the trigger in place. PL/pgSQL resolves record fields at execution
 -- time, so it did not fail on deploy — it failed on the next UPDATE of any
--- family_members row, which is every promote and demote. Nothing in this suite
+-- household_members row, which is every promote and demote. Nothing in this suite
 -- exercised a role change, so the feature was dead in production and unnoticed.
 --
 -- That trigger no longer exists in any migration here (profiles' own RLS gives
 -- the same guarantee one layer down). The lesson it left is this assertion.
 select lives_ok(
-  $$ update public.family_members set role = 'moderator'
-     where family_id = '00000000-0000-0000-0000-0000000000a1' and user_id = 'user_g' $$,
-  'the family owner can actually promote a member'
+  $$ update public.household_members set role = 'moderator'
+     where household_id = '00000000-0000-0000-0000-0000000000a1' and user_id = 'user_g' $$,
+  'the household owner can actually promote a member'
 );
 
 select is(
@@ -808,8 +812,8 @@ select is(
   'a role change records what it changed to'
 );
 
-delete from public.family_members
-where family_id = '00000000-0000-0000-0000-0000000000a1' and user_id = 'user_g';
+delete from public.household_members
+where household_id = '00000000-0000-0000-0000-0000000000a1' and user_id = 'user_g';
 
 select is(
   (select detail->>'self' from public.security_events
@@ -818,9 +822,87 @@ select is(
   'a removal records that it was not the member leaving voluntarily'
 );
 
--- ── 10b. The families UPDATE policy constrains the new row ───────────────────
+-- ── 10e. A membership cannot be reassigned to another account ────────────────
+-- The UPDATE policy on household_members gates the row, not the columns, and a
+-- moderator satisfies it. Until prevent_membership_identity_change()
+-- (003_households_and_members.sql) existed, that let a moderator PATCH somebody
+-- else's row and point it at any account with a profile — evicting the target
+-- and admitting the new account in one statement.
+--
+-- Worth spelling out what that walked past, because each is a rule asserted
+-- elsewhere in this file: the DELETE policy protects the owner and fellow
+-- moderators (10d's fixtures), the invite code is the only way in (assertion 5),
+-- the membership cap is BEFORE INSERT so it never sees the row, and neither
+-- audit trigger fires — so nothing above reaches security_digest().
+--
+-- Run as `authenticated` rather than the superuser: the point is that the whole
+-- stack rejects this, policy and trigger together, on the path a hand-crafted
+-- PostgREST call actually takes.
+insert into public.profiles (user_id, display_name) values
+  ('user_mod', 'User Mod'),
+  ('user_victim', 'User Victim'),
+  ('user_alt', 'User Alt');
+
+-- A moderator who is NOT the owner (user_a owns Household A), in two households so
+-- the household_id assertion below is rejected by the trigger rather than by the
+-- policy's WITH CHECK.
+insert into public.household_members (household_id, user_id, role) values
+  ('00000000-0000-0000-0000-0000000000a1', 'user_mod', 'moderator'),
+  ('00000000-0000-0000-0000-0000000000b1', 'user_mod', 'moderator'),
+  ('00000000-0000-0000-0000-0000000000a1', 'user_victim', 'member');
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"user_mod"}';
+
+select throws_ok(
+  $$ update public.household_members set user_id = 'user_alt'
+     where household_id = '00000000-0000-0000-0000-0000000000a1'
+       and user_id = 'user_victim' $$,
+  'P0001',
+  null,
+  'a moderator cannot repoint another member''s row at a different account'
+);
+
+-- The owner's own row, which the DELETE policy explicitly refuses to let a
+-- moderator remove. An UPDATE must not be the way around that.
+select throws_ok(
+  $$ update public.household_members set user_id = 'user_alt'
+     where household_id = '00000000-0000-0000-0000-0000000000a1'
+       and user_id = 'user_a' $$,
+  'P0001',
+  null,
+  'a moderator cannot evict the household owner by rewriting their membership row'
+);
+
+-- Moving a row between two households the actor moderates: the policy is satisfied
+-- at both ends, so only the trigger can refuse it.
+select throws_ok(
+  $$ update public.household_members
+     set household_id = '00000000-0000-0000-0000-0000000000b1'
+     where household_id = '00000000-0000-0000-0000-0000000000a1'
+       and user_id = 'user_victim' $$,
+  'P0001',
+  null,
+  'a membership cannot be moved into another household'
+);
+
+reset role;
+
+-- And the trigger is not so broad that it blocks the legitimate update on the
+-- very row the attack targets. Same lesson as the promote assertion above: a
+-- guard nobody exercises is a guard that can silently kill a feature.
+set local request.jwt.claims = '{"sub":"user_a"}';
+
+select lives_ok(
+  $$ update public.household_members set role = 'moderator'
+     where household_id = '00000000-0000-0000-0000-0000000000a1'
+       and user_id = 'user_victim' $$,
+  'the owner can still change a role on a row whose identity is now frozen'
+);
+
+-- ── 10b. The households UPDATE policy constrains the new row ───────────────────
 -- An earlier revision of this policy carried `with check (true)`: USING
--- correctly asked "may you touch this family", but nothing constrained the row
+-- correctly asked "may you touch this household", but nothing constrained the row
 -- the update produced, leaving the triggers as the only guard. The outage
 -- described just above is what that costs when a trigger drifts. Asserted
 -- against the catalog rather than by attempting an update, because what is being
@@ -832,22 +914,22 @@ reset role;
 select isnt(
   (select with_check from pg_policies
    where schemaname = 'public'
-     and tablename = 'families'
-     and policyname = 'family owner or moderator can update family'),
+     and tablename = 'households'
+     and policyname = 'household owner or moderator can update household'),
   'true',
-  'the families UPDATE policy constrains the new row, not only the old one'
+  'the households UPDATE policy constrains the new row, not only the old one'
 );
 
 -- ── 11. Catalog write rate limiting (002_security_audit.sql) ──────────────────────────
 -- bump_product_popularity increments add_count on *global* rows, and add_count
--- drives the suggestion ranking every family sees. Unlimited, it let one account
+-- drives the suggestion ranking every household sees. Unlimited, it let one account
 -- push any product to the top of everyone's list. A Vercel firewall rule cannot
 -- reach this: the browser calls Supabase directly, so the limiter lives here.
 
 -- Dedicated fixtures: a global product and an account that no earlier assertion
 -- has touched, so the counts below are exact rather than relative to whatever
 -- budget section 7 already spent.
-insert into public.product_catalog (name, maker, search_text, source, family_id, add_count)
+insert into public.product_catalog (name, maker, search_text, source, household_id, add_count)
 values ('Throttle Probe', 'Acme', 'throttle probe acme', 'curated', null, 0);
 
 -- 11a. The counter table is as locked down as the audit log.
@@ -882,7 +964,7 @@ end $$;
 
 select is(
   (select add_count::int from public.product_catalog
-   where search_text = 'throttle probe acme' and family_id is null),
+   where search_text = 'throttle probe acme' and household_id is null),
   5,
   'ordinary bumps are counted, not throttled'
 );
@@ -898,7 +980,7 @@ end $$;
 
 select is(
   (select add_count::int from public.product_catalog
-   where search_text = 'throttle probe acme' and family_id is null),
+   where search_text = 'throttle probe acme' and household_id is null),
   240,
   'ranking inflation stops dead at the hourly ceiling'
 );
@@ -932,7 +1014,7 @@ select ok(
 -- ── 12. The item-insert ceiling (004_shopping_list.sql) ─────────────
 -- The list had a breadth cap (50 active items per member) but no rate cap, so an
 -- account could add, check out and re-add forever -- and every insert fires the
--- push fan-out at everyone else in the family.
+-- push fan-out at everyone else in the household.
 --
 -- Note the fixtures use checked = true rows on purpose. The per-member active
 -- item cap (004_shopping_list.sql) returns early for checked rows, so this
@@ -946,7 +1028,7 @@ set local request.jwt.claims = '{"sub":"user_ins"}';
 do $$
 begin
   for i in 1..5 loop
-    insert into public.shopping_list_items (family_id, name, added_by, checked)
+    insert into public.shopping_list_items (household_id, name, added_by, checked)
     values ('00000000-0000-0000-0000-0000000000a1', 'RL Probe ' || i, 'user_ins', true);
   end loop;
 end $$;
@@ -972,7 +1054,7 @@ do $$
 begin
   for i in 6..400 loop
     begin
-      insert into public.shopping_list_items (family_id, name, added_by, checked)
+      insert into public.shopping_list_items (household_id, name, added_by, checked)
       values ('00000000-0000-0000-0000-0000000000a1', 'RL Probe ' || i, 'user_ins', true);
     exception when others then
       null;  -- throttled; keep attempting so the count below is a ceiling, not a stop
@@ -1005,7 +1087,7 @@ select is(
 set local request.jwt.claims = '{}';
 
 select lives_ok(
-  $$ insert into public.shopping_list_items (family_id, name, added_by, checked)
+  $$ insert into public.shopping_list_items (household_id, name, added_by, checked)
      values ('00000000-0000-0000-0000-0000000000a1', 'Seeded Row', 'user_seed', true) $$,
   'an insert with no authenticated actor is not throttled'
 );
@@ -1014,16 +1096,16 @@ select lives_ok(
 -- Both used to log 'member_removed' with a `self` flag in detail.
 -- security_digest() groups by kind and cannot see inside detail, so the poller
 -- reading it could only alert on the mixed bucket -- "three people left" looked
--- exactly like "someone is emptying a family". 10a above still covers the kick.
+-- exactly like "someone is emptying a household". 10a above still covers the kick.
 reset role;
 set local request.jwt.claims = '{"sub":"user_leave"}';
 
 insert into public.profiles (user_id, display_name) values ('user_leave', 'Leaver');
-insert into public.family_members (family_id, user_id, role)
+insert into public.household_members (household_id, user_id, role)
 values ('00000000-0000-0000-0000-0000000000a1', 'user_leave', 'member');
 
-delete from public.family_members
-where family_id = '00000000-0000-0000-0000-0000000000a1' and user_id = 'user_leave';
+delete from public.household_members
+where household_id = '00000000-0000-0000-0000-0000000000a1' and user_id = 'user_leave';
 
 select is(
   (select kind from public.security_events where detail->>'target' = 'user_leave'),
@@ -1031,10 +1113,10 @@ select is(
   'a member removing themselves is logged as leaving, not as being removed'
 );
 
--- ── 14. The profile write ceiling (003_families_and_members.sql) ─────────────
+-- ── 14. The profile write ceiling (003_households_and_members.sql) ─────────────
 -- profiles is the one table a client writes freely about itself -- the app
 -- refreshes display_name and image_url on every boot -- so there is no breadth
--- cap to lean on, and everyone sharing a family renders from it.
+-- cap to lean on, and everyone sharing a household renders from it.
 set local request.jwt.claims = '{"sub":"user_prof"}';
 
 -- Write 1 of the window.
@@ -1077,10 +1159,10 @@ reset role;
 set local role anon;
 
 select throws_ok(
-  $$ select * from public.families $$,
+  $$ select * from public.households $$,
   '42501',
   null,
-  'an anonymous caller cannot reach the families table at all'
+  'an anonymous caller cannot reach the households table at all'
 );
 
 reset role;
@@ -1090,7 +1172,7 @@ set local request.jwt.claims = '{"sub":"user_a"}';
 -- The header of 005 says a direct insert path would let a member forge author
 -- names and post-date purchased_at. buy_items() is the only writer.
 select throws_ok(
-  $$ insert into public.purchase_history (checkout_id, family_id, name, purchased_by)
+  $$ insert into public.purchase_history (checkout_id, household_id, name, purchased_by)
      values (gen_random_uuid(), '00000000-0000-0000-0000-0000000000a1', 'forged', 'user_a') $$,
   '42501',
   null,

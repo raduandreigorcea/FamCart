@@ -12,7 +12,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import FamilySettingsModal from '../src/components/FamilySettingsModal.vue'
+import HouseholdSettingsModal from '../src/components/HouseholdSettingsModal.vue'
 import ConfirmModal from '../src/components/ConfirmModal.vue'
 import ErrorModal from '../src/components/ErrorModal.vue'
 
@@ -57,11 +57,11 @@ const flush = async () => {
 const wrappers = []
 
 function mountSettings(props = {}) {
-  const w = mount(FamilySettingsModal, {
+  const w = mount(HouseholdSettingsModal, {
     props: {
       open: true,
-      familyId: 'fam_1',
-      familyName: 'Gorcea',
+      householdId: 'fam_1',
+      householdName: 'Gorcea',
       inviteCode: 'ABCD2345',
       ownerUserId: 'u_owner',
       memberProfiles: [
@@ -91,42 +91,42 @@ afterEach(() => {
 })
 
 describe('settings writes that fail say so', () => {
-  it('shows a message when renaming the family is rejected', async () => {
-    failing.table = 'families'
+  it('shows a message when renaming the household is rejected', async () => {
+    failing.table = 'households'
     failing.op = 'update'
-    failing.error = { message: 'permission denied for table families', code: '42501' }
+    failing.error = { message: 'permission denied for table households', code: '42501' }
 
     const wrapper = mountSettings()
     // Preferences tab, then edit the name and save.
     await wrapper.findAll('.sidebar-tab-btn')[1].trigger('click')
-    await wrapper.find('#familyNameInput').setValue('New Name')
+    await wrapper.find('#householdNameInput').setValue('New Name')
     await wrapper.find('.panel-save-btn').trigger('click')
     await nextTick()
     await nextTick()
 
-    expect(errorText(wrapper)).toBe('Could not rename the family.')
+    expect(errorText(wrapper)).toBe('Could not rename the household.')
   })
 
   it('does not raise the dialog when the rename succeeds', async () => {
     const wrapper = mountSettings()
     await wrapper.findAll('.sidebar-tab-btn')[1].trigger('click')
-    await wrapper.find('#familyNameInput').setValue('New Name')
+    await wrapper.find('#householdNameInput').setValue('New Name')
     await wrapper.find('.panel-save-btn').trigger('click')
     await nextTick()
     await nextTick()
 
     expect(errorText(wrapper)).toBe('')
-    expect(wrapper.emitted('refresh-family')).toBeTruthy()
+    expect(wrapper.emitted('refresh-household')).toBeTruthy()
   })
 
   it('never puts the raw Postgres text on screen', async () => {
-    failing.table = 'families'
+    failing.table = 'households'
     failing.op = 'update'
-    failing.error = { message: 'duplicate key value violates unique constraint "families_pkey"' }
+    failing.error = { message: 'duplicate key value violates unique constraint "households_pkey"' }
 
     const wrapper = mountSettings()
     await wrapper.findAll('.sidebar-tab-btn')[1].trigger('click')
-    await wrapper.find('#familyNameInput').setValue('New Name')
+    await wrapper.find('#householdNameInput').setValue('New Name')
     await wrapper.find('.panel-save-btn').trigger('click')
     await nextTick()
     await nextTick()
@@ -137,7 +137,7 @@ describe('settings writes that fail say so', () => {
   it('reports a failed leave instead of only logging it', async () => {
     // A non-owner sees Leave rather than Delete.
     currentUserId.value = 'u_other'
-    failing.table = 'family_members'
+    failing.table = 'household_members'
     failing.op = 'delete'
     failing.error = { message: 'network error', code: 'PGRST301' }
 
@@ -150,17 +150,17 @@ describe('settings writes that fail say so', () => {
     await wrapper.find('.danger-action-btn').trigger('click')
     await flush()
 
-    // Confirm the "Leave Family?" dialog, which is what runs the write.
+    // Confirm the "Leave Household?" dialog, which is what runs the write.
     wrapper.findComponent(ConfirmModal).vm.$emit('confirm')
     await flush()
 
-    expect(errorText(wrapper)).toBe('Could not leave the family.')
-    // The user is still in the family, so the view must not move them on.
-    expect(wrapper.emitted('family-left')).toBeFalsy()
+    expect(errorText(wrapper)).toBe('Could not leave the household.')
+    // The user is still in the household, so the view must not move them on.
+    expect(wrapper.emitted('household-left')).toBeFalsy()
   })
 
-  it('reports a failed delete and keeps the user in the family', async () => {
-    failing.table = 'families'
+  it('reports a failed delete and keeps the user in the household', async () => {
+    failing.table = 'households'
     failing.op = 'delete'
     failing.error = { message: 'permission denied', code: '42501' }
 
@@ -175,7 +175,7 @@ describe('settings writes that fail say so', () => {
     wrapper.findComponent(ConfirmModal).vm.$emit('confirm')
     await flush()
 
-    expect(errorText(wrapper)).toBe('Could not delete the family.')
-    expect(wrapper.emitted('family-deleted')).toBeFalsy()
+    expect(errorText(wrapper)).toBe('Could not delete the household.')
+    expect(wrapper.emitted('household-deleted')).toBeFalsy()
   })
 })

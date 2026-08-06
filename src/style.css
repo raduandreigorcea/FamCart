@@ -13,6 +13,12 @@
   --bg-surface: #ffffff;            /* Card/Modal backgrounds */
   --bg-surface-alt: #f9fafb;        /* Slight contrast surface (headers, etc.) */
   --bg-hover: #f3f4f6;              /* Hover state for items */
+  /* Pressed state, one clear step further from the surface than --bg-hover.
+     Controls used to reach for --border-light for this, which in light mode is
+     the same #f3f4f6 as --bg-hover (and in dark is lighter than it) -- so a
+     press either painted nothing or moved the wrong way. A press has to be
+     visibly more than a hover or the control reads as not having answered. */
+  --bg-press: #e6e8ec;
 
   /* Text */
   --text-primary: #1a1a1a;          /* Main readable text */
@@ -181,6 +187,10 @@
   --bg-surface: #151c25;
   --bg-surface-alt: #1b2430;
   --bg-hover: #232f3d;
+  /* Lighter than --bg-hover here, where light mode's is darker: on a dark
+     surface a control coming toward you means adding light. Same idea either
+     way -- press is always further from the surface than hover. */
+  --bg-press: #2e3d4e;
 
   /* Text */
   --text-primary: #e6edf5;

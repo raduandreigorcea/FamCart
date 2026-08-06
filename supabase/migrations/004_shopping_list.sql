@@ -12,7 +12,7 @@
 
 create table if not exists public.shopping_list_items (
   id          uuid        primary key default gen_random_uuid(),
-  family_id   uuid        not null references public.families(id) on delete cascade,
+  household_id   uuid        not null references public.households(id) on delete cascade,
   name        text        not null,
   -- The catalog product's maker ("Dorna"), shown as a subtitle. Part of the merge
   -- key below: the same name from two makers is two different products.
@@ -46,73 +46,73 @@ alter table public.shopping_list_items enable row level security;
 -- normalizeItemName() and findActiveItemByName() in src/lib/shoppingList.ts.
 create unique index if not exists shopping_list_items_unique_active_name
   on public.shopping_list_items (
-    family_id,
+    household_id,
     lower(btrim(name)),
     lower(btrim(coalesce(maker, '')))
   )
   where checked = false;
 
 -- Serves the two list reads (unchecked, then checked) the app issues on load.
-create index if not exists idx_shopping_list_items_family_id_checked
-  on public.shopping_list_items (family_id, checked);
+create index if not exists idx_shopping_list_items_household_id_checked
+  on public.shopping_list_items (household_id, checked);
 
 -- ─── policies ────────────────────────────────────────────────────────────────
 -- Membership is the whole rule: you may read, add, change and remove items in
--- any family you belong to. Insert additionally pins added_by to the caller, and
+-- any household you belong to. Insert additionally pins added_by to the caller, and
 -- the ownership trigger below stops an update rewriting it afterwards.
-drop policy if exists "family members can read items" on public.shopping_list_items;
-create policy "family members can read items"
+drop policy if exists "household members can read items" on public.shopping_list_items;
+create policy "household members can read items"
   on public.shopping_list_items for select
   using (
-    family_id in (
-      select family_id from public.family_members
+    household_id in (
+      select household_id from public.household_members
       where user_id = requesting_user_id()
     )
   );
 
-drop policy if exists "family members can insert items" on public.shopping_list_items;
-create policy "family members can insert items"
+drop policy if exists "household members can insert items" on public.shopping_list_items;
+create policy "household members can insert items"
   on public.shopping_list_items for insert
   with check (
     added_by = requesting_user_id()
-    and family_id in (
-      select family_id from public.family_members
+    and household_id in (
+      select household_id from public.household_members
       where user_id = requesting_user_id()
     )
   );
 
--- WITH CHECK keeps the row inside the caller's families; the trigger below pins
--- added_by and family_id, which a WITH CHECK expression cannot do because it
+-- WITH CHECK keeps the row inside the caller's households; the trigger below pins
+-- added_by and household_id, which a WITH CHECK expression cannot do because it
 -- cannot compare old against new.
-drop policy if exists "family members can update items" on public.shopping_list_items;
-create policy "family members can update items"
+drop policy if exists "household members can update items" on public.shopping_list_items;
+create policy "household members can update items"
   on public.shopping_list_items for update
   using (
-    family_id in (
-      select family_id from public.family_members
+    household_id in (
+      select household_id from public.household_members
       where user_id = requesting_user_id()
     )
   )
   with check (
-    family_id in (
-      select family_id from public.family_members
+    household_id in (
+      select household_id from public.household_members
       where user_id = requesting_user_id()
     )
   );
 
-drop policy if exists "family members can delete items" on public.shopping_list_items;
-create policy "family members can delete items"
+drop policy if exists "household members can delete items" on public.shopping_list_items;
+create policy "household members can delete items"
   on public.shopping_list_items for delete
   using (
-    family_id in (
-      select family_id from public.family_members
+    household_id in (
+      select household_id from public.household_members
       where user_id = requesting_user_id()
     )
   );
 
 -- ─── row rules the policies cannot express ───────────────────────────────────
 
--- An item's author and its family are fixed at insert.
+-- An item's author and its household are fixed at insert.
 create or replace function public.prevent_item_ownership_change()
 returns trigger
 language plpgsql
@@ -125,8 +125,8 @@ begin
       using errcode = 'P0001';
   end if;
 
-  if new.family_id is distinct from old.family_id then
-    raise exception 'Item cannot be moved between families.'
+  if new.household_id is distinct from old.household_id then
+    raise exception 'Item cannot be moved between households.'
       using errcode = 'P0001';
   end if;
 
@@ -179,17 +179,17 @@ begin
   -- On UPDATE, only enforce when the row is newly becoming active (an uncheck).
   -- A row that was already active being updated for some other reason (e.g. a
   -- quantity change) is already counted below, so enforcing here would reject it
-  -- the moment the family sits exactly at the cap.
+  -- the moment the household sits exactly at the cap.
   if tg_op = 'UPDATE' and coalesce(old.checked, false) = false then
     return new;
   end if;
 
   select coalesce(f.max_items_per_member, 50)
     into member_limit
-  from public.families f
-  where f.id = new.family_id;
+  from public.households f
+  where f.id = new.household_id;
 
-  -- If the family row is missing, let the FK constraint produce the canonical error.
+  -- If the household row is missing, let the FK constraint produce the canonical error.
   if member_limit is null then
     return new;
   end if;
@@ -197,7 +197,7 @@ begin
   select count(*)::integer
     into current_count
   from public.shopping_list_items sli
-  where sli.family_id = new.family_id
+  where sli.household_id = new.household_id
     and sli.added_by = new.added_by
     and sli.checked = false;
 
@@ -216,7 +216,7 @@ $$;
 -- only one of them was here — under the cap alone an account can add, check out
 -- and re-add forever, and every insert fires the push fan-out in
 -- supabase/functions/push-on-item-insert, so uncapped insert rate is also
--- uncapped notification volume at everyone else in the family.
+-- uncapped notification volume at everyone else in the household.
 --
 -- A trigger rather than an RPC because the list has several write paths — the
 -- direct insert in addItem(), the offline queue's replay
@@ -227,8 +227,8 @@ $$;
 -- active items, so a full list plus a checkout plus a full re-add is 100
 -- inserts, and an offline queue flush after a long trip replays as one burst.
 -- Deliberately far looser than the catalog limiters in 006 (120 and 240/hour):
--- those guard a ranking every family sees, where one account's repetition is the
--- whole attack. This guards a family's own list, where a false positive costs a
+-- those guard a ranking every household sees, where one account's repetition is the
+-- whole attack. This guards a household's own list, where a false positive costs a
 -- real person a grocery item, so it errs toward letting the shopper shop.
 --
 -- SECURITY DEFINER because rate_limit_hit() (002_security_audit.sql) is granted
@@ -263,7 +263,7 @@ begin
   -- rate_limit_hit() logs the crossing to security_events on the call where hits
   -- reaches limit + 1. That INSERT is in *this* transaction, so raising here
   -- would roll it back along with the rejected item — the throttle would fire
-  -- forever and leave no trace of having fired. 003_families_and_members.sql
+  -- forever and leave no trace of having fired. 003_households_and_members.sql
   -- hits the same wall in the invite throttle and answers it by returning
   -- quietly instead of raising; a trigger has no such option, because letting
   -- the insert through IS the thing being prevented.
@@ -332,7 +332,7 @@ execute function public.enforce_item_insert_rate_limit();
 
 -- Revoke then grant, so the end state is exactly these two lines and not these
 -- plus the provisioning defaults — TRUNCATE among them, which ignores RLS. The
--- long note at the end of 003_families_and_members.sql explains the whole thing.
+-- long note at the end of 003_households_and_members.sql explains the whole thing.
 -- buy_items() deletes from this table as its owner, so service_role needs no
 -- write privilege of its own.
 revoke all on public.shopping_list_items from anon, authenticated, service_role;

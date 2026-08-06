@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, type PropType } from 'vue'
 import { getProductEmoji } from '../lib/productEmoji'
-import type { ShoppingItemRow } from '../lib/familyRealtime'
+import type { ShoppingItemRow } from '../lib/householdRealtime'
 import checkIcon from '../assets/check.svg?raw'
 import xIcon from '../assets/x.svg?raw'
 
@@ -21,7 +21,7 @@ const props = defineProps({
     type: Number,
     default: 0,
   },
-  // Author avatar/name, resolved live from the family roster by item.added_by —
+  // Author avatar/name, resolved live from the household roster by item.added_by —
   // the row itself no longer carries a copied name/photo.
   avatarUrl: {
     type: String,

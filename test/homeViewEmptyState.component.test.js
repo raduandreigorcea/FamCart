@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
 //
-// The empty list has two opposite readings: "All bought" for a family that
+// The empty list has two opposite readings: "All bought" for a household that
 // shops, "Nothing here yet" for one starting out. Which one is right depends on
 // purchase history, and that query is deliberately not awaited so the rows can
 // paint first. The cost was that an empty list rendered the beginner copy and
 // then corrected itself to "All bought" a moment later — most reliably when
-// switching families, where the stats are cleared and the skeleton comes down
+// switching households, where the stats are cleared and the skeleton comes down
 // before the refetch is even issued.
 //
 // These pin the rule: never show the empty state until it can be answered, and
@@ -15,7 +15,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import HomeView from '../src/views/HomeView.vue'
 import ShoppingList from '../src/components/ShoppingList.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
-import { saveFamilySnapshot } from '../src/lib/familyCache'
+import { saveHouseholdSnapshot } from '../src/lib/householdCache'
 import { __setOnlineForTest } from '../src/lib/connectivity'
 
 const mocks = vi.hoisted(() => ({ db: null, routerReplace: () => {} }))
@@ -24,8 +24,8 @@ vi.mock('../src/supabase', () => ({ useSupabase: () => mocks.db }))
 vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: (...args) => mocks.routerReplace(...args) }),
 }))
-vi.mock('../src/lib/familyRealtime', () => ({
-  useFamilyRealtime: () => ({
+vi.mock('../src/lib/householdRealtime', () => ({
+  useHouseholdRealtime: () => ({
     realtimeHealthy: { value: false },
     setupRealtimeSubscriptions: async () => {},
     cleanupRealtimeSubscriptions: () => {},
@@ -52,11 +52,11 @@ const mountedWrappers = []
 async function mountHome({ items = [], history = () => ({ data: [], error: null }) } = {}) {
   mocks.db = createFakeDb()
   mocks.routerReplace = vi.fn()
-  mocks.db.handlers['family_members.select'] = (q) =>
+  mocks.db.handlers['household_members.select'] = (q) =>
     q.filters.user_id
-      ? { data: [{ family_id: 'fam-1', families: { id: 'fam-1', name: 'Fam' } }], error: null }
+      ? { data: [{ household_id: 'fam-1', households: { id: 'fam-1', name: 'Fam' } }], error: null }
       : { data: [{ user_id: 'user-1', display_name: 'Test User', image_url: null, role: 'moderator' }], error: null }
-  mocks.db.handlers['families.select'] = () => ({
+  mocks.db.handlers['households.select'] = () => ({
     data: { name: 'Fam', invite_code: 'ABCDEFGH', created_by: 'user-1', max_items_per_member: 50 },
     error: null,
   })
@@ -98,7 +98,7 @@ describe('the empty list', () => {
     expect(showEmpty(wrapper)).toBe(false)
   })
 
-  it('reads as finished once the history says the family has shopped', async () => {
+  it('reads as finished once the history says the household has shopped', async () => {
     const wrapper = await mountHome({ history: () => ({ data: BOUGHT, error: null }) })
 
     expect(showEmpty(wrapper)).toBe(true)
@@ -112,7 +112,7 @@ describe('the empty list', () => {
     expect(hasShopped(wrapper)).toBe(false)
   })
 
-  // A history we could not read is not a family that never shopped — but it is
+  // A history we could not read is not a household that never shopped — but it is
   // not a reason to hold a blank screen forever either.
   it('gives up waiting when the history query fails', async () => {
     const wrapper = await mountHome({
@@ -130,17 +130,17 @@ describe('the empty list', () => {
   })
 
   // Offline the history cannot be fetched at all, so the cached snapshot holds
-  // the only answer there is. Without it a family that shops every week opens
+  // the only answer there is. Without it a household that shops every week opens
   // their empty list to "Nothing here yet" every time they lose signal.
   it('trusts the cached answer offline rather than claiming a fresh start', async () => {
-    saveFamilySnapshot(localStorage, 'user-1', {
-      familyId: 'fam-1',
-      familyName: 'Fam',
-      familyInviteCode: 'ABCDEFGH',
-      familyOwnerId: 'user-1',
-      familyItemLimit: 50,
-      familyEmoji: '',
-      familyMembers: [],
+    saveHouseholdSnapshot(localStorage, 'user-1', {
+      householdId: 'fam-1',
+      householdName: 'Fam',
+      householdInviteCode: 'ABCDEFGH',
+      householdOwnerId: 'user-1',
+      householdItemLimit: 50,
+      householdEmoji: '',
+      householdMembers: [],
       items: [],
       hasShopped: true,
     })
@@ -152,25 +152,25 @@ describe('the empty list', () => {
     expect(hasShopped(wrapper)).toBe(true)
   })
 
-  // The snapshot is keyed to the USER, not the family. Creating or joining a
-  // family makes it active immediately, but the snapshot still describes the
-  // previous one — so its cached "this family has shopped" answer was being
-  // applied to a family that has bought nothing, and a brand-new list opened on
-  // "All bought". Switching families cleared it; arriving at a new one did not.
-  it('does not carry the cached answer over to a different family', async () => {
-    saveFamilySnapshot(localStorage, 'user-1', {
-      familyId: 'fam-old',            // a family that HAS shopped
-      familyName: 'Old Fam',
-      familyInviteCode: 'ABCDEFGH',
-      familyOwnerId: 'user-1',
-      familyItemLimit: 50,
-      familyEmoji: '',
-      familyMembers: [],
+  // The snapshot is keyed to the USER, not the household. Creating or joining a
+  // household makes it active immediately, but the snapshot still describes the
+  // previous one — so its cached "this household has shopped" answer was being
+  // applied to a household that has bought nothing, and a brand-new list opened on
+  // "All bought". Switching households cleared it; arriving at a new one did not.
+  it('does not carry the cached answer over to a different household', async () => {
+    saveHouseholdSnapshot(localStorage, 'user-1', {
+      householdId: 'fam-old',            // a household that HAS shopped
+      householdName: 'Old Fam',
+      householdInviteCode: 'ABCDEFGH',
+      householdOwnerId: 'user-1',
+      householdItemLimit: 50,
+      householdEmoji: '',
+      householdMembers: [],
       items: [],
       hasShopped: true,
     })
 
-    // The active family resolves to fam-1, which has no purchase history.
+    // The active household resolves to fam-1, which has no purchase history.
     const wrapper = await mountHome({ history: () => ({ data: [], error: null }) })
 
     expect(showEmpty(wrapper)).toBe(true)
@@ -179,12 +179,12 @@ describe('the empty list', () => {
 
   // The other half of the bug: a first-ever checkout empties the list while the
   // history refetch is still in flight, so the stats are momentarily empty and
-  // the screen used to claim the family had never bought anything — right after
+  // the screen used to claim the household had never bought anything — right after
   // watching them buy something.
   it('says "all bought" the moment a checkout empties the list', async () => {
     let call = 0
     const wrapper = await mountHome({
-      items: [{ id: 'i1', family_id: 'fam-1', name: 'Lapte', quantity: 1, checked: true, added_by: 'user-1' }],
+      items: [{ id: 'i1', household_id: 'fam-1', name: 'Lapte', quantity: 1, checked: true, added_by: 'user-1' }],
       // First load: no history yet. The post-checkout refetch never settles, so
       // the assertion lands squarely inside the old flash window.
       history: () => (call++ === 0 ? { data: [], error: null } : new Promise(() => {})),

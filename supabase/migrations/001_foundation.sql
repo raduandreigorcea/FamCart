@@ -5,14 +5,14 @@
 -- the order in which it was discovered. They replace thirty-four incremental
 -- migrations that had accumulated eight objects created and later dropped
 -- outright, four separate definitions of buy_items(), three of
--- join_family_with_code(), and one policy written three times. Nothing here
+-- join_household_with_code(), and one policy written three times. Nothing here
 -- undoes anything else here; each file states one intent and is safe to re-run.
 --
 -- They are ordered by dependency, and that order is load-bearing:
 --
 --   001 foundation           extensions, the JWT helper, the schema grant
 --   002 security_audit       the audit trail, the throttle, and who reads them
---   003 families_and_members who exists and who may change what
+--   003 households_and_members who exists and who may change what
 --   004 shopping_list        the list itself
 --   005 purchase_history     what was bought
 --   006 product_catalog      the searchable catalog

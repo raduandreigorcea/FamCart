@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref, onBeforeUnmount, type PropType } from 'vue'
-import type { FamilyMemberProfile } from '../../lib/familyRealtime'
+import type { HouseholdMemberProfile } from '../../lib/householdRealtime'
 import copyIcon from '../../assets/copy.svg?raw'
 import checkIcon from '../../assets/check.svg?raw'
 import infoIcon from '../../assets/info.svg?raw'
 
-// Read-only: who is in the family, who made it, and the code for adding
+// Read-only: who is in the household, who made it, and the code for adding
 // someone. The only thing it writes is the clipboard.
 //
 // It stays mounted on every tab: it is the tallest panel, so it is what holds
@@ -19,11 +19,11 @@ import infoIcon from '../../assets/info.svg?raw'
 // since a child component's root carries the parent's scope id.
 defineProps({
   ghost: { type: Boolean, default: false },
-  familyName: { type: String, default: '' },
+  householdName: { type: String, default: '' },
   inviteCode: { type: String, default: '' },
   memberCount: { type: Number, default: 0 },
   ownerProfile: {
-    type: Object as PropType<FamilyMemberProfile | null>,
+    type: Object as PropType<HouseholdMemberProfile | null>,
     default: null,
   },
 })
@@ -58,13 +58,13 @@ onBeforeUnmount(() => {
     :aria-hidden="ghost"
   >
     <div class="panel-section">
-      <h4 class="panel-section-title">Family Summary</h4>
+      <h4 class="panel-section-title">Household Summary</h4>
 
       <div class="summary-card">
         <div class="summary-details">
           <div class="summary-row">
-            <span class="summary-label">Family Name</span>
-            <span class="summary-value highlight">{{ familyName }}</span>
+            <span class="summary-label">Household Name</span>
+            <span class="summary-value highlight">{{ householdName }}</span>
           </div>
           <div class="summary-row" v-if="ownerProfile">
             <span class="summary-label">Created By</span>
@@ -88,7 +88,7 @@ onBeforeUnmount(() => {
 
     <div class="panel-section" v-if="inviteCode">
       <h4 class="panel-section-title">Invite New Members</h4>
-      <p class="panel-section-desc">Share this code with your family members so they can join your list.</p>
+      <p class="panel-section-desc">Share this code with your household members so they can join your list.</p>
 
       <div class="invite-card">
         <div class="invite-code-container">

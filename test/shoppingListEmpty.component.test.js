@@ -2,8 +2,8 @@
 //
 // The empty list. An empty grocery list is usually a FINISHED one — checking
 // out is what leaves the screen looking like this — so telling an established
-// family that their list is empty and inviting them to add their first item
-// reads as though something has gone missing. Only a family that has never
+// household that their list is empty and inviting them to add their first item
+// reads as though something has gone missing. Only a household that has never
 // bought anything is actually starting from nothing.
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
@@ -27,14 +27,14 @@ const mountEmpty = (props = {}) =>
 const title = (wrapper) => wrapper.find('.empty-state__title').text()
 
 describe('the empty list', () => {
-  it('reads as finished for a family that has shopped', () => {
+  it('reads as finished for a household that has shopped', () => {
     const wrapper = mountEmpty({ hasShopped: true })
 
     expect(title(wrapper)).toBe('All bought')
     expect(wrapper.find('.empty-state__text').text()).toBe('Nothing left to pick up.')
   })
 
-  it('reads as a beginning for a family that never has', () => {
+  it('reads as a beginning for a household that never has', () => {
     const wrapper = mountEmpty({ hasShopped: false })
 
     expect(title(wrapper)).toBe('Nothing here yet')
@@ -59,7 +59,7 @@ describe('the empty list', () => {
       expect(wrapper.emitted('add')[0][0]).toEqual(REGULARS[0])
     })
 
-    it('falls back to the words alone for a family with no history', () => {
+    it('falls back to the words alone for a household with no history', () => {
       const wrapper = mountEmpty({ hasShopped: false, suggestedProducts: [] })
 
       expect(wrapper.find('.restart').exists()).toBe(false)
