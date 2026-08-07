@@ -1,7 +1,7 @@
 {
   "name": "famcart",
   "private": true,
-  "version": "0.1.11",
+  "version": "0.1.12",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -19,6 +19,7 @@
     "@capacitor/browser": "^8.0.3",
     "@capacitor/core": "^8.4.1",
     "@capacitor/network": "^8.0.1",
+    "@capacitor/share": "^8.0.1",
     "@clerk/vue": "^2.4.1",
     "@onesignal/capacitor-plugin": "^1.1.4",
     "@sentry/vue": "^10.63.0",
