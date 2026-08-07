@@ -129,11 +129,14 @@ export function isReportSendable(report: {
   return true
 }
 
-// Sends the report. Today that means Sentry, alongside the crashes it already
-// collects, tagged so reports can be read as their own stream — which is why
-// this ships before the table it will eventually also write to: the button is
-// worth having now, and nothing here changes when that table arrives except a
-// second write below.
+// Sends the report. Today that means Sentry's feedback inbox — one entry per
+// report, beside the crashes but not mixed into them — which is why this ships
+// before the table it will eventually also write to: the button is worth having
+// now, and nothing here changes when that table arrives except a second write
+// below.
+//
+// The place is tagged by its label rather than its id, because the tag is read
+// by a person: "Barcode scanner" says what "scan" only implies.
 //
 // Resolves false when there is nowhere to send: offline, or a build with no
 // Sentry DSN. The caller keeps the dialog open and says so rather than
@@ -141,15 +144,9 @@ export function isReportSendable(report: {
 export async function submitReport(report: IssueReport): Promise<boolean> {
   if (isCurrentlyOffline()) return false
 
-  const title =
-    report.kind === 'bug'
-      ? `Bug: ${surfaceLabel(report.surface)}`
-      : 'Idea'
-
-  return captureReport(title, {
+  return captureReport(report.message.trim().slice(0, REPORT_MAX_LENGTH), {
     kind: report.kind,
-    surface: report.kind === 'bug' ? report.surface : '',
-    message: report.message.slice(0, REPORT_MAX_LENGTH),
+    place: report.surface ? surfaceLabel(report.surface) : '',
     ...report.diagnostics,
   })
 }

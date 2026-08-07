@@ -26,15 +26,12 @@ import type { Router } from 'vue-router'
 let capture: ((error: unknown) => void) | null = null
 // Held separately from `capture` for the same reason: naming the export is what
 // lets the bundler shake the rest of the SDK across the dynamic import.
-let captureMsg:
-  | ((
-      message: string,
-      context: {
-        level: 'info'
-        tags: Record<string, string>
-        extra: Record<string, unknown>
-      },
-    ) => void)
+let sendFeedback:
+  | ((params: {
+      message: string
+      name?: string
+      tags?: Record<string, string>
+    }) => void)
   | null = null
 let loading: Promise<void> | null = null
 
@@ -54,33 +51,42 @@ export function captureException(error: unknown): void {
   if (buffered.length < MAX_BUFFERED) buffered.push(error)
 }
 
-// A report someone typed, sent to the same place as the crashes nobody typed.
+// A report someone typed, sent as Sentry feedback rather than as a message.
 //
-// Unlike captureException this does NOT buffer, and it reports whether it
+// The distinction matters more than it looks. captureMessage groups by message
+// text, so reports would have collapsed into one issue per kind and place —
+// every new one arriving as another event on an issue that had already been
+// triaged, which is precisely how a report goes unread. Feedback lands in its
+// own inbox, one entry per report, which is what this is.
+//
+// Unlike captureException it does NOT buffer, and it reports whether it
 // arrived. An error raised into the void is still worth queueing, because
 // nobody is waiting on the answer; a person who pressed "Send report" is, and
 // telling them it went when it did not is worse than telling them it didn't.
 // It waits on the SDK's idle-time load rather than racing it, since a report is
 // almost always raised long after boot.
 export async function captureReport(
-  title: string,
-  fields: Record<string, unknown>,
+  message: string,
+  meta: Record<string, unknown>,
 ): Promise<boolean> {
   if (loading) await loading
-  if (!captureMsg) return false
+  if (!sendFeedback) return false
 
-  // Ids and free text go in `extra`; only low-cardinality facts become tags, so
-  // the issue stream stays groupable by kind and place.
-  const { message, householdId, userId, ...tagged } = fields
+  // The message travels verbatim: it is the person's own words and the one
+  // thing in here nobody else could have written. Everything the app worked out
+  // for itself becomes a tag, so the inbox can be filtered by it.
+  const { userId, ...tagged } = meta
   const tags: Record<string, string> = { report: 'user' }
   for (const [key, value] of Object.entries(tagged)) {
     if (value !== '' && value !== undefined && value !== null) tags[key] = String(value)
   }
 
-  captureMsg(title, {
-    level: 'info',
+  sendFeedback({
+    message,
+    // Sentry's inbox shows this as who reported it. An opaque Clerk id is not
+    // a name, but it is what lets a report be traced back to an account.
+    name: typeof userId === 'string' && userId ? userId : undefined,
     tags,
-    extra: { message, householdId, userId },
   })
   return true
 }
@@ -154,7 +160,7 @@ export function startErrorReporting(app: App, router: Router): Promise<void> {
         .then(({
           init,
           captureException: sentryCapture,
-          captureMessage: sentryCaptureMessage,
+          captureFeedback: sentryCaptureFeedback,
           browserTracingIntegration,
         }) => {
           init({
@@ -181,7 +187,7 @@ export function startErrorReporting(app: App, router: Router): Promise<void> {
             },
           })
           capture = sentryCapture
-          captureMsg = sentryCaptureMessage
+          sendFeedback = sentryCaptureFeedback
           flush()
         })
         .catch(() => {
