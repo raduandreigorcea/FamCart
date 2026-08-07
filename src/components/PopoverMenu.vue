@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch, type PropType } from 'vue'
+import { closeModal, openModal } from '../lib/modalStack'
 
 // The menu shell: a panel that hangs off a button on a wide screen and comes up
 // as a bottom sheet on a phone. Owns the teleport, the overlay, the transition,
@@ -84,16 +85,25 @@ function onResize() {
   measure()
 }
 
+// This menu's place in the layer stack. It joins the dialogs there so Android's
+// Back press closes whatever is actually in front — on a phone this opens as a
+// bottom sheet, and a sheet the hardware button ignores reads as a dead button.
+// It does not lock the page's scroll, which is the one way it differs from a
+// dialog and why openModal is told so.
+const layer = Symbol('popover-menu')
+
 // Bound only while open: a document listener that outlived the menu would
 // swallow Escape for the modals above it.
 watch(open, (isOpen) => {
   if (typeof document === 'undefined') return
   if (isOpen) {
     measure()
+    openModal(layer, { close, locksScroll: false })
     document.addEventListener('keydown', onKeydown)
     window.addEventListener('resize', onResize)
   } else {
     anchor.value = null
+    closeModal(layer)
     document.removeEventListener('keydown', onKeydown)
     window.removeEventListener('resize', onResize)
   }
@@ -101,6 +111,7 @@ watch(open, (isOpen) => {
 
 onBeforeUnmount(() => {
   if (typeof document === 'undefined') return
+  closeModal(layer)
   document.removeEventListener('keydown', onKeydown)
   window.removeEventListener('resize', onResize)
 })
