@@ -14,6 +14,7 @@ import { clearHouseholdSnapshot } from '../lib/householdCache'
 import { clearOfflineQueue } from '../lib/offlineQueue'
 import { logoutPushUser } from '../lib/pushNotifications'
 import { captureException } from '../lib/errorReporting'
+import { shareInvite } from '../lib/inviteShare'
 
 // The settings modal is by far the heaviest part of the topbar; load its chunk
 // only when someone actually opens it.
@@ -139,22 +140,30 @@ function openHouseholdSettings() {
   settingsOpen.value = true
 }
 
-// Copies the invite code straight to the clipboard, which is what someone
-// picking "Invite people" actually wants. Clipboard access can be refused
-// outright (permissions, a non-secure context, an older WebView), so fall
-// through to the overview panel — it shows the code with its own copy button,
-// which is also where someone with no code yet needs to end up.
-async function inviteMembersFromAccountMenu() {
-  if (props.inviteCode) {
-    try {
-      await navigator.clipboard.writeText(props.inviteCode)
-      accountMenuOpen.value = false
-      return
-    } catch {
-      // fall through to the panel
-    }
+// Hands the invite to whatever the device sends things with: the share sheet on
+// a phone, the clipboard on a desktop. See lib/inviteShare for why that is three
+// paths rather than one.
+//
+// Not awaited before the call — the web share sheet only opens inside the user
+// activation from the tap, and an await here would spend it.
+function inviteMembersFromAccountMenu() {
+  if (!props.inviteCode) {
+    // No code to send yet. The overview panel is where one is minted, so that is
+    // where this has to end up.
+    openHouseholdSettings()
+    return
   }
-  openHouseholdSettings()
+
+  void shareInvite(props.householdName, props.inviteCode).then((outcome) => {
+    // Backing out of the sheet is an answer, not a failure: stay exactly where
+    // they were so a second try is one tap away.
+    if (outcome === 'cancelled') return
+    if (outcome === 'unavailable') {
+      openHouseholdSettings()
+      return
+    }
+    accountMenuOpen.value = false
+  })
 }
 
 async function handleSignOut() {
