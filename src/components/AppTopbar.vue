@@ -14,6 +14,7 @@ import { clearHouseholdSnapshot } from '../lib/householdCache'
 import { clearOfflineQueue } from '../lib/offlineQueue'
 import { logoutPushUser } from '../lib/pushNotifications'
 import { captureException } from '../lib/errorReporting'
+import { shareInvite } from '../lib/inviteShare'
 
 // The settings modal is by far the heaviest part of the topbar; load its chunk
 // only when someone actually opens it.
@@ -29,6 +30,9 @@ const HouseholdSettingsModal = defineAsyncComponent(loadHouseholdSettingsModal)
 // Same treatment for the purchase-history modal: fetched and rendered on demand.
 const loadPurchaseHistoryModal = () => import('./PurchaseHistoryModal.vue')
 const PurchaseHistoryModal = defineAsyncComponent(loadPurchaseHistoryModal)
+// Reporting is rare and its chunk pulls in the report library, so it stays out
+// of the initial download like the two above.
+const ReportIssueModal = defineAsyncComponent(() => import('./ReportIssueModal.vue'))
 
 // Warm a modal's chunk ahead of the click. The bundler dedupes the dynamic
 // import, so the real open reuses this request instead of starting a second one.
@@ -99,6 +103,9 @@ const appSettingsOpen = ref(false)
 const historyOpen = ref(false)
 const historyEverOpened = ref(false)
 
+const reportOpen = ref(false)
+const reportEverOpened = ref(false)
+
 function openAppSettings() {
   accountMenuOpen.value = false
   appSettingsOpen.value = true
@@ -118,6 +125,12 @@ function openAccountSettings() {
   clerk.value?.openUserProfile()
 }
 
+function openReportIssue() {
+  accountMenuOpen.value = false
+  reportEverOpened.value = true
+  reportOpen.value = true
+}
+
 // Two doors lead here — the household block in the bar and the account dialog —
 // because people reach for different ones. They both land on the same dialog, so
 // each just closes whatever it was opened from.
@@ -127,22 +140,30 @@ function openHouseholdSettings() {
   settingsOpen.value = true
 }
 
-// Copies the invite code straight to the clipboard, which is what someone
-// picking "Invite people" actually wants. Clipboard access can be refused
-// outright (permissions, a non-secure context, an older WebView), so fall
-// through to the overview panel — it shows the code with its own copy button,
-// which is also where someone with no code yet needs to end up.
-async function inviteMembersFromAccountMenu() {
-  if (props.inviteCode) {
-    try {
-      await navigator.clipboard.writeText(props.inviteCode)
-      accountMenuOpen.value = false
-      return
-    } catch {
-      // fall through to the panel
-    }
+// Hands the invite to whatever the device sends things with: the share sheet on
+// a phone, the clipboard on a desktop. See lib/inviteShare for why that is three
+// paths rather than one.
+//
+// Not awaited before the call — the web share sheet only opens inside the user
+// activation from the tap, and an await here would spend it.
+function inviteMembersFromAccountMenu() {
+  if (!props.inviteCode) {
+    // No code to send yet. The overview panel is where one is minted, so that is
+    // where this has to end up.
+    openHouseholdSettings()
+    return
   }
-  openHouseholdSettings()
+
+  void shareInvite(props.householdName, props.inviteCode).then((outcome) => {
+    // Backing out of the sheet is an answer, not a failure: stay exactly where
+    // they were so a second try is one tap away.
+    if (outcome === 'cancelled') return
+    if (outcome === 'unavailable') {
+      openHouseholdSettings()
+      return
+    }
+    accountMenuOpen.value = false
+  })
 }
 
 async function handleSignOut() {
@@ -321,9 +342,18 @@ const orderedActiveMembers = computed(() =>
     @manage-household="openHouseholdSettings"
     @invite-members="inviteMembersFromAccountMenu"
     @app-settings="openAppSettings"
+    @report-issue="openReportIssue"
     @switch-household="selectHousehold"
     @add-household="addHousehold"
     @sign-out="handleSignOut"
+  />
+
+  <ReportIssueModal
+    v-if="reportEverOpened"
+    :open="reportOpen"
+    :household-id="householdId"
+    :user-id="currentUserId"
+    @close="reportOpen = false"
   />
 
   <AppSettingsModal :open="appSettingsOpen" @close="appSettingsOpen = false" />

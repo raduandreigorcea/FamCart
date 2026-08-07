@@ -3,6 +3,17 @@ import { computed, type PropType } from 'vue'
 import AppModal from './AppModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
 import userRoundIconRaw from '../assets/user-round.svg?raw'
+import flagIconRaw from '../assets/flag.svg?raw'
+// One icon per row, and each one distinct: their job here is to tell four
+// near-identically shaped rows apart at a glance, so a repeat would cost more
+// than it buys. They name the destination rather than the dialog it opens --
+// a house for the household, a gear for the app -- which is also what keeps
+// them apart, since both of those dialogs wear the same gear in their headers.
+import houseIconRaw from '../assets/house.svg?raw'
+import userRoundPlusIconRaw from '../assets/user-round-plus.svg?raw'
+import gearIconRaw from '../assets/settings.svg?raw'
+import plusIconRaw from '../assets/plus.svg?raw'
+import logOutIconRaw from '../assets/log-out.svg?raw'
 import { DEFAULT_HOUSEHOLD_EMOJI } from '../lib/householdEmoji'
 import { HOUSEHOLD_MEMBERSHIP_CAP } from '../lib/limits'
 
@@ -42,6 +53,7 @@ const props = defineProps({
 const emit = defineEmits([
   'close',
   'edit-account',
+  'report-issue',
   'sign-out',
   'manage-household',
   'invite-members',
@@ -103,22 +115,34 @@ function switchHousehold(id: string) {
 
           <div class="account-section">
             <button class="account-menu-item" type="button" @click="emit('edit-account')">
-              <span class="account-menu-item__label">Profile</span>
+              <span class="account-menu-item__label">
+                <span class="account-item-icon" aria-hidden="true" v-html="userRoundIconRaw"></span>
+                <span>Profile</span>
+              </span>
               <span class="account-menu-item__hint">Name, photo, password</span>
             </button>
             <button class="account-menu-item" type="button" @click="emit('manage-household')">
-              <span class="account-menu-item__label">Manage household</span>
+              <span class="account-menu-item__label">
+                <span class="account-item-icon" aria-hidden="true" v-html="houseIconRaw"></span>
+                <span>Manage household</span>
+              </span>
               <span class="account-menu-item__hint">{{ householdName || 'Household' }}</span>
             </button>
             <button class="account-menu-item" type="button" @click="emit('invite-members')">
-              <span class="account-menu-item__label">Invite people</span>
+              <span class="account-menu-item__label">
+                <span class="account-item-icon" aria-hidden="true" v-html="userRoundPlusIconRaw"></span>
+                <span>Invite people</span>
+              </span>
               <span class="account-menu-item__hint">
                 {{ householdMemberCount }} {{ householdMemberCount === 1 ? 'member' : 'members' }}
               </span>
             </button>
 
             <button class="account-menu-item" type="button" @click="emit('app-settings')">
-              <span class="account-menu-item__label">App settings</span>
+              <span class="account-menu-item__label">
+                <span class="account-item-icon" aria-hidden="true" v-html="gearIconRaw"></span>
+                <span>App settings</span>
+              </span>
               <span class="account-menu-item__hint">Appearance, notifications, about</span>
             </button>
 
@@ -127,7 +151,6 @@ function switchHousehold(id: string) {
                  which is the only state where neither row has anything to do. -->
             <template v-if="showHouseholdSection">
               <div class="account-divider"></div>
-              <p class="account-section-label">Households</p>
 
               <button
                 v-for="household in (canSwitch ? households : [])"
@@ -153,11 +176,29 @@ function switchHousehold(id: string) {
                 type="button"
                 @click="emit('add-household')"
               >
-                <span class="account-menu-item__label">Join or create a household</span>
+                <span class="account-menu-item__label">
+                  <span class="account-item-icon" aria-hidden="true" v-html="plusIconRaw"></span>
+                  <span>Join or create a household</span>
+                </span>
               </button>
             </template>
 
             <div class="account-divider"></div>
+
+            <!-- Sits with sign out rather than with the rows above it: those
+                 four lead further into the app, these two are the ways of
+                 stepping outside it. -->
+            <button
+              class="account-menu-item account-report-item"
+              type="button"
+              @click="emit('report-issue')"
+            >
+              <span class="account-menu-item__label">
+                <span class="account-item-icon" aria-hidden="true" v-html="flagIconRaw"></span>
+                <span>Report an issue</span>
+              </span>
+              <span class="account-menu-item__hint">Bugs and feedback</span>
+            </button>
 
             <button
               class="account-menu-item account-menu-item--danger"
@@ -165,9 +206,15 @@ function switchHousehold(id: string) {
               :disabled="loadingSignOut"
               @click="emit('sign-out')"
             >
+              <!-- The spinner takes the icon's place rather than the whole
+                   label's: signing out is the one action here that can hang on
+                   the network, and the row that used to empty to a bare spinner
+                   stopped saying which action was in flight. The name carries
+                   through instead. -->
               <span class="account-menu-item__label account-menu-item__label--danger">
-                <span v-if="loadingSignOut" class="account-spinner"></span>
-                <span v-else>Sign out</span>
+                <span v-if="loadingSignOut" class="account-spinner" aria-hidden="true"></span>
+                <span v-else class="account-item-icon" aria-hidden="true" v-html="logOutIconRaw"></span>
+                <span>{{ loadingSignOut ? 'Signing out' : 'Sign out' }}</span>
               </span>
             </button>
           </div>
@@ -192,7 +239,12 @@ function switchHousehold(id: string) {
 
 .account-dialog {
   width: 100%;
-  max-width: 360px;
+  /* Wider than the 360px it opened at. Every row now spends 24px of its width on
+     an icon and its gap before the label starts, while the hint still holds the
+     right edge — so the two were meeting in the middle on the longest rows
+     ("App settings" against "Appearance, notifications, about"). The sheet below
+     520px is unaffected; it has been full-width all along. */
+  max-width: 420px;
   background: var(--bg-surface);
   border: none;
   border-radius: var(--radius-dialog);
@@ -363,10 +415,43 @@ function switchHousehold(id: string) {
   cursor: not-allowed;
 }
 
+/* Every row leads with an icon now, so the row/icon layout lives here rather
+   than being re-declared per row. min-width:0 is what lets a long household
+   name ellipsize inside it. */
 .account-menu-item__label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
   font-size: var(--text-sm);
   font-weight: var(--weight-bold);
   color: var(--text-primary);
+}
+
+.account-item-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.account-item-icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  /* The assets ship at mixed stroke widths — flag.svg at 1 reads as a hairline
+     next to the bold row labels — so the weight is set here for all of them. */
+  stroke-width: 2;
+  fill: none;
+}
+
+/* The icon warms with the row, so the whole row answers a hover as one thing
+   rather than the border moving while the mark stays grey. */
+.account-menu-item:hover:not(:disabled) .account-item-icon {
+  color: var(--color-primary);
 }
 
 .account-menu-item__label--danger {
@@ -379,26 +464,9 @@ function switchHousehold(id: string) {
   flex-shrink: 0;
 }
 
-/* Names what the rows under it are, in the same voice as the list header on the
-   dashboard. */
-.account-section-label {
-  margin: 0 0 -0.1rem 0.15rem;
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-disabled);
-}
-
-/* A household row is a label like any other row here; the emoji rides inside it
-   so the row keeps the shape the rest of the dialog uses. */
-.account-household-item .account-menu-item__label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-}
-
+/* A household wears its own emoji where the other rows wear an icon — same slot,
+   same gap, but a bigger tile, because it identifies one particular household
+   rather than naming a kind of destination. */
 .account-household-emoji {
   flex-shrink: 0;
   width: 26px;
@@ -448,6 +516,14 @@ function switchHousehold(id: string) {
   opacity: 0.5;
 }
 
+/* The mark rides on the solid fill here, so it takes the label's inverse colour
+   instead of the muted grey the pale rows use — and it must not warm to green
+   on hover the way they do, which is why the hover state is restated. */
+.account-menu-item--danger .account-item-icon,
+.account-menu-item--danger:hover:not(:disabled) .account-item-icon {
+  color: var(--text-inverse);
+}
+
 
 
 
@@ -460,8 +536,11 @@ function switchHousehold(id: string) {
 
 
 .account-spinner {
-  width: 14px;
-  height: 14px;
+  /* Same box as .account-item-icon, which it stands in for: at 14px the label
+     shifted two pixels left the moment sign-out started. */
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
   border: var(--border-width-thick) solid color-mix(in srgb, var(--text-inverse) 45%, transparent);
   border-top-color: var(--text-inverse);
   border-radius: 50%;

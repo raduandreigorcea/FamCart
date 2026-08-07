@@ -635,8 +635,9 @@ function onHouseholdDeleted() {
 
   .settings-modal {
     max-width: none;
-    /* Height comes from the always-present Overview panel, so it is the same on
-       every tab. The cap only bites on very short viewports. */
+    /* Height comes from the always-present Overview panel, floored by
+       .settings-content-wrapper below, so it is the same on every tab. The cap
+       only bites on very short viewports. */
     height: auto;
     max-height: min(88dvh, calc(760px + var(--safe-bottom)));
     border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
@@ -657,6 +658,18 @@ function onHouseholdDeleted() {
     grid-template-rows: auto minmax(0, 1fr);
     height: auto;
     min-height: 0;
+  }
+
+  /* The sheet is the one place the modal's height is content-driven (desktop
+     pins .settings-modal__body to a fixed height), so whatever Overview happens
+     to contain used to decide how much room Members and Danger got. Give the
+     panel area a floor of its own and that stops being an accident.
+
+     Viewport-relative on purpose: the sheet is capped at 88dvh, and 55dvh plus
+     the header and tab strip stays under that cap on any real phone, so the
+     floor can never fight the cap and push content past the modal's clip. */
+  .settings-content-wrapper {
+    min-height: 55dvh;
   }
 
   .settings-sidebar {
