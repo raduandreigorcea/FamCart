@@ -3,7 +3,6 @@ import { ref, onBeforeUnmount, type PropType } from 'vue'
 import type { HouseholdMemberProfile } from '../../lib/householdRealtime'
 import copyIcon from '../../assets/copy.svg?raw'
 import checkIcon from '../../assets/check.svg?raw'
-import infoIcon from '../../assets/info.svg?raw'
 
 // Read-only: who is in the household, who made it, and the code for adding
 // someone. The only thing it writes is the clipboard.
@@ -106,15 +105,6 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </div>
-
-    <div class="panel-section info-box-section">
-      <div class="info-box">
-        <span class="info-box-icon-wrap" aria-hidden="true" v-html="infoIcon"></span>
-        <p class="settings-note-text">
-          Use your profile menu on the top right of the dashboard screen to sign out or manage your personal account settings.
-        </p>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -128,24 +118,6 @@ onBeforeUnmount(() => {
 }
 
 .btn-icon-wrap :deep(svg) {
-  width: 100%;
-  height: 100%;
-  stroke: currentColor;
-  stroke-width: 2;
-  fill: none;
-}
-
-.info-box-icon-wrap {
-  width: 16px;
-  height: 16px;
-  color: var(--ui-text-muted);
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.info-box-icon-wrap :deep(svg) {
   width: 100%;
   height: 100%;
   stroke: currentColor;
@@ -276,27 +248,5 @@ onBeforeUnmount(() => {
   color: var(--color-primary-text);
   transform: none;
   box-shadow: none;
-}
-
-/* Info Box */
-.info-box-section {
-  margin-top: auto;
-  padding-top: 0.5rem;
-}
-
-.info-box {
-  display: flex;
-  gap: 0.65rem;
-  background: var(--bg-surface-alt);
-  padding: var(--space-3) 0.9rem;
-  border-radius: var(--radius-md);
-}
-
-
-.settings-note-text {
-  margin: 0;
-  font-size: var(--text-xs);
-  color: var(--ui-text-muted);
-  line-height: 1.45;
 }
 </style>

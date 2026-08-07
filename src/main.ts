@@ -6,6 +6,7 @@ import router from './router'
 import { startConnectivity } from './lib/connectivity'
 import { initPushNotifications } from './lib/pushNotifications'
 import { captureEarlyErrors, startErrorReporting } from './lib/errorReporting'
+import { startNativeBack } from './lib/nativeBack'
 
 // First statement in the module on purpose: everything below can throw or reject,
 // and until the Sentry SDK loads (deferred to idle) nothing else is listening.
@@ -59,4 +60,9 @@ app.use(clerkPlugin, {
 })
 
 app.use(router)
+
+// Android's Back button, once the router exists for it to navigate. A no-op in
+// a browser, where Back belongs to the browser.
+startNativeBack(router)
+
 app.mount('#app')

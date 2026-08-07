@@ -284,3 +284,88 @@ describe('AccountActionModal households', () => {
     expect(wrapper.emitted('add-household')).toBeTruthy()
   })
 })
+
+// Reporting a problem sits with sign out at the bottom rather than among the
+// four rows above it: those lead further into the app, these two are the ways of
+// stepping outside it. Sign out stays last, since it ends the session.
+describe('AccountActionModal report issue', () => {
+  function mountAccount(props) {
+    const w = mount(AccountActionModal, { props: { open: true, ...props } })
+    wrappers.push(w)
+    return w
+  }
+
+  it('offers a report row and emits from it', async () => {
+    const wrapper = mountAccount({ householdName: 'Home' })
+
+    const row = wrapper.find('.account-report-item')
+    expect(row.exists()).toBe(true)
+    expect(row.text()).toContain('Report an issue')
+
+    await row.trigger('click')
+    expect(wrapper.emitted('report-issue')).toBeTruthy()
+  })
+
+  it('keeps sign out as the last row', () => {
+    const wrapper = mountAccount({ householdName: 'Home' })
+
+    const rows = wrapper.findAll('.account-menu-item')
+    const last = rows[rows.length - 1]
+    expect(last.classes()).toContain('account-menu-item--danger')
+    expect(rows[rows.length - 2].classes()).toContain('account-report-item')
+  })
+
+  it('reaches the topbar as a handled event', () => {
+    const wrapper = mountTopbar({
+      householdName: 'Home',
+      memberProfiles: profiles,
+      currentUserId: 'u_self',
+    })
+
+    const modal = wrapper.findComponent(AccountActionModal)
+    modal.vm.$emit('report-issue')
+    // Handled locally, so it closes the dialog rather than bubbling out of the bar.
+    expect(wrapper.emitted('report-issue')).toBeFalsy()
+    expect(modal.props('open')).toBe(false)
+  })
+})
+
+// The rows are near-identically shaped, so the icon is what tells them apart at
+// a glance. A row added later without one would be the odd one out, which is
+// what this guards.
+describe('AccountActionModal row icons', () => {
+  function mountAccount(props) {
+    const w = mount(AccountActionModal, { props: { open: true, ...props } })
+    wrappers.push(w)
+    return w
+  }
+
+  it('leads every row with a mark, and never the same one twice', () => {
+    const wrapper = mountAccount({
+      householdName: 'Home',
+      households: [{ id: 'fam-1', name: 'Home', emoji: 'E1' }],
+      householdId: 'fam-1',
+    })
+
+    // No exceptions, sign out included.
+    for (const row of wrapper.findAll('.account-menu-item')) {
+      const mark = row.find('.account-item-icon, .account-household-emoji')
+      expect(mark.exists(), `no icon on: ${row.text()}`).toBe(true)
+    }
+
+    const svgs = wrapper.findAll('.account-item-icon svg')
+    const shapes = svgs.map((s) => s.attributes('class'))
+    expect(new Set(shapes).size).toBe(shapes.length)
+  })
+
+  // The row used to empty to a bare spinner, which said something was happening
+  // but not what. Only the mark is replaced now.
+  it('keeps sign out named while it is signing out', () => {
+    const wrapper = mountAccount({ householdName: 'Home', loadingSignOut: true })
+
+    const row = wrapper.find('.account-menu-item--danger')
+    expect(row.text()).toContain('Signing out')
+    expect(row.find('.account-spinner').exists()).toBe(true)
+    expect(row.find('.account-item-icon').exists()).toBe(false)
+  })
+})
