@@ -102,7 +102,9 @@ function activate() {
   if (typeof document === 'undefined' || active) return
   active = true
   previouslyFocused = document.activeElement as HTMLElement | null
-  openModal(token)
+  // The same request Escape and the backdrop make, registered so Android's Back
+  // press can make it too without knowing anything about this dialog.
+  openModal(token, { close: () => emit('close') })
   document.addEventListener('keydown', onKeydown)
   // The overlay does not exist until after this tick.
   if (props.autofocus) {
