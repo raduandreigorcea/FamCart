@@ -24,6 +24,18 @@ import type { Router } from 'vue-router'
 // tree-shaken down to. Naming the three exports used is what lets that shaking
 // still happen across a dynamic import.
 let capture: ((error: unknown) => void) | null = null
+// Held separately from `capture` for the same reason: naming the export is what
+// lets the bundler shake the rest of the SDK across the dynamic import.
+let captureMsg:
+  | ((
+      message: string,
+      context: {
+        level: 'info'
+        tags: Record<string, string>
+        extra: Record<string, unknown>
+      },
+    ) => void)
+  | null = null
 let loading: Promise<void> | null = null
 
 // Bounded on purpose. Without a DSN (local dev, CI, tests) the SDK never loads
@@ -40,6 +52,37 @@ export function captureException(error: unknown): void {
     return
   }
   if (buffered.length < MAX_BUFFERED) buffered.push(error)
+}
+
+// A report someone typed, sent to the same place as the crashes nobody typed.
+//
+// Unlike captureException this does NOT buffer, and it reports whether it
+// arrived. An error raised into the void is still worth queueing, because
+// nobody is waiting on the answer; a person who pressed "Send report" is, and
+// telling them it went when it did not is worse than telling them it didn't.
+// It waits on the SDK's idle-time load rather than racing it, since a report is
+// almost always raised long after boot.
+export async function captureReport(
+  title: string,
+  fields: Record<string, unknown>,
+): Promise<boolean> {
+  if (loading) await loading
+  if (!captureMsg) return false
+
+  // Ids and free text go in `extra`; only low-cardinality facts become tags, so
+  // the issue stream stays groupable by kind and place.
+  const { message, householdId, userId, ...tagged } = fields
+  const tags: Record<string, string> = { report: 'user' }
+  for (const [key, value] of Object.entries(tagged)) {
+    if (value !== '' && value !== undefined && value !== null) tags[key] = String(value)
+  }
+
+  captureMsg(title, {
+    level: 'info',
+    tags,
+    extra: { message, householdId, userId },
+  })
+  return true
 }
 
 function flush(): void {
@@ -108,7 +151,12 @@ export function startErrorReporting(app: App, router: Router): Promise<void> {
   loading = new Promise<void>((resolve) => {
     whenIdle(() => {
       void import('@sentry/vue')
-        .then(({ init, captureException: sentryCapture, browserTracingIntegration }) => {
+        .then(({
+          init,
+          captureException: sentryCapture,
+          captureMessage: sentryCaptureMessage,
+          browserTracingIntegration,
+        }) => {
           init({
             app,
             dsn,
@@ -133,6 +181,7 @@ export function startErrorReporting(app: App, router: Router): Promise<void> {
             },
           })
           capture = sentryCapture
+          captureMsg = sentryCaptureMessage
           flush()
         })
         .catch(() => {

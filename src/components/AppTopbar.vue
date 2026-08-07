@@ -29,6 +29,9 @@ const HouseholdSettingsModal = defineAsyncComponent(loadHouseholdSettingsModal)
 // Same treatment for the purchase-history modal: fetched and rendered on demand.
 const loadPurchaseHistoryModal = () => import('./PurchaseHistoryModal.vue')
 const PurchaseHistoryModal = defineAsyncComponent(loadPurchaseHistoryModal)
+// Reporting is rare and its chunk pulls in the report library, so it stays out
+// of the initial download like the two above.
+const ReportIssueModal = defineAsyncComponent(() => import('./ReportIssueModal.vue'))
 
 // Warm a modal's chunk ahead of the click. The bundler dedupes the dynamic
 // import, so the real open reuses this request instead of starting a second one.
@@ -99,6 +102,9 @@ const appSettingsOpen = ref(false)
 const historyOpen = ref(false)
 const historyEverOpened = ref(false)
 
+const reportOpen = ref(false)
+const reportEverOpened = ref(false)
+
 function openAppSettings() {
   accountMenuOpen.value = false
   appSettingsOpen.value = true
@@ -116,6 +122,12 @@ function openAccountMenu() {
 function openAccountSettings() {
   accountMenuOpen.value = false
   clerk.value?.openUserProfile()
+}
+
+function openReportIssue() {
+  accountMenuOpen.value = false
+  reportEverOpened.value = true
+  reportOpen.value = true
 }
 
 // Two doors lead here — the household block in the bar and the account dialog —
@@ -321,9 +333,18 @@ const orderedActiveMembers = computed(() =>
     @manage-household="openHouseholdSettings"
     @invite-members="inviteMembersFromAccountMenu"
     @app-settings="openAppSettings"
+    @report-issue="openReportIssue"
     @switch-household="selectHousehold"
     @add-household="addHousehold"
     @sign-out="handleSignOut"
+  />
+
+  <ReportIssueModal
+    v-if="reportEverOpened"
+    :open="reportOpen"
+    :household-id="householdId"
+    :user-id="currentUserId"
+    @close="reportOpen = false"
   />
 
   <AppSettingsModal :open="appSettingsOpen" @close="appSettingsOpen = false" />
