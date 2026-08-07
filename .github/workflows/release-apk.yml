@@ -112,7 +112,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: FamCart - latest build
+          # The version goes in the NAME, not just the body, because the name is
+          # all the releases list shows -- "FamCart - latest build" told you a
+          # build existed but never which one, so the only way to read the
+          # version was to open the release. The tag stays `latest` regardless:
+          # it is the rolling download URL and must not move with the version.
+          name: FamCart v${{ steps.built.outputs.version }}
           body: |
             Newest FamCart Android app, built automatically from `master`.
 
