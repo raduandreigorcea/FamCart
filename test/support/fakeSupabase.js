@@ -55,6 +55,10 @@ export function createFakeDb() {
         query.filters[`is:${column}`] = value
         return query
       },
+      in(column, values) {
+        query.filters[`in:${column}`] = values
+        return query
+      },
       or(expression) {
         query.filters.or = expression
         return query

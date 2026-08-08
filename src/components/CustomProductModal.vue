@@ -17,34 +17,60 @@ const props = defineProps({
   // what the row would reject anyway.
   nameMaxLength: { type: Number, default: 120 },
   makerMaxLength: { type: Number, default: 60 },
+  // The code this dialog opens with — set when it was reached from a scan the
+  // catalog could not answer, empty when the user typed their way here. Either
+  // way the field below is editable: a misread digit is worth correcting, and a
+  // product on the counter is worth typing a code for even without scanning it.
+  initialBarcode: { type: String, default: '' },
 })
 
 const emit = defineEmits(['submit', 'cancel'])
 
+// What product_catalog_barcode_format accepts (006_product_catalog.sql). The
+// server drops anything else silently, which is right for a fire-and-forget RPC
+// and wrong for a field someone is looking at — so the same rule is enforced
+// here, where it can still be corrected.
+const BARCODE_RE = /^[0-9]{8,14}$/
+
 const name = ref('')
 const maker = ref('')
+const barcode = ref('')
 const nameInput = ref<HTMLInputElement | null>(null)
 
 // Every open starts from the add form's text with a blank maker, so a previous
 // visit can never leave a stale manufacturer attached to a different product.
+// The barcode starts from whatever the scan found, which is empty for a product
+// reached by typing.
 watch(
   () => props.open,
   async (open) => {
     if (!open) return
     name.value = props.initialName
     maker.value = ''
+    barcode.value = props.initialBarcode
     await nextTick()
     nameInput.value?.focus()
     nameInput.value?.select()
   },
 )
 
-const canSubmit = computed(() => name.value.trim().length > 0)
+// Empty is fine — the field is optional. Half a barcode is not: it would be
+// dropped on the way to the database, and the user would have no way of knowing
+// their scan shortcut was never saved.
+const barcodeInvalid = computed(
+  () => barcode.value.trim().length > 0 && !BARCODE_RE.test(barcode.value.trim()),
+)
+
+const canSubmit = computed(() => name.value.trim().length > 0 && !barcodeInvalid.value)
 
 function submit() {
   const productName = name.value.trim()
-  if (!productName) return
-  emit('submit', { name: productName, maker: maker.value.trim() || null })
+  if (!productName || barcodeInvalid.value) return
+  emit('submit', {
+    name: productName,
+    maker: maker.value.trim() || null,
+    barcode: barcode.value.trim() || null,
+  })
 }
 </script>
 
@@ -67,6 +93,13 @@ function submit() {
         </div>
 
         <div class="custom-product-dialog__body">
+          <!-- One name, whichever way you got here. This dialog is reached from
+               the suggestion list's "Add your own" and from a scan the catalog
+               could not answer, and it used to rename itself for the second —
+               which made one dialog look like two features and left the app with
+               three labels for a single action. What actually differs between
+               the two routes is one field's starting value, so that is all that
+               differs now. -->
           <h4 id="custom-product-title" class="custom-product-dialog__title">Add your own</h4>
           <p class="custom-product-dialog__message">
             Describe it and it goes straight on your list. We'll suggest it to
@@ -101,6 +134,56 @@ function submit() {
             />
           </label>
 
+          <!-- Optional, and last, because it is the field fewest people will
+               touch: filled already when a scan brought you here, blank and
+               skippable when you typed your way in. inputmode numeric so a phone
+               offers digits without type="number"'s spinners and its habit of
+               eating leading zeros — which a barcode can start with.
+
+               The placeholder describes the format rather than showing a
+               specimen code, unlike the two fields above. A plausible 13-digit
+               number here would be indistinguishable at a glance from one that
+               really was scanned, and checking it against the package is the
+               entire reason this field is visible. -->
+          <label class="custom-product-field">
+            <span class="custom-product-label">
+              Barcode
+              <span class="custom-product-optional">optional</span>
+            </span>
+            <input
+              v-model="barcode"
+              type="text"
+              inputmode="numeric"
+              placeholder="8 to 14 digits"
+              maxlength="14"
+              autocomplete="off"
+              class="custom-product-barcode"
+              :class="{ 'custom-product-barcode--invalid': barcodeInvalid }"
+              :aria-invalid="barcodeInvalid"
+              aria-describedby="custom-product-barcode-hint"
+            />
+            <!-- What filling this in actually buys, said once and always. It
+                 carried the barcode route's whole reason for existing back when
+                 the dialog renamed itself; the field it is about is a better
+                 place for it than the title. -->
+            <span
+              v-if="!barcodeInvalid"
+              id="custom-product-barcode-hint"
+              class="custom-product-note"
+            >
+              Saved with the product, so the next scan finds it.
+            </span>
+            <!-- Says what a barcode is rather than that this one is wrong: the
+                 user is mid-typing, and the count is the thing they can act on. -->
+            <span
+              v-if="barcodeInvalid"
+              id="custom-product-barcode-hint"
+              class="custom-product-hint"
+            >
+              A barcode is 8 to 14 digits. Clear the field to skip it.
+            </span>
+          </label>
+
           <div class="custom-product-dialog__actions">
             <AppButton variant="secondary" block type="button" @click="emit('cancel')">Cancel</AppButton>
             <AppButton variant="primary" block type="submit" :disabled="!canSubmit">Add to list</AppButton>
@@ -127,6 +210,12 @@ function submit() {
 .custom-product-dialog {
   width: 100%;
   max-width: 400px;
+  /* Three fields and a keyboard leave very little of a small phone. Bounded by
+     the overlay's box (which already subtracts the safe areas) and scrolled
+     inside itself, so the actions stay reachable instead of being clipped off
+     the bottom of the screen. */
+  max-height: 100%;
+  overflow-y: auto;
   background: var(--bg-surface);
   border-radius: var(--radius-dialog);
   border: var(--border-width-thin) solid var(--border-main);
@@ -181,6 +270,43 @@ function submit() {
   font-size: var(--text-sm);
   color: var(--text-secondary);
   line-height: 1.5;
+}
+
+/* Digits, and read as digits: a scanned code is checked against the package by
+   eye, which tabular figures and a little tracking make possible. */
+.custom-product-barcode {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+}
+
+/* But only the digits. The placeholder here is a sentence, not a code, and
+   inheriting the tracking made it read as a different typeface from the
+   placeholders in the two fields above it. */
+.custom-product-barcode::placeholder {
+  font-variant-numeric: normal;
+  letter-spacing: normal;
+}
+
+/* Qualified by the field wrapper so it outranks `.custom-product-field input:focus`
+   — which is more specific than a bare class and would otherwise keep the border
+   green while the value in it is one the database would refuse. */
+.custom-product-field input.custom-product-barcode--invalid,
+.custom-product-field input.custom-product-barcode--invalid:focus {
+  border-color: var(--danger-border);
+}
+
+.custom-product-hint {
+  font-size: var(--text-xs);
+  color: var(--danger-text);
+  line-height: var(--leading-snug);
+}
+
+/* Same slot as the error, quieter: this one is not a correction, it is the
+   answer to "why would I fill this in". */
+.custom-product-note {
+  font-size: var(--text-xs);
+  color: var(--text-disabled);
+  line-height: var(--leading-snug);
 }
 
 .custom-product-form {

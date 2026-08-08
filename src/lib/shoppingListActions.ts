@@ -19,6 +19,23 @@ import { ITEM_NAME_MAX_LENGTH } from './limits'
 import type { ShoppingItemRow } from './householdRealtime'
 import type { ProductSuggestion } from './productSearch'
 
+// A product on its way onto the list, with the two facts about HOW it got there
+// that the catalog write needs and the item row does not. Both are dropped
+// before the insert, which builds its row from named fields only.
+//
+// Declared here rather than beside ProductSuggestion because productSearch.ts is
+// vendored byte-for-byte into the catalog importer (see test/vendorDrift), and
+// the importer has no use for either field. A type the app alone needs does not
+// belong in the file the two repos have to keep identical.
+export interface AddedProduct extends ProductSuggestion {
+  /** Contribute this product to the catalog rather than bump it: the "Add your
+   *  own" path, for something the catalog does not have yet. */
+  custom?: boolean
+  /** The barcode it was scanned from. Stored alongside a custom contribution so
+   *  the next scan of the same package finds it instead of missing again. */
+  barcode?: string | null
+}
+
 // Every write the list can make, and the optimistic bookkeeping around them.
 //
 // The shape of all of these is the same: change the local array first so the tap
@@ -38,7 +55,7 @@ export interface ShoppingListActions {
   closeLimitReachedPopup: () => void
   ensureQueueFlushed: () => Promise<FlushResult>
   loadItems: () => Promise<void>
-  addItem: (product?: (ProductSuggestion & { custom?: boolean }) | null) => Promise<void>
+  addItem: (product?: AddedProduct | null) => Promise<void>
   toggleItem: (item: ShoppingItemRow) => Promise<void>
   deleteItem: (item: ShoppingItemRow) => Promise<void>
   checkoutItems: (ids: string[]) => Promise<void>
@@ -56,7 +73,7 @@ export function useShoppingListActions(options: {
   // and restores them when a failed add is worth retrying.
   draftName: Ref<string>
   draftQuantity: Ref<number>
-  selectedProduct: Ref<(ProductSuggestion & { custom?: boolean }) | null>
+  selectedProduct: Ref<AddedProduct | null>
   // The view's shared error surface. addError below is this composable's own
   // because only the add path writes it; loadError is passed in because the
   // household loaders and the reconnect sync write it too.
@@ -65,7 +82,7 @@ export function useShoppingListActions(options: {
   // what to record against the catalog once it has.
   reportAdded: (name: string, maker: string | null) => void
   clearLastAdded: () => void
-  recordProductAdd: (product: ProductSuggestion & { custom?: boolean }) => void
+  recordProductAdd: (product: AddedProduct) => void
   /** A checkout succeeded — the empty list means "bought", not "never started". */
   onCheckedOut: () => void
 }): ShoppingListActions {
@@ -266,7 +283,7 @@ export function useShoppingListActions(options: {
   // whole intent — name and maker both come from it, not from the input. A plain
   // form submit passes nothing and adds whatever was typed.
   async function addItem(
-    product: (ProductSuggestion & { custom?: boolean }) | null = null,
+    product: AddedProduct | null = null,
   ): Promise<void> {
     const name = (product?.name ?? draftName.value).trim()
     if (!name) return
