@@ -79,7 +79,6 @@ function submit() {
     :open="open"
     overlay-class="custom-product-overlay"
     transition="custom-product-fade"
-    :autofocus="false"
     @close="emit('cancel')"
   >
       <div
