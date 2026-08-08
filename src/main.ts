@@ -7,6 +7,7 @@ import { startConnectivity } from './lib/connectivity'
 import { initPushNotifications } from './lib/pushNotifications'
 import { captureEarlyErrors, startErrorReporting } from './lib/errorReporting'
 import { startNativeBack } from './lib/nativeBack'
+import { startAppUpdates } from './lib/appUpdate'
 
 // First statement in the module on purpose: everything below can throw or reject,
 // and until the Sentry SDK loads (deferred to idle) nothing else is listening.
@@ -17,6 +18,11 @@ const stopEarlyCapture = captureEarlyErrors()
 // Begin tracking real connectivity as early as possible so the router's first
 // navigation can make a trustworthy offline/online decision.
 startConnectivity()
+
+// Register the app's service worker and pick up new deploys. Before push, so a
+// worker left over from a previous build is cleared in dev before OneSignal
+// starts registering its own alongside it.
+startAppUpdates()
 
 // OneSignal push: loads the web SDK (or initializes the native plugin) when a
 // VITE_ONESIGNAL_APP_ID is configured; a no-op otherwise.

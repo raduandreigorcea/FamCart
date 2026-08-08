@@ -15,11 +15,63 @@ const uploadSourceMaps = !!process.env.SENTRY_AUTH_TOKEN || fs.existsSync('.env.
 // than imported, so the whole of package.json does not end up in the bundle.
 const appVersion = JSON.parse(fs.readFileSync('./package.json', 'utf8')).version
 
+// A worker registered on this origin by a production build — a `vite preview`,
+// or dist/ served on the same host and port — outlives the build that installed
+// it. It keeps answering navigations from its own precache, so the dev server is
+// running and reachable while the browser never sees a line of it: the page it
+// serves is built HTML with no /@vite/client in it, so there is no HMR socket
+// either. Phones are where this bites, because clearing site data on one is
+// buried three menus deep.
+//
+// The worker cannot fix itself. It re-fetches /sw.js to check for a new version,
+// and in dev that path is the SPA fallback — HTML where a script belongs, so the
+// update fails and the old worker stays. Serving a real script here is what
+// breaks the loop: the browser accepts it, and it removes itself and its caches
+// on activation, then reloads whatever tabs it was holding.
+const SELF_DESTRUCTING_WORKER = `
+self.addEventListener('install', () => self.skipWaiting())
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys()
+    await Promise.all(keys.map((key) => caches.delete(key)))
+    await self.registration.unregister()
+    const windows = await self.clients.matchAll({ type: 'window' })
+    for (const client of windows) client.navigate(client.url)
+  })())
+})
+`
+
+function devServiceWorkerKillSwitch() {
+  return {
+    name: 'famcart:dev-sw-kill-switch',
+    apply: 'serve',
+    configureServer(server) {
+      // Registered directly rather than from a returned function, so it runs
+      // ahead of Vite's internal middleware — including the SPA fallback that
+      // was answering /sw.js with index.html.
+      server.middlewares.use((req, res, next) => {
+        if ((req.url ?? '').split('?')[0] !== '/sw.js') return next()
+        res.setHeader('Content-Type', 'application/javascript')
+        res.setHeader('Cache-Control', 'no-store')
+        res.end(SELF_DESTRUCTING_WORKER)
+      })
+    },
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
   },
+  // Deliberately no `server.host`. Binding every interface is what lets a phone
+  // on the LAN reach the dev server, and it is also what puts the whole project
+  // source in front of everyone else on that network — which on a home network
+  // is nobody and in a cafe is everybody. Not a decision to make once, in a file,
+  // on behalf of every future `npm run dev`.
+  //
+  // `npm run dev:host` opts in per session instead, so exposure lasts exactly as
+  // long as the phone testing it was for.
   build: {
     // 'hidden' emits the maps for upload without adding sourceMappingURL
     // comments to the bundles; the maps are deleted after upload so they are
@@ -28,6 +80,7 @@ export default defineConfig({
   },
   plugins: [
     vue(),
+    devServiceWorkerKillSwitch(),
     VitePWA({
       // Custom SW (src/sw.js): precaching that generateSW used to emit.
       // skipWaiting/clientsClaim in the SW mirror the autoUpdate behavior.
@@ -37,7 +90,10 @@ export default defineConfig({
       srcDir: 'src',
       filename: 'sw.js',
       registerType: 'autoUpdate',
-      injectRegister: 'auto',
+      // The injected registerSW.js only registers; the reload that makes
+      // 'autoUpdate' actually update a page on screen is not in it. src/lib/
+      // appUpdate.ts registers instead and does both — see the note there.
+      injectRegister: null,
       includeAssets: ['icons/*.png', 'screen.webp'],
       manifest: {
         name: 'FamCart: Family Shopping List',

@@ -1,10 +1,11 @@
 {
   "name": "famcart",
   "private": true,
-  "version": "0.1.18",
+  "version": "0.1.19",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:host": "vite --host",
     "build": "vite build",
     "build:apk": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-apk.ps1",
     "preview": "vite preview",
