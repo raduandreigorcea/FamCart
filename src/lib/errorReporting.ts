@@ -172,19 +172,6 @@ export function startErrorReporting(app: App, router: Router): Promise<void> {
             // (e.g. Clerk during a login redirect) is expected teardown, not a
             // fault we can act on. Keep it out of the issue stream.
             ignoreErrors: ['AbortError: The connection was closed.'],
-            beforeSend(event) {
-              // Service-worker registration (vite-plugin-pwa's registerSW.js)
-              // can reject while the OAuth callback page is already unloading to
-              // redirect; the PWA re-registers on the next load, so there is
-              // nothing to fix here.
-              const frames = event.exception?.values?.flatMap(
-                (value) => value.stacktrace?.frames ?? [],
-              )
-              if (frames?.some((frame) => (frame.filename ?? '').includes('registerSW.js'))) {
-                return null
-              }
-              return event
-            },
           })
           capture = sentryCapture
           sendFeedback = sentryCaptureFeedback
