@@ -10,6 +10,8 @@ import {
   type HouseholdProductStat,
   type ProductSuggestion,
 } from './productSearch'
+import { barcodeCandidates } from './barcodeScanner'
+import type { AddedProduct } from './shoppingListActions'
 import { topHouseholdProducts } from './productRecents'
 import type { ShoppingItemRow } from './householdRealtime'
 
@@ -43,11 +45,13 @@ export interface ProductSuggestions {
   recentProducts: Ref<ProductSuggestion[]>
   /** The same list, shorter, for the empty list's one-tap adds. */
   restartProducts: Ref<ProductSuggestion[]>
+  /** Find the product a scanned barcode names, or null if the catalog has none. */
+  lookupBarcode: (code: string) => Promise<ProductSuggestion | null>
   lastAdded: Ref<{ name: string; maker: string | null } | null>
   reportAdded: (name: string, maker?: string | null) => void
   /** Take the confirmation back when the add turns out not to have landed. */
   clearLastAdded: () => void
-  recordProductAdd: (product: ProductSuggestion & { custom?: boolean }) => void
+  recordProductAdd: (product: AddedProduct) => void
   clearSuggestions: () => void
 }
 
@@ -187,6 +191,40 @@ export function useProductSuggestions(options: {
     }
   }
 
+  // ─── scanning ──────────────────────────────────────────────────────────────
+  // A barcode is an exact key, so this is the one lookup that does not go near
+  // search_text, ranking, or the debounce: there is nothing to rank and nothing
+  // to guess at. Scoped the same way fetchSuggestions is — the global catalog
+  // plus this household's own contributions — which is what lets a product this
+  // household named after a miss be found by the next scan.
+  //
+  // Ordered so a global row wins over a scoped one carrying the same code. The
+  // global is the canonical spelling; the scoped row is what this household
+  // called it before the catalog caught up.
+  async function lookupBarcode(code: string): Promise<ProductSuggestion | null> {
+    const candidates = barcodeCandidates(code)
+    if (!candidates.length || isOffline()) return null
+    try {
+      let query = db
+        .from('product_catalog')
+        .select('name, maker, popularity')
+        .in('barcode', candidates)
+      query = householdId.value
+        ? query.or(`household_id.is.null,household_id.eq.${householdId.value}`)
+        : query.is('household_id', null)
+      const { data, error } = await query
+        .order('household_id', { ascending: true, nullsFirst: true })
+        .order('popularity', { ascending: false })
+        .limit(1)
+      if (error) return null
+      return ((data ?? [])[0] as ProductSuggestion) ?? null
+    } catch {
+      // Treated as "the catalog does not have it", which puts the user on the
+      // naming path rather than on an error they can do nothing about.
+      return null
+    }
+  }
+
   watch(query, (value) => {
     const text = value.trim()
     // Editing away from a picked suggestion drops its maker; retyping the exact
@@ -244,16 +282,23 @@ export function useProductSuggestions(options: {
   // households have added the same product (006_product_catalog.sql), so one household's
   // spelling cannot leak into everyone else's dropdown.
   //
+  // A custom product named after a scan carries its barcode into that
+  // contribution, which is what closes the scanning loop: the code missed once,
+  // was named once, and every later scan of the same package — by anyone in the
+  // household — finds it. The server validates the format and ignores anything
+  // that is not a barcode, so nothing here has to.
+  //
   // Best-effort either way: fire-and-forget, never blocks or errors the add, and
   // skipped offline (neither is part of the offline queue). Both RPCs are
   // throttled server-side as well (002_security_audit.sql).
-  function recordProductAdd(product: ProductSuggestion & { custom?: boolean }): void {
+  function recordProductAdd(product: AddedProduct): void {
     if (!product || isOffline()) return
     const call = product.custom
       ? db.rpc('add_custom_product', {
           p_household_id: householdId.value,
           p_name: product.name,
           p_maker: product.maker ?? null,
+          p_barcode: product.barcode ?? null,
         })
       : db.rpc('bump_product_popularity', {
           p_name: product.name,
@@ -281,6 +326,7 @@ export function useProductSuggestions(options: {
     loadHouseholdProductStats,
     recentProducts,
     restartProducts,
+    lookupBarcode,
     lastAdded,
     reportAdded,
     clearLastAdded,

@@ -1,7 +1,7 @@
 {
   "name": "famcart",
   "private": true,
-  "version": "0.1.17",
+  "version": "0.1.18",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,6 +14,7 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "@capacitor-mlkit/barcode-scanning": "^8.1.0",
     "@capacitor/android": "^8.4.1",
     "@capacitor/app": "^8.1.0",
     "@capacitor/browser": "^8.0.3",
@@ -24,8 +25,10 @@
     "@onesignal/capacitor-plugin": "^1.1.4",
     "@sentry/vue": "^10.63.0",
     "@supabase/supabase-js": "^2.108.1",
+    "barcode-detector": "^3.2.1",
     "vue": "^3.5.34",
-    "vue-router": "^5.1.0"
+    "vue-router": "^5.1.0",
+    "zxing-wasm": "3.1.1"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.4.1",

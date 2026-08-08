@@ -147,6 +147,74 @@ describe('AddItemForm suggestions', () => {
     expect(wrapper.emitted('submit')).toHaveLength(1)
   })
 
+  // The button at the end of the row does two jobs, because with nothing typed
+  // there is nothing to add and it would otherwise sit there disabled — which is
+  // the state it is in every time the form comes back after an add.
+  describe('the button at the end of the row', () => {
+    const scanIcon = (wrapper) => wrapper.find('.scan-icon')
+
+    it('offers the scan when the field is empty', async () => {
+      const wrapper = await mountForm({ name: '', canScan: true })
+
+      expect(scanIcon(wrapper).exists()).toBe(true)
+      expect(wrapper.find('.add-btn').attributes('aria-label')).toBe('Scan a barcode')
+      // Live, unlike the add button it replaces. That is the whole point.
+      expect(wrapper.find('.add-btn').attributes('disabled')).toBeUndefined()
+      // And never a submit button, or Enter in the field would open the camera.
+      expect(wrapper.find('.add-btn').attributes('type')).toBe('button')
+    })
+
+    it('hands the button back to Add as soon as there is something to add', async () => {
+      const wrapper = await mountForm({ name: '', canScan: true })
+
+      await wrapper.setProps({ name: 'apa' })
+
+      expect(scanIcon(wrapper).exists()).toBe(false)
+      expect(wrapper.find('.add-btn').attributes('type')).toBe('submit')
+      expect(wrapper.find('.add-btn').attributes('aria-label')).toBe('Add')
+    })
+
+    it('treats a field holding only spaces as empty', async () => {
+      const wrapper = await mountForm({ name: '   ', canScan: true })
+
+      expect(scanIcon(wrapper).exists()).toBe(true)
+    })
+
+    it('stays the plain add button on a device that cannot scan', async () => {
+      // A control that would fail is worse than no control: the browser is never
+      // offered a camera it does not have.
+      const wrapper = await mountForm({ name: '', canScan: false })
+
+      expect(scanIcon(wrapper).exists()).toBe(false)
+      expect(wrapper.find('.add-btn').attributes('type')).toBe('submit')
+      expect(wrapper.find('.add-btn').attributes('disabled')).toBeDefined()
+    })
+
+    it('asks for the scanner and never submits the form', async () => {
+      const wrapper = await mountForm({ name: '', canScan: true })
+
+      await wrapper.find('.add-btn').trigger('click')
+
+      expect(wrapper.emitted('scan')).toHaveLength(1)
+      expect(wrapper.emitted('submit')).toBeUndefined()
+    })
+
+    it('does not ask for the scanner when it is the add button', async () => {
+      const wrapper = await mountForm({ name: 'apa', canScan: true })
+
+      await wrapper.find('.add-btn').trigger('click')
+
+      expect(wrapper.emitted('scan')).toBeUndefined()
+    })
+
+    it('shows the spinner over both jobs while an add is in flight', async () => {
+      const wrapper = await mountForm({ name: '', canScan: true, adding: true })
+
+      expect(wrapper.find('.spinner').exists()).toBe(true)
+      expect(scanIcon(wrapper).exists()).toBe(false)
+    })
+  })
+
   it('keeps focus in the input when a row is pressed, so blur cannot beat it', async () => {
     const wrapper = await mountForm({ suggestions: PRODUCTS, canAddCustom: true })
 

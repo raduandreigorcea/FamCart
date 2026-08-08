@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Scanning a barcode onto the list. There is no camera plugin: the web
+         layer calls getUserMedia, and Capacitor's WebView grants it only if the
+         permission is declared here and the user allows it at the prompt.
+         required="false" so a device without a camera can still install the app;
+         the add form asks what the device can do before offering the button. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
