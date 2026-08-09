@@ -136,9 +136,32 @@ describe('stacking', () => {
 })
 
 describe('focus', () => {
-  it('moves focus into the dialog on open', async () => {
+  // Opening a dialog focuses nothing in it. The old default was to focus the
+  // first focusable element, which is only sensible if that element was chosen —
+  // and it never was, it is whatever comes first in the markup. In most of these
+  // dialogs that is the close button, so they opened with the way out looking
+  // like the thing to press and Enter wired to dismiss them.
+  it('focuses nothing on open', async () => {
     const wrapper = open()
     await nextTick()
+
+    expect(document.activeElement).not.toBe(wrapper.find('.a').element)
+    expect(document.activeElement).not.toBe(wrapper.find('.b').element)
+  })
+
+  it('still opts in for a dialog that has a first thing to do', async () => {
+    const wrapper = open({ autofocus: true })
+    await nextTick()
+    expect(document.activeElement).toBe(wrapper.find('.a').element)
+  })
+
+  // Focusing nothing must not mean the keyboard can walk into the page behind:
+  // the trap pulls focus in from outside on the first Tab.
+  it('takes focus on the first Tab even though nothing was focused', async () => {
+    const wrapper = open()
+    await nextTick()
+
+    press('Tab')
     expect(document.activeElement).toBe(wrapper.find('.a').element)
   })
 

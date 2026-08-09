@@ -4,6 +4,7 @@ import { getProductEmoji } from '../lib/productEmoji'
 import BackButton from './BackButton.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import checkIcon from '../assets/check.svg?raw'
+import scanBarcodeIcon from '../assets/scan-barcode.svg?raw'
 import { productKey, type ProductSuggestion } from '../lib/productSearch'
 
 // Phone search mode: the same boundary PopoverMenu uses to pick sheet over
@@ -55,12 +56,37 @@ const props = defineProps({
   // Whether to offer the "add your own" escape hatch. Owned by the parent,
   // which knows when the query is long enough to have been searched for.
   canAddCustom: { type: Boolean, default: false },
+  // Whether this device can scan at all — a camera it can reach, and something
+  // that can decode. Asked once by the parent; a browser that cannot scan is
+  // never offered the button rather than being offered one that fails.
+  canScan: { type: Boolean, default: false },
 })
 
 // Uneven widths so the placeholder reads as products rather than a bar chart.
 const skeletonWidths = ['58%', '41%', '66%']
 
-const emit = defineEmits(['submit', 'select', 'add-custom'])
+const emit = defineEmits(['submit', 'select', 'add-custom', 'scan'])
+
+// ─── The button at the end of the row ────────────────────────────────────────
+// With nothing typed there is nothing to add, so the add button spends most of
+// its life disabled — which is most of the time the form is on screen at all,
+// since an empty field is what you come back to after every add. That dead state
+// is where scanning goes: same button, same place, no extra control on a row
+// that has no width to spare. The first keystroke hands it back to Add, which is
+// the action that has become available.
+const showScan = computed(() => props.canScan && !name.value.trim())
+
+function onAction() {
+  // Not a scan means this is the submit button, and the form's own submit
+  // handler is already on its way. Nothing to do here.
+  if (!showScan.value) return
+  // Hand the screen over rather than stacking a camera on top of a search. The
+  // collapse runs behind the dialog that is about to cover it, so the only thing
+  // the user sees is the scanner arriving — and the way back is the list, which
+  // is where the scanned items are.
+  close()
+  emit('scan')
+}
 
 // The dropdown shows only while the input has focus; mousedown.prevent on the
 // options keeps focus in the input, so picking one never races the blur.
@@ -399,15 +425,28 @@ function decreaseQty() {
             @blur="close"
             @keydown.esc="close"
           />
+          <!-- One control, two jobs. type follows the job so Enter in the field
+               still submits when there is something to add, and the scan state is
+               never a submit button that would fire on it. -->
           <button
-            type="submit"
+            :type="showScan ? 'button' : 'submit'"
             class="add-btn"
             @mousedown.prevent
-            :disabled="adding || !name.trim()"
-            aria-label="Add"
+            @click="onAction"
+            :disabled="adding || (!showScan && !name.trim())"
+            :aria-label="showScan ? 'Scan a barcode' : 'Add'"
           >
-            <span v-if="adding" class="spinner"></span>
-            <span v-else class="add-icon"></span>
+            <Transition name="btn-swap" mode="out-in">
+              <span v-if="adding" key="busy" class="spinner"></span>
+              <span
+                v-else-if="showScan"
+                key="scan"
+                class="scan-icon"
+                aria-hidden="true"
+                v-html="scanBarcodeIcon"
+              ></span>
+              <span v-else key="add" class="add-icon"></span>
+            </Transition>
           </button>
         </div>
       </div>
@@ -1062,9 +1101,44 @@ function decreaseQty() {
   -webkit-mask: url('../assets/add.svg') no-repeat center / contain;
 }
 
+/* Inlined rather than masked like its neighbours, for the reason .added-row__mark
+   is: the asset ships at stroke-width 1, and a barcode glyph is nothing BUT thin
+   strokes — masked at this size it dissolves into the green. A shade larger than
+   the plus, too, since seven hairlines read lighter than one stroked cross. */
+.scan-icon {
+  width: calc(var(--size-icon-lg) + 2px);
+  height: calc(var(--size-icon-lg) + 2px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scan-icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  fill: none;
+}
+
 .add-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* The swap between the two jobs, at the quantity picker's tempo — the same
+   "this control just changed" beat, so the row has one motion vocabulary rather
+   than two. Short enough that mode="out-in" never reads as a gap. */
+.btn-swap-enter-active,
+.btn-swap-leave-active {
+  transition: opacity 0.11s ease, transform 0.11s ease;
+}
+
+.btn-swap-enter-from,
+.btn-swap-leave-to {
+  opacity: 0;
+  transform: scale(0.7);
 }
 
 
@@ -1091,11 +1165,18 @@ function decreaseQty() {
   .suggest-enter-active,
   .suggest-leave-active,
   .added-enter-active,
-  .added-leave-active {
+  .added-leave-active,
+  .btn-swap-enter-active,
+  .btn-swap-leave-active {
     transition: none;
   }
 
   .added-enter-from {
+    transform: none;
+  }
+
+  .btn-swap-enter-from,
+  .btn-swap-leave-to {
     transform: none;
   }
 }

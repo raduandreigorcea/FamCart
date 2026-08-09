@@ -46,7 +46,10 @@ create table if not exists public.product_catalog (
   base_weight integer     not null default 0,
   add_count   integer     not null default 0,
   popularity  integer     generated always as (base_weight + add_count) stored,
-  -- EAN/GTIN from an upstream catalog. Null for seeded and contributed rows.
+  -- EAN/GTIN. From an upstream catalog on imported rows, and from the scan that
+  -- missed on a contributed one — naming a product the scanner could not find is
+  -- what puts a code on a community row. Null for seeded rows, and for anything
+  -- typed in without a scan.
   barcode     text,
   -- curated = scripts/seed-products.mjs, community = add_custom_product(),
   -- openfoodfacts = catalog-importer. Provenance is a licensing fact here, not a
@@ -91,7 +94,7 @@ alter table public.product_catalog enable row level security;
 -- read from the SQL editor when auditing where a row came from, and a licensing
 -- question is exactly when nobody has this file open.
 comment on column public.product_catalog.barcode is
-  'EAN/GTIN from the upstream catalog. Null for seeded and contributed rows.';
+  'EAN/GTIN. From the upstream catalog on imported rows; from the scan that missed on a contributed one. Null for seeded rows and for products typed in without a scan.';
 comment on column public.product_catalog.source is
   'curated = scripts/seed-products.mjs, community = add_custom_product(), openfoodfacts = catalog-importer.';
 comment on column public.product_catalog.source_ref is
@@ -124,9 +127,11 @@ create unique index if not exists product_catalog_global_search
   on public.product_catalog (search_text)
   where household_id is null;
 
--- One global row per barcode. Partial on household_id because a contributed row
--- carries no barcode today, and a future "scan it onto the list" feature must not
--- find itself blocked by a global that already claimed that code.
+-- One global row per barcode. Partial on household_id so that scoped rows are
+-- exempt: a household naming a product the scanner could not find records the
+-- code on their own row, and must not be blocked by a global that already claims
+-- it under a different name. Promotion is where the two meet, and it declines to
+-- carry a code rather than collide — see add_custom_product_unthrottled.
 create unique index if not exists product_catalog_global_barcode
   on public.product_catalog (barcode)
   where household_id is null and barcode is not null;
@@ -206,10 +211,21 @@ revoke all on function public.product_search_text(text, text) from public;
 -- Silently no-ops rather than raising for anything the caller cannot fix (not a
 -- member, overlong text): this is fire-and-forget from the client and must never
 -- surface an error on top of an add that already succeeded.
+-- Adding p_barcode does not replace the three-argument function, it overloads
+-- it: Postgres identifies a function by its argument list, so `create or
+-- replace` with a new parameter leaves the old one in place — still granted,
+-- still callable, and still writing rows without a barcode. Dropping it first is
+-- what makes this a change rather than an addition. Safe to re-run: the drop is
+-- guarded, and everything below recreates from scratch.
+drop function if exists public.add_custom_product_unthrottled(uuid, text, text);
+
 create or replace function public.add_custom_product_unthrottled(
   p_household_id uuid,
   p_name text,
-  p_maker text default null
+  p_maker text default null,
+  -- The code this product was scanned from, when the catalog had nothing for it.
+  -- Null for anything typed in by hand.
+  p_barcode text default null
 )
 returns void
 language plpgsql
@@ -230,10 +246,22 @@ declare
   v_user   text := requesting_user_id();
   v_name   text := btrim(p_name);
   v_maker  text := nullif(btrim(coalesce(p_maker, '')), '');
+  -- Mirrors product_catalog_barcode_format rather than letting it raise, the
+  -- same way the length checks below do. Anything that is not a barcode is
+  -- simply not one: the product still gets contributed, it just carries no code.
+  v_barcode text := nullif(btrim(coalesce(p_barcode, '')), '');
   v_search text;
   v_contributors integer;
   v_first  record;
+  -- Kept separate from v_barcode, which is this caller's code. This one is what
+  -- the scoped rows collectively agree on, and the two are only ever the same by
+  -- coincidence.
+  v_promote_barcode text;
 begin
+  if v_barcode is not null and v_barcode !~ '^[0-9]{8,14}$' then
+    v_barcode := null;
+  end if;
+
   if v_user is null or p_household_id is null then
     return;
   end if;
@@ -270,6 +298,15 @@ begin
   -- Already global: nothing to contribute, so count the add against it the way
   -- bump_product_popularity would. Matching on search_text rather than name/maker
   -- means a differently-accented spelling still finds it.
+  --
+  -- v_barcode is deliberately dropped on this path rather than written to the
+  -- global row. Writing it would let a single account attach a code to a product
+  -- everyone sees, on nothing but their own say-so — scan a cola, name it
+  -- "milk", and every household scanning that cola is offered milk. The
+  -- promotion path below is the only way a code reaches a global row, and it
+  -- gets there behind the same distinct-contributor gate that guards spellings.
+  -- The cost is that a global product the importer never gave a code to stays
+  -- unscannable, which is where it started.
   if exists (
     select 1 from public.product_catalog
     where household_id is null and search_text = v_search
@@ -296,11 +333,17 @@ begin
   -- (do update only bumps add_count). base_weight stays 0: that column belongs to
   -- the seed script, so earned usage has to live in add_count or the next
   -- re-seed would wipe it.
+  -- The barcode is filled in but never overwritten: a product first typed by
+  -- hand and later scanned gains its code, and a second scan reporting something
+  -- different cannot take the first one's place. Scoped rows are not covered by
+  -- the barcode unique index (it is partial on household_id is null), so nothing
+  -- here can conflict.
   insert into public.product_catalog as pc
-    (name, maker, search_text, household_id, contributed_by, base_weight, add_count, source)
-  values (v_name, v_maker, v_search, p_household_id, v_user, 0, 1, 'community')
+    (name, maker, search_text, household_id, contributed_by, base_weight, add_count, source, barcode)
+  values (v_name, v_maker, v_search, p_household_id, v_user, 0, 1, 'community', v_barcode)
   on conflict (household_id, search_text) where household_id is not null
-  do update set add_count = pc.add_count + 1;
+  do update set add_count = pc.add_count + 1,
+                barcode = coalesce(pc.barcode, excluded.barcode);
 
   -- Count distinct contributing *accounts*, not households or owners. This is the
   -- gate that actually resists abuse — see the header.
@@ -319,6 +362,25 @@ begin
   where household_id is not null and search_text = v_search
   order by created_at, id
   limit 1;
+
+  -- Which barcode, if any, the promoted row should carry: the one the scoped
+  -- rows agree on, meaning a single distinct value among those that carry a code
+  -- at all. Contributors who typed the name without scanning are not counted as
+  -- dissent — they said nothing about the code — so one scanner and two typists
+  -- promote that scanner's code unopposed.
+  --
+  -- So agreement resolves CONFLICTING scans; it is not what stops a bad one.
+  -- That job belongs to promote_at above: a code cannot reach a global row
+  -- without three distinct accounts having contributed the name it rides on,
+  -- the same gate the spelling has to clear. One person who scanned the wrong
+  -- package cannot promote anything on their own.
+  --
+  -- When two contributors did scan different packages the product still gets
+  -- promoted; it just arrives without a code, exactly as a typed one would.
+  select case when count(distinct barcode) = 1 then min(barcode) end
+    into v_promote_barcode
+  from public.product_catalog
+  where household_id is not null and search_text = v_search and barcode is not null;
 
   -- Collapse the scoped rows into one global in a single statement, carrying
   -- their add_counts so the product arrives ranked by the usage it earned rather
@@ -347,6 +409,22 @@ begin
   from scoped
   on conflict (search_text) where household_id is null
   do update set add_count = public.product_catalog.add_count + excluded.add_count;
+
+  -- The code goes on afterwards, in its own block, and never as part of the
+  -- insert above. product_catalog_global_barcode is unique across globals, so a
+  -- code another global already claims would raise — and this function is
+  -- fire-and-forget from the client, called after an add that has already
+  -- succeeded, so it must not. Promotion is the outcome that matters; the scan
+  -- shortcut is a bonus, and losing it costs the user nothing they had.
+  if v_promote_barcode is not null then
+    begin
+      update public.product_catalog
+      set barcode = v_promote_barcode
+      where household_id is null and search_text = v_search and barcode is null;
+    exception when unique_violation then
+      null;
+    end;
+  end if;
 end;
 $$;
 
@@ -362,14 +440,20 @@ $$;
 -- signed-in user, and the 120/hour limit was one RPC name away from being
 -- bypassed entirely. Defining the inner function outright, never granting it, is
 -- what closes that.
-revoke all on function public.add_custom_product_unthrottled(uuid, text, text) from public;
-revoke all on function public.add_custom_product_unthrottled(uuid, text, text) from authenticated;
+revoke all on function public.add_custom_product_unthrottled(uuid, text, text, text) from public;
+revoke all on function public.add_custom_product_unthrottled(uuid, text, text, text) from authenticated;
+
+-- Dropped for the same reason the inner function is: the three-argument version
+-- is granted to `authenticated`, and leaving it behind would leave a second,
+-- barcode-less entry point in place with its grant intact.
+drop function if exists public.add_custom_product(uuid, text, text);
 
 -- The public entry point: 120 contributions per hour, then silence.
 create or replace function public.add_custom_product(
   p_household_id uuid,
   p_name text,
-  p_maker text default null
+  p_maker text default null,
+  p_barcode text default null
 )
 returns void
 language plpgsql
@@ -380,12 +464,12 @@ begin
   if public.rate_limit_hit('catalog_contribute', 120, interval '1 hour') then
     return;
   end if;
-  perform public.add_custom_product_unthrottled(p_household_id, p_name, p_maker);
+  perform public.add_custom_product_unthrottled(p_household_id, p_name, p_maker, p_barcode);
 end;
 $$;
 
-revoke all on function public.add_custom_product(uuid, text, text) from public;
-grant execute on function public.add_custom_product(uuid, text, text) to authenticated;
+revoke all on function public.add_custom_product(uuid, text, text, text) from public;
+grant execute on function public.add_custom_product(uuid, text, text, text) to authenticated;
 
 -- ─── popularity ──────────────────────────────────────────────────────────────
 -- Count one add against a product without opening the table to client writes.
