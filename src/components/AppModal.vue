@@ -36,11 +36,18 @@ const props = defineProps({
   // A confirm dialog wants a click outside to mean cancel; a destructive one
   // may not want to be dismissed by accident.
   closeOnBackdrop: { type: Boolean, default: true },
-  // Off for a dialog that places focus itself — a form wanting its first field
-  // focused and selected, say. Both would otherwise fire on the same tick and
-  // the winner would come down to watcher order. Escape, the Tab trap and
-  // restoring focus on close stay in force either way.
-  autofocus: { type: Boolean, default: true },
+  // Opening a dialog does not focus anything in it. It used to focus the first
+  // focusable element, which is a reasonable default only if that element was
+  // chosen — and it never was: it is whatever comes first in the markup, which
+  // in most of these dialogs is the close button. So dialogs opened looking like
+  // the way out was the thing to press, and Enter dismissed them.
+  //
+  // On for a dialog that genuinely has a first thing to do; CustomProductModal
+  // does its own instead, because it wants the field selected as well as
+  // focused. Escape, the Tab trap and restoring focus on close are unaffected —
+  // the trap already pulls focus in from outside on the first Tab, so the
+  // keyboard still cannot walk into the page behind.
+  autofocus: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['close'])

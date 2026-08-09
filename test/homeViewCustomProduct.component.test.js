@@ -108,6 +108,9 @@ describe('contributing a custom product to the catalog', () => {
       p_household_id: 'fam-1',
       p_name: 'Olive Oil 500ml',
       p_maker: 'Bertolli',
+      // Typed in rather than scanned, so there is no code to remember. Sent
+      // explicitly rather than omitted, for the same reason p_maker is.
+      p_barcode: null,
     })
   })
 

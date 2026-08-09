@@ -10,12 +10,18 @@ import ErrorModal from '../components/ErrorModal.vue'
 import NotificationPromptModal from '../components/NotificationPromptModal.vue'
 import ShoppingList from '../components/ShoppingList.vue'
 import AddItemForm from '../components/AddItemForm.vue'
+import BarcodeScannerModal from '../components/BarcodeScannerModal.vue'
 import OnboardingTour from '../components/OnboardingTour.vue'
 import { useHouseholdRealtime } from '../lib/householdRealtime'
 import { useProductSuggestions } from '../lib/productSuggestions'
+import {
+  canScanBarcodes,
+  nativeScanAvailable,
+  scanWithNativeScanner,
+} from '../lib/barcodeScanner'
 import type { ProductSuggestion } from '../lib/productSearch'
 import type { HouseholdMemberProfile, ShoppingItemRow } from '../lib/householdRealtime'
-import { useShoppingListActions } from '../lib/shoppingListActions'
+import { useShoppingListActions, type AddedProduct } from '../lib/shoppingListActions'
 import { upsertOwnProfile } from '../lib/profile'
 import { cleanAuthCallbackUrl } from '../lib/authCallbackUrl'
 import {
@@ -105,6 +111,7 @@ const {
   loadHouseholdProductStats,
   recentProducts,
   restartProducts,
+  lookupBarcode,
   lastAdded,
   reportAdded,
   clearLastAdded,
@@ -126,6 +133,24 @@ const boughtThisSession = ref(false)
 const cachedShoppedHouseholdId = ref('')
 const loadError = ref('')
 const customProductOpen = ref(false)
+// Whether this device has a camera the app can reach and something to decode
+// with. Asked once at setup rather than per render: it cannot change while the
+// view is mounted, and the answer decides whether the add form offers the button
+// at all. A browser that cannot scan is never shown a control that would fail.
+const canScan = canScanBarcodes()
+const scannerOpen = ref(false)
+// A barcode is being looked up. Holds the scanner still so one code cannot start
+// a second lookup over its own.
+const scanBusy = ref(false)
+// The last code the catalog had no product for, and every code that has missed
+// while this scanner has been open. The set is what keeps a barcode lying in
+// frame from re-querying every couple of seconds for an answer that has not
+// changed.
+const scannedUnknown = ref('')
+const unknownCodes = new Set<string>()
+// The code the custom-product modal is naming, carried from the scan that missed
+// so the contributed catalog row can keep it.
+const pendingBarcode = ref('')
 // The one-time first-run sequence: gesture tour, then the notifications ask.
 // Owns its own dialog state; the view renders them and passes the answers back.
 const {
@@ -288,9 +313,130 @@ function openCustomProduct() {
 // pick — it is simply a product the catalog does not have yet. The tag rides
 // along so recordProductAdd knows to contribute it rather than bump it; it is
 // dropped before the insert, which builds its row from named fields only.
-function addCustomProduct(product: ProductSuggestion) {
+//
+// A barcode rides along the same way when the modal was opened from a scan the
+// catalog could not answer. That is what turns naming it into a one-time cost:
+// the contributed row carries the code, so the next scan of the same package —
+// by anyone in the household — finds it.
+// The barcode now arrives in the payload rather than being held here: the dialog
+// shows it as an optional field, so the user can correct a misread one, clear it,
+// or type one in for a product they never scanned at all. This only has to stop
+// holding its own copy.
+function addCustomProduct(product: ProductSuggestion & { barcode?: string | null }) {
   customProductOpen.value = false
-  void addItem({ ...product, custom: true })
+  pendingBarcode.value = ''
+  void addItem({ ...product, custom: true } as AddedProduct)
+}
+
+function cancelCustomProduct() {
+  customProductOpen.value = false
+  pendingBarcode.value = ''
+}
+
+// ─── Scanning ────────────────────────────────────────────────────────────────
+// A scan is a suggestion arrived at with the camera instead of the keyboard, so
+// a hit takes selectSuggestion's path exactly and lands the same confirmation.
+// Only the miss is new, and it is handed to the "add your own" modal that
+// already exists for the typed version of the same problem.
+//
+// Two ways to obtain the code, one way to act on it. In the app that is Google's
+// scanner: auto-zoom, and no camera permission of our own (see
+// lib/barcodeScanner). In a browser, where that does not exist, it is our own
+// camera screen. Everything from the code onwards — resolveScannedCode below —
+// is shared, so the two differ only in how the barcode is read.
+
+async function openScanner() {
+  clearSuggestions()
+  // Codes that missed are only remembered for the length of one scanning
+  // session. Naming one makes it findable, so the next session must ask the
+  // catalog again rather than trusting an answer from before it was told.
+  unknownCodes.clear()
+  scannedUnknown.value = ''
+
+  if (nativeScanAvailable()) {
+    const result = await scanWithNativeScanner()
+    // Its UI is already gone by now: one scan, then it closes itself. Which is
+    // why a miss goes straight to the naming dialog rather than to the row our
+    // own screen shows — there is no screen left to show it on.
+    if (result.ok) {
+      if (result.code) await resolveScannedCode(result.code, 'native')
+      return
+    }
+    // No Play Services, or the module would not install. Our own camera screen
+    // is the fallback, and it reports its own failures if it cannot start
+    // either.
+  }
+
+  scannerOpen.value = true
+}
+
+function closeScanner() {
+  scannerOpen.value = false
+  scanBusy.value = false
+  scannedUnknown.value = ''
+}
+
+// What a barcode means, whichever scanner read it.
+//
+// `source` is not cosmetic: it decides where a miss goes, and whether the user
+// can still walk away mid-lookup. Our own screen stays open and reads
+// continuously, so it can be closed while a lookup is in flight and a miss has
+// somewhere to be shown. The native scanner has already closed itself by the
+// time we have a code, so neither is true of it.
+async function resolveScannedCode(code: string, source: 'screen' | 'native') {
+  const reportMiss = () => {
+    unknownCodes.add(code)
+    if (source === 'screen') scannedUnknown.value = code
+    else nameUnknownBarcode(code)
+  }
+
+  // Already asked about, and the answer does not change within a session.
+  // Re-asserting it rather than querying again is what stops a barcode lying in
+  // front of our own camera from firing a lookup every couple of seconds.
+  if (unknownCodes.has(code)) {
+    reportMiss()
+    return
+  }
+
+  scanBusy.value = true
+  scannedUnknown.value = ''
+  const product = await lookupBarcode(code)
+  scanBusy.value = false
+  // Left our camera screen while the lookup ran. Filling a form behind a screen
+  // they have closed is not what they asked for.
+  if (source === 'screen' && !scannerOpen.value) return
+
+  if (product) {
+    // A scan answers "which product", not "add this" — so it fills the form and
+    // hands the screen back rather than adding outright. The quantity picker and
+    // the name are both right there to correct before anything is committed,
+    // which a camera cannot offer while it is covering them.
+    //
+    // selectedProduct is what carries the maker onto the row, exactly as it does
+    // for a tapped suggestion. Setting it also stops the suggestions watcher
+    // searching for the name we just wrote into the field: it treats a query
+    // that still matches the picked product as settled.
+    selectedProduct.value = product
+    newItem.value = product.name
+    closeScanner()
+    return
+  }
+
+  reportMiss()
+}
+
+// From our own camera screen, which reads continuously.
+async function onBarcodeDetected(code: string) {
+  if (!scannerOpen.value) return
+  await resolveScannedCode(code, 'screen')
+}
+
+// Naming it is a detour off the camera, so the camera goes away: the item lands
+// on the list, which is where the answer belongs and where the user ends up.
+function nameUnknownBarcode(code: string) {
+  pendingBarcode.value = code
+  closeScanner()
+  customProductOpen.value = true
 }
 
 // Back online: replay writes queued while offline, then re-fetch so local state
@@ -700,9 +846,11 @@ async function refreshMembershipOrRedirect() {
           :last-added="lastAdded"
           :suggestions-loading="suggestionsLoading"
           :can-add-custom="canAddCustomProduct"
+          :can-scan="canScan"
           @submit="addItem"
           @select="selectSuggestion"
           @add-custom="openCustomProduct"
+          @scan="openScanner"
         />
 
         <ShoppingList
@@ -732,12 +880,25 @@ async function refreshMembershipOrRedirect() {
       @cancel="closeLimitReachedPopup"
     />
 
+    <!-- Mounted only once it has been asked for: it holds a camera, and the
+         WebView should not be handed one on the way to a shopping list. -->
+    <BarcodeScannerModal
+      v-if="scannerOpen"
+      :open="scannerOpen"
+      :busy="scanBusy"
+      :unknown-code="scannedUnknown"
+      @detected="onBarcodeDetected"
+      @name-unknown="nameUnknownBarcode"
+      @close="closeScanner"
+    />
+
     <CustomProductModal
       :open="customProductOpen"
       :initial-name="newItem"
       :name-max-length="ITEM_NAME_MAX_LENGTH"
+      :initial-barcode="pendingBarcode"
       @submit="addCustomProduct"
-      @cancel="customProductOpen = false"
+      @cancel="cancelCustomProduct"
     />
 
     <OnboardingTour
