@@ -12,6 +12,7 @@ import ShoppingList from '../components/ShoppingList.vue'
 import AddItemForm from '../components/AddItemForm.vue'
 import BarcodeScannerModal from '../components/BarcodeScannerModal.vue'
 import OnboardingTour from '../components/OnboardingTour.vue'
+import UpdateAvailableModal from '../components/UpdateAvailableModal.vue'
 import { useHouseholdRealtime } from '../lib/householdRealtime'
 import { useProductSuggestions } from '../lib/productSuggestions'
 import {
@@ -41,6 +42,7 @@ import { flushOfflineQueue, isOfflineError } from '../lib/offlineQueue'
 import { isCurrentlyOffline, onReconnect } from '../lib/connectivity'
 import { rememberUser, getRememberedUser } from '../lib/session'
 import { useFirstRunGreeting } from '../lib/firstRunGreeting'
+import { useUpdatePrompt } from '../lib/updatePrompt'
 import { syncPushUser } from '../lib/pushNotifications'
 import {
   clampItemLimit,
@@ -171,6 +173,20 @@ const {
   acceptNotifications,
   declineNotifications,
 } = useFirstRunGreeting({ userId, isOffline: isCurrentlyOffline })
+// The Android app cannot update itself the way the web app does, so it has to be
+// told. A no-op everywhere else — see lib/nativeUpdate.
+const appVersion = __APP_VERSION__
+const {
+  updateOpen,
+  updatePhase,
+  updateVersion,
+  updateProgress,
+  start: startUpdateCheck,
+  install: installUpdate,
+  openInstallSettings,
+  openReleasesPage,
+  dismiss: dismissUpdate,
+} = useUpdatePrompt({ currentVersion: appVersion })
 const hasInitialized = ref(false)
 // True while switchHousehold is tearing down the old household and loading the new one.
 // Drives the skeleton (instead of the "no items" empty state) so a switch never
@@ -593,6 +609,10 @@ async function runInitializeHome() {
   hasInitialized.value = true
   persistSnapshot()
   startFirstRunGreeting()
+  // After the greeting, never before: a first-run user is mid-sequence and this
+  // stands down when anything else is open. Not awaited — it is a network round
+  // trip to GitHub that nothing below depends on.
+  void startUpdateCheck()
 }
 
 // First run: teach the gestures with the tour, then (once it's dismissed) fall
@@ -934,6 +954,19 @@ async function refreshMembershipOrRedirect() {
       :open="notificationPromptOpen"
       @accept="acceptNotifications"
       @decline="declineNotifications"
+    />
+
+    <UpdateAvailableModal
+      :open="updateOpen"
+      :phase="updatePhase"
+      :version="updateVersion"
+      :current-version="appVersion"
+      :progress="updateProgress"
+      @install="installUpdate"
+      @later="dismissUpdate"
+      @open-settings="openInstallSettings"
+      @open-releases="openReleasesPage"
+      @close="updateOpen = false"
     />
 
     <ErrorModal

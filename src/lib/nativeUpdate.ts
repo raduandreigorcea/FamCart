@@ -1,0 +1,216 @@
+// Telling the Android app that a newer build exists, and installing it.
+//
+// The web app updates itself — a deploy lands, the service worker picks it up
+// and lib/appUpdate.ts reloads the page (see the note there). The APK cannot do
+// any of that. Its web assets are baked into the package, so the only way to a
+// newer version is a new APK, and until now the only way to a new APK was to
+// know that releases exist, open GitHub on a phone, and find the download.
+//
+// WHERE "NEWEST" COMES FROM
+//
+// The Android APK workflow publishes every master build to one rolling release
+// tagged `latest`, whose *name* carries the version ("FamCart v0.1.23") and
+// whose asset is FamCart.apk. That release is therefore the only honest answer
+// to "is there a newer app": it exists exactly when a downloadable APK exists.
+//
+// Deliberately NOT the version deployed to the web app, which is the other thing
+// we could have asked. The web deploy and the APK build are triggered by the
+// same push but are not the same job — a web deploy that succeeds while the APK
+// build fails would advertise a version with no APK behind it, and the update
+// button would 404.
+//
+// api.github.com answers with `Access-Control-Allow-Origin: *`, so the WebView
+// can make this call directly with no proxy of our own in between. The APK
+// download itself is done natively (see AppInstallerPlugin.java) where CORS does
+// not apply at all.
+import { Capacitor, registerPlugin } from '@capacitor/core'
+
+const RELEASE_API_URL =
+  'https://api.github.com/repos/raduandreigorcea/FamCart/releases/latest'
+
+// The releases page, offered as a way out when the in-app install cannot run.
+export const RELEASES_PAGE_URL =
+  'https://github.com/raduandreigorcea/FamCart/releases/latest'
+
+// A version the user said "Later" to. Re-prompting on the next launch for a
+// version already declined is nagging; a *newer* version than the declined one
+// is news, so this stores the version rather than a boolean.
+const SKIPPED_VERSION_KEY = 'famcart_update_skipped_version'
+
+// The GitHub API allows 60 unauthenticated requests an hour per IP, shared by
+// everyone in the house behind one router. Checking on every single app open
+// would be well inside that in practice and pointlessly close to it in theory —
+// builds land a few times a day at most, so a few hours between checks loses
+// nothing a user would notice.
+const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
+const LAST_CHECK_KEY = 'famcart_update_last_check'
+
+export interface AvailableUpdate {
+  version: string
+  apkUrl: string
+}
+
+/** The native half: downloads the APK and hands it to Android's installer. */
+export interface AppInstaller {
+  /**
+   * Whether Android will let FamCart install a package right now. Since Android
+   * 8 "install unknown apps" is granted per app rather than device-wide, and it
+   * cannot be requested from a dialog — only by sending the user to a settings
+   * screen.
+   */
+  canInstall(): Promise<{ granted: boolean }>
+  /** Opens that settings screen for FamCart. */
+  openInstallSettings(): Promise<void>
+  /**
+   * Downloads `url` and launches the system installer for it. Resolves when the
+   * installer has been handed the package, not when the install finishes — from
+   * that point on the app is being replaced and this process is about to die.
+   */
+  downloadAndInstall(options: { url: string }): Promise<void>
+  addListener(
+    eventName: 'downloadProgress',
+    handler: (event: { loaded: number; total: number }) => void,
+  ): Promise<{ remove: () => Promise<void> }>
+}
+
+export const AppInstallerPlugin = registerPlugin<AppInstaller>('AppInstaller')
+
+/**
+ * Ordering for `major.minor.patch`, ignoring anything after it.
+ *
+ * String comparison is wrong here in a way that only shows up later: "0.1.9" >
+ * "0.1.10". The patch number moves on every commit (see .githooks/pre-commit),
+ * so that boundary is crossed within days of shipping, not eventually.
+ */
+export function compareVersions(a: string, b: string): number {
+  const parse = (value: string) => {
+    const match = /(\d+)\.(\d+)\.(\d+)/.exec(value)
+    return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : [0, 0, 0]
+  }
+  const left = parse(a)
+  const right = parse(b)
+  for (let i = 0; i < 3; i += 1) {
+    if (left[i] !== right[i]) return left[i] < right[i] ? -1 : 1
+  }
+  return 0
+}
+
+/**
+ * The version and APK of the current `latest` release, or null if the release
+ * cannot be read.
+ *
+ * Every failure here is a null rather than a throw. Not being able to reach
+ * GitHub is the normal state of a phone on a train, and it says nothing about
+ * whether the app is out of date — so the caller has nothing to tell the user
+ * either way, and the next launch asks again.
+ */
+export async function fetchLatestRelease(
+  fetchImpl: typeof fetch = fetch,
+): Promise<AvailableUpdate | null> {
+  try {
+    const response = await fetchImpl(RELEASE_API_URL, {
+      headers: { Accept: 'application/vnd.github+json' },
+    })
+    if (!response.ok) return null
+    const release = (await response.json()) as {
+      name?: string
+      assets?: { name?: string; browser_download_url?: string }[]
+    }
+
+    // The version lives in the release NAME because the tag cannot carry it: the
+    // tag stays `latest` forever so the download URL never moves. The workflow
+    // that writes that name and this regex are one contract in two files.
+    const version = /(\d+\.\d+\.\d+)/.exec(release.name ?? '')?.[1]
+    if (!version) return null
+
+    const apkUrl = (release.assets ?? []).find((asset) =>
+      asset.name?.toLowerCase().endsWith('.apk'),
+    )?.browser_download_url
+    if (!apkUrl) return null
+
+    return { version, apkUrl }
+  } catch {
+    // Offline, DNS, a rate-limit body that isn't JSON. Nothing to report.
+    return null
+  }
+}
+
+function readSkippedVersion(storage: Storage): string {
+  try {
+    return storage.getItem(SKIPPED_VERSION_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+/** Remember that this version was declined, so only a newer one asks again. */
+export function skipVersion(storage: Storage, version: string): void {
+  try {
+    storage.setItem(SKIPPED_VERSION_KEY, version)
+  } catch {
+    // Storage disabled: the prompt reappears next launch. Mildly annoying,
+    // never broken.
+  }
+}
+
+function dueForCheck(storage: Storage, now: number): boolean {
+  try {
+    const last = Number(storage.getItem(LAST_CHECK_KEY))
+    if (!Number.isFinite(last) || last <= 0) return true
+    // A clock that has moved backwards (timezone edit, NTP correction) would
+    // otherwise park the next check arbitrarily far in the future.
+    if (last > now) return true
+    return now - last >= CHECK_INTERVAL_MS
+  } catch {
+    return true
+  }
+}
+
+function markChecked(storage: Storage, now: number): void {
+  try {
+    storage.setItem(LAST_CHECK_KEY, String(now))
+  } catch {
+    // Without a record we check on every launch. Still correct, just chattier.
+  }
+}
+
+/** Whether this build can install another one over itself. */
+export function canSelfUpdate(): boolean {
+  // Android only. On the web there is nothing to install — the service worker
+  // already replaced the build behind the user's back — and on a desktop browser
+  // the plugin does not exist.
+  return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android'
+}
+
+/**
+ * The update worth showing a dialog about, or null.
+ *
+ * `force` skips both the interval and the "Later" memory, for a check the user
+ * asked for explicitly rather than one that happens on launch.
+ */
+export async function findUpdate(options: {
+  currentVersion: string
+  storage?: Storage
+  fetchImpl?: typeof fetch
+  now?: number
+  force?: boolean
+}): Promise<AvailableUpdate | null> {
+  const storage = options.storage ?? localStorage
+  const now = options.now ?? Date.now()
+
+  if (!canSelfUpdate()) return null
+  if (!options.force && !dueForCheck(storage, now)) return null
+
+  const latest = await fetchLatestRelease(options.fetchImpl ?? fetch)
+  // Only a check that got an answer counts. Marking a failed one would put the
+  // next attempt four hours out for a phone that was offline for ten seconds.
+  if (!latest) return null
+  markChecked(storage, now)
+
+  if (compareVersions(latest.version, options.currentVersion) <= 0) return null
+  if (!options.force && compareVersions(latest.version, readSkippedVersion(storage)) <= 0) {
+    return null
+  }
+
+  return latest
+}

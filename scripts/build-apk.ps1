@@ -20,10 +20,16 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 npx cap sync android
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+# assembleRelease so a local build is the same shape as the published one: not
+# debuggable, and signed with the release key if FAMCART_KEYSTORE_FILE and its
+# three companions are set in this shell. Without them the build falls back to
+# the debug key (see android/app/build.gradle) — installable on the phone in
+# front of you, but not over a copy installed from GitHub, because Android will
+# not accept an APK signed by a different key than the one already there.
 Set-Location (Join-Path $root 'android')
-.\gradlew.bat assembleDebug
+.\gradlew.bat assembleRelease
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-$apk = Join-Path $root 'android\app\build\outputs\apk\debug\app-debug.apk'
+$apk = Join-Path $root 'android\app\build\outputs\apk\release\app-release.apk'
 Write-Host ''
 Write-Host "APK ready: $apk"

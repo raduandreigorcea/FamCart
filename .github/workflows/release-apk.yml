@@ -65,6 +65,28 @@ jobs:
             exit 1
           fi
 
+      # The signing key is not optional here, and failing without it has to be
+      # loud. android/app/build.gradle falls back to the debug key when no
+      # keystore is passed — right for a local build, silently poisonous for this
+      # one, because the debug key is generated fresh on every runner. A build
+      # published under a one-off identity installs for nobody who already has
+      # the app: Android rejects an APK signed by a different key than the
+      # installed one, and the in-app updater would fail for every user until the
+      # next correctly-signed release.
+      - name: Check signing secrets
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "Missing signing secrets: set ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD under Settings → Secrets and variables → Actions."
+            echo "ANDROID_KEYSTORE_BASE64 is 'base64 -w0 famcart-release.keystore' from the existing keystore -- NOT a new one."
+            echo "Generating a fresh key here would publish an APK that installs for nobody who already has FamCart."
+            exit 1
+          fi
+
       - run: npm ci
 
       - name: Build web app
@@ -78,14 +100,29 @@ jobs:
 
       - run: npx cap sync android
 
+      # Written outside the workspace so it cannot be picked up by anything that
+      # walks the repo, and removed by the runner along with the whole VM.
+      - name: Restore signing keystore
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/famcart-release.keystore"
+
+      # assembleRelease, not assembleDebug: a debug build is marked debuggable and
+      # signed with a throwaway key. The signing config it uses is chosen in
+      # android/app/build.gradle from these four variables.
       - name: Build APK
+        env:
+          FAMCART_KEYSTORE_FILE: ${{ runner.temp }}/famcart-release.keystore
+          FAMCART_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          FAMCART_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          FAMCART_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x android/gradlew
           cd android
-          ./gradlew assembleDebug
+          ./gradlew assembleRelease
 
       - name: Rename APK
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk FamCart.apk
+        run: cp android/app/build/outputs/apk/release/app-release.apk FamCart.apk
 
       # Read back what was actually built rather than reporting github.sha. On a
       # workflow_dispatch that variable is the tip at dispatch time, which is not
@@ -117,11 +154,20 @@ jobs:
           # build existed but never which one, so the only way to read the
           # version was to open the release. The tag stays `latest` regardless:
           # it is the rolling download URL and must not move with the version.
+          #
+          # The name is now also read by the app itself: src/lib/nativeUpdate.ts
+          # pulls this release from the GitHub API and takes the version out of
+          # this string to decide whether to offer an update. Changing the format
+          # so a `major.minor.patch` can no longer be found in it turns the
+          # in-app updater off silently, for everyone.
           name: FamCart v${{ steps.built.outputs.version }}
           body: |
             Newest FamCart Android app, built automatically from `master`.
 
-            **Install:** download `FamCart.apk` on your phone and open it.
+            **Already have FamCart?** You don't need this page — the app offers
+            the update itself the next time you open it.
+
+            **First install:** download `FamCart.apk` on your phone and open it.
             Updating over an existing install keeps your data.
 
             Version: ${{ steps.built.outputs.version }}
