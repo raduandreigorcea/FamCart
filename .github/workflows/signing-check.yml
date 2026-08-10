@@ -11,8 +11,13 @@ name: Signing check (temporary)
 # to the debug key when the keystore variables are missing or the file is
 # unreadable, so a mis-encoded secret produces a perfectly good APK signed by the
 # wrong key. That only shows up on a phone, as a refused install.
+# A push trigger scoped to this branch, rather than workflow_dispatch: dispatch
+# can only start a workflow that already exists on the default branch, and the
+# whole point of this one is to prove the signing works BEFORE anything reaches
+# master. Both the trigger and the file go away together.
 on:
-  workflow_dispatch:
+  push:
+    branches: [feat/barcode-scanning]
 
 jobs:
   signing:
