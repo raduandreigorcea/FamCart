@@ -113,13 +113,13 @@ export function canScanBarcodes(): boolean {
 // asking the user to fill a rectangle with it, and no camera permission at all —
 // the capture happens inside Play Services, not in our process.
 //
-// The cost is Google's own full-screen UI, which cannot be styled. That was a
-// poor trade while a scan added items and the screen stayed open for the next
-// one; it is a good one now that a scan just fills the add form and closes,
-// because "hand me one barcode" is exactly the shape of scan().
+// The cost is Google's own full-screen UI, which cannot be styled. That is a
+// good trade while a scan is one barcode: "hand me one code" is exactly the
+// shape of scan(). It would be a poor one if the screen had to stay up for the
+// next item, which is part of why it does not.
 //
 // Everything after the code is unchanged and shared with the web path: the
-// catalog lookup, filling the form, and naming a product the catalog missed.
+// catalog lookup, the add, and naming a product the catalog missed.
 
 /** Whether to use the native scanner rather than our own camera screen. */
 export function nativeScanAvailable(): boolean {

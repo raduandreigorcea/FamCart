@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, type PropType } from 'vue'
+import { computed, onBeforeUnmount, ref, watch, type PropType } from 'vue'
 import ShoppingListItem from './ShoppingListItem.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import ListFilterMenu from './ListFilterMenu.vue'
@@ -42,7 +42,24 @@ const props = defineProps({
 // component's header, but the value belongs to the view that owns the list.
 const filter = defineModel('filter', { type: String, default: 'all' })
 
-const emit = defineEmits(['toggle', 'delete', 'checkout', 'add'])
+const emit = defineEmits(['toggle', 'delete', 'checkout', 'add', 'set-quantity'])
+
+// Which row has its quantity stepper open, if any. One at a time: two open
+// steppers would be two rows claiming the same "this is the one you are editing"
+// state, and the second one is always the one you meant.
+const openQtyId = ref('')
+
+// A row that leaves while its stepper is open (checked out, deleted, filtered
+// away) would otherwise leave the id behind, and the next row to reuse it --
+// there isn't one, ids are uuids -- is not the risk. The risk is the stepper
+// silently staying "open" on nothing, so a later press to open a different row
+// reads as a close.
+watch(
+  () => props.items.map((i) => i.id).join(','),
+  (ids) => {
+    if (openQtyId.value && !ids.split(',').includes(openQtyId.value)) openQtyId.value = ''
+  },
+)
 
 const uncheckedItems = computed(() => props.items.filter((i) => !i.checked))
 const checkedItems = computed(() => props.items.filter((i) => i.checked))
@@ -283,8 +300,11 @@ const labelText = computed(() =>
        showed placeholders sitting on top of the rows they stand in for, which
        then jumped up as the skeletons unmounted. -->
   <ul v-if="loading" class="item-list" aria-hidden="true">
+    <!-- Emoji tile, name, avatar — the row's three fixed parts, at the row's own
+         sizes. There is deliberately no circle in front of the tile: that stood
+         in for a checkbox the row has not had since checking became a swipe, so
+         it was promising a control that never arrived. -->
     <li v-for="(nameWidth, idx) in skeletonNameWidths" :key="idx" class="skeleton-item">
-      <SkeletonBlock width="24px" height="24px" radius="50%" />
       <SkeletonBlock width="2.05rem" height="2.05rem" radius="0.65rem" />
       <SkeletonBlock class="skeleton-item__name" :width="nameWidth" height="0.95rem" />
       <SkeletonBlock width="var(--size-avatar-sm)" height="var(--size-avatar-sm)" radius="var(--radius-pill)" />
@@ -302,8 +322,12 @@ const labelText = computed(() =>
       :avatar-name="row.avatarName"
       :draining="row.draining"
       :drain-index="row.drainIndex"
+      :qty-open="row.item.id === openQtyId"
       @toggle="$emit('toggle', $event)"
       @delete="$emit('delete', $event)"
+      @set-quantity="$emit('set-quantity', $event)"
+      @open-quantity="openQtyId = $event"
+      @close-quantity="openQtyId = ''"
     />
   </TransitionGroup>
 
@@ -419,13 +443,17 @@ const labelText = computed(() =>
 }
 
 /* Mirrors ShoppingListItem's .item card so rows swap in without layout shift */
+/* Box-for-box .item plus .item-face: same border, radius, gap and padding, so
+   the tile and the name sit where the real row is about to put them and the
+   swap moves nothing. The left padding is .item-face's 0.9rem rather than a
+   rounder 0.75rem for that reason alone. */
 .skeleton-item {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   background: var(--bg-surface);
   border-radius: var(--radius-xl);
-  padding: 0.875rem 0.875rem 0.875rem 0.75rem;
+  padding: 0.875rem 0.875rem 0.875rem 0.9rem;
   border: var(--border-width-base) solid var(--border-main);
 }
 
@@ -540,7 +568,18 @@ const labelText = computed(() =>
   /* 40px: comfortably tappable without the pills turning into buttons. */
   min-height: 40px;
   max-width: 100%;
-  padding: 0.3rem 0.7rem 0.3rem 0.45rem;
+  /* Wider on the emoji end than the plus end. The two glyphs are not the same
+     kind of thing: an emoji is a filled image sitting nearly edge to edge in its
+     box, while plus.svg is a Lucide stroke drawn from 4.5 to 19.5 of a 24 box,
+     so roughly a fifth of its width is whitespace it brings with it -- about
+     2.5px at this size. The 0.1rem difference here cancels that, leaving the two
+     marks about equally far from the pill's ends.
+
+     It used to be 0.45rem before the emoji and 0.7rem after the plus, which
+     tilted the same way the glyphs already do and made the emoji look jammed
+     against the edge. Exact balance is not worth chasing past this: emoji side
+     bearings differ by platform, so the last pixel is not ours to set. */
+  padding: 0.3rem 0.55rem 0.3rem 0.65rem;
   background: var(--bg-surface);
   border: var(--border-width-thin) solid var(--border-main);
   border-radius: var(--radius-pill);

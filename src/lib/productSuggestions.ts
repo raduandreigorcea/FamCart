@@ -107,17 +107,45 @@ export function useProductSuggestions(options: {
   // list offers as one-tap adds. Groceries are mostly repeats, so the most useful
   // thing either space can hold is the shortcut past typing altogether.
   // householdProductStats is already loaded for ranking, so this costs no query.
+  // What was already on the list when the search screen opened, frozen there.
+  //
+  // The exclusion itself is right -- something already on the list is not much of
+  // a shortcut -- but reading it live made the row you had just tapped stop
+  // qualifying and disappear out from under your finger. That was coherent while
+  // adding cleared the query and put the screen away; it is not now that the
+  // query, the results and the tapped row all stay, with a tick on it, so a
+  // second tap can ask for a second one.
+  //
+  // Frozen at open rather than never applied: the answer to "is this worth
+  // offering" belongs to the moment the offer is made, and nothing the user does
+  // inside that screen should rearrange the things they are choosing between.
+  const recentsExcluded = ref<string[]>([])
+
+  watch(searchExpanded, (open) => {
+    if (open) {
+      recentsExcluded.value = items.value.map((item) =>
+        productKey(item.name, item.maker as string | null),
+      )
+    }
+  })
+
   const recentProducts = computed(() =>
     topHouseholdProducts(householdProductStats.value, {
       limit: RECENT_LIMIT,
-      // Already on the list is not something to add again.
-      exclude: items.value.map((item) => productKey(item.name, item.maker as string | null)),
+      exclude: recentsExcluded.value,
     }),
   )
 
-  // The same list, shorter. A prefix rather than a second query, because the
-  // order is the same one either way.
-  const restartProducts = computed(() => recentProducts.value.slice(0, RESTART_LIMIT))
+  // The same list, shorter, for the empty state's one-tap adds. Live rather than
+  // frozen: it is drawn under an empty list, so there is nothing to exclude, and
+  // it has no screen of its own to hold still -- a chip whose product lands on the
+  // list has done its job and the list is right there showing it.
+  const restartProducts = computed(() =>
+    topHouseholdProducts(householdProductStats.value, {
+      limit: RESTART_LIMIT,
+      exclude: items.value.map((item) => productKey(item.name, item.maker as string | null)),
+    }),
+  )
 
   // What just landed, for the search screen to confirm — while it is up, the list
   // is behind it and a tap would otherwise have no visible result. Reported at

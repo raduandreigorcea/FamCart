@@ -49,7 +49,7 @@ const CATALOG = [
 
 const mountedWrappers = []
 
-async function mountHome({ history = [] } = {}) {
+async function mountHome({ history = [], items = [] } = {}) {
   mocks.db = createFakeDb()
   mocks.routerReplace = vi.fn()
   mocks.db.handlers['household_members.select'] = (q) =>
@@ -60,7 +60,10 @@ async function mountHome({ history = [] } = {}) {
     data: { name: 'Fam', invite_code: 'ABCDEFGH', created_by: 'user-1', max_items_per_member: 50 },
     error: null,
   })
-  mocks.db.handlers['shopping_list_items.select'] = () => ({ data: [], error: null })
+  mocks.db.handlers['shopping_list_items.select'] = (q) => ({
+    data: items.filter((i) => i.checked === q.filters.checked),
+    error: null,
+  })
   mocks.db.handlers['purchase_history.select'] = () => ({ data: history, error: null })
 
   const wrapper = mount(HomeView, { shallow: true })
@@ -345,5 +348,78 @@ describe('a household product the catalog pool left out', () => {
     expect(form(wrapper).props('suggestions').map((p) => p.name)).toEqual(
       STRANGERS.map((p) => p.name),
     )
+  })
+})
+
+// The regulars the search screen opens on before anything is typed. They exclude
+// what is already on the list — a shortcut to something you have already got is
+// not much of a shortcut — but that answer belongs to the moment the screen
+// opened, not to every keystroke after it.
+describe('the regulars offered before anything is typed', () => {
+  const HISTORY = [
+    { name: 'Lapte 1L', maker: 'Zuzu', purchased_at: '2026-08-01T10:00:00.000Z' },
+    { name: 'Paine Alba', maker: null, purchased_at: '2026-08-02T10:00:00.000Z' },
+  ]
+
+  const recents = (wrapper) => form(wrapper).props('recents').map((p) => p.name)
+
+  async function openSearch(wrapper) {
+    form(wrapper).vm.$emit('update:expanded', true)
+    await flushPromises()
+  }
+
+  async function pick(wrapper, product) {
+    form(wrapper).vm.$emit('select', product)
+    await flushPromises()
+  }
+
+  it('offers what the household buys', async () => {
+    const wrapper = await mountHome({ history: HISTORY })
+    await openSearch(wrapper)
+
+    expect(recents(wrapper)).toContain('Lapte 1L')
+    expect(recents(wrapper)).toContain('Paine Alba')
+  })
+
+  // The bug this pins. Reading the exclusion live meant the row you had just
+  // tapped stopped qualifying and vanished from under your finger — which also
+  // took away the tick marking it added, and the second tap that asks for a
+  // second one.
+  it('keeps a row in place after it has been tapped', async () => {
+    mocks.db.handlers['shopping_list_items.insert'] = (q) => ({
+      data: { ...q.payload, checked: false, created_at: '2026-08-03T00:00:00.000Z' },
+      error: null,
+    })
+    const wrapper = await mountHome({ history: HISTORY })
+    await openSearch(wrapper)
+
+    await pick(wrapper, { name: 'Lapte 1L', maker: 'Zuzu' })
+
+    expect(recents(wrapper)).toContain('Lapte 1L')
+    expect(recents(wrapper)).toHaveLength(HISTORY.length)
+  })
+
+  // The exclusion still applies — it is only frozen, not dropped. A product
+  // already on the list when the screen opens is not offered at all.
+  it('leaves out what was already on the list when it opened', async () => {
+    const wrapper = await mountHome({
+      history: HISTORY,
+      items: [
+        {
+          id: 'item-1',
+          household_id: 'fam-1',
+          name: 'Lapte 1L',
+          maker: 'Zuzu',
+          quantity: 1,
+          checked: false,
+          added_by: 'user-1',
+          created_at: '2026-08-01T00:00:00.000Z',
+        },
+      ],
+    })
+    await openSearch(wrapper)
+
+    expect(recents(wrapper)).not.toContain('Lapte 1L')
+    expect(recents(wrapper)).toContain('Paine Alba')
   })
 })

@@ -97,6 +97,7 @@ async function mountHome() {
 }
 
 const scanner = (wrapper) => wrapper.findComponent(BarcodeScannerModal)
+
 const rpcCalls = (fn) => mocks.db.calls.filter((c) => c.table === 'rpc' && c.op === fn)
 const insertedRows = () =>
   mocks.db.calls
@@ -137,29 +138,46 @@ describe('scanning a barcode onto the list', () => {
     expect(scanner(wrapper).exists()).toBe(false)
   })
 
-  it('writes the product it found into the add form instead of adding it', async () => {
+  // The scan IS the add now. It used to fill the form and close the camera so
+  // the name and the quantity picker could be checked first — but quantity moved
+  // onto the list row, and a barcode is an exact key, so that confirming tap was
+  // buying nothing that tapping a fuzzy search result had to pay for.
+  it('adds the product it found', async () => {
     const wrapper = await mountHome()
     await openScanner(wrapper)
 
     await scan(wrapper, SCANNED)
 
-    // A scan answers "which product", not "add this". The catalog's spelling
-    // lands in the field, and the quantity picker and the name are both there to
-    // correct before anything is committed.
-    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('Apa Plata 2L')
-    expect(insertedRows()).toHaveLength(0)
-    expect(rpcCalls('bump_product_popularity')).toHaveLength(0)
+    const [row] = insertedRows()
+    expect(row.name).toBe('Apa Plata 2L')
+    expect(rpcCalls('bump_product_popularity')).toHaveLength(1)
   })
 
-  it('closes the camera once it has an answer', async () => {
-    // The form it just filled is underneath this screen. Leaving the camera up
-    // would hide the only thing that changed.
+  // Writing the catalog's spelling into the field left it sitting there
+  // afterwards — the add form no longer clears on add — where it looked like a
+  // draft and suppressed suggestions until it was edited by hand.
+  it('never touches the add form', async () => {
     const wrapper = await mountHome()
     await openScanner(wrapper)
 
     await scan(wrapper, SCANNED)
 
+    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('')
+  })
+
+  // One code per scan. Our camera could have kept reading and Google's could
+  // have been reopened, but a camera that comes back on its own after every item
+  // is a thing to dismiss rather than a thing to use.
+  it('closes once it has an answer', async () => {
+    const wrapper = await mountHome()
+    await openScanner(wrapper)
+
+    await scan(wrapper, SCANNED)
+
+    // The list behind it is the confirmation: the row is there with its own
+    // stepper, which is also where a count gets corrected.
     expect(scanner(wrapper).exists()).toBe(false)
+    expect(insertedRows()).toHaveLength(1)
   })
 
   it('keeps the maker with the product it scanned', async () => {
@@ -167,11 +185,8 @@ describe('scanning a barcode onto the list', () => {
     await openScanner(wrapper)
     await scan(wrapper, SCANNED)
 
-    // Adding from the filled form must produce the same row a tapped suggestion
-    // would — maker included, which the typed text alone could never carry.
-    wrapper.findComponent(AddItemForm).vm.$emit('submit')
-    await flushPromises()
-
+    // The row must be the one a tapped suggestion would have produced — maker
+    // included, which the typed text alone could never carry.
     const [row] = insertedRows()
     expect(row.name).toBe('Apa Plata 2L')
     expect(row.maker).toBe('Dorna')
@@ -328,24 +343,17 @@ describe('scanning through the native scanner', () => {
     expect(scanner(wrapper).exists()).toBe(false)
   })
 
-  it('fills the add form from the code it read', async () => {
+  it('adds the code it read', async () => {
     mocks.nativeScan = vi.fn(async () => ({ ok: true, code: SCANNED }))
     const wrapper = await mountHome()
 
     await openScanner(wrapper)
 
-    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('Apa Plata 2L')
-    expect(insertedRows()).toHaveLength(0)
-  })
-
-  it('goes straight to the naming dialog when the catalog has no product', async () => {
-    mocks.nativeScan = vi.fn(async () => ({ ok: true, code: UNKNOWN }))
-    const wrapper = await mountHome()
-
-    await openScanner(wrapper)
-
-    // Its UI has already closed, so there is no row to put the miss on.
-    expect(wrapper.findComponent(CustomProductModal).props('initialBarcode')).toBe(UNKNOWN)
+    expect(insertedRows().map((r) => r.name)).toEqual(['Apa Plata 2L'])
+    // Asked once. Nothing reopens it.
+    expect(mocks.nativeScan).toHaveBeenCalledTimes(1)
+    // Nothing of ours was on screen, so the form is never involved.
+    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('')
     expect(scanner(wrapper).exists()).toBe(false)
   })
 

@@ -304,20 +304,25 @@ describe('AddItemForm suggestions', () => {
       expect(wrapper.find('.add-head__bar').exists()).toBe(false)
     })
 
-    it('stays open while the quantity is set', async () => {
-      const wrapper = await mountForm({ suggestions: PRODUCTS, quantity: 1 })
+    // The row used to open with a stepper in front of the field, asking how many
+    // before anything had said of what — and it could never be corrected once the
+    // item existed. Quantity belongs to the row on the list now.
+    it('offers no quantity control at all', async () => {
+      const wrapper = await mountForm({ suggestions: PRODUCTS })
+
+      expect(wrapper.find('.qty-picker').exists()).toBe(false)
+      expect(wrapper.findAll('.qty-btn')).toHaveLength(0)
+    })
+
+    it('stays open while the add button is pressed', async () => {
+      const wrapper = await mountForm({ suggestions: PRODUCTS })
 
       // The press must not move focus off the input, or the blur would put the
       // whole screen away mid-flow.
-      for (const btn of wrapper.findAll('.qty-btn')) {
-        const event = new Event('mousedown', { bubbles: true, cancelable: true })
-        btn.element.dispatchEvent(event)
-        expect(event.defaultPrevented).toBe(true)
-      }
+      const event = new Event('mousedown', { bubbles: true, cancelable: true })
+      wrapper.find('.add-btn').element.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(true)
 
-      await wrapper.findAll('.qty-btn')[1].trigger('click')
-
-      expect(wrapper.emitted('update:quantity').at(-1)).toEqual([2])
       expect(wrapper.find('.add-form').classes()).toContain('add-form--expanded')
     })
 
@@ -333,38 +338,193 @@ describe('AddItemForm suggestions', () => {
 
     // The list is behind the screen, so the tap has no other visible result.
     describe('confirming an add', () => {
-      it('names what landed on the list', async () => {
-        const wrapper = await mountForm({ suggestions: PRODUCTS })
-        await wrapper.setProps({ lastAdded: { name: 'Lapte 3.5% 1L', maker: 'Napolact' } })
+      const added = (wrapper) =>
+        wrapper.findAll('.suggestion').filter((row) => row.classes().includes('suggestion--added'))
 
-        expect(wrapper.find('.added-row__name').text()).toBe('Lapte 3.5% 1L')
-        expect(wrapper.find('.added-row__note').text()).toBe('Added to your list')
+      // The confirmation used to be a band above the results restating the
+      // product. It said the same thing twice and said it away from the thing.
+      it('marks the row that was tapped, with no band above the list', async () => {
+        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        await wrapper.setProps({ lastAdded: { name: 'Banane 1kg', maker: null } })
+
+        expect(wrapper.find('.added-row').exists()).toBe(false)
+        expect(added(wrapper)).toHaveLength(1)
+        expect(added(wrapper)[0].text()).toContain('Banane 1kg')
+      })
+
+      // Two makers' versions of the same product are two rows, and only the one
+      // that was added is on the list.
+      it('marks by product and maker, not by name alone', async () => {
+        const wrapper = await mountForm({
+          suggestions: [
+            { name: 'Lapte 1L', maker: 'Napolact' },
+            { name: 'Lapte 1L', maker: 'Zuzu' },
+          ],
+        })
+        await wrapper.setProps({ lastAdded: { name: 'Lapte 1L', maker: 'Zuzu' } })
+
+        expect(added(wrapper)).toHaveLength(1)
+        expect(added(wrapper)[0].text()).toContain('Zuzu')
+      })
+
+      it('keeps marking every product added from one search', async () => {
+        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        await wrapper.setProps({ lastAdded: { name: 'Banane 1kg', maker: null } })
+        await wrapper.setProps({ lastAdded: { name: 'Apa Plata 2L', maker: 'Dorna' } })
+
+        // Not just the latest: the results double as a record of what this
+        // search has already contributed.
+        expect(added(wrapper)).toHaveLength(2)
+      })
+
+      // The tick is decoration; the state has to reach the accessible name too.
+      it('says so in the option, not only in colour', async () => {
+        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        await wrapper.setProps({ lastAdded: { name: 'Banane 1kg', maker: null } })
+
+        expect(added(wrapper)[0].text()).toContain('on your list')
       })
 
       it('announces it to a screen reader', async () => {
         const wrapper = await mountForm({ suggestions: PRODUCTS })
-        const region = wrapper.find('.added-slot')
+        const region = wrapper.find('p.added-announce')
 
         // The live region has to pre-exist the news for it to be announced.
         expect(region.exists()).toBe(true)
         expect(region.attributes('aria-live')).toBe('polite')
+
+        await wrapper.setProps({ lastAdded: { name: 'Banane 1kg', maker: null } })
+        expect(wrapper.find('p.added-announce').text()).toBe('Banane 1kg added to your list')
       })
 
-      it('takes it back when the add turns out to have failed', async () => {
+      // The parent clears lastAdded only when the add did not land after all, so
+      // the mark has to come off with it — otherwise a failed add leaves a
+      // product ticked as on a list it never reached.
+      const lit = (wrapper) =>
+        wrapper
+          .findAll('.suggestion')
+          .filter((row) =>
+            row.classes().some((c) => c === 'suggestion--lit-a' || c === 'suggestion--lit-b'),
+          )
+
+      const litClass = (wrapper) =>
+        lit(wrapper)[0].classes().find((c) => c.startsWith('suggestion--lit-'))
+
+      it('flashes the row that was tapped, and only that row', async () => {
         const wrapper = await mountForm({ suggestions: PRODUCTS })
-        await wrapper.setProps({ lastAdded: { name: 'Lapte 3.5% 1L', maker: null } })
-        expect(wrapper.find('.added-row').exists()).toBe(true)
+        await wrapper.setProps({ lastAdded: { name: 'Banane 1kg', maker: null } })
+
+        expect(lit(wrapper)).toHaveLength(1)
+        expect(lit(wrapper)[0].text()).toContain('Banane 1kg')
+      })
+
+      // Adding three of something is three taps on one row, and each one has to
+      // be visible. The row is already wearing the flash class by the second tap,
+      // so re-applying it would change nothing in the DOM and the animation would
+      // never restart — hence two rules that differ only in name.
+      it('flashes again on every further tap of the same row', async () => {
+        const wrapper = await mountForm({ suggestions: PRODUCTS })
+
+        await wrapper.setProps({ lastAdded: { name: 'Banane 1kg', maker: null } })
+        const first = litClass(wrapper)
+
+        // A fresh object each time, exactly as reportAdded sends it.
+        await wrapper.setProps({ lastAdded: { name: 'Banane 1kg', maker: null } })
+        const second = litClass(wrapper)
+
+        expect(second).not.toBe(first)
+        expect(lit(wrapper)).toHaveLength(1)
+
+        await wrapper.setProps({ lastAdded: { name: 'Banane 1kg', maker: null } })
+        expect(litClass(wrapper)).toBe(first)
+      })
+
+      // Tapping a row again adds another of that product. The flash says a tap
+      // landed; the counter says how many, thrown off the spot that was pressed.
+      const tapRow = (wrapper, index) =>
+        wrapper.findAll('.suggestion')[index].trigger('mousedown', {
+          clientX: 120,
+          clientY: 200,
+        })
+
+      it('says nothing on the first tap, where one is just one', async () => {
+        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        await tapRow(wrapper, 0)
+
+        expect(wrapper.findAll('.pop')).toHaveLength(0)
+        expect(wrapper.emitted('select')).toHaveLength(1)
+      })
+
+      it('counts each further tap of the same row', async () => {
+        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        await tapRow(wrapper, 0)
+        await tapRow(wrapper, 0)
+        expect(wrapper.findAll('.pop').map((p) => p.text())).toEqual(['x2'])
+
+        await tapRow(wrapper, 0)
+        expect(wrapper.findAll('.pop').map((p) => p.text())).toEqual(['x2', 'x3'])
+      })
+
+      // Each one lands somewhere of its own: three in the same place would read
+      // as one badge being replaced, which is what the count exists to disprove.
+      it('throws them in scattered directions', async () => {
+        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        for (let i = 0; i < 6; i++) await tapRow(wrapper, 0)
+
+        const drifts = wrapper.findAll('.pop').map((p) => p.attributes('style'))
+        expect(drifts).toHaveLength(5)
+        expect(new Set(drifts).size).toBeGreaterThan(1)
+      })
+
+      it('counts each product separately', async () => {
+        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        await tapRow(wrapper, 0)
+        await tapRow(wrapper, 0)
+        await tapRow(wrapper, 1)
+
+        // The second row is still on its first tap.
+        expect(wrapper.findAll('.pop').map((p) => p.text())).toEqual(['x2'])
+      })
+
+      // Decorative: the count is already in the row's tick and the announcement.
+      it('keeps the counters out of the reader and out of the way', async () => {
+        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        await tapRow(wrapper, 0)
+        await tapRow(wrapper, 0)
+
+        expect(wrapper.find('.pop-layer').attributes('aria-hidden')).toBe('true')
+      })
+
+      it('takes the mark back when the add turns out to have failed', async () => {
+        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        await wrapper.setProps({ lastAdded: { name: 'Banane 1kg', maker: null } })
+        expect(added(wrapper)).toHaveLength(1)
 
         await wrapper.setProps({ lastAdded: null })
-        expect(wrapper.find('.added-row').exists()).toBe(false)
+        expect(added(wrapper)).toHaveLength(0)
       })
 
-      it('says nothing on a wider screen, where the list is in plain sight', async () => {
+      it('takes back only the one that failed', async () => {
+        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        await wrapper.setProps({ lastAdded: { name: 'Banane 1kg', maker: null } })
+        await wrapper.setProps({ lastAdded: { name: 'Apa Plata 2L', maker: 'Dorna' } })
+        await wrapper.setProps({ lastAdded: null })
+
+        expect(added(wrapper)).toHaveLength(1)
+        expect(added(wrapper)[0].text()).toContain('Banane 1kg')
+      })
+
+      // The band was phone-only: on a wider screen the list is in plain sight
+      // below the dropdown, so a notice about it was redundant. A mark on the
+      // row is not a notice — it is the row's own state, and it is worth just as
+      // much here.
+      it('marks the row on a wider screen too, where the band never showed', async () => {
         stubViewport(false)
         const wrapper = await mountForm({ suggestions: PRODUCTS })
-        await wrapper.setProps({ lastAdded: { name: 'Lapte 3.5% 1L', maker: null } })
+        await wrapper.setProps({ lastAdded: { name: 'Banane 1kg', maker: null } })
 
         expect(wrapper.find('.added-row').exists()).toBe(false)
+        expect(added(wrapper)).toHaveLength(1)
       })
     })
 

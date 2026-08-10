@@ -22,12 +22,18 @@ const mediaMatches = (query: string) =>
 // transitionend was swallowed rather than racing a real one.
 const SLIDE_TIMEOUT_MS = 400
 
-// Presentational: name/quantity state lives in the parent (via v-model) so the
-// add flow can restore values when an optimistic insert fails. The suggestions
-// list is likewise owned by the parent (it queries the product catalog); this
-// component only renders it and reports the pick.
+// Presentational: the typed name lives in the parent (via v-model) so the add
+// flow can restore it when an optimistic insert fails. The suggestions list is
+// likewise owned by the parent (it queries the product catalog); this component
+// only renders it and reports the pick.
+//
+// There is no quantity here any more. A stepper used to sit at the head of this
+// row, which asked how many before anything had said of what, reset itself after
+// every add, and spent the width that made the row need one button for two jobs.
+// It is on the list row now, where the product it counts exists and can still be
+// corrected. Adding is one tap; adding the same thing twice sums, as it always
+// has.
 const name = defineModel('name', { type: String, default: '' })
-const quantity = defineModel('quantity', { type: Number, default: 1 })
 // Whether the form is currently lifted to the top of a phone screen. Exposed
 // because the parent widens the search while it is: the panel has room for
 // twice the rows, so capping the query at six would waste it.
@@ -110,7 +116,72 @@ const closing = ref(false)
 
 let slideTimer: ReturnType<typeof setTimeout> | null = null
 
-function selectSuggestion(product: ProductSuggestion) {
+// ─── Counting the taps out loud ──────────────────────────────────────────────
+// Tapping a row again adds another of that product (the merge sums them), and
+// the row's flash says a tap landed but not how many. So from the second tap on,
+// the running count flies off the spot that was pressed: x2, x3, x4.
+//
+// They are thrown in scattered directions on purpose. Three tidy badges stacking
+// in the same place would read as one badge being replaced, which is the thing
+// the count is there to disprove -- and the third one has to look different from
+// the second or the tap did not visibly do anything.
+
+// Long enough to read, short enough to be gone before the next tap needs the
+// space. Mirrors the pop-drift animation below.
+const POP_MS = 900
+
+interface TapPop {
+  id: number
+  x: number
+  y: number
+  label: string
+  dx: number
+  dy: number
+  rot: number
+}
+
+const pops = ref<TapPop[]>([])
+const wrapRef = ref<HTMLElement | null>(null)
+// Taps per product, for as long as this panel has been open.
+const tapCounts = ref<Map<string, number>>(new Map())
+let popId = 0
+
+function throwPop(event: MouseEvent, label: string) {
+  const wrap = wrapRef.value
+  if (!wrap) return
+  const rect = wrap.getBoundingClientRect()
+  // A wide fan, biased upward: a counter that drifts down goes straight under
+  // the finger that just pressed there, which is the one place it cannot be read.
+  const angle = -Math.PI / 2 + (Math.random() - 0.5) * 2.6
+  const distance = 34 + Math.random() * 26
+  const id = ++popId
+
+  pops.value = [
+    ...pops.value,
+    {
+      id,
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+      label,
+      dx: Math.cos(angle) * distance,
+      dy: Math.sin(angle) * distance,
+      rot: (Math.random() - 0.5) * 34,
+    },
+  ]
+
+  setTimeout(() => {
+    pops.value = pops.value.filter((pop) => pop.id !== id)
+  }, POP_MS)
+}
+
+function selectSuggestion(product: ProductSuggestion, event?: MouseEvent) {
+  const key = productKey(product.name, product.maker)
+  const count = (tapCounts.value.get(key) ?? 0) + 1
+  tapCounts.value = new Map(tapCounts.value).set(key, count)
+  // Nothing on the first: one tap is one item, and the row's own flash and tick
+  // already say it landed. The count only becomes news once there is more than
+  // one of something.
+  if (count > 1 && event) throwPop(event, `x${count}`)
   emit('select', product)
 }
 
@@ -149,28 +220,85 @@ const showingHint = computed(
 // ─── Confirming the add ──────────────────────────────────────────────────────
 // Picking a product adds it and hands the screen straight back, ready for the
 // next item — which on the search screen means the tap has no visible result at
-// all, because the list it landed on is the thing this screen is covering. So
-// the row says so itself, in the shape of the row that was tapped.
+// all, because the list it landed on is the thing this screen is covering.
+//
+// The answer is on the row that was tapped. It is still on screen: a pick no
+// longer clears the query, so the matches it came from are all still there. The
+// mark stays for as long as the panel is open rather than timing out, so the
+// results double as a record of what this search has already contributed — which
+// is the question you actually have on the third pass through "milk".
+//
+// Tapping an already-marked row still adds again; the merge sums it. The mark
+// says "this is on the list", not "this is spent".
+
+// How long the tapped row stays lit. Only the highlight is timed; the tick it
+// leaves behind is not.
 const ADDED_VISIBLE_MS = 2400
 
 const justAdded = ref<{ name: string; maker: string | null } | null>(null)
 let addedTimer: ReturnType<typeof setTimeout> | null = null
+
+// Every product added while this panel has been open, by productKey.
+const addedKeys = ref<Set<string>>(new Set())
+
+const justAddedKey = computed(() =>
+  justAdded.value ? productKey(justAdded.value.name, justAdded.value.maker) : '',
+)
+
+// Which of the two identical flash classes is in play. Tapping the same row
+// again has to flash it again -- that is how you see the third one land -- but
+// the row is already wearing the class, so nothing changes in the DOM and a CSS
+// animation only restarts when its declaration does. Alternating between two
+// rules that differ in name and nothing else is what forces that: one class
+// comes off, the other goes on, and the browser starts the animation over.
+const litPhase = ref(0)
+
+const isAdded = (product: ProductSuggestion) =>
+  addedKeys.value.has(productKey(product.name, product.maker))
+
+// The key of the most recent add, kept past the highlight's timer so a late
+// failure still knows which mark to take back.
+const lastAddedKey = ref('')
 
 watch(
   () => props.lastAdded,
   (product) => {
     if (addedTimer) clearTimeout(addedTimer)
     if (!product) {
+      // The parent only clears this when the add did not land after all (see
+      // clearLastAdded, "it did not land"). The mark has to come off with it, or
+      // a failed add leaves a product ticked as on a list it never reached.
       justAdded.value = null
+      if (lastAddedKey.value) {
+        const next = new Set(addedKeys.value)
+        next.delete(lastAddedKey.value)
+        addedKeys.value = next
+        lastAddedKey.value = ''
+      }
       return
     }
     justAdded.value = product
+    lastAddedKey.value = productKey(product.name, product.maker)
+    litPhase.value = litPhase.value === 0 ? 1 : 0
+    // Replaced rather than mutated: a Set added to in place is the same object,
+    // so the rows would not re-render and the tick would not appear until
+    // something else happened to redraw them.
+    addedKeys.value = new Set(addedKeys.value).add(productKey(product.name, product.maker))
     addedTimer = setTimeout(() => {
       justAdded.value = null
       addedTimer = null
     }, ADDED_VISIBLE_MS)
   },
 )
+
+// The record is of this visit to the search, not of the session. Leaving the
+// panel and coming back should not show ticks against a trip already finished.
+watch(panelOpen, (open) => {
+  if (!open) {
+    addedKeys.value = new Set()
+    tapCounts.value = new Map()
+  }
+})
 
 // ─── Phone search mode ───────────────────────────────────────────────────────
 // On a phone the dropdown has nowhere to go: 72px of fixed topbar above it and
@@ -331,17 +459,6 @@ onBeforeUnmount(() => {
   rowRef.value?.removeEventListener('transitionend', onSlideEnd)
 })
 
-const qtyDirection = ref('up')
-
-function increaseQty() {
-  qtyDirection.value = 'up'
-  quantity.value = Math.min(99, quantity.value + 1)
-}
-
-function decreaseQty() {
-  qtyDirection.value = 'down'
-  quantity.value = Math.max(1, quantity.value - 1)
-}
 </script>
 
 <template>
@@ -382,38 +499,11 @@ function decreaseQty() {
         </div>
 
         <div class="add-row" ref="rowRef">
-          <!-- Every control in this row uses mousedown.prevent for the same
-               reason the option rows do: pressing one must not take focus off
-               the input. Setting a quantity or adding an item is the middle of
-               the job, not the end of it, and losing focus here would drop the
-               keyboard and put the search screen away mid-flow. -->
-          <div class="qty-picker" aria-label="Item quantity">
-            <button
-              type="button"
-              class="qty-btn"
-              @mousedown.prevent
-              @click="decreaseQty"
-              :disabled="quantity <= 1 || adding"
-              aria-label="Decrease quantity"
-            >
-              <span class="qty-icon qty-icon--minus"></span>
-            </button>
-            <div class="qty-value-wrap" aria-live="polite">
-              <Transition :name="qtyDirection === 'up' ? 'qty-slide-up' : 'qty-slide-down'" mode="out-in">
-                <span :key="quantity" class="qty-value">{{ quantity }}</span>
-              </Transition>
-            </div>
-            <button
-              type="button"
-              class="qty-btn"
-              @mousedown.prevent
-              @click="increaseQty"
-              :disabled="quantity >= 99 || adding"
-              aria-label="Increase quantity"
-            >
-              <span class="qty-icon qty-icon--plus"></span>
-            </button>
-          </div>
+          <!-- The button uses mousedown.prevent for the same reason the option
+               rows do: pressing it must not take focus off the input. Adding an
+               item is the middle of the job, not the end of it, and losing focus
+               here would drop the keyboard and put the search screen away
+               mid-flow. -->
           <input
             v-model="name"
             ref="inputRef"
@@ -460,24 +550,22 @@ function decreaseQty() {
            field that is itself moving, and fading them out means sweeping all
            of that down the page on the way out; cutting is quieter. -->
       <Transition name="suggest" :css="!expanded">
-        <div v-if="panelOpen" class="suggestions-wrap">
-          <!-- The live region is always here so a screen reader is already
-               listening when the confirmation arrives; announcing it depends on
-               the region pre-existing, not on the row appearing. -->
-          <div v-if="expanded" class="added-slot" role="status" aria-live="polite">
-            <Transition name="added">
-              <!-- Deliberately the same box as the row that was tapped — tile,
-                   name, second line — so the confirmation reads as that row
-                   having landed rather than as a notice about it. -->
-              <div v-if="justAdded" class="added-row">
-                <span class="added-row__mark" aria-hidden="true" v-html="checkIcon"></span>
-                <span class="suggestion-text">
-                  <span class="added-row__name">{{ justAdded.name }}</span>
-                  <span class="added-row__note">Added to your list</span>
-                </span>
-              </div>
-            </Transition>
-          </div>
+        <div v-if="panelOpen" ref="wrapRef" class="suggestions-wrap">
+          <!-- Always mounted so a screen reader is already listening when the
+               confirmation arrives; announcing depends on the region
+               pre-existing, not on it appearing with the news.
+
+               The add is confirmed on the row that was tapped, which is still
+               sitting there now that a pick no longer clears the query. This
+               used to be a band above the results restating the product, which
+               said the same thing twice and said it away from the thing.
+
+               The band was also the live region, so it stays as one -- announced
+               and not drawn, because the visible half of its job now belongs to
+               the row. -->
+          <p class="added-announce" role="status" aria-live="polite">
+            {{ justAdded ? `${justAdded.name} added to your list` : '' }}
+          </p>
 
           <!-- Outside the listbox: a listbox exposes only its options, so a
                heading inside it would be dropped on the way to a screen reader.
@@ -508,16 +596,30 @@ function decreaseQty() {
                 <button
                   type="button"
                   class="suggestion"
+                  :class="{
+                    'suggestion--added': isAdded(product),
+                    'suggestion--lit-a':
+                      litPhase === 0 && productKey(product.name, product.maker) === justAddedKey,
+                    'suggestion--lit-b':
+                      litPhase === 1 && productKey(product.name, product.maker) === justAddedKey,
+                  }"
                   role="option"
-                  @mousedown.prevent="selectSuggestion(product)"
+                  @mousedown.prevent="selectSuggestion(product, $event)"
                 >
                   <span class="suggestion-emoji" aria-hidden="true">
                     {{ getProductEmoji(product.name, product.maker || '') }}
+                    <!-- On the tile, the way the row on the list wears its own
+                         mark. Rendering it only when added would pop the layout;
+                         it scales in from nothing instead. -->
+                    <span class="suggestion-tick" v-html="checkIcon"></span>
                   </span>
                   <span class="suggestion-text">
                     <span class="suggestion-name">{{ product.name }}</span>
                     <span v-if="product.maker" class="suggestion-maker">{{ product.maker }}</span>
                   </span>
+                  <!-- The tick is decoration; this is what carries the state into
+                       the option's accessible name. -->
+                  <span v-if="isAdded(product)" class="added-announce">on your list</span>
                 </button>
               </li>
 
@@ -542,6 +644,25 @@ function decreaseQty() {
           <!-- A household with nothing bought yet has no usuals to open on. An
                empty screen should say what to do with it. -->
           <p v-if="showingHint" class="suggestions-hint">Type a product name to search.</p>
+
+          <!-- Last in the wrap and outside the scrolling results, so a counter
+               thrown from the top row is not sliced off by the list's own edge.
+               Decorative: the count it reports is already in the row's tick and
+               in the announcement, so there is nothing here for a reader. -->
+          <div class="pop-layer" aria-hidden="true">
+            <span
+              v-for="pop in pops"
+              :key="pop.id"
+              class="pop"
+              :style="{
+                left: `${pop.x}px`,
+                top: `${pop.y}px`,
+                '--pop-dx': `${pop.dx}px`,
+                '--pop-dy': `${pop.dy}px`,
+                '--pop-rot': `${pop.rot}deg`,
+              }"
+            >{{ pop.label }}</span>
+          </div>
         </div>
       </Transition>
     </form>
@@ -675,7 +796,19 @@ function decreaseQty() {
 /* Lifted, it is not an overlay at all: it is what is left of the screen under
    the band, and it takes the rest of the height. */
 .add-form--expanded .suggestions-wrap {
-  position: static;
+  /* relative rather than static: it still has to sit in the flow, but it is also
+     what the tap counters are positioned against, and they must not be clipped
+     by the scrolling results inside it.
+
+     inset and z-index have to be put back by hand. The rule above is the
+     DROPDOWN's, and its top/left/right and stacking only ever applied because it
+     was absolute there; static ignored them silently. Turning this relative
+     hands them all back — top: 100% on a relative box shifts it down a full
+     container height, which puts the entire results panel off the bottom of the
+     screen and looks exactly like search having stopped working. */
+  position: relative;
+  inset: auto;
+  z-index: auto;
   margin-top: 0;
   flex: 1;
   min-height: 0;
@@ -765,87 +898,145 @@ function decreaseQty() {
 }
 
 /* ─── The add, confirmed ─────────────────────────────────────────────────────
-   Reserves nothing when empty: the rows below sit where they would anyway, and
-   the confirmation pushes them down for the couple of seconds it is up. */
-.added-slot {
-  flex-shrink: 0;
-}
-
-.added-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  min-height: 56px;
-  padding: 0.6rem 1rem;
-  /* The one tinted band on a screen that is otherwise all surface, so the eye
-     goes to it without anything else having to get louder. */
-  background: color-mix(in srgb, var(--color-primary) 9%, var(--bg-surface));
-}
-
-/* A filled tile where the tapped row had its emoji: same size, same place, so
-   the swap reads as that product moving on rather than a new thing arriving. */
-.added-row__mark {
-  flex-shrink: 0;
-  width: 2.15rem;
-  height: 2.15rem;
-  border-radius: 0.6rem;
-  background: var(--color-primary);
-  color: var(--text-inverse);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* The asset ships at stroke-width 1, too fine to read as a tick at this size —
-   the same weighting PopoverMenu gives its check. */
-.added-row__mark :deep(svg) {
-  width: 1.15rem;
-  height: 1.15rem;
-  display: block;
-  stroke: currentColor;
-  stroke-width: 2.5;
-  fill: none;
-}
-
-.added-row__name {
-  font-size: var(--text-md);
-  color: var(--text-primary);
-  line-height: 1.3;
+   Announced, not drawn. The confirmation that used to be a band above the
+   results is a mark on the row now, so this carries only what a tick cannot. */
+.added-announce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+  clip-path: inset(50%);
   white-space: nowrap;
-}
-
-.added-row__note {
-  font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
-  color: var(--color-primary);
-  line-height: 1.3;
-}
-
-/* Arrives with the rise curve — it is a thing landing — and leaves by simply
-   fading, because by then it has said what it had to say. */
-.added-enter-active {
-  transition: opacity var(--transition-fast) var(--ease-standard),
-    transform var(--transition-base) var(--ease-rise);
-}
-
-.added-leave-active {
-  transition: opacity var(--transition-base) var(--ease-fall);
-}
-
-.added-enter-from {
-  opacity: 0;
-  transform: translateY(-8px);
-}
-
-.added-leave-to {
-  opacity: 0;
 }
 
 .suggestion:hover,
 .suggestion:focus-visible {
   background: var(--bg-hover);
+}
+
+/* ─── A row that is already on the list ──────────────────────────────────────
+   The tick rides the product tile, the way the row on the list wears its own
+   mark. It is always rendered and scaled to nothing, so appearing costs no
+   layout -- the row's height and the name's position never move. */
+.suggestion-emoji {
+  position: relative;
+}
+
+.suggestion-tick {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 1rem;
+  height: 1rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  color: var(--text-inverse);
+  border: var(--border-width-base) solid var(--bg-surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: scale(0);
+  transition: transform var(--transition-base) var(--ease-rise);
+}
+
+.suggestion--added .suggestion-tick {
+  transform: scale(1);
+}
+
+.suggestion-tick :deep(svg) {
+  width: 0.62rem;
+  height: 0.62rem;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 3.5;
+  fill: none;
+}
+
+/* The name steps back once its product is on the list: still readable, no longer
+   the thing being offered. */
+.suggestion--added .suggestion-name {
+  color: var(--text-secondary);
+}
+
+/* The moment of adding, on the row that was tapped: one pass, leaving the tick
+   behind as the standing answer.
+
+   Two rules and two keyframes, identical in everything but their names. The row
+   that was just tapped is very often the row that was tapped a moment ago --
+   that is how you add three of something -- and re-applying the same animation
+   to an element already wearing it does nothing at all. Swapping which of these
+   two is on the row is a real declaration change, so the flash starts over. */
+.suggestion--lit-a {
+  animation: suggestion-lit-a var(--transition-slow) var(--ease-standard);
+}
+
+.suggestion--lit-b {
+  animation: suggestion-lit-b var(--transition-slow) var(--ease-standard);
+}
+
+@keyframes suggestion-lit-a {
+  50% {
+    background: color-mix(in srgb, var(--color-primary) 16%, var(--bg-surface));
+  }
+}
+
+@keyframes suggestion-lit-b {
+  50% {
+    background: color-mix(in srgb, var(--color-primary) 16%, var(--bg-surface));
+  }
+}
+
+/* ─── The tap counters ───────────────────────────────────────────────────────
+   A layer of its own, over the results and outside their scroll box, so a
+   counter thrown from the top row is not sliced off by the list's edge. It never
+   takes a press: the row underneath is still the thing being tapped, and being
+   tapped repeatedly is the entire point. */
+.pop-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.pop {
+  position: absolute;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  color: var(--text-inverse);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-extrabold);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  box-shadow: var(--elevation-primary-soft);
+  /* left/top put it under the finger; the keyframes carry the centring, because
+     an animated transform replaces any transform set here. */
+  animation: pop-drift 0.9s var(--ease-fall) forwards;
+}
+
+@keyframes pop-drift {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+  /* Overshoots its final size on the way out of the finger, which is what makes
+     it read as thrown rather than faded up. */
+  22% {
+    opacity: 1;
+    transform: translate(
+        calc(-50% + var(--pop-dx) * 0.35),
+        calc(-50% + var(--pop-dy) * 0.35)
+      )
+      scale(1.08);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--pop-dx)), calc(-50% + var(--pop-dy)))
+      scale(0.92) rotate(var(--pop-rot));
+  }
 }
 
 /* Mirrors .suggestion's box exactly, so real rows land where the placeholder
@@ -978,101 +1169,6 @@ function decreaseQty() {
   color: var(--text-disabled);
 }
 
-.qty-picker {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.1rem;
-  border-right: var(--border-width-thin) solid var(--border-main);
-  padding: 0.3rem 0.5rem 0.3rem 0.4rem;
-  margin-right: 0.1rem;
-}
-
-.qty-btn {
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  line-height: 1;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.qty-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--color-primary);
-}
-
-.qty-icon {
-  width: var(--size-icon-sm);
-  height: var(--size-icon-sm);
-  background-color: currentColor;
-}
-
-.qty-icon--plus {
-  mask: url('../assets/plus.svg') no-repeat center / contain;
-  -webkit-mask: url('../assets/plus.svg') no-repeat center / contain;
-}
-
-.qty-icon--minus {
-  mask: url('../assets/minus.svg') no-repeat center / contain;
-  -webkit-mask: url('../assets/minus.svg') no-repeat center / contain;
-}
-
-.qty-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.qty-value-wrap {
-  min-width: 1.4rem;
-  height: 1.3rem;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.qty-value {
-  min-width: 1.4rem;
-  text-align: center;
-  font-size: var(--text-md);
-  font-weight: var(--weight-bold);
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
-.qty-slide-up-enter-active,
-.qty-slide-up-leave-active,
-.qty-slide-down-enter-active,
-.qty-slide-down-leave-active {
-  transition: transform 0.11s ease, opacity 0.11s ease;
-}
-
-.qty-slide-up-enter-from {
-  transform: translateY(10px);
-  opacity: 0;
-}
-
-.qty-slide-up-leave-to {
-  transform: translateY(-10px);
-  opacity: 0;
-}
-
-.qty-slide-down-enter-from {
-  transform: translateY(-10px);
-  opacity: 0;
-}
-
-.qty-slide-down-leave-to {
-  transform: translateY(10px);
-  opacity: 0;
-}
 
 .add-btn {
   width: 42px;
@@ -1101,7 +1197,7 @@ function decreaseQty() {
   -webkit-mask: url('../assets/add.svg') no-repeat center / contain;
 }
 
-/* Inlined rather than masked like its neighbours, for the reason .added-row__mark
+/* Inlined rather than masked like its neighbours, for the reason .suggestion-tick
    is: the asset ships at stroke-width 1, and a barcode glyph is nothing BUT thin
    strokes — masked at this size it dissolves into the green. A shade larger than
    the plus, too, since seven hairlines read lighter than one stroked cross. */
@@ -1127,9 +1223,9 @@ function decreaseQty() {
   cursor: not-allowed;
 }
 
-/* The swap between the two jobs, at the quantity picker's tempo — the same
-   "this control just changed" beat, so the row has one motion vocabulary rather
-   than two. Short enough that mode="out-in" never reads as a gap. */
+/* The swap between the two jobs. Short enough that mode="out-in" never reads as
+   a gap — this is the only place in the row that still animates, now that the
+   quantity stepper it used to keep time with has gone. */
 .btn-swap-enter-active,
 .btn-swap-leave-active {
   transition: opacity 0.11s ease, transform 0.11s ease;
@@ -1164,15 +1260,38 @@ function decreaseQty() {
   .add-cover-leave-active,
   .suggest-enter-active,
   .suggest-leave-active,
-  .added-enter-active,
-  .added-leave-active,
+  .suggestion,
+  .suggestion-tick,
   .btn-swap-enter-active,
   .btn-swap-leave-active {
     transition: none;
   }
 
-  .added-enter-from {
-    transform: none;
+  /* The tick still arrives, it just does not grow into place. */
+  .suggestion-tick {
+    transform: scale(1);
+  }
+
+  .suggestion--lit-a,
+  .suggestion--lit-b {
+    animation: none;
+  }
+
+  /* The count still appears and still goes away on its own — it is the answer to
+     "did that tap count", not decoration — it just does not fly to get there. */
+  @keyframes pop-drift {
+    0% {
+      opacity: 0;
+      transform: translate(-50%, -50%);
+    }
+    22% {
+      opacity: 1;
+      transform: translate(-50%, -50%);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(-50%, -50%);
+    }
   }
 
   .btn-swap-enter-from,
