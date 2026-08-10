@@ -115,13 +115,37 @@ function listedItems(wrapper) {
   return wrapper.findComponent(ShoppingList).props('items')
 }
 
-async function submitAdd(wrapper, name, quantity = 1) {
+// One add is one item. The form no longer carries a quantity — it is set on the
+// row afterwards, or reached by adding the same product again, which sums.
+async function submitAdd(wrapper, name) {
   const form = wrapper.findComponent(AddItemForm)
   form.vm.$emit('update:name', name)
-  form.vm.$emit('update:quantity', quantity)
   await wrapper.vm.$nextTick()
   form.vm.$emit('submit')
   await flushPromises()
+}
+
+// The row stepper's write, as HomeView receives it.
+// A stepper is held down, not clicked once, so the write waits out a short
+// window and taps inside it collapse into one UPDATE. Mirrors
+// QUANTITY_WRITE_DEBOUNCE_MS in shoppingListActions.
+const QUANTITY_DEBOUNCE_MS = 300
+
+// One tap. Moves the number; does not send anything yet.
+async function tapQuantity(wrapper, item, quantity) {
+  wrapper.findComponent(ShoppingList).vm.$emit('set-quantity', { item, quantity })
+  await flushPromises()
+}
+
+// Waits out the window so whatever was tapped actually goes to the server.
+async function settleQuantity() {
+  await new Promise((resolve) => setTimeout(resolve, QUANTITY_DEBOUNCE_MS + 60))
+  await flushPromises()
+}
+
+async function setQuantity(wrapper, item, quantity) {
+  await tapQuantity(wrapper, item, quantity)
+  await settleQuantity()
 }
 
 beforeEach(() => {
@@ -186,10 +210,9 @@ describe('cached snapshot', () => {
 // maker — so it adds straight away instead of filling the input and waiting for
 // a confirming tap.
 describe('picking a suggestion', () => {
-  async function pick(wrapper, product, { typed = '', quantity = 1 } = {}) {
+  async function pick(wrapper, product, { typed = '' } = {}) {
     const form = wrapper.findComponent(AddItemForm)
     form.vm.$emit('update:name', typed)
-    form.vm.$emit('update:quantity', quantity)
     await wrapper.vm.$nextTick()
     form.vm.$emit('select', product)
     await flushPromises()
@@ -209,8 +232,9 @@ describe('picking a suggestion', () => {
     expect(items[0].name).toBe('Apa Plata 2L')
     // The maker comes from the pick, not from what was typed.
     expect(items[0].maker).toBe('Dorna')
-    // The half-typed "apa" is gone rather than left behind or added as an item.
-    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('')
+    // The query stays, so the next kind of water is one more tap rather than
+    // typing "apa" again. It is a query, not a draft item: nothing added it.
+    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('apa')
   })
 
   it('adds the picked product, not the text already in the input', async () => {
@@ -227,16 +251,61 @@ describe('picking a suggestion', () => {
     expect(inserted[0].name).toBe('Lapte 3.5% 1L')
   })
 
-  it('keeps the quantity chosen on the form', async () => {
+  // Every pick lands one. Wanting three is three taps (which sum) or the row's
+  // own stepper — never a number chosen before the product was named.
+  it('adds one, whatever was picked before it', async () => {
     const wrapper = await mountHome()
     mocks.db.handlers['shopping_list_items.insert'] = (q) => ({
       data: { ...q.payload, checked: false, created_at: '2026-02-02T00:00:00.000Z' },
       error: null,
     })
 
-    await pick(wrapper, { name: 'Banane 1kg', maker: null }, { typed: 'ban', quantity: 3 })
+    await pick(wrapper, { name: 'Banane 1kg', maker: null }, { typed: 'ban' })
 
-    expect(listedItems(wrapper)[0].quantity).toBe(3)
+    expect(listedItems(wrapper)[0].quantity).toBe(1)
+  })
+
+  // The point of keeping the query. "milk" is usually two kinds of milk, and
+  // getting the second one used to mean typing the word again.
+  it('lets a second product be picked from the same search', async () => {
+    const wrapper = await mountHome()
+    mocks.db.handlers['shopping_list_items.insert'] = (q) => ({
+      data: { ...q.payload, checked: false, created_at: '2026-02-02T00:00:00.000Z' },
+      error: null,
+    })
+
+    await pick(wrapper, { name: 'Lapte 3.5% 1L', maker: 'Napolact' }, { typed: 'lapte' })
+    // No retyping: the field still holds the query, so the second pick is one tap.
+    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('lapte')
+    wrapper.findComponent(AddItemForm).vm.$emit('select', { name: 'Lapte 1.5% 1L', maker: 'Zuzu' })
+    await flushPromises()
+
+    // Order is the list's business (creation time); what matters here is that
+    // both landed, each keeping the maker from its own pick.
+    const byName = new Map(listedItems(wrapper).map((i) => [i.name, i.maker]))
+    expect(byName.get('Lapte 3.5% 1L')).toBe('Napolact')
+    expect(byName.get('Lapte 1.5% 1L')).toBe('Zuzu')
+    expect(byName.size).toBe(2)
+  })
+
+  // The maker rides on the pick, and the pick used to be dropped by the query
+  // watcher when adding emptied the field. Nothing empties it now, so the add
+  // has to spend the pick itself — otherwise typing nothing and pressing Add
+  // again puts the QUERY on the list wearing the picked product's maker.
+  it('does not leave the picked maker attached to the next typed add', async () => {
+    const wrapper = await mountHome()
+    mocks.db.handlers['shopping_list_items.insert'] = (q) => ({
+      data: { ...q.payload, checked: false, created_at: '2026-02-02T00:00:00.000Z' },
+      error: null,
+    })
+
+    await pick(wrapper, { name: 'Apa Plata 2L', maker: 'Dorna' }, { typed: 'apa' })
+    wrapper.findComponent(AddItemForm).vm.$emit('submit')
+    await flushPromises()
+
+    const typed = listedItems(wrapper).find((i) => i.name === 'apa')
+    expect(typed).toBeTruthy()
+    expect(typed.maker).toBeNull()
   })
 
   it('merges into the existing active row instead of duplicating it', async () => {
@@ -260,10 +329,11 @@ describe('picking a suggestion', () => {
 
     await pick(wrapper, { name: 'Apa Plata 2L', maker: 'Dorna' }, { typed: 'apa' })
 
-    // Nothing added, and the full product name (not the typed "apa") is put back
-    // so the add can simply be retried.
+    // Nothing added, and the query is left exactly as typed -- it was never
+    // taken away, so there is nothing to put back. The pick itself is restored
+    // (below), which is what a retry actually needs.
     expect(listedItems(wrapper)).toHaveLength(0)
-    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('Apa Plata 2L')
+    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('apa')
   })
 
   it('says to slow down (not "something went wrong") when the add is rate limited', async () => {
@@ -287,7 +357,7 @@ describe('picking a suggestion', () => {
     expect(wrapper.findComponent(ErrorModal).props('message')).toBe(
       'You are adding items too quickly. Wait a minute and try again.',
     )
-    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('Apa Plata 2L')
+    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('apa')
   })
 })
 
@@ -354,7 +424,7 @@ describe('adding a custom product', () => {
     expect(items[0].maker).toBe('Piata Obor')
     // The modal closed and the half-typed text is gone.
     expect(wrapper.findComponent(CustomProductModal).props('open')).toBe(false)
-    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('')
+    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('Branza')
   })
 
   it('reaches the catalog only through the RPC, never the table directly', async () => {
@@ -414,15 +484,16 @@ describe('addItem', () => {
           resolve({ data: { ...q.payload, checked: false, created_at: '2026-02-02T00:00:00.000Z' }, error: null })
       })
 
-    await submitAdd(wrapper, 'Milk', 2)
+    await submitAdd(wrapper, 'Milk')
 
     // Optimistic row is visible while the insert is still in flight, and the
     // form has been cleared.
     let items = listedItems(wrapper)
     expect(items).toHaveLength(1)
     expect(items[0].name).toBe('Milk')
-    expect(items[0].quantity).toBe(2)
-    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('')
+    expect(items[0].quantity).toBe(1)
+    // Left in the field: adding does not take the query away any more.
+    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('Milk')
 
     resolveInsert()
     await flushPromises()
@@ -440,15 +511,13 @@ describe('addItem', () => {
       error: { message: 'boom' },
     })
 
-    await submitAdd(wrapper, 'Milk', 2)
+    await submitAdd(wrapper, 'Milk')
 
     expect(listedItems(wrapper)).toHaveLength(0)
     // One ErrorModal serves every channel now, so this is the add error itself.
     // The raw Postgres text ('boom') is masked on the way out.
     expect(wrapper.findComponent(ErrorModal).props('message')).toBe('Failed to add item.')
-    const form = wrapper.findComponent(AddItemForm)
-    expect(form.props('name')).toBe('Milk')
-    expect(form.props('quantity')).toBe(2)
+    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('Milk')
   })
 
   it('bumps the quantity of an existing active item with the same name instead of inserting', async () => {
@@ -456,15 +525,133 @@ describe('addItem', () => {
     const wrapper = await mountHome({ items: [existing] })
     mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
 
-    await submitAdd(wrapper, '  milk ', 3)
+    await submitAdd(wrapper, '  milk ')
 
     const items = listedItems(wrapper)
     expect(items).toHaveLength(1)
-    expect(items[0].quantity).toBe(4)
+    expect(items[0].quantity).toBe(2)
+
+    await settleQuantity()
     const update = mocks.db.calls.find((q) => q.op === 'update')
-    expect(update.payload).toEqual({ quantity: 4 })
+    expect(update.payload).toEqual({ quantity: 2 })
     expect(update.filters.id).toBe('item-1')
     expect(mocks.db.calls.some((q) => q.op === 'insert')).toBe(false)
+  })
+
+  // The bug this was reported as: tap a product twenty times, go back to the
+  // list, and the count is short. Three things conspired, and all three end in
+  // "less".
+  //
+  // Every tap used to fire its own UPDATE carrying the absolute quantity it had
+  // computed at tap time, unordered against the other nineteen, so the row
+  // settled on whichever landed last rather than the highest.
+  it('lands every one of twenty taps on the same product', async () => {
+    const existing = makeItem({ id: 'item-1', name: 'Milk', quantity: 1 })
+    const wrapper = await mountHome({ items: [existing] })
+    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
+
+    for (let i = 0; i < 19; i++) await submitAdd(wrapper, 'Milk')
+
+    expect(listedItems(wrapper)[0].quantity).toBe(20)
+
+    await settleQuantity()
+
+    // One UPDATE, carrying the number the user actually stopped on.
+    const updates = mocks.db.calls.filter((q) => q.op === 'update')
+    expect(updates).toHaveLength(1)
+    expect(updates[0].payload).toEqual({ quantity: 20 })
+  })
+
+  // The second tap finds the row that the first tap only just pushed locally.
+  // Its id is client-generated, so an UPDATE sent before the INSERT lands
+  // matches nothing, reports no error, and loses the increment in silence.
+  it('waits for a new row to exist before bumping it', async () => {
+    const wrapper = await mountHome()
+    let landInsert
+    mocks.db.handlers['shopping_list_items.insert'] = (q) =>
+      new Promise((resolve) => {
+        landInsert = () =>
+          resolve({
+            data: { ...q.payload, checked: false, created_at: '2026-02-02T00:00:00.000Z' },
+            error: null,
+          })
+      })
+    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
+
+    await submitAdd(wrapper, 'Milk')
+    // Two more while the insert is still on the wire.
+    await submitAdd(wrapper, 'Milk')
+    await submitAdd(wrapper, 'Milk')
+    await settleQuantity()
+
+    // Nothing sent yet: the row does not exist server-side to be updated.
+    expect(mocks.db.calls.some((q) => q.op === 'update')).toBe(false)
+
+    landInsert()
+    await flushPromises()
+    await flushPromises()
+
+    const updates = mocks.db.calls.filter((q) => q.op === 'update')
+    expect(updates).toHaveLength(1)
+    expect(updates[0].payload).toEqual({ quantity: 3 })
+    expect(listedItems(wrapper)[0].quantity).toBe(3)
+  })
+
+  // Unguarded, the merge write let realtime treat its own echo as someone else's
+  // edit and paint the pre-write number back over the optimistic one.
+  it('guards the row while the merged write is on the wire', async () => {
+    const existing = makeItem({ id: 'item-1', name: 'Milk', quantity: 1 })
+    const wrapper = await mountHome({ items: [existing] })
+    let finishUpdate
+    mocks.db.handlers['shopping_list_items.update'] = () =>
+      new Promise((resolve) => {
+        finishUpdate = () => resolve({ data: null, error: null })
+      })
+
+    await submitAdd(wrapper, 'Milk')
+    await settleQuantity()
+
+    expect(wrapper.vm.pendingItemWrites.has('item-1')).toBe(true)
+
+    finishUpdate()
+    await flushPromises()
+    expect(wrapper.vm.pendingItemWrites.has('item-1')).toBe(false)
+  })
+
+  // Tapping fast, the row spends the whole debounce holding a number the server
+  // has not been told about. An echo landing in that gap — a previous burst's
+  // own write coming home, or another device — used to be merged as news, which
+  // set the count backwards and, because the number keys the row's transition,
+  // replayed the animation on the way down.
+  it('guards the row from the tap, not from when the write leaves', async () => {
+    const existing = makeItem({ id: 'item-1', name: 'Milk', quantity: 1 })
+    const wrapper = await mountHome({ items: [existing] })
+    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
+
+    await submitAdd(wrapper, 'Milk')
+
+    // Nothing on the wire yet, and already protected — this is the window the
+    // guard used to leave open.
+    expect(mocks.db.calls.some((q) => q.op === 'update')).toBe(false)
+    expect(wrapper.vm.pendingItemWrites.has('item-1')).toBe(true)
+
+    await settleQuantity()
+    expect(wrapper.vm.pendingItemWrites.has('item-1')).toBe(false)
+  })
+
+  // The guard is depth-counted, so a burst must raise it once and not once per
+  // tap — twenty increments against a single release would pin the row guarded
+  // for the rest of the session, and it would stop hearing the household at all.
+  it('releases the guard after a long burst rather than pinning it', async () => {
+    const existing = makeItem({ id: 'item-1', name: 'Milk', quantity: 1 })
+    const wrapper = await mountHome({ items: [existing] })
+    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
+
+    for (let i = 0; i < 20; i++) await submitAdd(wrapper, 'Milk')
+    expect(wrapper.vm.pendingItemWrites.has('item-1')).toBe(true)
+
+    await settleQuantity()
+    expect(wrapper.vm.pendingItemWrites.has('item-1')).toBe(false)
   })
 
   it('blocks adds past the per-member limit locally and opens the limit popup', async () => {
@@ -489,7 +676,7 @@ describe('addItem', () => {
     mocks.db.handlers['shopping_list_items.select'] = () => ({ data: [serverRow], error: null })
     mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
 
-    await submitAdd(wrapper, 'Milk', 1)
+    await submitAdd(wrapper, 'Milk')
 
     const items = listedItems(wrapper)
     expect(items).toHaveLength(1)
@@ -696,6 +883,172 @@ describe('multiple households', () => {
   })
 })
 
+// The row stepper's write. Adding the same product again has always summed
+// quantities, which covers going up but never down — so before this, a wrong
+// number could only be fixed by deleting the item and adding it back.
+describe('setItemQuantity', () => {
+  it('sends the resulting quantity and shows it without waiting for the round trip', async () => {
+    const existing = makeItem({ id: 'item-1', name: 'Milk', quantity: 2 })
+    const wrapper = await mountHome({ items: [existing] })
+    let resolveUpdate
+    mocks.db.handlers['shopping_list_items.update'] = () =>
+      new Promise((resolve) => {
+        resolveUpdate = () => resolve({ data: null, error: null })
+      })
+
+    const row = listedItems(wrapper)[0]
+    await tapQuantity(wrapper, row, 5)
+
+    // Already moved, before anything has been sent at all.
+    expect(listedItems(wrapper)[0].quantity).toBe(5)
+    expect(mocks.db.calls.some((q) => q.op === 'update')).toBe(false)
+
+    await settleQuantity()
+    resolveUpdate()
+    await flushPromises()
+
+    const update = mocks.db.calls.find((q) => q.op === 'update')
+    expect(update.payload).toEqual({ quantity: 5 })
+    expect(update.filters.id).toBe('item-1')
+  })
+
+  it('puts the old number back when the write fails', async () => {
+    const existing = makeItem({ id: 'item-1', name: 'Milk', quantity: 3 })
+    const wrapper = await mountHome({ items: [existing] })
+    mocks.db.handlers['shopping_list_items.update'] = () => ({
+      data: null,
+      error: { message: 'boom' },
+    })
+
+    await setQuantity(wrapper, listedItems(wrapper)[0], 1)
+
+    expect(listedItems(wrapper)[0].quantity).toBe(3)
+  })
+
+  it('queues the change instead of calling the network when offline', async () => {
+    const existing = makeItem({ id: 'item-1', name: 'Milk', quantity: 2 })
+    const wrapper = await mountHome({ items: [existing] })
+    goOffline()
+
+    await setQuantity(wrapper, listedItems(wrapper)[0], 4)
+
+    expect(listedItems(wrapper)[0].quantity).toBe(4)
+    expect(mocks.db.calls.some((q) => q.op === 'update')).toBe(false)
+    expect(loadOfflineQueue(localStorage, 'user-1')).toHaveLength(1)
+  })
+
+  it('writes nothing when the number did not actually change', async () => {
+    const existing = makeItem({ id: 'item-1', name: 'Milk', quantity: 2 })
+    const wrapper = await mountHome({ items: [existing] })
+
+    await setQuantity(wrapper, listedItems(wrapper)[0], 2)
+
+    expect(mocks.db.calls.some((q) => q.op === 'update')).toBe(false)
+  })
+
+  // The reason the debounce exists. Writing per tap put four UPDATEs on the wire
+  // for one decision, and they do not necessarily come back in the order they
+  // left — so the row settled on whichever echo landed last rather than on the
+  // number under the thumb, and the count keys the row's transition, so the
+  // animation replayed each time.
+  it('collapses a burst of taps into one write carrying the final number', async () => {
+    const existing = makeItem({ id: 'item-1', name: 'Milk', quantity: 1 })
+    const wrapper = await mountHome({ items: [existing] })
+    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
+
+    const row = listedItems(wrapper)[0]
+    for (const n of [2, 3, 4, 5]) await tapQuantity(wrapper, row, n)
+
+    // The number tracked every tap; the wire stayed quiet.
+    expect(listedItems(wrapper)[0].quantity).toBe(5)
+    expect(mocks.db.calls.filter((q) => q.op === 'update')).toHaveLength(0)
+
+    await settleQuantity()
+
+    const updates = mocks.db.calls.filter((q) => q.op === 'update')
+    expect(updates).toHaveLength(1)
+    expect(updates[0].payload).toEqual({ quantity: 5 })
+  })
+
+  it('says nothing at all when a burst ends where it started', async () => {
+    const existing = makeItem({ id: 'item-1', name: 'Milk', quantity: 3 })
+    const wrapper = await mountHome({ items: [existing] })
+    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
+
+    const row = listedItems(wrapper)[0]
+    await tapQuantity(wrapper, row, 4)
+    await tapQuantity(wrapper, row, 3)
+    await settleQuantity()
+
+    expect(listedItems(wrapper)[0].quantity).toBe(3)
+    expect(mocks.db.calls.some((q) => q.op === 'update')).toBe(false)
+  })
+
+  // Rolling back one step would leave the row on a number nobody chose: the tap
+  // before last. The whole burst is the unit that failed.
+  it('rolls a failed burst back to where the burst began', async () => {
+    const existing = makeItem({ id: 'item-1', name: 'Milk', quantity: 2 })
+    const wrapper = await mountHome({ items: [existing] })
+    mocks.db.handlers['shopping_list_items.update'] = () => ({
+      data: null,
+      error: { message: 'boom' },
+    })
+
+    const row = listedItems(wrapper)[0]
+    for (const n of [3, 4, 5]) await tapQuantity(wrapper, row, n)
+    await settleQuantity()
+
+    expect(listedItems(wrapper)[0].quantity).toBe(2)
+  })
+
+  // A refetch that overtakes a waiting write reads the server's older number and
+  // paints over one the user is already looking at.
+  it('sends a waiting change before a refetch can read past it', async () => {
+    const existing = makeItem({ id: 'item-1', name: 'Milk', quantity: 2 })
+    const wrapper = await mountHome({ items: [existing] })
+    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
+
+    await tapQuantity(wrapper, listedItems(wrapper)[0], 7)
+    expect(mocks.db.calls.some((q) => q.op === 'update')).toBe(false)
+
+    // Whatever triggers a reload — reconnect, focus, the realtime watchdog.
+    goOnline()
+    await flushPromises()
+
+    const updates = mocks.db.calls.filter((q) => q.op === 'update')
+    expect(updates).toHaveLength(1)
+    expect(updates[0].payload).toEqual({ quantity: 7 })
+  })
+
+  // The row refuses to open its stepper on a checked item, but a change can still
+  // arrive from one that was open when the row was ticked from another device.
+  // Same rule addItem's merge already follows: checked rows are left alone.
+  it('refuses to change a checked item', async () => {
+    const existing = makeItem({ id: 'item-1', name: 'Milk', quantity: 2, checked: true })
+    const wrapper = await mountHome({ items: [existing] })
+    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
+
+    await setQuantity(wrapper, listedItems(wrapper)[0], 5)
+
+    expect(listedItems(wrapper)[0].quantity).toBe(2)
+    expect(mocks.db.calls.some((q) => q.op === 'update')).toBe(false)
+  })
+
+  // 004_shopping_list.sql only enforces >= 1; the ceiling is the app's, so it has
+  // to hold here rather than relying on the stepper's disabled state.
+  it('clamps to the allowed range', async () => {
+    const existing = makeItem({ id: 'item-1', name: 'Milk', quantity: 2 })
+    const wrapper = await mountHome({ items: [existing] })
+    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
+
+    await setQuantity(wrapper, listedItems(wrapper)[0], 0)
+    expect(listedItems(wrapper)[0].quantity).toBe(1)
+
+    await setQuantity(wrapper, listedItems(wrapper)[0], 500)
+    expect(listedItems(wrapper)[0].quantity).toBe(99)
+  })
+})
+
 describe('deleteItem', () => {
   it('restores the row at its original position when the delete fails', async () => {
     const first = makeItem({ id: 'item-1', name: 'Milk' })
@@ -731,12 +1084,12 @@ describe('offline queue', () => {
     const wrapper = await mountHome()
     goOffline()
 
-    await submitAdd(wrapper, 'Milk', 2)
+    await submitAdd(wrapper, 'Milk')
 
     const items = listedItems(wrapper)
     expect(items).toHaveLength(1)
     expect(items[0].name).toBe('Milk')
-    expect(items[0].quantity).toBe(2)
+    expect(items[0].quantity).toBe(1)
     expect(mocks.db.calls.some((q) => q.op === 'insert')).toBe(false)
     const queue = loadOfflineQueue(localStorage, 'user-1')
     expect(queue).toHaveLength(1)
@@ -760,7 +1113,7 @@ describe('offline queue', () => {
   it('flushes queued writes and re-fetches when connectivity returns', async () => {
     const wrapper = await mountHome()
     goOffline()
-    await submitAdd(wrapper, 'Milk', 2)
+    await submitAdd(wrapper, 'Milk')
     wrapper.findComponent(ShoppingList).vm.$emit('toggle', listedItems(wrapper)[0])
     await flushPromises()
     expect(loadOfflineQueue(localStorage, 'user-1')).toHaveLength(1)
@@ -795,7 +1148,7 @@ describe('offline queue', () => {
   it('keeps a throttled offline add on screen instead of losing it to the re-fetch', async () => {
     const wrapper = await mountHome()
     goOffline()
-    await submitAdd(wrapper, 'Milk', 2)
+    await submitAdd(wrapper, 'Milk')
     expect(loadOfflineQueue(localStorage, 'user-1')).toHaveLength(1)
 
     // Back online, but the server throttles the replay (004_shopping_list.sql).
@@ -814,7 +1167,7 @@ describe('offline queue', () => {
 
     const items = listedItems(wrapper)
     expect(items.map((i) => i.name)).toEqual(['Milk'])
-    expect(items[0].quantity).toBe(2)
+    expect(items[0].quantity).toBe(1)
     // Still queued, so it syncs once the window clears.
     expect(loadOfflineQueue(localStorage, 'user-1')).toHaveLength(1)
     // And no error modal: the row is on screen and will send itself. A throttle
@@ -895,7 +1248,7 @@ describe('network failure while reported online', () => {
     const wrapper = await mountHome()
     mocks.db.handlers['shopping_list_items.insert'] = fetchError
 
-    await submitAdd(wrapper, 'Milk', 2)
+    await submitAdd(wrapper, 'Milk')
 
     expect(listedItems(wrapper)).toHaveLength(1)
     expect(anyErrorModalShown(wrapper)).toBe(false)
@@ -964,7 +1317,7 @@ describe('reliable reconnect via connectivity signal', () => {
 
     // Reliable native offline (navigator may still claim online).
     __setOnlineForTest(false)
-    await submitAdd(wrapper, 'Milk', 2)
+    await submitAdd(wrapper, 'Milk')
     expect(loadOfflineQueue(localStorage, 'user-1')).toHaveLength(1)
     expect(mocks.db.calls.some((q) => q.op === 'insert')).toBe(false)
 

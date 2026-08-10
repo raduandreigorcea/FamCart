@@ -128,6 +128,14 @@
   --focus-ring-primary: 0 0 0 3px var(--shadow-primary-12);
   --focus-ring-primary-soft: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, var(--bg-surface));
 
+  /* The face for a string the user has to read character by character, rather
+     than as a word: the invite code, and anything else where O and 0 have to be
+     told apart. Same reasoning as the ramp below — it was three hardcoded
+     stacks, one of them reaching for a --mono token that never existed, so the
+     onboarding tour taught people an invite code in one typeface and the
+     household panels then showed them the real one in another. */
+  --font-mono: ui-monospace, 'SF Mono', Consolas, 'Cascadia Mono', Monaco, monospace;
+
   /* Typography scale. Theme-independent. Collapses the ad-hoc font sizes that
      had accumulated across components (nearly thirty distinct values) into one
      shared ramp — reach for the nearest step instead of a raw rem. */

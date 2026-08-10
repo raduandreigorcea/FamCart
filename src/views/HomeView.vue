@@ -42,7 +42,11 @@ import { isCurrentlyOffline, onReconnect } from '../lib/connectivity'
 import { rememberUser, getRememberedUser } from '../lib/session'
 import { useFirstRunGreeting } from '../lib/firstRunGreeting'
 import { syncPushUser } from '../lib/pushNotifications'
-import { clampItemLimit, ITEM_LIMIT_DEFAULT, ITEM_NAME_MAX_LENGTH } from '../lib/limits'
+import {
+  clampItemLimit,
+  ITEM_LIMIT_DEFAULT,
+  ITEM_NAME_MAX_LENGTH,
+} from '../lib/limits'
 
 const { userId, isLoaded } = useAuth()
 const { user } = useUser()
@@ -95,6 +99,11 @@ const memberProfileMap = computed(
   () => new Map(householdMembers.value.map((m) => [m.user_id, m])),
 )
 const newItem = ref('')
+// What one add puts on the list. No longer picked before the product it counts:
+// the add form got you to name a number before you had named the thing, and then
+// reset it after every add. Adding is one tap now, and the row's own stepper is
+// where a quantity is set — so this stays 1, and addItem's merge (same product
+// again sums the quantities) is what turns two taps into two.
 const newQty = ref(1)
 // Everything behind the search box: the catalog query, this household's purchase
 // habits (which rank it), and the regulars offered before anything is typed.
@@ -180,6 +189,7 @@ const {
   loadItems,
   addItem,
   toggleItem,
+  setItemQuantity,
   deleteItem,
   checkoutItems,
 } = useShoppingListActions({
@@ -298,9 +308,15 @@ onBeforeUnmount(() => {
 
 // Picking a suggestion adds it outright rather than filling the input: the pick
 // already says exactly which product was meant, so a second confirming tap is
-// just friction. The typed text is dropped by addItem clearing the input.
+// just friction.
+//
+// The query stays, and so do its matches. Adding used to empty the field and
+// drop the suggestions with it, which is right when one search means one item
+// and wrong the rest of the time -- "milk" is usually two kinds of milk, and
+// getting the second one meant typing the word again. Clearing the matches here
+// while the text remained would be worse than either: the search is debounced on
+// the text changing, so an unchanged query would never fetch them back.
 function selectSuggestion(product: ProductSuggestion) {
-  clearSuggestions()
   void addItem(product)
 }
 
@@ -402,28 +418,35 @@ async function resolveScannedCode(code: string, source: 'screen' | 'native') {
   scannedUnknown.value = ''
   const product = await lookupBarcode(code)
   scanBusy.value = false
-  // Left our camera screen while the lookup ran. Filling a form behind a screen
-  // they have closed is not what they asked for.
+  // Left our camera screen while the lookup ran. Adding behind a screen they
+  // have closed is not what they asked for.
   if (source === 'screen' && !scannerOpen.value) return
 
   if (product) {
-    // A scan answers "which product", not "add this" — so it fills the form and
-    // hands the screen back rather than adding outright. The quantity picker and
-    // the name are both right there to correct before anything is committed,
-    // which a camera cannot offer while it is covering them.
+    // The scan IS the add. It used to fill the form and hand the screen back so
+    // the name and the quantity picker could be corrected before committing --
+    // but the picker has moved onto the list row, and a barcode is an exact key,
+    // so this was the one action in the app asking for a confirming tap while
+    // tapping a fuzzy search result committed outright.
     //
-    // selectedProduct is what carries the maker onto the row, exactly as it does
-    // for a tapped suggestion. Setting it also stops the suggestions watcher
-    // searching for the name we just wrote into the field: it treats a query
-    // that still matches the picked product as settled.
-    selectedProduct.value = product
-    newItem.value = product.name
+    // Same call a tapped suggestion makes, so the maker rides onto the row by
+    // the same route. The add form is not touched at all: writing the name into
+    // it left the query sitting there afterwards, suppressing suggestions until
+    // it was edited by hand.
+    //
+    // Then the screen goes, and the list behind it is the confirmation -- the row
+    // is there with its own stepper on it. One code per scan, on both scanners:
+    // ours could have kept reading and Google's could have been reopened, but a
+    // camera that comes back on its own after every item is a thing to dismiss
+    // rather than a thing to use.
+    void addItem(product as AddedProduct)
     closeScanner()
     return
   }
 
   reportMiss()
 }
+
 
 // From our own camera screen, which reads continuously.
 async function onBarcodeDetected(code: string) {
@@ -838,7 +861,6 @@ async function refreshMembershipOrRedirect() {
         <!-- Add item form -->
         <AddItemForm
           v-model:name="newItem"
-          v-model:quantity="newQty"
           v-model:expanded="searchExpanded"
           :max-length="ITEM_NAME_MAX_LENGTH"
           :suggestions="suggestions"
@@ -864,6 +886,7 @@ async function refreshMembershipOrRedirect() {
           @add="selectSuggestion"
           @toggle="toggleItem"
           @delete="deleteItem"
+          @set-quantity="setItemQuantity($event.item, $event.quantity)"
           @checkout="checkoutItems"
         />
 

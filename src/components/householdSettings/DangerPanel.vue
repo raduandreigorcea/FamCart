@@ -207,20 +207,20 @@ async function deleteHousehold() {
   margin: 0 0 0.2rem 0;
   font-size: var(--text-base);
   font-weight: var(--weight-bold);
-  color: var(--ui-text-strong);
+  color: var(--text-primary);
 }
 
 .card-item__info p {
   margin: 0;
   font-size: var(--text-xs);
-  color: var(--ui-text-muted);
+  color: var(--text-secondary);
   line-height: 1.45;
 }
 
 .panel-action-btn {
   background: var(--bg-surface);
-  color: var(--ui-text-strong);
-  border: var(--border-width-thin) solid var(--ui-border);
+  color: var(--text-primary);
+  border: var(--border-width-thin) solid var(--border-main);
   border-radius: var(--radius-md);
   padding: 0.55rem 0.9rem;
   font-size: var(--text-sm);

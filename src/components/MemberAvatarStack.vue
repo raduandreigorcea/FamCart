@@ -86,7 +86,7 @@ const extraMembers = computed(() => Math.max(0, props.members.length - visibleMe
   justify-content: center;
   font-size: var(--text-xs);
   font-weight: var(--weight-bold);
-  color: var(--ui-text-muted, var(--text-secondary));
+  color: var(--text-secondary);
 }
 
 .member-avatar--more {
