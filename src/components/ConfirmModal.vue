@@ -3,6 +3,21 @@ import { computed, useId } from 'vue'
 import AppButton from './AppButton.vue'
 import AppModal from './AppModal.vue'
 import triangleAlertIcon from '../assets/triangle-alert.svg?raw'
+import infoIcon from '../assets/info.svg?raw'
+import checkIcon from '../assets/check.svg?raw'
+
+// One mark per tone, all three from the icon set rather than drawn inline.
+//
+// info.svg for warning is a near-identical silhouette to the exclamation it
+// replaces -- both are a circle around a bar and a dot, and the only difference
+// is which is on top. The tick loses the ring it used to draw around itself,
+// which the danger triangle never had: the wrap behind it is already a 52px
+// disc, so every tone was carrying one circle except the one that drew two.
+const TONE_ICONS: Record<string, string> = {
+  danger: triangleAlertIcon,
+  success: checkIcon,
+  warning: infoIcon,
+}
 
 // Per-instance, because this component is mounted several times over on one
 // screen (HomeView alone has an ErrorModal and a limit-reached ConfirmModal).
@@ -31,6 +46,10 @@ const resolvedTone = computed(() => {
   return props.danger ? 'danger' : 'warning'
 })
 
+// Falls back to the warning mark, which is also what resolvedTone falls back to,
+// so a tone the validator let through without an icon still draws something.
+const toneIcon = computed(() => TONE_ICONS[resolvedTone.value] ?? TONE_ICONS.warning)
+
 const confirmVariant = computed(() => {
   if (resolvedTone.value === 'danger') return 'danger'
   if (resolvedTone.value === 'warning') return 'warning'
@@ -49,22 +68,7 @@ const emit = defineEmits(['confirm', 'cancel'])
   >
       <div class="confirm-dialog" :class="`confirm-dialog--${resolvedTone}`" role="alertdialog" aria-modal="true" :aria-labelledby="titleId">
         <div class="confirm-dialog__icon-wrap" :class="`confirm-dialog__icon-wrap--${resolvedTone}`">
-          <span
-            v-if="resolvedTone === 'danger'"
-            class="confirm-dialog__icon"
-            aria-hidden="true"
-            v-html="triangleAlertIcon"
-          ></span>
-          <!-- The success tick and the neutral exclamation have no asset of their
-               own, so they stay inline. -->
-          <svg v-else-if="resolvedTone === 'success'" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="confirm-dialog__icon">
-            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
-            <path d="M8 12.5l2.5 2.5L16 9.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <svg v-else viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="confirm-dialog__icon">
-            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
-            <path d="M12 8v4m0 4h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          </svg>
+          <span class="confirm-dialog__icon" aria-hidden="true" v-html="toneIcon"></span>
         </div>
 
         <div class="confirm-dialog__body">

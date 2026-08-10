@@ -22,6 +22,14 @@ export const ITEM_NAME_MAX_LENGTH = 120
 export const HOUSEHOLD_MEMBERSHIP_CAP = 3
 
 /**
+ * Most of one product a single row may carry. This one is the app's own:
+ * 004_shopping_list.sql only requires quantity >= 1, so nothing but this stops a
+ * row reading x400 after a stuck finger on the stepper. Anyone genuinely buying
+ * more than this wants two rows, or a wholesaler.
+ */
+export const ITEM_QUANTITY_MAX = 99
+
+/**
  * Bounds on a household's per-member active-item cap — the owner-configurable
  * setting itself, not the count it limits. Mirrors 003_households_and_members.sql.
  */

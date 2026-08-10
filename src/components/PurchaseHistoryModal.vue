@@ -404,9 +404,13 @@ function formatTime(iso: string) {
   background: var(--bg-surface-alt);
 }
 
+/* Keeps .history-row's padding: both rows are 2.05rem of content tall, so the
+   0.5rem this used to carry made every placeholder 3.2px taller than the row it
+   stands in for -- eight of them, and the whole list stepped up as the real
+   entries landed. Only the fill is dropped, because a skeleton is the shape of
+   the content and not the surface it will sit on. */
 .history-row--skeleton {
   background: transparent;
-  padding: 0.5rem 0.25rem;
 }
 
 .history-emoji {
