@@ -14,10 +14,12 @@
 -- one household types stays scoped to them forever; a product several households
 -- independently ask for earns its way in on its own. No moderation queue, and no
 -- way for one household's spelling to leak into everyone else's suggestions — the
--- threshold counts distinct contributing *accounts* (contributed_by), so
--- crossing it takes three separate people who each added the product in their
--- own household. One account belonging to three households and typing the same junk
--- into all three still counts as one and cannot self-promote.
+-- threshold counts distinct contributing *accounts* (contributed_by) AND the
+-- distinct households they contributed from, and both must reach it. Crossing it
+-- takes three separate people who each added the product in their own household.
+-- One account belonging to three households and typing the same junk into all
+-- three counts as one account and cannot self-promote; three accounts one person
+-- controls inside a single household count as one household and cannot either.
 --
 -- Clients never write this table. RLS grants SELECT and nothing else; the two
 -- SECURITY DEFINER RPCs at the bottom are the only writes reachable from the
@@ -233,9 +235,10 @@ security definer
 set search_path = public
 as $$
 declare
-  -- How many distinct accounts must contribute a product before it goes global.
-  -- Low enough that genuinely common products graduate, high enough that one
-  -- account's spelling (or a two-account coincidence) cannot drag junk in.
+  -- How many distinct accounts, in that many distinct households, must contribute
+  -- a product before it goes global. Low enough that genuinely common products
+  -- graduate, high enough that one account's spelling (or a two-account
+  -- coincidence) cannot drag junk in.
   promote_at constant integer := 3;
 
   -- Ceiling on distinct products one household may contribute, so a member cannot
@@ -252,6 +255,7 @@ declare
   v_barcode text := nullif(btrim(coalesce(p_barcode, '')), '');
   v_search text;
   v_contributors integer;
+  v_households integer;
   v_first  record;
   -- Kept separate from v_barcode, which is this caller's code. This one is what
   -- the scoped rows collectively agree on, and the two are only ever the same by
@@ -345,13 +349,27 @@ begin
   do update set add_count = pc.add_count + 1,
                 barcode = coalesce(pc.barcode, excluded.barcode);
 
-  -- Count distinct contributing *accounts*, not households or owners. This is the
-  -- gate that actually resists abuse — see the header.
-  select count(distinct pc.contributed_by) into v_contributors
+  -- Both counts, and both have to clear the bar: three distinct accounts, spread
+  -- over three distinct households. They defeat different abuses, and neither
+  -- alone is the rule.
+  --
+  -- Accounts is what stops one person who belongs to three households typing the
+  -- same junk into all three (test 7i). Households is what stops three accounts
+  -- one person controls doing it from inside a single household.
+  --
+  -- That second one is, today, already impossible: product_catalog_household_search
+  -- is unique on (household_id, search_text), so a household holds at most one
+  -- scoped row per product, and three distinct contributed_by therefore cannot
+  -- come from fewer than three households. It is counted anyway. The property the
+  -- header promises should be readable here rather than inferred from an index two
+  -- hundred lines up, and relaxing that index later must break this rule loudly
+  -- instead of quietly widening what reaches every household's suggestions.
+  select count(distinct pc.contributed_by), count(distinct pc.household_id)
+    into v_contributors, v_households
   from public.product_catalog pc
   where pc.household_id is not null and pc.search_text = v_search;
 
-  if v_contributors < promote_at then
+  if v_contributors < promote_at or v_households < promote_at then
     return;
   end if;
 
