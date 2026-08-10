@@ -1,0 +1,280 @@
+<script setup lang="ts">
+// "There's a new FamCart" — the Android app's only way of saying so.
+//
+// Shaped like NotificationPromptModal on purpose: same icon-over-title-over-
+// buttons dialog, because it arrives in the same place (just after the list
+// loads) and the two should not look like they came from different apps.
+//
+// The phases share one dialog rather than becoming four, because they are one
+// continuous thing happening: the icon and title stay put and only the sentence
+// and the buttons change underneath them, so nothing jumps.
+import { computed, type PropType } from 'vue'
+import AppButton from './AppButton.vue'
+import AppModal from './AppModal.vue'
+import downloadIcon from '../assets/download.svg?raw'
+import type { UpdatePhase } from '../lib/updatePrompt'
+
+const props = defineProps({
+  open: { type: Boolean, default: false },
+  phase: { type: String as PropType<UpdatePhase>, default: 'available' },
+  version: { type: String, default: '' },
+  currentVersion: { type: String, default: '' },
+  // 0–1, or -1 when the download's total size is unknown.
+  progress: { type: Number, default: -1 },
+})
+
+const emit = defineEmits(['install', 'later', 'open-settings', 'open-releases', 'close'])
+
+// Nothing to cancel into once the APK is on its way, and a stray backdrop tap
+// during a 30 MB download should not look like it stopped anything.
+const dismissable = computed(() => props.phase === 'available' || props.phase === 'error')
+
+const percent = computed(() => Math.round(Math.min(Math.max(props.progress, 0), 1) * 100))
+</script>
+
+<template>
+  <AppModal
+    :open="open"
+    overlay-class="update-overlay"
+    transition="update-fade"
+    :close-on-backdrop="dismissable"
+    @close="dismissable && emit('later')"
+  >
+    <div
+      class="update-dialog"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="update-prompt-title"
+    >
+      <div class="update-dialog__icon-wrap">
+        <span class="update-dialog__icon" aria-hidden="true" v-html="downloadIcon"></span>
+      </div>
+
+      <div class="update-dialog__body">
+        <h4 id="update-prompt-title" class="update-dialog__title">
+          {{ phase === 'permission' ? 'One permission first' : 'Update available' }}
+        </h4>
+
+        <p v-if="phase === 'available'" class="update-dialog__message">
+          FamCart {{ version }} is ready to install.
+          <template v-if="currentVersion"> You're on {{ currentVersion }}.</template>
+        </p>
+
+        <p v-else-if="phase === 'permission'" class="update-dialog__message">
+          Android only lets an app install updates once you allow it. Turn on
+          <strong>Allow from this source</strong> for FamCart, then come back and
+          press Update.
+        </p>
+
+        <p v-else-if="phase === 'downloading'" class="update-dialog__message">
+          Downloading FamCart {{ version }}…
+        </p>
+
+        <p v-else-if="phase === 'installing'" class="update-dialog__message">
+          Android is taking over from here. Follow the install prompt to finish —
+          your list and household stay exactly as they are.
+        </p>
+
+        <p v-else class="update-dialog__message">
+          The update couldn't be downloaded. It may just be the connection — try
+          again, or get the APK from the releases page.
+        </p>
+      </div>
+
+      <div v-if="phase === 'downloading'" class="update-dialog__progress">
+        <div
+          class="update-dialog__track"
+          role="progressbar"
+          aria-label="Download progress"
+          :aria-valuenow="progress >= 0 ? percent : undefined"
+          aria-valuemin="0"
+          aria-valuemax="100"
+        >
+          <!-- No Content-Length means no honest percentage, so the bar sweeps
+               instead of claiming a number it does not have. -->
+          <div
+            class="update-dialog__fill"
+            :class="{ 'update-dialog__fill--unknown': progress < 0 }"
+            :style="progress >= 0 ? { width: `${percent}%` } : undefined"
+          ></div>
+        </div>
+        <span v-if="progress >= 0" class="update-dialog__percent">{{ percent }}%</span>
+      </div>
+
+      <div class="update-dialog__actions">
+        <template v-if="phase === 'available'">
+          <AppButton variant="secondary" block @click="emit('later')">Later</AppButton>
+          <AppButton variant="primary" block @click="emit('install')">Update</AppButton>
+        </template>
+
+        <template v-else-if="phase === 'permission'">
+          <AppButton variant="secondary" block @click="emit('later')">Not now</AppButton>
+          <AppButton variant="primary" block @click="emit('open-settings')">
+            Open settings
+          </AppButton>
+        </template>
+
+        <template v-else-if="phase === 'downloading'">
+          <AppButton variant="secondary" block disabled>Downloading…</AppButton>
+        </template>
+
+        <template v-else-if="phase === 'installing'">
+          <AppButton variant="secondary" block @click="emit('close')">Close</AppButton>
+        </template>
+
+        <template v-else>
+          <AppButton variant="secondary" block @click="emit('open-releases')">
+            Open releases
+          </AppButton>
+          <AppButton variant="primary" block @click="emit('install')">Try again</AppButton>
+        </template>
+      </div>
+    </div>
+  </AppModal>
+</template>
+
+<style scoped>
+.update-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-dark-strong);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+  padding: calc(var(--space-4) + var(--safe-top)) var(--space-4)
+    calc(var(--space-4) + var(--safe-bottom));
+}
+
+.update-dialog {
+  width: 100%;
+  max-width: 400px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-dialog);
+  border: var(--border-width-thin) solid
+    color-mix(in srgb, var(--color-primary) 42%, var(--border-main));
+  box-shadow: var(--elevation-dialog);
+  padding: var(--space-7) var(--space-7) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  text-align: center;
+  animation: modal-rise-in var(--transition-slow) var(--ease-rise) forwards;
+}
+
+.update-dialog__icon-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--bg-surface));
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.update-dialog__icon {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+}
+
+/* The asset ships at stroke-width 1 for a 24px box; weight it for this size. */
+.update-dialog__icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.update-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.update-dialog__title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-extrabold);
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.update-dialog__message {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.update-dialog__progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.update-dialog__track {
+  flex: 1;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--color-primary) 16%, var(--bg-surface));
+  overflow: hidden;
+}
+
+.update-dialog__fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  transition: width var(--transition-base) ease;
+}
+
+.update-dialog__fill--unknown {
+  width: 40%;
+  animation: update-sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes update-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+.update-dialog__percent {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.update-dialog__actions {
+  display: flex;
+  gap: 0.65rem;
+  width: 100%;
+  margin-top: 0.25rem;
+}
+
+.update-fade-enter-active,
+.update-fade-leave-active {
+  transition: opacity var(--transition-base) ease;
+}
+
+.update-fade-enter-from,
+.update-fade-leave-to {
+  opacity: 0;
+}
+
+/* Beats the entrance animation on the base class, which by now has finished. */
+.update-fade-leave-active .update-dialog {
+  animation: modal-rise-out var(--transition-base) var(--ease-fall) forwards;
+}
+</style>

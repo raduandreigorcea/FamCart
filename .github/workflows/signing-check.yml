@@ -1,0 +1,70 @@
+name: Signing check (temporary)
+
+# TEMPORARY — delete this file once the in-app updater has shipped.
+#
+# Proves the one thing a local build cannot: that the keystore survives the trip
+# through a GitHub secret and actually signs the APK on a runner. It builds
+# exactly what release-apk.yml builds and prints the signing certificate, but
+# publishes nothing — no release, no tag, nothing a user can see.
+#
+# The failure it exists to catch is silent: android/app/build.gradle falls back
+# to the debug key when the keystore variables are missing or the file is
+# unreadable, so a mis-encoded secret produces a perfectly good APK signed by the
+# wrong key. That only shows up on a phone, as a refused install.
+on:
+  workflow_dispatch:
+
+jobs:
+  signing:
+    name: Build and print the signer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - run: npm ci
+
+      # The web build only has to produce something for cap sync to copy; this
+      # job is about the signature, not the bundle, so the app secrets are not
+      # needed and are deliberately not referenced.
+      - run: npm run build
+      - run: npx cap sync android
+
+      - name: Restore signing keystore
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/famcart-release.keystore"
+
+      - name: Build APK
+        env:
+          FAMCART_KEYSTORE_FILE: ${{ runner.temp }}/famcart-release.keystore
+          FAMCART_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          FAMCART_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          FAMCART_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew assembleRelease
+
+      # keytool cannot read this: with minSdk 24 the APK is signed v2/v3 only,
+      # and `keytool -printcert -jarfile` only understands the old v1 JAR
+      # signature. apksigner ships with the build-tools already on the runner.
+      - name: Print the signing certificate
+        run: |
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs android/app/build/outputs/apk/release/app-release.apk
+
+      # Kept so the APK this job produced can be installed by hand and compared
+      # against a local build, rather than trusted on the strength of a log line.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: famcart-signing-check-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
