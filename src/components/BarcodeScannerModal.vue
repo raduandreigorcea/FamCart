@@ -5,9 +5,9 @@
 // the codes it reads, but what a code MEANS is the parent's answer.
 //
 // A code the catalog knows is not this screen's business at all — the parent
-// writes the product's name into the add form and closes this. So the scanner
-// never adds anything itself, and the only outcome it draws is the one that
-// still needs a decision: a code nothing matched.
+// puts it on the list and closes this. So the scanner never adds anything
+// itself, and the only outcome it draws is the one that still needs a decision:
+// a code nothing matched.
 //
 // It is a dialog rather than a second full-screen mode of the add form, because
 // everything a dialog already owns here is something a camera screen needs:
@@ -30,9 +30,9 @@ const props = defineProps({
   // the more likely answer to "we don't have this one" than naming it.
   //
   // Note this is the only result the screen ever draws. A code the catalog DOES
-  // know closes the scanner and fills the add form, so there is nothing to
-  // confirm here — the name sitting in the field is the confirmation, and it is
-  // one the user can still edit.
+  // know lands on the list and closes the scanner, so there is nothing to
+  // confirm here — the row waiting behind this screen is the confirmation, and
+  // its own stepper is where the count gets corrected.
   unknownCode: { type: String, default: '' },
 })
 
