@@ -155,7 +155,14 @@ const isFiltered = computed(() => model.value !== 'all')
   fill: none;
 }
 
-/* Sits on the rim rather than inside it, so the border stays unbroken. */
+/* Sits on the rim rather than inside it, so the border stays unbroken. The ring
+   is the page showing through, not a surface: .list-meta paints nothing, so what
+   is behind the dot is the body's --bg-main.
+
+   It read --bg-page until now, which this app has never defined. A var() with no
+   fallback invalidates the whole shorthand, so the dot has been drawn with no
+   ring at all since the filter button was added -- visible, but merging into the
+   button's own border exactly as the line above says it must not. */
 .filter-btn__dot {
   position: absolute;
   top: -2px;
@@ -164,7 +171,7 @@ const isFiltered = computed(() => model.value !== 'all')
   height: 7px;
   border-radius: 50%;
   background: var(--color-primary);
-  border: var(--border-width-base) solid var(--bg-page);
+  border: var(--border-width-base) solid var(--bg-main);
 }
 
 /* Row internals; the row's own box comes from PopoverMenu's .menu-item. */

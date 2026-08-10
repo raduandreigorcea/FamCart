@@ -127,7 +127,7 @@ onBeforeUnmount(() => {
 
 /* Overview Panel cards */
 .summary-card {
-  border: var(--border-width-thin) solid var(--ui-border-soft);
+  border: var(--border-width-thin) solid var(--bg-hover);
   background: var(--bg-surface-alt);
   border-radius: var(--radius-lg);
   padding: var(--space-4);
@@ -147,12 +147,12 @@ onBeforeUnmount(() => {
 }
 
 .summary-label {
-  color: var(--ui-text-muted);
+  color: var(--text-secondary);
   font-weight: var(--weight-medium);
 }
 
 .summary-value {
-  color: var(--ui-text-strong);
+  color: var(--text-primary);
   font-weight: var(--weight-bold);
 }
 
@@ -167,7 +167,7 @@ onBeforeUnmount(() => {
   background: var(--bg-surface);
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-sm);
-  border: var(--border-width-thin) solid var(--ui-border-soft);
+  border: var(--border-width-thin) solid var(--bg-hover);
 }
 
 .owner-avatar-mini {
@@ -180,7 +180,7 @@ onBeforeUnmount(() => {
 .owner-name {
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
-  color: var(--ui-text-strong);
+  color: var(--text-primary);
 }
 
 /* Invite card */
@@ -205,14 +205,14 @@ onBeforeUnmount(() => {
   font-size: var(--text-2xs);
   letter-spacing: 0.08em;
   font-weight: var(--weight-extrabold);
-  color: var(--ui-text-muted);
+  color: var(--text-secondary);
 }
 
 .invite-code-value {
-  font-family: 'SF Mono', Consolas, Monaco, 'Andale Mono', monospace;
+  font-family: var(--font-mono);
   font-size: var(--text-xl);
   font-weight: var(--weight-extrabold);
-  color: var(--ui-text-strong);
+  color: var(--text-primary);
   letter-spacing: 0.05em;
 }
 

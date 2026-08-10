@@ -448,7 +448,7 @@ async function copyCode() {
   cursor: pointer;
 }
 .art-code__value {
-  font-family: var(--mono, ui-monospace, monospace); letter-spacing: 0.14em;
+  font-family: var(--font-mono); letter-spacing: 0.14em;
   font-size: var(--text-md); font-weight: var(--weight-extrabold); color: var(--text-primary);
 }
 .art-code__copy {

@@ -313,13 +313,6 @@ function onHouseholdDeleted() {
 
 <style scoped>
 .settings-modal-overlay {
-  --ui-border: var(--border-main);
-  --ui-border-soft: var(--bg-hover);
-  --ui-text: var(--text-primary);
-  --ui-text-muted: var(--text-secondary);
-  --ui-text-strong: var(--text-primary);
-  --ui-bg: var(--bg-surface);
-
   position: fixed;
   inset: 0;
   background: var(--overlay-dark);
@@ -388,14 +381,14 @@ function onHouseholdDeleted() {
   margin: 0;
   font-size: var(--text-lg);
   font-weight: var(--weight-extrabold);
-  color: var(--ui-text-strong);
+  color: var(--text-primary);
   letter-spacing: -0.02em;
 }
 
 .settings-modal__subtitle {
   margin: 0.1rem 0 0;
   font-size: var(--text-sm);
-  color: var(--ui-text-muted);
+  color: var(--text-secondary);
   font-weight: var(--weight-medium);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -450,7 +443,7 @@ function onHouseholdDeleted() {
   border-radius: var(--radius-md);
   border: none;
   background: transparent;
-  color: var(--ui-text-muted);
+  color: var(--text-secondary);
   font-size: var(--text-base);
   font-weight: var(--weight-semibold);
   cursor: pointer;
@@ -461,7 +454,7 @@ function onHouseholdDeleted() {
 
 .sidebar-tab-btn:hover:not(.active) {
   background: var(--bg-hover);
-  color: var(--ui-text-strong);
+  color: var(--text-primary);
 }
 
 @media (max-width: 580px) {
@@ -676,7 +669,7 @@ function onHouseholdDeleted() {
     flex-direction: row;
     padding: 0.75rem;
     border-right: none;
-    border-bottom: var(--border-width-thin) solid var(--ui-border-soft);
+    border-bottom: var(--border-width-thin) solid var(--bg-hover);
     overflow-x: auto;
     gap: 0.5rem;
     scrollbar-width: none;
@@ -726,7 +719,7 @@ function onHouseholdDeleted() {
   font-size: var(--text-sm);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--ui-text-muted);
+  color: var(--text-secondary);
   font-weight: var(--weight-bold);
 }
 :deep(.panel-section-title.text-danger) {
@@ -735,13 +728,13 @@ function onHouseholdDeleted() {
 :deep(.panel-section-desc) {
   margin: 0 0 0.25rem;
   font-size: var(--text-sm);
-  color: var(--ui-text-muted);
+  color: var(--text-secondary);
   line-height: 1.4;
 }
 
 /* Form Settings (Preferences) */
 :deep(.card-item) {
-  border: var(--border-width-thin) solid var(--ui-border-soft);
+  border: var(--border-width-thin) solid var(--bg-hover);
   background: var(--bg-surface);
   border-radius: var(--radius-lg);
   padding: var(--space-4);
@@ -762,7 +755,7 @@ function onHouseholdDeleted() {
   width: 14px;
   height: 14px;
   border: var(--border-width-thick) solid transparent;
-  border-top-color: var(--ui-text-strong);
+  border-top-color: var(--text-primary);
   border-radius: 50%;
   animation: btnSpin 0.6s linear infinite;
 }
