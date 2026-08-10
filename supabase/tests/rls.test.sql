@@ -52,7 +52,7 @@
 -- Tests run inside a transaction that is rolled back, so they leave no data behind.
 
 begin;
-select plan(88);
+select plan(90);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 -- Three households, because promoting a contributed product to the global catalog
@@ -71,7 +71,11 @@ insert into public.profiles (user_id, display_name) values
   ('user_d', 'User D'),
   ('user_e', 'User E'),
   ('user_f', 'User F'),
-  ('attacker', 'Attacker');
+  ('attacker', 'Attacker'),
+  -- Three accounts one person controls, all inside a single household (7j).
+  ('sock_one', 'Sock One'),
+  ('sock_two', 'Sock Two'),
+  ('sock_three', 'Sock Three');
 
 insert into public.household_members (household_id, user_id, role) values
   ('00000000-0000-0000-0000-0000000000a1', 'user_a', 'moderator'),
@@ -95,6 +99,13 @@ insert into public.household_members (household_id, user_id, role) values
   ('00000000-0000-0000-0000-0000000000d1', 'attacker', 'member'),
   ('00000000-0000-0000-0000-0000000000e1', 'attacker', 'member'),
   ('00000000-0000-0000-0000-0000000000f1', 'attacker', 'member');
+
+-- Fixture for 7j: three separate accounts that all live in ONE household. The
+-- mirror image of 7i -- distinct contributors, a single household between them.
+insert into public.household_members (household_id, user_id, role) values
+  ('00000000-0000-0000-0000-0000000000d1', 'sock_one', 'member'),
+  ('00000000-0000-0000-0000-0000000000d1', 'sock_two', 'member'),
+  ('00000000-0000-0000-0000-0000000000d1', 'sock_three', 'member');
 
 -- 8. One household per owner. Asserted here as the superuser, so RLS is out of the
 -- way and the unique index (003_households_and_members.sql) is the only thing that can reject the
@@ -477,6 +488,37 @@ select is(
    where search_text = 'attacker junk' and household_id is null),
   0,
   'one account in three households cannot self-promote a product'
+);
+
+-- ── 7j. Contributor count is not household breadth ───────────────────────────
+-- The mirror of 7i, and the half the gate did not state. Three distinct accounts
+-- contribute the same product from inside ONE household. Promotion needs three
+-- distinct households as well as three distinct accounts, so this stays scoped.
+--
+-- It cannot reach the threshold today for a second reason:
+-- product_catalog_household_search is unique on (household_id, search_text), so
+-- these three calls collapse onto one row carrying one contributed_by. That is
+-- exactly why this is worth asserting -- the rule must be what refuses it, not a
+-- unique index two hundred lines away that could be relaxed for its own reasons.
+set local request.jwt.claims = '{"sub":"sock_one"}';
+select public.add_custom_product('00000000-0000-0000-0000-0000000000d1', 'Sock Puppet Juice', null);
+set local request.jwt.claims = '{"sub":"sock_two"}';
+select public.add_custom_product('00000000-0000-0000-0000-0000000000d1', 'Sock Puppet Juice', null);
+set local request.jwt.claims = '{"sub":"sock_three"}';
+select public.add_custom_product('00000000-0000-0000-0000-0000000000d1', 'Sock Puppet Juice', null);
+
+select is(
+  (select count(*)::int from public.product_catalog
+   where search_text = 'sock puppet juice' and household_id is null),
+  0,
+  'three accounts inside one household cannot promote a product'
+);
+
+select is(
+  (select count(distinct household_id)::int from public.product_catalog
+   where search_text = 'sock puppet juice' and household_id is not null),
+  1,
+  'their contributions stay scoped to the one household they share'
 );
 
 -- ── 9. Provenance and bulk import (006_product_catalog.sql) ────────────────────────────
