@@ -376,7 +376,7 @@ async function removeMember(memberUserId: string) {
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1rem;
-  border-bottom: var(--border-width-thin) solid var(--ui-border-soft);
+  border-bottom: var(--border-width-thin) solid var(--bg-hover);
   gap: 1rem;
   position: relative;
   overflow: visible;
@@ -402,7 +402,7 @@ async function removeMember(memberUserId: string) {
   height: 32px;
   border-radius: 50%;
   object-fit: cover;
-  border: var(--border-width-thin) solid var(--ui-border-soft);
+  border: var(--border-width-thin) solid var(--bg-hover);
   background: var(--bg-hover);
   flex-shrink: 0;
 }
@@ -413,7 +413,7 @@ async function removeMember(memberUserId: string) {
   justify-content: center;
   font-size: var(--text-sm);
   font-weight: var(--weight-bold);
-  color: var(--ui-text-muted);
+  color: var(--text-secondary);
 }
 
 .member-custom-details {
@@ -425,7 +425,7 @@ async function removeMember(memberUserId: string) {
 .member-custom-name {
   font-size: var(--text-base);
   font-weight: var(--weight-semibold);
-  color: var(--ui-text-strong);
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -489,7 +489,7 @@ async function removeMember(memberUserId: string) {
 .member-actions-trigger {
   width: 28px;
   height: 28px;
-  border: var(--border-width-thin) solid var(--ui-border-soft);
+  border: var(--border-width-thin) solid var(--bg-hover);
   background: var(--bg-surface);
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
@@ -534,7 +534,7 @@ async function removeMember(memberUserId: string) {
   z-index: 6100;
   min-width: 248px;
   padding: 0.25rem;
-  border: var(--border-width-thin) solid color-mix(in srgb, var(--border-dark) 45%, var(--ui-border-soft));
+  border: var(--border-width-thin) solid color-mix(in srgb, var(--border-dark) 45%, var(--bg-hover));
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--bg-surface-alt) 88%, var(--border-light));
   box-shadow: 0 12px 28px var(--shadow-popover);
@@ -602,7 +602,7 @@ async function removeMember(memberUserId: string) {
 .member-action-hint {
   font-size: var(--text-2xs);
   font-weight: var(--weight-medium);
-  color: var(--ui-text-muted);
+  color: var(--text-secondary);
   margin-top: 0.05rem;
 }
 
@@ -616,7 +616,7 @@ async function removeMember(memberUserId: string) {
   align-items: center;
   gap: 0.7rem;
   padding: 0 0.35rem 0.9rem;
-  border-bottom: var(--border-width-thin) solid var(--ui-border-soft);
+  border-bottom: var(--border-width-thin) solid var(--bg-hover);
 }
 
 .member-sheet__avatar {
@@ -624,7 +624,7 @@ async function removeMember(memberUserId: string) {
   height: 40px;
   border-radius: 50%;
   object-fit: cover;
-  border: var(--border-width-thin) solid var(--ui-border-soft);
+  border: var(--border-width-thin) solid var(--bg-hover);
   background: var(--bg-hover);
   flex-shrink: 0;
 }
@@ -635,7 +635,7 @@ async function removeMember(memberUserId: string) {
   justify-content: center;
   font-size: var(--text-md);
   font-weight: var(--weight-bold);
-  color: var(--ui-text-muted);
+  color: var(--text-secondary);
 }
 
 .member-sheet__meta {
@@ -647,7 +647,7 @@ async function removeMember(memberUserId: string) {
 .member-sheet__name {
   font-size: var(--text-md);
   font-weight: var(--weight-bold);
-  color: var(--ui-text-strong);
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -655,7 +655,7 @@ async function removeMember(memberUserId: string) {
 
 .member-sheet__role {
   font-size: var(--text-xs);
-  color: var(--ui-text-muted);
+  color: var(--text-secondary);
   font-weight: var(--weight-medium);
 }
 
@@ -676,7 +676,7 @@ async function removeMember(memberUserId: string) {
   border: none;
   background: transparent;
   border-radius: var(--radius-md);
-  color: var(--ui-text-strong);
+  color: var(--text-primary);
   text-align: left;
   cursor: pointer;
 }
@@ -724,7 +724,7 @@ async function removeMember(memberUserId: string) {
 
 .member-sheet__action-hint {
   font-size: var(--text-xs);
-  color: var(--ui-text-muted);
+  color: var(--text-secondary);
   font-weight: var(--weight-medium);
   margin-top: 0.1rem;
 }
@@ -733,10 +733,10 @@ async function removeMember(memberUserId: string) {
   width: 100%;
   min-height: 52px;
   margin-top: 0.35rem;
-  border: var(--border-width-thin) solid var(--ui-border-soft);
+  border: var(--border-width-thin) solid var(--bg-hover);
   background: var(--bg-surface-alt);
   border-radius: var(--radius-md);
-  color: var(--ui-text-strong);
+  color: var(--text-primary);
   font-size: var(--text-base);
   font-weight: var(--weight-bold);
   cursor: pointer;

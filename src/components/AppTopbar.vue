@@ -361,13 +361,6 @@ const orderedActiveMembers = computed(() =>
 
 <style scoped>
 .topbar {
-  --ui-border: var(--border-main);
-  --ui-border-soft: var(--bg-hover);
-  --ui-text: var(--text-primary);
-  --ui-text-muted: var(--text-secondary);
-  --ui-text-strong: var(--text-primary);
-  --ui-bg: var(--bg-surface);
-
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -378,8 +371,8 @@ const orderedActiveMembers = computed(() =>
      keeps the usual 72px strip below it. */
   padding: var(--safe-top) 1.25rem 0;
   height: calc(72px + var(--safe-top));
-  background: var(--ui-bg);
-  border-bottom: var(--border-width-thin) solid var(--ui-border);
+  background: var(--bg-surface);
+  border-bottom: var(--border-width-thin) solid var(--border-main);
   position: fixed;
   top: 0;
   left: 0;
@@ -495,7 +488,7 @@ const orderedActiveMembers = computed(() =>
      block, and a 1.5 line-height pushed that block past the 72px bar. */
   line-height: 1.25;
   letter-spacing: -0.01em;
-  color: var(--ui-text-strong);
+  color: var(--text-primary);
   /* A long household name must never shove the account button off the edge: cap it
      to the available width and ellipsize the overflow. min-width:0 lets it
      shrink inside the block's flex row rather than forcing it wider. */
@@ -600,7 +593,7 @@ const orderedActiveMembers = computed(() =>
   border-radius: var(--radius-pill);
   border: none;
   background: transparent;
-  color: var(--ui-text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -613,7 +606,7 @@ const orderedActiveMembers = computed(() =>
 
 .topbar-icon-btn:hover {
   background: var(--bg-hover);
-  color: var(--ui-text-strong);
+  color: var(--text-primary);
 }
 
 .history-icon {
@@ -635,7 +628,7 @@ const orderedActiveMembers = computed(() =>
   width: var(--size-control-md);
   height: var(--size-control-md);
   border-radius: var(--radius-pill);
-  border: var(--border-width-thick) solid var(--ui-border);
+  border: var(--border-width-thick) solid var(--border-main);
   background: var(--bg-hover);
   padding: 0;
   cursor: pointer;
@@ -664,6 +657,6 @@ const orderedActiveMembers = computed(() =>
 .user-avatar-fallback {
   font-size: var(--text-base);
   font-weight: var(--weight-bold);
-  color: var(--ui-text-muted);
+  color: var(--text-secondary);
 }
 </style>

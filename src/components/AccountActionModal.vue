@@ -4,7 +4,7 @@ import AppModal from './AppModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
 import userRoundIconRaw from '../assets/user-round.svg?raw'
 import flagIconRaw from '../assets/flag.svg?raw'
-// One icon per row, and each one distinct: their job here is to tell four
+// One icon per row, and each one distinct: their job here is to tell three
 // near-identically shaped rows apart at a glance, so a repeat would cost more
 // than it buys. They name the destination rather than the dialog it opens --
 // a house for the household, a gear for the app -- which is also what keeps
@@ -14,6 +14,10 @@ import userRoundPlusIconRaw from '../assets/user-round-plus.svg?raw'
 import gearIconRaw from '../assets/settings.svg?raw'
 import plusIconRaw from '../assets/plus.svg?raw'
 import logOutIconRaw from '../assets/log-out.svg?raw'
+// The identity card's affordance. It is the only control here that leads
+// somewhere without a hint on the right saying what it holds, because what it
+// holds is the face and name already printed on it.
+import chevronRightIconRaw from '../assets/chevron-right.svg?raw'
 import { DEFAULT_HOUSEHOLD_EMOJI } from '../lib/householdEmoji'
 import { HOUSEHOLD_MEMBERSHIP_CAP } from '../lib/limits'
 
@@ -102,25 +106,31 @@ function switchHousehold(id: string) {
         </div>
 
         <div class="account-dialog__body">
-          <div class="account-user-card">
+          <!-- Who you are AND the way to change it, in one control. This used to
+               be a passive card sitting on top of a "Profile" row hinted "Name,
+               photo, password" -- but the card was already showing the name and
+               the photo, so the row underneath was a second, wordier copy of
+               what the user was looking at. Tapping your own face to edit it
+               costs a row less and needs no label to explain it; the chevron
+               says it leads somewhere and the accessible name says where. -->
+          <button
+            class="account-user-card"
+            type="button"
+            aria-label="Edit your profile: name, photo, password"
+            @click="emit('edit-account')"
+          >
             <div class="account-user-card__avatar-wrap">
-              <img v-if="avatarUrl" :src="avatarUrl" alt="Profile picture" class="account-user-card__avatar" />
+              <img v-if="avatarUrl" :src="avatarUrl" alt="" class="account-user-card__avatar" />
               <span v-else class="account-user-card__avatar account-user-card__avatar--fallback">{{ initial }}</span>
             </div>
             <div class="account-user-card__identity">
               <h4>{{ displayName }}</h4>
               <p>{{ email || 'No email available' }}</p>
             </div>
-          </div>
+            <span class="account-user-card__chevron" aria-hidden="true" v-html="chevronRightIconRaw"></span>
+          </button>
 
           <div class="account-section">
-            <button class="account-menu-item" type="button" @click="emit('edit-account')">
-              <span class="account-menu-item__label">
-                <span class="account-item-icon" aria-hidden="true" v-html="userRoundIconRaw"></span>
-                <span>Profile</span>
-              </span>
-              <span class="account-menu-item__hint">Name, photo, password</span>
-            </button>
             <button class="account-menu-item" type="button" @click="emit('manage-household')">
               <span class="account-menu-item__label">
                 <span class="account-item-icon" aria-hidden="true" v-html="houseIconRaw"></span>
@@ -186,7 +196,7 @@ function switchHousehold(id: string) {
             <div class="account-divider"></div>
 
             <!-- Sits with sign out rather than with the rows above it: those
-                 four lead further into the app, these two are the ways of
+                 three lead further into the app, these two are the ways of
                  stepping outside it. -->
             <button
               class="account-menu-item account-report-item"
@@ -320,13 +330,40 @@ function switchHousehold(id: string) {
   gap: 1rem;
 }
 
+/* A control, so it takes the button reset and answers a press. It keeps the
+   borderless alt-surface fill rather than the rows' bordered box below: it is
+   the one thing here identifying the person, and looking like the fourth
+   variant of a menu row would lose that. Hover and press move the fill instead,
+   which is the same answer the rows give with their border. */
 .account-user-card {
+  width: 100%;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.8rem;
   background: var(--bg-surface-alt);
+  border: none;
   border-radius: var(--radius-lg);
-  padding: 0.9rem 0.9rem 0.65rem;
+  padding: 0.8rem 0.9rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-base) ease;
+}
+
+.account-user-card:hover {
+  background: var(--bg-hover);
+}
+
+.account-user-card:active {
+  background: var(--bg-press);
+}
+
+/* Inset and solid, the way .item-face rings the app's other large tappable
+   surface. The --focus-ring-primary tokens are a 12-20% tint meant to sit
+   OUTSIDE a small control against --bg-surface; at this size, on the alt
+   surface, they read as a smudge rather than a focus state. */
+.account-user-card:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--color-primary);
 }
 
 .account-user-card__avatar-wrap {
@@ -353,8 +390,35 @@ function switchHousehold(id: string) {
   background: color-mix(in srgb, var(--color-primary) 16%, var(--bg-surface));
 }
 
+/* Takes the slack so the chevron holds the right edge. */
 .account-user-card__identity {
   min-width: 0;
+  flex: 1;
+}
+
+.account-user-card__chevron {
+  width: var(--size-icon-lg);
+  height: var(--size-icon-lg);
+  flex-shrink: 0;
+  color: var(--text-disabled);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--transition-base) ease;
+}
+
+/* Warms with the card, the way the rows' icons warm with theirs. */
+.account-user-card:hover .account-user-card__chevron {
+  color: var(--color-primary);
+}
+
+.account-user-card__chevron :deep(svg) {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  /* Ships at stroke-width 1 for a 24px box; weighted here for this one. */
+  stroke-width: 2;
+  fill: none;
 }
 
 .account-user-card__identity h4 {

@@ -386,14 +386,14 @@ async function saveItemLimit() {
   margin: 0;
   font-size: var(--text-base);
   font-weight: var(--weight-extrabold);
-  color: var(--ui-text-strong);
+  color: var(--text-primary);
 }
 
 .pref-card__meta p {
   margin: 0.18rem 0 0;
   font-size: var(--text-xs);
   line-height: 1.45;
-  color: var(--ui-text-muted);
+  color: var(--text-secondary);
 }
 
 .pref-card__icon {
@@ -415,12 +415,12 @@ async function saveItemLimit() {
 }
 
 .pref-card__value {
-  font-family: 'SF Mono', Consolas, Monaco, 'Andale Mono', monospace;
+  font-family: var(--font-mono);
   font-size: var(--text-base);
   font-weight: var(--weight-extrabold);
-  color: var(--ui-text-strong);
+  color: var(--text-primary);
   background: var(--bg-surface-alt);
-  border: var(--border-width-thin) solid var(--ui-border-soft);
+  border: var(--border-width-thin) solid var(--bg-hover);
   border-radius: var(--radius-sm);
   padding: 0.22rem 0.5rem;
   min-width: 2.2rem;
@@ -437,7 +437,7 @@ async function saveItemLimit() {
 .pref-range-minmax {
   font-size: var(--text-xs);
   font-weight: var(--weight-bold);
-  color: var(--ui-text-muted);
+  color: var(--text-secondary);
   min-width: 1rem;
   text-align: center;
 }
@@ -492,12 +492,12 @@ async function saveItemLimit() {
 
 .panel-input {
   width: 100%;
-  border: var(--border-width-thin) solid var(--ui-border);
+  border: var(--border-width-thin) solid var(--border-main);
   border-radius: var(--radius-md);
   padding: 0.55rem 0.75rem;
   font-size: var(--text-base);
   background: var(--bg-surface);
-  color: var(--ui-text-strong);
+  color: var(--text-primary);
   transition: all var(--transition-base) ease;
 }
 
@@ -515,7 +515,7 @@ async function saveItemLimit() {
   margin: 0.25rem 0 0;
   text-align: right;
   font-size: var(--text-xs);
-  color: var(--ui-text-muted);
+  color: var(--text-secondary);
 }
 
 .panel-counter--under-save {
@@ -536,8 +536,8 @@ async function saveItemLimit() {
 
 .panel-save-btn {
   background: var(--bg-hover);
-  color: var(--ui-text-strong);
-  border: var(--border-width-thin) solid var(--ui-border-soft);
+  color: var(--text-primary);
+  border: var(--border-width-thin) solid var(--bg-hover);
   border-radius: var(--radius-md);
   padding: 0.55rem 1rem;
   font-size: var(--text-sm);
