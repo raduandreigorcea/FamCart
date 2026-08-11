@@ -58,10 +58,37 @@ describe('UpdateAvailableModal', () => {
     expect(wrapper.find('.update-dialog__fill--unknown').exists()).toBe(true)
   })
 
-  it('cannot be dismissed by the backdrop mid-download', async () => {
-    const wrapper = mountModal({ phase: 'downloading', progress: 0.1 })
-    await wrapper.trigger('click')
+  it('ignores a tap on the backdrop entirely', async () => {
+    // The one dismissal with no intent worth reading: a tap landing beside the
+    // dialog is as likely to be a missed press as an answer, so it neither
+    // closes nor declines.
+    const wrapper = mountModal({ phase: 'available' })
+    await wrapper.find('.app-modal-overlay').trigger('click')
+    expect(wrapper.emitted('close')).toBeUndefined()
     expect(wrapper.emitted('later')).toBeUndefined()
+  })
+
+  it('declines on Escape, which is Android Back', async () => {
+    // Back is the dialog's "no" button on a phone, and it arrives here as the
+    // same close request Escape makes. Treating it as anything softer than the
+    // Later button would ignore a deliberate answer.
+    const wrapper = mountModal({ phase: 'available' })
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('later')).toHaveLength(1)
+  })
+
+  it('does not decline on Escape mid-download', async () => {
+    const wrapper = mountModal({ phase: 'downloading', progress: 0.1 })
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('later')).toBeUndefined()
+  })
+
+  it('still declines from the Later button', async () => {
+    const wrapper = mountModal({ phase: 'available' })
+    await wrapper.findAllComponents(AppButton)[0].trigger('click')
+    expect(wrapper.emitted('later')).toHaveLength(1)
   })
 
   it('leaves a way to the APK when the download fails', async () => {
@@ -78,6 +105,14 @@ describe('UpdateAvailableModal', () => {
   it('says the data is safe once Android has taken over', () => {
     const wrapper = mountModal({ phase: 'installing' })
     expect(wrapper.text()).toContain('stay exactly as they are')
-    expect(buttonLabels(wrapper)).toEqual(['Close'])
+    expect(buttonLabels(wrapper)).toEqual(['Close', 'Try again'])
+  })
+
+  it('can retry from the handover screen', async () => {
+    // Reachable only when the resume listener failed to register, which is
+    // exactly when Close on its own would leave no way forward.
+    const wrapper = mountModal({ phase: 'installing' })
+    await wrapper.findAllComponents(AppButton)[1].trigger('click')
+    expect(wrapper.emitted('install')).toHaveLength(1)
   })
 })

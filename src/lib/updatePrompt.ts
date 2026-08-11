@@ -1,9 +1,12 @@
-import { ref, type Ref } from 'vue'
+import { nextTick, ref, type InjectionKey, type Ref } from 'vue'
+import { App } from '@capacitor/app'
 import { Browser } from '@capacitor/browser'
 import { hasOpenModal } from './modalStack'
 import {
   AppInstallerPlugin,
   RELEASES_PAGE_URL,
+  compareVersions,
+  fetchLatestRelease,
   findUpdate,
   skipVersion,
   type AvailableUpdate,
@@ -20,6 +23,14 @@ import {
 // switch is off, so it gets its own phase and its own button.
 //
 // Same shape as lib/firstRunGreeting: this owns the state, the view renders it.
+
+// How Settings reaches the check without four layers of props between them.
+// HomeView owns the prompt; the row that runs it lives in AppSettingsModal,
+// which is two components down inside AppTopbar. Provided rather than passed,
+// because nothing in between has any business knowing about app updates.
+export const updateCheckKey = Symbol('famcart-update-check') as InjectionKey<
+  () => Promise<'found' | 'up-to-date' | 'failed'>
+>
 
 export type UpdatePhase =
   // A new version exists; the user has not answered yet.
@@ -40,6 +51,14 @@ export interface UpdatePrompt {
   updateProgress: Ref<number>
   /** Look for a newer release and open the dialog if there is one. */
   start: () => Promise<void>
+  /**
+   * The same look, asked for by hand from Settings.
+   *
+   * Reports what happened rather than just opening a dialog, because a check the
+   * user pressed a button for owes them an answer either way — and "you're up to
+   * date" is a lie when the truth is that GitHub could not be reached.
+   */
+  checkNow: () => Promise<'found' | 'up-to-date' | 'failed'>
   install: () => Promise<void>
   openInstallSettings: () => Promise<void>
   openReleasesPage: () => Promise<void>
@@ -58,18 +77,23 @@ export function useUpdatePrompt(options: {
   const updateProgress = ref(-1)
 
   let pending: AvailableUpdate | null = null
+  let resumeListener: { remove: () => Promise<void> } | null = null
 
   async function start(): Promise<void> {
     // Never interrupt an install already under way — start() runs whenever the
     // list finishes loading, which includes the reload after a household switch.
     if (updateOpen.value) return
 
-    // Something else is already on screen. On a first run that is the gesture
-    // tour or the notifications ask — the one-time sequence a new user is in the
-    // middle of, and a fresh install is on the newest version anyway. Anywhere
-    // else it is a dialog the user opened themselves. Checked before the request
-    // as well as after it, so the common case costs nothing: the caller runs this
-    // immediately after the first-run sequence has already opened its dialog.
+    // The caller runs this the moment the first-run sequence settles, which is
+    // typically the same tick as the last of its dialogs being told to close.
+    // AppModal leaves the modal stack on a watcher, so without waiting for that
+    // flush the stack still holds a dialog that is on its way out, and the guard
+    // below would stand down for a screen that is about to be empty.
+    await nextTick()
+
+    // Something genuinely on screen — a dialog the user opened themselves, or
+    // the error dialog the notifications ask can end on. Nothing is recorded, so
+    // the next check offers again.
     if (hasOpenModal()) return
 
     const update = await findUpdate({
@@ -81,11 +105,28 @@ export function useUpdatePrompt(options: {
     // recorded as declined, so the next check offers it again.
     if (hasOpenModal()) return
 
+    offer(update)
+  }
+
+  function offer(update: AvailableUpdate): void {
     pending = update
     updateVersion.value = update.version
     updatePhase.value = 'available'
     updateProgress.value = -1
     updateOpen.value = true
+  }
+
+  async function checkNow(): Promise<'found' | 'up-to-date' | 'failed'> {
+    // Deliberately not findUpdate(): every gate that one applies is a reason to
+    // stay quiet, and there is nothing to stay quiet about when the user has just
+    // asked. The interval does not apply, and neither does a version they
+    // declined earlier — pressing this is how someone changes their mind.
+    const latest = await fetchLatestRelease()
+    if (!latest) return 'failed'
+    if (compareVersions(latest.version, options.currentVersion) <= 0) return 'up-to-date'
+
+    offer(latest)
+    return 'found'
   }
 
   async function install(): Promise<void> {
@@ -113,18 +154,48 @@ export function useUpdatePrompt(options: {
       updateProgress.value = event.total > 0 ? event.loaded / event.total : -1
     }).catch(() => null)
 
+    // Registered before the handover, because the resume it is waiting for can
+    // arrive the moment the installer closes.
+    await watchForAbandonedInstall()
+
     try {
       await AppInstallerPlugin.downloadAndInstall({ url: pending.apkUrl })
       // The installer is up. Everything from here is Android's, including
       // whether the user goes through with it — so the dialog stays put rather
-      // than closing, and a cancelled install lands back on a screen that still
-      // offers the update.
+      // than closing.
       updatePhase.value = 'installing'
     } catch {
       updatePhase.value = 'error'
+      await stopWatchingForAbandonedInstall()
     } finally {
       await listener?.remove().catch(() => {})
     }
+  }
+
+  /**
+   * Put the offer back when the user backs out of the system installer.
+   *
+   * There is no callback for that — handing the APK to Android is the end of
+   * what this app is told. But a *completed* install replaces this process, so
+   * it never returns here at all: being resumed while still on 'installing' can
+   * only mean the install did not happen. Without this the dialog sits there
+   * claiming Android is taking over, offering nothing but a Close button, when
+   * nothing is happening and the app is still on the old version.
+   */
+  async function watchForAbandonedInstall(): Promise<void> {
+    if (resumeListener) return
+    resumeListener = await App.addListener('appStateChange', ({ isActive }) => {
+      if (!isActive || updatePhase.value !== 'installing') return
+      updatePhase.value = 'available'
+      updateProgress.value = -1
+      void stopWatchingForAbandonedInstall()
+    }).catch(() => null)
+  }
+
+  async function stopWatchingForAbandonedInstall(): Promise<void> {
+    const listener = resumeListener
+    resumeListener = null
+    await listener?.remove().catch(() => {})
   }
 
   async function openInstallSettings(): Promise<void> {
@@ -163,6 +234,7 @@ export function useUpdatePrompt(options: {
     updateVersion,
     updateProgress,
     start,
+    checkNow,
     install,
     openInstallSettings,
     openReleasesPage,

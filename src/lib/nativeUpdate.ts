@@ -43,7 +43,15 @@ const SKIPPED_VERSION_KEY = 'famcart_update_skipped_version'
 // builds land a few times a day at most, so a few hours between checks loses
 // nothing a user would notice.
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
-const LAST_CHECK_KEY = 'famcart_update_last_check'
+
+// When the last check found nothing — deliberately not "when we last checked".
+// A check that turns up a newer version does not write this at all, because the
+// interval exists to keep quiet, not to sit on news (see findUpdate).
+//
+// Renamed from famcart_update_last_check, which recorded the other fact. Any
+// value left under the old name is stale by definition and is simply ignored,
+// which is the point of moving rather than reusing it.
+const QUIET_SINCE_KEY = 'famcart_update_quiet_since'
 
 export interface AvailableUpdate {
   version: string
@@ -155,7 +163,7 @@ export function skipVersion(storage: Storage, version: string): void {
 
 function dueForCheck(storage: Storage, now: number): boolean {
   try {
-    const last = Number(storage.getItem(LAST_CHECK_KEY))
+    const last = Number(storage.getItem(QUIET_SINCE_KEY))
     if (!Number.isFinite(last) || last <= 0) return true
     // A clock that has moved backwards (timezone edit, NTP correction) would
     // otherwise park the next check arbitrarily far in the future.
@@ -168,7 +176,7 @@ function dueForCheck(storage: Storage, now: number): boolean {
 
 function markChecked(storage: Storage, now: number): void {
   try {
-    storage.setItem(LAST_CHECK_KEY, String(now))
+    storage.setItem(QUIET_SINCE_KEY, String(now))
   } catch {
     // Without a record we check on every launch. Still correct, just chattier.
   }
@@ -183,34 +191,41 @@ export function canSelfUpdate(): boolean {
 }
 
 /**
- * The update worth showing a dialog about, or null.
+ * The update worth showing a dialog about on startup, or null.
  *
- * `force` skips both the interval and the "Later" memory, for a check the user
- * asked for explicitly rather than one that happens on launch.
+ * Every gate here is a reason to stay quiet, which is right for a check nobody
+ * asked for. A check the user pressed a button for wants none of them, and goes
+ * through fetchLatestRelease directly instead — see checkNow in lib/updatePrompt.
  */
 export async function findUpdate(options: {
   currentVersion: string
   storage?: Storage
   fetchImpl?: typeof fetch
   now?: number
-  force?: boolean
 }): Promise<AvailableUpdate | null> {
   const storage = options.storage ?? localStorage
   const now = options.now ?? Date.now()
 
   if (!canSelfUpdate()) return null
-  if (!options.force && !dueForCheck(storage, now)) return null
+  if (!dueForCheck(storage, now)) return null
 
   const latest = await fetchLatestRelease(options.fetchImpl ?? fetch)
   // Only a check that got an answer counts. Marking a failed one would put the
   // next attempt four hours out for a phone that was offline for ten seconds.
   if (!latest) return null
-  markChecked(storage, now)
 
-  if (compareVersions(latest.version, options.currentVersion) <= 0) return null
-  if (!options.force && compareVersions(latest.version, readSkippedVersion(storage)) <= 0) {
+  // The interval is for the quiet case only. Once a newer version is known to
+  // exist, waiting is the wrong instinct: someone who backs out of the system
+  // installer, or force-quits mid-download, has not decided anything, and four
+  // hours of silence afterwards is four hours of running a version they were
+  // already trying to replace. Declining is what silences a version, and that is
+  // remembered separately and permanently.
+  if (compareVersions(latest.version, options.currentVersion) <= 0) {
+    markChecked(storage, now)
     return null
   }
+
+  if (compareVersions(latest.version, readSkippedVersion(storage)) <= 0) return null
 
   return latest
 }
