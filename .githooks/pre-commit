@@ -31,6 +31,27 @@
 # npm is not on PATH in every GUI git client. Skip rather than fail.
 command -v npm >/dev/null 2>&1 || exit 0
 
+# A version already changed by hand is left exactly as it is.
+#
+# The bump exists so that no commit can silently reuse a version, not to have an
+# opinion about which version. Someone typing 0.2.0 to mark a feature has said
+# what they want, and patch-bumping it to 0.2.1 on the way past means the number
+# they chose never exists in any commit -- so the minor bump is only ever
+# possible one patch off from where it was aimed.
+#
+# Compared against HEAD rather than a marker file, so it needs no setup and
+# cannot fall out of step: if this commit changes the version, that is the
+# version. Failure to read either side leaves both empty, which compares equal
+# and falls through to the bump -- the safe direction, since an unnecessary bump
+# costs a number and a missed one costs an unreleasable commit.
+version_of() { sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1; }
+new_version=$(version_of < package.json 2>/dev/null)
+old_version=$(git show HEAD:package.json 2>/dev/null | version_of)
+
+if [ -n "$new_version" ] && [ "$new_version" != "$old_version" ]; then
+  exit 0
+fi
+
 # --no-git-tag-version keeps npm away from git entirely: no commit, no tag, and
 # no refusal to run against a working tree it considers dirty. Staging the result
 # is what folds it into the commit already in progress.

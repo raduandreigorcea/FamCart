@@ -87,6 +87,52 @@ jobs:
             exit 1
           fi
 
+      # A version that has not moved publishes nothing anyone can install. The
+      # release is replaced with the same number, every phone compares it against
+      # its own, finds nothing newer, and stays where it is -- and not one thing
+      # goes red. That is exactly what happens when .githooks/pre-commit did not
+      # run, which is easier than it sounds: the hook is opt-in per clone
+      # (`git config core.hooksPath .githooks`) and it deliberately exits quietly
+      # when npm is not on PATH, because refusing someone's commit is worse than
+      # losing a bump.
+      #
+      # So the bump is checked here, in the one place nobody can skip. It fails
+      # safe: a wrong answer stops a release being published, never publishes a
+      # bad one. Ordered before `npm ci` so it costs seconds rather than a build.
+      - name: Check the version moved
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NEW=$(node -p "require('./package.json').version")
+          # Read back what is actually published rather than trusting a tag: the
+          # release name is what the app parses, so it is what has to differ.
+          PUBLISHED=$(gh release view latest --json name --jq .name 2>/dev/null \
+            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)
+
+          if [ -z "$PUBLISHED" ]; then
+            echo "No published release yet. Publishing $NEW."
+            exit 0
+          fi
+
+          if [ "$NEW" = "$PUBLISHED" ]; then
+            echo "::error::package.json is still $NEW, the same version already published."
+            echo "The version bump did not happen, so this build would reach nobody."
+            echo "In the clone that made this commit, run:  git config core.hooksPath .githooks"
+            exit 1
+          fi
+
+          # sort -V compares each field as a number, so 0.1.9 sorts below 0.1.10.
+          # Plain sort puts them the other way round and would wave a downgrade
+          # through -- the same trap compareVersions avoids in src/lib/nativeUpdate.ts.
+          OLDEST=$(printf '%s\n%s\n' "$NEW" "$PUBLISHED" | sort -V | head -1)
+          if [ "$OLDEST" != "$PUBLISHED" ]; then
+            echo "::error::package.json is $NEW, older than the published $PUBLISHED."
+            echo "Android refuses a lower versionCode, so this APK could not install as an update."
+            exit 1
+          fi
+
+          echo "$PUBLISHED -> $NEW"
+
       - run: npm ci
 
       - name: Build web app
