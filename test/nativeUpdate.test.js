@@ -149,9 +149,9 @@ describe('findUpdate', () => {
     expect(update?.version).toBe('0.1.25')
   })
 
-  it('does not ask GitHub again straight away', async () => {
+  it('does not ask GitHub again straight away when there was nothing new', async () => {
     const storage = fakeStorage()
-    const fetchImpl = vi.fn(fetchLatest('0.1.24'))
+    const fetchImpl = vi.fn(fetchLatest('0.1.23'))
     const now = 1_000_000_000
 
     await findUpdate({ currentVersion: '0.1.23', storage, fetchImpl, now })
@@ -162,7 +162,7 @@ describe('findUpdate', () => {
 
   it('asks again once the interval has passed', async () => {
     const storage = fakeStorage()
-    const fetchImpl = vi.fn(fetchLatest('0.1.24'))
+    const fetchImpl = vi.fn(fetchLatest('0.1.23'))
     const now = 1_000_000_000
 
     await findUpdate({ currentVersion: '0.1.23', storage, fetchImpl, now })
@@ -174,6 +174,43 @@ describe('findUpdate', () => {
     })
 
     expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps offering a known update rather than going quiet for hours', async () => {
+    // Backing out of the system installer decides nothing. The interval is for
+    // the case where there is nothing to say; while a newer version is sitting
+    // there unrefused, every launch should say so.
+    const storage = fakeStorage()
+    const fetchImpl = vi.fn(fetchLatest('0.1.24'))
+    const now = 1_000_000_000
+
+    expect((await findUpdate({ currentVersion: '0.1.23', storage, fetchImpl, now }))?.version).toBe(
+      '0.1.24',
+    )
+    const second = await findUpdate({
+      currentVersion: '0.1.23',
+      storage,
+      fetchImpl,
+      now: now + 1000,
+    })
+
+    expect(second?.version).toBe('0.1.24')
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+
+  it('still goes quiet for a version that was actually declined', async () => {
+    // The difference that matters: "Later" is a decision, a cancelled install
+    // is not.
+    const storage = fakeStorage()
+    const fetchImpl = vi.fn(fetchLatest('0.1.24'))
+    const now = 1_000_000_000
+
+    await findUpdate({ currentVersion: '0.1.23', storage, fetchImpl, now })
+    skipVersion(storage, '0.1.24')
+
+    expect(
+      await findUpdate({ currentVersion: '0.1.23', storage, fetchImpl, now: now + 1000 }),
+    ).toBeNull()
   })
 
   it('does not let a failed check start the clock', async () => {
@@ -211,21 +248,4 @@ describe('findUpdate', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2)
   })
 
-  it('ignores both the interval and the decline when asked directly', async () => {
-    const storage = fakeStorage()
-    skipVersion(storage, '0.1.24')
-    const fetchImpl = vi.fn(fetchLatest('0.1.24'))
-    const now = 1_000_000_000
-
-    await findUpdate({ currentVersion: '0.1.23', storage, fetchImpl, now })
-    const update = await findUpdate({
-      currentVersion: '0.1.23',
-      storage,
-      fetchImpl,
-      now,
-      force: true,
-    })
-
-    expect(update?.version).toBe('0.1.24')
-  })
 })

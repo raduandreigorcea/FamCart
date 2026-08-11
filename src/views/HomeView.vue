@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, provide, watch } from 'vue'
 import { useAuth, useUser } from '@clerk/vue'
 import { useRouter } from 'vue-router'
 import { useSupabase } from '../supabase'
@@ -42,7 +42,7 @@ import { flushOfflineQueue, isOfflineError } from '../lib/offlineQueue'
 import { isCurrentlyOffline, onReconnect } from '../lib/connectivity'
 import { rememberUser, getRememberedUser } from '../lib/session'
 import { useFirstRunGreeting } from '../lib/firstRunGreeting'
-import { useUpdatePrompt } from '../lib/updatePrompt'
+import { updateCheckKey, useUpdatePrompt } from '../lib/updatePrompt'
 import { syncPushUser } from '../lib/pushNotifications'
 import {
   clampItemLimit,
@@ -172,7 +172,12 @@ const {
   closeTour: closeOnboardingTour,
   acceptNotifications,
   declineNotifications,
-} = useFirstRunGreeting({ userId, isOffline: isCurrentlyOffline })
+} = useFirstRunGreeting({
+  userId,
+  isOffline: isCurrentlyOffline,
+  // The update offer goes last, after the one-time greeting has had its say.
+  onSettled: () => void startUpdateCheck(),
+})
 // The Android app cannot update itself the way the web app does, so it has to be
 // told. A no-op everywhere else — see lib/nativeUpdate.
 const appVersion = __APP_VERSION__
@@ -182,11 +187,14 @@ const {
   updateVersion,
   updateProgress,
   start: startUpdateCheck,
+  checkNow: checkForUpdateNow,
   install: installUpdate,
   openInstallSettings,
   openReleasesPage,
   dismiss: dismissUpdate,
 } = useUpdatePrompt({ currentVersion: appVersion })
+// Settings → About runs the same check on demand; see updateCheckKey.
+provide(updateCheckKey, checkForUpdateNow)
 const hasInitialized = ref(false)
 // True while switchHousehold is tearing down the old household and loading the new one.
 // Drives the skeleton (instead of the "no items" empty state) so a switch never
@@ -608,11 +616,9 @@ async function runInitializeHome() {
   await setupRealtimeSubscriptions()
   hasInitialized.value = true
   persistSnapshot()
+  // The update offer is not called here: it hangs off this sequence's onSettled,
+  // so it lands after the tour and the notifications ask rather than racing them.
   startFirstRunGreeting()
-  // After the greeting, never before: a first-run user is mid-sequence and this
-  // stands down when anything else is open. Not awaited — it is a network round
-  // trip to GitHub that nothing below depends on.
-  void startUpdateCheck()
 }
 
 // First run: teach the gestures with the tour, then (once it's dismissed) fall

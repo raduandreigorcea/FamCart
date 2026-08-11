@@ -33,11 +33,22 @@ const percent = computed(() => Math.round(Math.min(Math.max(props.progress, 0), 
 </script>
 
 <template>
+  <!-- Back and Escape mean Later. On Android, Back IS the dialog's "no" button,
+       and someone pressing it wants the offer gone, not merely hidden until the
+       next time the list loads — so it declines the version exactly as the
+       button does. That is not as final as it sounds: a version is bumped on
+       every commit, so "not this one" is answered by the next build rather than
+       by silence.
+
+       The backdrop is the one route that does NOT decide, which is why it is
+       switched off rather than pointed at 'later'. A tap that lands beside the
+       dialog is as likely to be a missed press as an answer, and it is the one
+       dismissal with no intent behind it worth reading. -->
   <AppModal
     :open="open"
     overlay-class="update-overlay"
     transition="update-fade"
-    :close-on-backdrop="dismissable"
+    :close-on-backdrop="false"
     @close="dismissable && emit('later')"
   >
     <div
@@ -71,12 +82,12 @@ const percent = computed(() => Math.round(Math.min(Math.max(props.progress, 0), 
         </p>
 
         <p v-else-if="phase === 'installing'" class="update-dialog__message">
-          Android is taking over from here. Follow the install prompt to finish —
-          your list and household stay exactly as they are.
+          Android is taking over from here. Follow the install prompt to finish.
+          Your list and household stay exactly as they are.
         </p>
 
         <p v-else class="update-dialog__message">
-          The update couldn't be downloaded. It may just be the connection — try
+          The update couldn't be downloaded. It may just be the connection. Try
           again, or get the APK from the releases page.
         </p>
       </div>
@@ -118,8 +129,15 @@ const percent = computed(() => Math.round(Math.min(Math.max(props.progress, 0), 
           <AppButton variant="secondary" block disabled>Downloading…</AppButton>
         </template>
 
+        <!-- Try again is the safety net. Normally this phase is not reachable
+             for long enough to read: a finished install replaces the app, and
+             backing out of the installer puts the offer straight back (see
+             lib/updatePrompt). It is where you end up only if that resume
+             listener never registered — so the one case where this text is
+             actually read is the one where Close alone would strand you. -->
         <template v-else-if="phase === 'installing'">
           <AppButton variant="secondary" block @click="emit('close')">Close</AppButton>
+          <AppButton variant="primary" block @click="emit('install')">Try again</AppButton>
         </template>
 
         <template v-else>

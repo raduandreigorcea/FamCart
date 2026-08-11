@@ -9,6 +9,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ref } from 'vue'
 import { useFirstRunGreeting } from '../src/lib/firstRunGreeting'
 
+// onSettled is how anything else gets the screen after this sequence. It was
+// added because the update offer used to run alongside start() instead of after
+// it: on a fresh install the tour was already open, the offer saw a dialog on
+// screen and stood down for good, and a freshly sideloaded old APK was never
+// told it was old. Every path out of the sequence has to reach it, including the
+// ones that show nothing at all.
+
 const push = vi.hoisted(() => ({
   supported: true,
   appId: 'app-1',
@@ -175,5 +182,77 @@ describe('answering the ask', () => {
 
     expect(storage.getItem('famcart-notifications')).toBe('off')
     expect(g.notificationError.value).toContain('try again')
+  })
+
+  describe('handing the screen on', () => {
+    it('does not settle while the tour is still up', () => {
+      const onSettled = vi.fn()
+      const g = greeting({ storage: makeStorage(), onSettled })
+      g.start()
+
+      expect(g.onboardingTourOpen.value).toBe(true)
+      expect(g.isGreeting()).toBe(true)
+      expect(onSettled).not.toHaveBeenCalled()
+    })
+
+    it('settles once the tour closes and nothing else is owed', () => {
+      // The regression: a fresh install always opens the tour, so anything that
+      // ran alongside start() found the screen busy and gave up permanently.
+      const onSettled = vi.fn()
+      const storage = makeStorage({ 'famcart-notifications': 'off' })
+      const g = greeting({ storage, onSettled })
+
+      g.start()
+      expect(onSettled).not.toHaveBeenCalled()
+
+      g.closeTour()
+      expect(g.isGreeting()).toBe(false)
+      expect(onSettled).toHaveBeenCalledTimes(1)
+    })
+
+    it('waits for the notifications ask when the tour hands off to it', () => {
+      const onSettled = vi.fn()
+      const g = greeting({ storage: makeStorage(), onSettled })
+
+      g.start()
+      g.closeTour()
+      expect(g.notificationPromptOpen.value).toBe(true)
+      expect(onSettled).not.toHaveBeenCalled()
+
+      g.declineNotifications()
+      expect(onSettled).toHaveBeenCalledTimes(1)
+    })
+
+    it('settles after the ask is accepted', async () => {
+      const onSettled = vi.fn()
+      const g = greeting({ storage: makeStorage(), onSettled })
+      await g.acceptNotifications()
+      expect(onSettled).toHaveBeenCalledTimes(1)
+    })
+
+    it('settles immediately for a returning user with nothing to show', () => {
+      const onSettled = vi.fn()
+      const storage = makeStorage({
+        'famcart_tour_seen_v1': '1',
+        'famcart-notifications': 'off',
+      })
+      greeting({ storage, onSettled }).start()
+
+      expect(onSettled).toHaveBeenCalledTimes(1)
+    })
+
+    it('settles even when there is no user to greet', () => {
+      // The update offer is not tied to being signed in; nothing downstream
+      // should be stranded by an unresolved session.
+      const onSettled = vi.fn()
+      useFirstRunGreeting({
+        userId: ref(null),
+        isOffline: () => false,
+        storage: makeStorage(),
+        onSettled,
+      }).start()
+
+      expect(onSettled).toHaveBeenCalledTimes(1)
+    })
   })
 })

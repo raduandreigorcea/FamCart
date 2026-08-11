@@ -13,10 +13,12 @@ import { useUpdatePrompt } from '../src/lib/updatePrompt'
 
 const native = vi.hoisted(() => ({
   update: null,
+  latest: null,
   granted: true,
   canInstallThrows: false,
   installThrows: false,
   progressHandler: null,
+  resumeHandler: null,
   listenerRemoved: false,
   skipped: [],
   settingsOpened: 0,
@@ -32,9 +34,26 @@ vi.mock('@capacitor/browser', () => ({
   Browser: { open: vi.fn().mockResolvedValue(undefined) },
 }))
 
-vi.mock('../src/lib/nativeUpdate', () => ({
+vi.mock('@capacitor/app', () => ({
+  App: {
+    addListener: async (_event, handler) => {
+      native.resumeHandler = handler
+      return {
+        remove: async () => {
+          native.resumeHandler = null
+        },
+      }
+    },
+  },
+}))
+
+vi.mock('../src/lib/nativeUpdate', async () => ({
+  // The real ordering rather than a stand-in: checkNow decides what to report
+  // with it, and a hand-written copy here could agree with a wrong answer.
+  compareVersions: (await vi.importActual('../src/lib/nativeUpdate')).compareVersions,
   RELEASES_PAGE_URL: 'https://releases.test',
   findUpdate: async () => native.update,
+  fetchLatestRelease: async () => native.latest,
   skipVersion: (_storage, version) => native.skipped.push(version),
   AppInstallerPlugin: {
     canInstall: async () => {
@@ -73,10 +92,12 @@ function makePrompt() {
 
 beforeEach(() => {
   native.update = { version: '0.1.24', apkUrl: 'https://x/FamCart.apk' }
+  native.latest = { version: '0.1.24', apkUrl: 'https://x/FamCart.apk' }
   native.granted = true
   native.canInstallThrows = false
   native.installThrows = false
   native.progressHandler = null
+  native.resumeHandler = null
   native.listenerRemoved = false
   native.skipped = []
   native.settingsOpened = 0
@@ -109,6 +130,21 @@ describe('useUpdatePrompt', () => {
     expect(native.skipped).toEqual([])
   })
 
+  it('waits out a dialog that is already closing', async () => {
+    // AppModal leaves the modal stack on a Vue watcher, so in the tick where the
+    // first-run sequence hands over, the dialog it just closed is still on the
+    // stack. Reading the stack in that tick is what made the offer stand down
+    // for a screen that was about to be empty.
+    modals.open = true
+    Promise.resolve().then(() => {
+      modals.open = false
+    })
+
+    const prompt = makePrompt()
+    await prompt.start()
+    expect(prompt.updateOpen.value).toBe(true)
+  })
+
   it('does not reopen over an install already running', async () => {
     const prompt = makePrompt()
     await prompt.start()
@@ -116,6 +152,33 @@ describe('useUpdatePrompt', () => {
     expect(prompt.updatePhase.value).toBe('installing')
 
     await prompt.start()
+    expect(prompt.updatePhase.value).toBe('installing')
+  })
+
+  it('puts the offer back when the user backs out of the installer', async () => {
+    // Android tells the app nothing about a cancelled install. But a completed
+    // one replaces the process, so being resumed while still on 'installing' can
+    // only mean it did not happen — and the dialog must stop claiming otherwise.
+    const prompt = makePrompt()
+    await prompt.start()
+    await prompt.install()
+    expect(prompt.updatePhase.value).toBe('installing')
+
+    native.resumeHandler?.({ isActive: true })
+
+    expect(prompt.updatePhase.value).toBe('available')
+    expect(prompt.updateOpen.value).toBe(true)
+    // Nothing was declined, so the offer is still live rather than silenced.
+    expect(native.skipped).toEqual([])
+  })
+
+  it('ignores the app merely being backgrounded', async () => {
+    const prompt = makePrompt()
+    await prompt.start()
+    await prompt.install()
+
+    native.resumeHandler?.({ isActive: false })
+
     expect(prompt.updatePhase.value).toBe('installing')
   })
 
@@ -185,6 +248,52 @@ describe('useUpdatePrompt', () => {
     await prompt.start()
     await prompt.install()
     expect(prompt.updatePhase.value).toBe('error')
+  })
+
+  describe('checking by hand', () => {
+    it('opens the offer and says so', async () => {
+      const prompt = makePrompt()
+      expect(await prompt.checkNow()).toBe('found')
+      expect(prompt.updateOpen.value).toBe(true)
+      expect(prompt.updateVersion.value).toBe('0.1.24')
+      expect(prompt.updatePhase.value).toBe('available')
+    })
+
+    it('reports being up to date', async () => {
+      native.latest = { version: '0.1.23', apkUrl: 'https://x/FamCart.apk' }
+      const prompt = makePrompt()
+      expect(await prompt.checkNow()).toBe('up-to-date')
+      expect(prompt.updateOpen.value).toBe(false)
+    })
+
+    it('does not claim you are up to date when it could not ask', async () => {
+      // The distinction the automatic check has no use for and this one does:
+      // "nothing newer" and "could not reach GitHub" are different answers, and
+      // only one of them is reassuring.
+      native.latest = null
+      const prompt = makePrompt()
+      expect(await prompt.checkNow()).toBe('failed')
+      expect(prompt.updateOpen.value).toBe(false)
+    })
+
+    it('is the way back from a dismissal', async () => {
+      // Back on the dialog declines a version for good. This is the only route
+      // that ignores that, which is the whole reason it exists.
+      const prompt = makePrompt()
+      await prompt.start()
+      prompt.dismiss()
+      expect(native.skipped).toEqual(['0.1.24'])
+
+      expect(await prompt.checkNow()).toBe('found')
+      expect(prompt.updateOpen.value).toBe(true)
+    })
+
+    it('ignores a screen that is busy, unlike the startup check', async () => {
+      modals.open = true
+      const prompt = makePrompt()
+      expect(await prompt.checkNow()).toBe('found')
+      expect(prompt.updateOpen.value).toBe(true)
+    })
   })
 
   it('remembers a deliberate "Later"', async () => {
