@@ -37,3 +37,9 @@ graphify-out
 # Local state from `supabase db start` / `supabase test db`.
 supabase/.branches
 supabase/.temp
+
+# The Android signing key. Whoever holds this can publish an APK that installs
+# over everyone's FamCart as an update, so it lives in the repo secrets and on
+# whatever machine generated it — never here.
+*.keystore
+*.jks

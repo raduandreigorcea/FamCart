@@ -1,4 +1,43 @@
+import groovy.json.JsonSlurper
+
 apply plugin: 'com.android.application'
+
+// THE VERSION COMES FROM package.json
+//
+// It used to be `versionCode 1 / versionName "1.0"` here, frozen at whatever
+// Capacitor generated, while the real version moved with every commit (see
+// .githooks/pre-commit) and reached the web bundle through vite's define. So the
+// APK's own version — the one Android shows in App info, and the one an update
+// is judged against — said 1.0 forever. Now there is one number in one file and
+// everything else reads it.
+def appVersionName = new JsonSlurper().parseText(rootProject.file('../package.json').text).version
+def versionParts = (appVersionName =~ /^(\d+)\.(\d+)\.(\d+)/)
+if (!versionParts.find()) {
+    throw new GradleException("package.json version '${appVersionName}' is not major.minor.patch")
+}
+
+// Android's own ordering, which has to be an integer and has to only ever go up.
+// The patch field gets four digits because it is the one that moves on every
+// single commit; the day a version needs a 10000th patch, widen this and every
+// installed copy still updates, because the number only grows.
+def appVersionCode = versionParts.group(1).toInteger() * 1000000 +
+    versionParts.group(2).toInteger() * 10000 +
+    versionParts.group(3).toInteger()
+
+// SIGNING
+//
+// Android refuses to install an APK over an app signed with a different key, so
+// the in-app updater (AppInstallerPlugin) only works if every build is signed
+// with the same one. `assembleDebug` is not that: the debug key is generated on
+// first use per machine, so CI — a fresh VM each run — invented a new identity
+// for every build and no release could ever update the one before it.
+//
+// The real key is passed in by environment, never committed. Missing, this falls
+// back to the debug key so a plain local `assembleRelease` still produces
+// something installable on the phone in front of you — a build that cannot
+// update anyone else's install, which is exactly what a local build is.
+def keystorePath = System.getenv('FAMCART_KEYSTORE_FILE')
+def hasKeystore = keystorePath != null && !keystorePath.isEmpty() && file(keystorePath).exists()
 
 android {
     namespace = "com.famcart.app"
@@ -7,8 +46,8 @@ android {
         applicationId "com.famcart.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode appVersionCode
+        versionName appVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +55,19 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (hasKeystore) {
+                storeFile file(keystorePath)
+                storePassword System.getenv('FAMCART_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('FAMCART_KEY_ALIAS')
+                keyPassword System.getenv('FAMCART_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         release {
+            signingConfig hasKeystore ? signingConfigs.release : signingConfigs.debug
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

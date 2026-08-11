@@ -25,6 +25,8 @@ export interface FirstRunGreeting {
   notificationError: Ref<string>
   /** Begin the sequence, once the list is up and worth looking at. */
   start: () => void
+  /** Whether the sequence still has a dialog to show. */
+  isGreeting: () => boolean
   closeTour: () => void
   acceptNotifications: () => Promise<void>
   declineNotifications: () => void
@@ -36,6 +38,15 @@ export function useFirstRunGreeting(options: {
   // failed write, not just navigator.onLine, and there should be one answer.
   isOffline: () => boolean
   storage?: Storage
+  // Called once this sequence has nothing left to show — immediately for a
+  // returning user, or when the last dialog in it closes.
+  //
+  // Anything else that wants the screen on startup has to wait for this rather
+  // than race it. The update offer learned that the hard way: it ran straight
+  // after start(), found the tour already open, and stood down for good, so a
+  // freshly installed old APK never got told it was old — which is the one case
+  // where it matters most, since an APK is sideloaded and can be any age.
+  onSettled?: () => void
 }): FirstRunGreeting {
   const { userId, isOffline } = options
   const storage = options.storage ?? localStorage
@@ -44,24 +55,39 @@ export function useFirstRunGreeting(options: {
   const notificationPromptOpen = ref(false)
   const notificationError = ref('')
 
+  function settle(): void {
+    options.onSettled?.()
+  }
+
   // First-login greeting: users who never answered the notifications question
   // get asked once, right after their list is up. An unset preference is the
   // signal — both prompt buttons store a decision, so it never re-appears.
-  function maybePromptForNotifications(): void {
-    if (!userId.value) return
-    if (getNotificationPreference(storage)) return
+  function shouldPromptForNotifications(): boolean {
+    if (!userId.value) return false
+    if (getNotificationPreference(storage)) return false
     // No point asking where accepting could do nothing: unsupported browser,
     // push not configured, or offline (the OneSignal subscription needs the
     // network). Leaving the preference unset re-asks on the next login instead.
-    if (!isPushSupported() || !getOneSignalAppId() || isOffline()) return
+    if (!isPushSupported() || !getOneSignalAppId() || isOffline()) return false
     // Desktop browsers never get greeted with a permission ask; the preference
     // stays unset so the same account is still asked on a phone later.
-    if (isDesktopBrowser()) return
+    if (isDesktopBrowser()) return false
+    return true
+  }
+
+  function maybePromptForNotifications(): void {
+    if (!shouldPromptForNotifications()) {
+      settle()
+      return
+    }
     notificationPromptOpen.value = true
   }
 
   function start(): void {
-    if (!userId.value) return
+    if (!userId.value) {
+      settle()
+      return
+    }
     if (!hasSeenTour(storage)) {
       onboardingTourOpen.value = true
       return
@@ -73,6 +99,10 @@ export function useFirstRunGreeting(options: {
     onboardingTourOpen.value = false
     markTourSeen(storage)
     maybePromptForNotifications()
+  }
+
+  function isGreeting(): boolean {
+    return onboardingTourOpen.value || notificationPromptOpen.value
   }
 
   async function acceptNotifications(): Promise<void> {
@@ -89,11 +119,13 @@ export function useFirstRunGreeting(options: {
       notificationError.value =
         'Could not enable notifications. You can try again from Account Settings.'
     }
+    settle()
   }
 
   function declineNotifications(): void {
     notificationPromptOpen.value = false
     setNotificationPreference(storage, 'off')
+    settle()
   }
 
   return {
@@ -101,6 +133,7 @@ export function useFirstRunGreeting(options: {
     notificationPromptOpen,
     notificationError,
     start,
+    isGreeting,
     closeTour,
     acceptNotifications,
     declineNotifications,
