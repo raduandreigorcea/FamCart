@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, provide, watch } from 'vue'
 import { useAuth, useUser } from '@clerk/vue'
 import { useRouter } from 'vue-router'
 import { useSupabase } from '../supabase'
@@ -12,6 +12,7 @@ import ShoppingList from '../components/ShoppingList.vue'
 import AddItemForm from '../components/AddItemForm.vue'
 import BarcodeScannerModal from '../components/BarcodeScannerModal.vue'
 import OnboardingTour from '../components/OnboardingTour.vue'
+import UpdateAvailableModal from '../components/UpdateAvailableModal.vue'
 import { useHouseholdRealtime } from '../lib/householdRealtime'
 import { useProductSuggestions } from '../lib/productSuggestions'
 import {
@@ -41,6 +42,7 @@ import { flushOfflineQueue, isOfflineError } from '../lib/offlineQueue'
 import { isCurrentlyOffline, onReconnect } from '../lib/connectivity'
 import { rememberUser, getRememberedUser } from '../lib/session'
 import { useFirstRunGreeting } from '../lib/firstRunGreeting'
+import { updateCheckKey, useUpdatePrompt } from '../lib/updatePrompt'
 import { syncPushUser } from '../lib/pushNotifications'
 import {
   clampItemLimit,
@@ -170,7 +172,29 @@ const {
   closeTour: closeOnboardingTour,
   acceptNotifications,
   declineNotifications,
-} = useFirstRunGreeting({ userId, isOffline: isCurrentlyOffline })
+} = useFirstRunGreeting({
+  userId,
+  isOffline: isCurrentlyOffline,
+  // The update offer goes last, after the one-time greeting has had its say.
+  onSettled: () => void startUpdateCheck(),
+})
+// The Android app cannot update itself the way the web app does, so it has to be
+// told. A no-op everywhere else — see lib/nativeUpdate.
+const appVersion = __APP_VERSION__
+const {
+  updateOpen,
+  updatePhase,
+  updateVersion,
+  updateProgress,
+  start: startUpdateCheck,
+  checkNow: checkForUpdateNow,
+  install: installUpdate,
+  openInstallSettings,
+  openReleasesPage,
+  dismiss: dismissUpdate,
+} = useUpdatePrompt({ currentVersion: appVersion })
+// Settings → About runs the same check on demand; see updateCheckKey.
+provide(updateCheckKey, checkForUpdateNow)
 const hasInitialized = ref(false)
 // True while switchHousehold is tearing down the old household and loading the new one.
 // Drives the skeleton (instead of the "no items" empty state) so a switch never
@@ -592,6 +616,8 @@ async function runInitializeHome() {
   await setupRealtimeSubscriptions()
   hasInitialized.value = true
   persistSnapshot()
+  // The update offer is not called here: it hangs off this sequence's onSettled,
+  // so it lands after the tour and the notifications ask rather than racing them.
   startFirstRunGreeting()
 }
 
@@ -934,6 +960,19 @@ async function refreshMembershipOrRedirect() {
       :open="notificationPromptOpen"
       @accept="acceptNotifications"
       @decline="declineNotifications"
+    />
+
+    <UpdateAvailableModal
+      :open="updateOpen"
+      :phase="updatePhase"
+      :version="updateVersion"
+      :current-version="appVersion"
+      :progress="updateProgress"
+      @install="installUpdate"
+      @later="dismissUpdate"
+      @open-settings="openInstallSettings"
+      @open-releases="openReleasesPage"
+      @close="updateOpen = false"
     />
 
     <ErrorModal

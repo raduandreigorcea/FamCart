@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useAuth } from '@clerk/vue'
+import AppButton from './AppButton.vue'
 import AppModal from './AppModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
 import ErrorModal from './ErrorModal.vue'
 import slidersIconRaw from '../assets/settings.svg?raw'
+import { canSelfUpdate } from '../lib/nativeUpdate'
+import { updateCheckKey } from '../lib/updatePrompt'
 import {
   enablePushNotifications,
   disablePushNotifications,
@@ -41,6 +44,38 @@ const { userId } = useAuth()
 const appVersion = __APP_VERSION__
 
 const aboutOpen = ref(false)
+
+// Asking for an update by hand.
+//
+// The startup check deliberately stays quiet in several situations — it waits
+// out an interval, and it says nothing about a version already declined. Both
+// are right for a check nobody asked for and wrong once someone goes looking,
+// so this route applies neither. It is also the only way back from a dismissal:
+// Back on the update dialog declines that version, and without this the app
+// would have nothing to say until the next release.
+//
+// Provided by HomeView rather than passed down through AppTopbar. Absent (null)
+// anywhere that view does not own — the setup screen, and every test that mounts
+// this modal on its own — so the row simply does not appear there.
+const runUpdateCheck = inject(updateCheckKey, null)
+type UpdateCheckState = 'idle' | 'checking' | 'up-to-date' | 'failed'
+const updateCheckState = ref<UpdateCheckState>('idle')
+const canCheckForUpdates = computed(() => canSelfUpdate() && !!runUpdateCheck)
+
+async function checkForUpdates() {
+  if (!runUpdateCheck || updateCheckState.value === 'checking') return
+  updateCheckState.value = 'checking'
+  const result = await runUpdateCheck()
+  // 'found' opens the update dialog, which belongs to the view behind this one.
+  // Close everything so it is not buried under two layers of settings.
+  if (result === 'found') {
+    updateCheckState.value = 'idle'
+    aboutOpen.value = false
+    emit('close')
+    return
+  }
+  updateCheckState.value = result
+}
 const themeMode = ref<ThemeMode>('system')
 const notificationMode = ref<NotificationPreference>('on')
 const notificationHint = ref('')
@@ -227,7 +262,24 @@ watch(
       <img src="/icons/pwa-192.png" alt="" class="about-logo" />
       <h3 id="about-dialog-title" class="about-name">FamCart</h3>
       <p class="about-version">v{{ appVersion }}</p>
-      <p class="about-tagline">One shopping list, shared with your household.</p>
+
+      <div v-if="canCheckForUpdates" class="about-update">
+        <AppButton
+          variant="secondary"
+          size="sm"
+          :disabled="updateCheckState === 'checking'"
+          @click="checkForUpdates"
+        >
+          {{ updateCheckState === 'checking' ? 'Checking…' : 'Check for updates' }}
+        </AppButton>
+        <p v-if="updateCheckState === 'up-to-date'" class="about-update__result">
+          FamCart is up to date.
+        </p>
+        <p v-else-if="updateCheckState === 'failed'" class="about-update__result">
+          Couldn't reach GitHub to check. Try again when you're back online.
+        </p>
+      </div>
+
       <p class="about-credit">
         Product data from
         <a class="settings-note-link" href="https://openfoodfacts.org" target="_blank" rel="noopener noreferrer">Open Food Facts</a>,
@@ -515,10 +567,19 @@ watch(
   color: var(--text-secondary);
 }
 
-.about-tagline {
-  margin: 0.5rem 0 0;
-  font-size: var(--text-sm);
+.about-update {
+  margin-top: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.about-update__result {
+  margin: 0;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
+  line-height: 1.4;
 }
 
 .about-credit {

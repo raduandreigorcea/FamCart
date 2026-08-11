@@ -107,7 +107,6 @@ describe('the About section', () => {
     const wrapper = await openAbout()
     expect(wrapper.text()).toContain('FamCart')
     expect(wrapper.find('.about-logo').exists()).toBe(true)
-    expect(wrapper.text()).toContain('One shopping list, shared with your household.')
   })
 
   // Injected from package.json at build time, so a version bump there is the
