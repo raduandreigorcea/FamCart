@@ -31,6 +31,10 @@ const props = defineProps({
   // The regulars, [{ name, maker }], offered as one-tap adds on the empty
   // list. Empty for a household with no history, which then gets the words alone.
   suggestedProducts: { type: Array as PropType<ProductSuggestion[]>, default: () => [] },
+  // The regulars are expected but have not arrived — the purchase history they
+  // are ranked from is still in flight. Distinct from having none: one is a gap
+  // to hold open, the other is a household with nothing to offer.
+  suggestedProductsLoading: { type: Boolean, default: false },
 })
 
 // 'all' | 'active' | 'checked'. Applied to what is RENDERED only -- the counts
@@ -123,6 +127,23 @@ const leftCount = computed(() => sumActiveQuantities(props.items))
 const checkedUnitCount = computed(() => sumCheckedQuantities(props.items))
 
 const skeletonNameWidths = ['55%', '38%', '62%', '30%']
+
+// Placeholder pills for the empty state's one-tap adds. Fixed widths rather than
+// percentages, because a chip is sized by its own name and not by the row it sits
+// in — and three uneven ones read as products where three equal ones read as a
+// loading bar cut into pieces.
+//
+// Each carries the plus glyph's width as well as a name's: the placeholder draws
+// no plus, since a mark saying "tap to add" on something that cannot be tapped is
+// a lie, but the pill still has to come out the size a real pill comes out.
+const skeletonChipWidths = ['4.4rem', '6.6rem', '5.2rem']
+
+// The "Buy again" block has something to show, or is about to. Kept as one
+// question so the label and the chips appear and leave together: a heading over
+// nothing is worse than no heading.
+const showRestart = computed(
+  () => props.suggestedProducts.length > 0 || props.suggestedProductsLoading,
+)
 
 // ─── Checkout action ─────────────────────────────────────────────────────────
 // The bar owns the celebration: it drains the checked rows into the cart and
@@ -354,9 +375,23 @@ const labelText = computed(() =>
 
     <!-- Same name as the search screen's section, because it is the same idea
          and one name for it is how it gets learned. -->
-    <div v-if="suggestedProducts.length" class="restart">
+    <div v-if="showRestart" class="restart">
       <p class="restart__label">Buy again</p>
-      <div class="restart__chips">
+
+      <!-- The words above arrive from the cached snapshot, on the first painted
+           frame; the chips have to wait for the purchase history to say which
+           products they are. Without something standing in that gap the screen
+           resolves twice — a title alone, then pills shoving it up a row a
+           moment later. Placeholders in the pills' own shape hold the space so
+           the real ones land where these stood. -->
+      <div v-if="suggestedProductsLoading" class="restart__chips" aria-hidden="true">
+        <span v-for="(width, idx) in skeletonChipWidths" :key="idx" class="chip chip--skeleton">
+          <SkeletonBlock width="1.15rem" height="1.15rem" radius="var(--radius-pill)" />
+          <SkeletonBlock :width="width" height="0.8rem" />
+        </span>
+      </div>
+
+      <div v-else class="restart__chips">
         <button
           v-for="product in suggestedProducts"
           :key="productKey(product.name, product.maker)"
@@ -595,6 +630,14 @@ const labelText = computed(() =>
 .chip:focus-visible {
   border-color: var(--color-primary);
   background: color-mix(in srgb, var(--color-primary) 7%, var(--bg-surface));
+}
+
+/* The pill's own shape, borrowed whole so the real chips land exactly where
+   these stood. It is a span, not a button: nothing here can be pressed yet, and
+   pointer-events keeps the hover styling above from suggesting otherwise. */
+.chip--skeleton {
+  pointer-events: none;
+  cursor: default;
 }
 
 /* Presses in rather than lifting: the chip is going onto the list, not away. */
