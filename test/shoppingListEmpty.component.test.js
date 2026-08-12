@@ -65,6 +65,58 @@ describe('the empty list', () => {
       expect(wrapper.find('.restart').exists()).toBe(false)
       expect(wrapper.find('.empty-state').exists()).toBe(true)
     })
+
+    // The words come from the cached snapshot on the first painted frame; the
+    // regulars have to wait for the purchase history that ranks them. Left to
+    // itself the screen resolved twice — a title alone, then pills arriving
+    // underneath and shoving it up a row.
+    describe('while the history that ranks them is still in flight', () => {
+      const placeholders = (wrapper) => wrapper.findAll('.chip--skeleton')
+
+      it('holds the space with pills in the same shape', () => {
+        const wrapper = mountEmpty({ hasShopped: true, suggestedProductsLoading: true })
+
+        expect(placeholders(wrapper).length).toBeGreaterThan(0)
+        // Under the same heading the real ones will land under, so the label
+        // does not arrive with them and move everything again.
+        expect(wrapper.find('.restart__label').text()).toBe('Buy again')
+      })
+
+      it('offers nothing to press, and nothing for a reader to hear', () => {
+        const wrapper = mountEmpty({ hasShopped: true, suggestedProductsLoading: true })
+
+        // Spans, not buttons: there is nothing behind them to add yet.
+        expect(placeholders(wrapper).every((chip) => chip.element.tagName === 'SPAN')).toBe(true)
+        expect(wrapper.findAll('.chip__name')).toHaveLength(0)
+        expect(wrapper.find('.restart__chips').attributes('aria-hidden')).toBe('true')
+      })
+
+      it('gives way to the real regulars rather than sitting alongside them', async () => {
+        const wrapper = mountEmpty({ hasShopped: true, suggestedProductsLoading: true })
+        await wrapper.setProps({ suggestedProducts: REGULARS, suggestedProductsLoading: false })
+
+        expect(placeholders(wrapper)).toHaveLength(0)
+        expect(wrapper.findAll('.chip')).toHaveLength(2)
+      })
+
+      // A household with no history is not waiting for anything, and pills that
+      // resolve to nothing are a promise the screen cannot keep.
+      it('holds no space for a household that has never shopped', () => {
+        const wrapper = mountEmpty({ hasShopped: false, suggestedProductsLoading: false })
+
+        expect(wrapper.find('.restart').exists()).toBe(false)
+      })
+
+      // The history came back empty — retention caps it at 30 days, so a
+      // household that shopped long enough ago has nothing to offer after all.
+      it('takes the whole block away when the answer is that there are none', async () => {
+        const wrapper = mountEmpty({ hasShopped: true, suggestedProductsLoading: true })
+        await wrapper.setProps({ suggestedProducts: [], suggestedProductsLoading: false })
+
+        expect(wrapper.find('.restart').exists()).toBe(false)
+        expect(title(wrapper)).toBe('All bought')
+      })
+    })
   })
 
   it('stays out of the way while there are rows to show', () => {

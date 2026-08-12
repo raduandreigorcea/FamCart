@@ -304,7 +304,50 @@ const activeError = computed(() => {
 // correcting it a moment later is worse than waiting. Hold the empty state until
 // the answer is actually known. There are no rows to delay in the meantime;
 // this gates nothing but the message itself.
-const emptyStateAnswerable = computed(() => productStatsLoaded.value || boughtThisSession.value)
+//
+// But "known" is not the same as "fetched". The cached snapshot carries the answer
+// for the household it describes, and hasShopped above already trusts it — so a
+// returning user whose list is empty has no reason to sit in front of a blank
+// column for the length of a purchase_history query. That wait was the whole
+// delay: the skeleton comes down on the first painted frame and nothing replaced
+// it until the fourth round trip of boot landed.
+//
+// Only ever unblocks the "yes" — cachedShoppedHouseholdId is set only when the
+// snapshot said this household has shopped, so the genuinely ambiguous case
+// still waits for the query, which is what the paragraph above asks for.
+const emptyStateAnswerable = computed(
+  () =>
+    productStatsLoaded.value
+    || boughtThisSession.value
+    || (!!householdId.value && cachedShoppedHouseholdId.value === householdId.value),
+)
+
+// Whether to say the list is empty at all, as opposed to which of the two
+// sentences to say.
+//
+// paintedFromCache counts alongside hasInitialized for the reason initialLoading
+// gives above: a painted snapshot is a real list, and an empty one is a real
+// answer. Waiting for hasInitialized instead meant waiting for the whole boot
+// sequence — households, header, items, realtime — with the skeleton already
+// down, which is a blank column for as long as that takes. The stale reading can
+// be wrong (someone added something since the snapshot), and then the rows
+// arrive over it; that is the same bargain the cached list itself is already
+// making, and it is a better one than showing nothing.
+const showEmptyState = computed(
+  () =>
+    (hasInitialized.value || paintedFromCache.value)
+    && !items.value.length
+    && !loadError.value
+    && !switchingHousehold.value
+    && emptyStateAnswerable.value,
+)
+
+// The regulars on the empty state are ranked from purchase history, so they
+// arrive a beat after the words do now that the words come from the cache. Only
+// a household we already know has shopped gets placeholders held for it: one that
+// has not is not waiting for anything, and pills that resolve to nothing would be
+// a promise the screen cannot keep.
+const restartProductsLoading = computed(() => hasShopped.value && !productStatsLoaded.value)
 
 let stopReconnect: (() => void) | null = null
 
@@ -605,14 +648,18 @@ async function runInitializeHome() {
   const activeHousehold = households.value.find((f) => f.id === storedActiveId) || households.value[0]
   householdId.value = activeHousehold.id
   saveActiveHouseholdId(localStorage, effectiveUserId.value, activeHousehold.id)
+  // Started here, the moment householdId exists, rather than after the three
+  // awaits below. Not awaited either way — the list must paint without waiting on
+  // a ranking signal, and until it lands suggestions just rank by the global
+  // catalog order. But issued last it was the fourth serial round trip of boot,
+  // and an empty list has nothing to say until it answers (emptyStateAnswerable).
+  // Run alongside the others it is usually back before the items are.
+  void loadHouseholdProductStats()
   // Writes queued during a previous offline session land before the first
   // fetch, so the list below already reflects them. No-op when the queue is empty.
   await flushOfflineQueue(localStorage, effectiveUserId.value, db)
   await loadHouseholdHeader()
   await loadItems()
-  // Not awaited: the list should paint without waiting on a ranking signal.
-  // Until it lands, suggestions simply rank by the global catalog order.
-  void loadHouseholdProductStats()
   await setupRealtimeSubscriptions()
   hasInitialized.value = true
   persistSnapshot()
@@ -814,6 +861,11 @@ async function switchHousehold(id: string) {
   // topbar skeletons.
   const next = households.value.find((f) => f.id === id)
   if (next) householdName.value = next.name
+  // Alongside the two fetches below rather than after them, for the reason given
+  // in runInitializeHome: the new household's empty list stays blank until this
+  // answers, and issued last it answered a round trip after the skeleton came
+  // down.
+  void loadHouseholdProductStats()
   try {
     await loadHouseholdHeader()
     await loadItems()
@@ -823,7 +875,6 @@ async function switchHousehold(id: string) {
     // placeholder up behind a websocket handshake just delays the real list.
     switchingHousehold.value = false
   }
-  void loadHouseholdProductStats()
   await setupRealtimeSubscriptions()
 }
 
@@ -906,9 +957,10 @@ async function refreshMembershipOrRedirect() {
           v-model:filter="listFilter"
           :member-profiles="memberProfileMap"
           :loading="listLoading"
-          :show-empty="hasInitialized && !items.length && !loadError && !switchingHousehold && emptyStateAnswerable"
+          :show-empty="showEmptyState"
           :has-shopped="hasShopped"
           :suggested-products="restartProducts"
+          :suggested-products-loading="restartProductsLoading"
           @add="selectSuggestion"
           @toggle="toggleItem"
           @delete="deleteItem"
