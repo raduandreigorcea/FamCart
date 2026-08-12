@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch, type PropType } from 'vue'
+import { closeModal, openModal } from '../lib/modalStack'
 import { getProductEmoji } from '../lib/productEmoji'
 import BackButton from './BackButton.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
@@ -452,7 +453,31 @@ function close() {
   collapse()
 }
 
+// ─── Android's Back button ───────────────────────────────────────────────────
+// This form's place in the layer stack, joined for the same reason PopoverMenu
+// joins it: on a phone a focused field is not a field, it is a screen covering
+// the list, and Back has to mean "put that away". Without this the press fell
+// through an empty stack to Home's root-route case and exited the app with the
+// search still up — losing whatever had been typed, which is the one thing Back
+// is never supposed to do.
+//
+// Keyed on focus rather than on `expanded`, because the lift is phone-only: on a
+// wider screen the field takes focus without becoming a screen, and Back should
+// still hand the focus back rather than quit. close() no-ops on the half that
+// does not apply.
+//
+// It does not lock the page's scroll. Lifted, the form owns the viewport itself
+// and its cover already swallows touch; collapsed, a text cursor is no reason to
+// freeze the list.
+const layer = Symbol('add-item-search')
+
+watch(inputFocused, (focused) => {
+  if (focused) openModal(layer, { close, locksScroll: false })
+  else closeModal(layer)
+})
+
 onBeforeUnmount(() => {
+  closeModal(layer)
   clearSlideTimer()
   if (addedTimer) clearTimeout(addedTimer)
   bindViewportListeners(false)
