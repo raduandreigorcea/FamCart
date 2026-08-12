@@ -49,13 +49,22 @@ const mountedWrappers = []
 
 // `history` is a function so each call to purchase_history can be answered
 // differently — the point of most of these tests is the window before it lands.
-async function mountHome({ items = [], history = () => ({ data: [], error: null }) } = {}) {
+//
+// `members` overrides the household lookup, so a test can hold the whole boot
+// sequence open and inspect what a returning user sees before any of it lands.
+async function mountHome({
+  items = [],
+  history = () => ({ data: [], error: null }),
+  members = null,
+} = {}) {
   mocks.db = createFakeDb()
   mocks.routerReplace = vi.fn()
-  mocks.db.handlers['household_members.select'] = (q) =>
-    q.filters.user_id
-      ? { data: [{ household_id: 'fam-1', households: { id: 'fam-1', name: 'Fam' } }], error: null }
-      : { data: [{ user_id: 'user-1', display_name: 'Test User', image_url: null, role: 'moderator' }], error: null }
+  mocks.db.handlers['household_members.select'] =
+    members ??
+    ((q) =>
+      q.filters.user_id
+        ? { data: [{ household_id: 'fam-1', households: { id: 'fam-1', name: 'Fam' } }], error: null }
+        : { data: [{ user_id: 'user-1', display_name: 'Test User', image_url: null, role: 'moderator' }], error: null })
   mocks.db.handlers['households.select'] = () => ({
     data: { name: 'Fam', invite_code: 'ABCDEFGH', created_by: 'user-1', max_items_per_member: 50 },
     error: null,
@@ -152,6 +161,57 @@ describe('the empty list', () => {
     expect(hasShopped(wrapper)).toBe(true)
   })
 
+  // The cached answer is not an offline consolation prize. Online it is still the
+  // answer, and waiting for purchase_history to restate it is what left a
+  // returning user staring at a blank column on every cold open: the skeleton
+  // comes down on the painted frame, and nothing replaced it until the query
+  // landed several round trips later.
+  it('answers from the cache online too, without waiting for the history', async () => {
+    saveHouseholdSnapshot(localStorage, 'user-1', {
+      householdId: 'fam-1',
+      householdName: 'Fam',
+      householdInviteCode: 'ABCDEFGH',
+      householdOwnerId: 'user-1',
+      householdItemLimit: 50,
+      householdEmoji: '',
+      householdMembers: [],
+      items: [],
+      hasShopped: true,
+    })
+
+    const wrapper = await mountHome({ history: pending() })
+
+    expect(showEmpty(wrapper)).toBe(true)
+    expect(hasShopped(wrapper)).toBe(true)
+  })
+
+  // And not only once the boot finishes. A painted snapshot is a real list and an
+  // empty one is a real answer — the same reading the skeleton already goes by,
+  // which is why holding the message back until hasInitialized left a gap with
+  // nothing in it at all.
+  it('says so on the painted frame, before the boot sequence has landed', async () => {
+    saveHouseholdSnapshot(localStorage, 'user-1', {
+      householdId: 'fam-1',
+      householdName: 'Fam',
+      householdInviteCode: 'ABCDEFGH',
+      householdOwnerId: 'user-1',
+      householdItemLimit: 50,
+      householdEmoji: '',
+      householdMembers: [],
+      items: [],
+      hasShopped: true,
+    })
+
+    // Nothing about the boot ever resolves: no households, no header, no items.
+    const wrapper = await mountHome({ members: () => new Promise(() => {}), history: pending() })
+
+    expect(showEmpty(wrapper)).toBe(true)
+    expect(hasShopped(wrapper)).toBe(true)
+    // And no skeleton over it, which would be the same blank screen wearing a
+    // different coat.
+    expect(list(wrapper).props('loading')).toBe(false)
+  })
+
   // The snapshot is keyed to the USER, not the household. Creating or joining a
   // household makes it active immediately, but the snapshot still describes the
   // previous one — so its cached "this household has shopped" answer was being
@@ -175,6 +235,46 @@ describe('the empty list', () => {
 
     expect(showEmpty(wrapper)).toBe(true)
     expect(hasShopped(wrapper)).toBe(false)
+  })
+
+  // The words now arrive before the regulars do, so something has to stand in
+  // the gap between them.
+  describe('the regulars underneath', () => {
+    const restartLoading = (wrapper) => list(wrapper).props('suggestedProductsLoading')
+
+    it('holds their space while the history that ranks them is in flight', async () => {
+      saveHouseholdSnapshot(localStorage, 'user-1', {
+        householdId: 'fam-1',
+        householdName: 'Fam',
+        householdInviteCode: 'ABCDEFGH',
+        householdOwnerId: 'user-1',
+        householdItemLimit: 50,
+        householdEmoji: '',
+        householdMembers: [],
+        items: [],
+        hasShopped: true,
+      })
+
+      const wrapper = await mountHome({ history: pending() })
+
+      expect(showEmpty(wrapper)).toBe(true)
+      expect(restartLoading(wrapper)).toBe(true)
+    })
+
+    it('stops holding it once the history has answered', async () => {
+      const wrapper = await mountHome({ history: () => ({ data: BOUGHT, error: null }) })
+
+      expect(restartLoading(wrapper)).toBe(false)
+      expect(list(wrapper).props('suggestedProducts').length).toBeGreaterThan(0)
+    })
+
+    // Nothing is coming for a household that has never bought anything, so there
+    // is no space to hold.
+    it('holds nothing for a household with no history at all', async () => {
+      const wrapper = await mountHome({ history: pending() })
+
+      expect(restartLoading(wrapper)).toBe(false)
+    })
   })
 
   // The other half of the bug: a first-ever checkout empties the list while the
