@@ -249,3 +249,42 @@ describe('findUpdate', () => {
   })
 
 })
+
+// ─── What a published version BELOW a declined one does ──────────────────────
+//
+// The decline record is permanent by design, and that is safe only while
+// versions go up: "not this one" is answered by the next build, which is always
+// higher. Publish something lower than a version already declined and that
+// premise is gone -- every build from there on compares at or below the record,
+// so the automatic check goes quiet and stays quiet. The manual check is the
+// only way back, because it is the one route that ignores the record.
+describe('a release published below a declined version', () => {
+  const declined = { famcart_update_skipped_version: '0.3.0' }
+
+  it('is never offered, however long the phone waits', async () => {
+    const storage = fakeStorage(declined)
+    const fetchImpl = vi.fn(async () => releaseResponse('FamCart v0.2.1'))
+
+    const found = await findUpdate({
+      currentVersion: '0.2.0',
+      storage,
+      fetchImpl,
+      // A year later, so no interval can be the reason it stayed quiet.
+      now: Date.now() + 365 * 24 * 60 * 60 * 1000,
+    })
+
+    // 0.2.1 is genuinely newer than the 0.2.0 installed here -- the only thing
+    // stopping it is the 0.3.0 that was declined while it was published.
+    expect(compareVersions('0.2.1', '0.2.0')).toBe(1)
+    expect(found).toBeNull()
+  })
+
+  it('starts working again as soon as a build clears the declined version', async () => {
+    const storage = fakeStorage(declined)
+    const fetchImpl = vi.fn(async () => releaseResponse('FamCart v0.3.1'))
+
+    const found = await findUpdate({ currentVersion: '0.2.0', storage, fetchImpl })
+
+    expect(found).toEqual({ version: '0.3.1', apkUrl: 'https://x/FamCart.apk' })
+  })
+})
