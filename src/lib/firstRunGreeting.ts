@@ -64,7 +64,7 @@ export function useFirstRunGreeting(options: {
   // signal — both prompt buttons store a decision, so it never re-appears.
   function shouldPromptForNotifications(): boolean {
     if (!userId.value) return false
-    if (getNotificationPreference(storage)) return false
+    if (getNotificationPreference(storage, userId.value)) return false
     // No point asking where accepting could do nothing: unsupported browser,
     // push not configured, or offline (the OneSignal subscription needs the
     // network). Leaving the preference unset re-asks on the next login instead.
@@ -107,15 +107,20 @@ export function useFirstRunGreeting(options: {
 
   async function acceptNotifications(): Promise<void> {
     notificationPromptOpen.value = false
-    setNotificationPreference(storage, 'on')
-    const result = await enablePushNotifications(userId.value ?? '')
+    // Read once, up front: the preference belongs to the account that answered
+    // the prompt, and enabling push is a round trip the session can end during.
+    // Re-reading the ref after it would file the answer under whoever is signed
+    // in by then, or under nobody.
+    const uid = userId.value ?? ''
+    setNotificationPreference(storage, uid, 'on')
+    const result = await enablePushNotifications(uid)
     if (result === 'permission-denied') {
       // The browser said no — reflect reality instead of a preference that lies.
-      setNotificationPreference(storage, 'off')
+      setNotificationPreference(storage, uid, 'off')
       notificationError.value =
         'Notifications are blocked for FamCart in your device or browser settings.'
     } else if (result === 'error') {
-      setNotificationPreference(storage, 'off')
+      setNotificationPreference(storage, uid, 'off')
       notificationError.value =
         'Could not enable notifications. You can try again from Account Settings.'
     }
@@ -124,7 +129,7 @@ export function useFirstRunGreeting(options: {
 
   function declineNotifications(): void {
     notificationPromptOpen.value = false
-    setNotificationPreference(storage, 'off')
+    setNotificationPreference(storage, userId.value ?? '', 'off')
     settle()
   }
 

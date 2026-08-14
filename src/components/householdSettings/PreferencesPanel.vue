@@ -174,6 +174,7 @@ async function saveItemLimit() {
               <div class="input-wrapper">
                 <input
                   id="householdNameInput"
+                  aria-label="Household name"
                   v-model="renameValue"
                   class="panel-input"
                   type="text"

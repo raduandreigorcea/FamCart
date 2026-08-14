@@ -4,6 +4,14 @@ import arrowRightIcon from '../assets/arrow-right.svg?raw'
 defineProps({
   modelValue: String,
   type: { type: String, default: 'text' },
+  // What the field is called, for anyone who cannot see the form around it.
+  //
+  // The placeholder is not that. It is a hint, it is not exposed as an
+  // accessible name reliably, and it disappears the moment someone types — so a
+  // screen-reader user checking what they are in the middle of filling in hears
+  // "edit text" and nothing else. This component is the sign-in email field and
+  // both household setup fields, which made it the app's front door.
+  ariaLabel: String,
   placeholder: String,
   autocomplete: String,
   maxlength: [String, Number],
@@ -21,6 +29,7 @@ defineEmits(['update:modelValue'])
     <input
       :value="modelValue"
       :type="type"
+      :aria-label="ariaLabel"
       :placeholder="placeholder"
       :autocomplete="autocomplete"
       :maxlength="maxlength"

@@ -1,27 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch, type PropType } from 'vue'
+import { computed, onBeforeUnmount, ref, useId, watch, type PropType } from 'vue'
 import { closeModal, openModal } from '../lib/modalStack'
+import { isPhoneWidth, usePhoneSearchScreen } from '../lib/usePhoneSearchScreen'
+import { useTapPops } from '../lib/useTapPops'
+import { useAddedConfirmation } from '../lib/useAddedConfirmation'
 import { getProductEmoji } from '../lib/productEmoji'
 import BackButton from './BackButton.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import checkIcon from '../assets/check.svg?raw'
 import scanBarcodeIcon from '../assets/scan-barcode.svg?raw'
 import { productKey, type ProductSuggestion } from '../lib/productSearch'
-
-// Phone search mode: the same boundary PopoverMenu uses to pick sheet over
-// popover. Above it nothing below changes and the form stays in the flow.
-const PHONE_QUERY = '(max-width: 599.98px)'
-const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
-
-const mediaMatches = (query: string) =>
-  typeof window !== 'undefined' &&
-  typeof window.matchMedia === 'function' &&
-  window.matchMedia(query).matches
-
-// How long the form is allowed to be mid-slide before we tidy up regardless.
-// Comfortably past --transition-base, so it only ever fires when the
-// transitionend was swallowed rather than racing a real one.
-const SLIDE_TIMEOUT_MS = 400
 
 // Presentational: the typed name lives in the parent (via v-model) so the add
 // flow can restore it when an optimistic insert fails. The suggestions list is
@@ -99,91 +87,65 @@ function onAction() {
 // options keeps focus in the input, so picking one never races the blur.
 const inputFocused = ref(false)
 
-const slotRef = ref<HTMLElement | null>(null)
-const rowRef = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLInputElement | null>(null)
 
-// Freezes the gap the form leaves behind once it goes fixed, so the list below
-// does not jump up to meet it.
-const slotStyle = ref<Record<string, string> | null>(null)
-// The screen the search fills: the visual viewport, so it ends where the
-// keyboard starts. Null until measured — the stylesheet's 100dvh covers that
-// frame.
-const screenBox = ref<Record<string, string> | null>(null)
-// The field is on its way back down. Everything in the band that is not the
-// field fades over exactly that journey, so the screen is empty by the time it
-// lands rather than resolving in pieces afterwards.
-const closing = ref(false)
+// The input and the results are a combobox and its listbox, and saying so is
+// what makes the pair navigable: without aria-controls the two are unrelated
+// elements that merely sit near each other, and without aria-expanded there is
+// no way to know the results opened at all. Generated rather than hardcoded so
+// the id stays unique if this form is ever mounted twice.
+const listboxId = useId()
 
-let slideTimer: ReturnType<typeof setTimeout> | null = null
+// The phone-only choreography — measuring the visual viewport, freezing the slot
+// the form leaves behind, and sliding the field between the two positions. All
+// of it lives in lib/usePhoneSearchScreen; this component keeps only the
+// decision of WHEN to expand and collapse.
+// Declared here rather than inside the composable: a string `ref="slotRef"` in
+// the template only binds to a directly-declared const.
+const slotRef = ref<HTMLElement | null>(null)
+const rowRef = ref<HTMLElement | null>(null)
+const { slotStyle, screenBox, closing, expand, collapse } = usePhoneSearchScreen({
+  expanded,
+  slotRef,
+  rowRef,
+})
 
 // ─── Counting the taps out loud ──────────────────────────────────────────────
-// Tapping a row again adds another of that product (the merge sums them), and
-// the row's flash says a tap landed but not how many. So from the second tap on,
-// the running count flies off the spot that was pressed: x2, x3, x4.
-//
-// They are thrown in scattered directions on purpose. Three tidy badges stacking
-// in the same place would read as one badge being replaced, which is the thing
-// the count is there to disprove -- and the third one has to look different from
-// the second or the tap did not visibly do anything.
-
-// Long enough to read, short enough to be gone before the next tap needs the
-// space. Mirrors the pop-drift animation below.
-const POP_MS = 900
-
-interface TapPop {
-  id: number
-  x: number
-  y: number
-  label: string
-  dx: number
-  dy: number
-  rot: number
-}
-
-const pops = ref<TapPop[]>([])
+// The running x2 / x3 / x4 that flies off a suggestion tapped more than once.
+// See lib/useTapPops — it draws a number and forgets it, and knows nothing about
+// products or the search.
 const wrapRef = ref<HTMLElement | null>(null)
-// Taps per product, for as long as this panel has been open.
-const tapCounts = ref<Map<string, number>>(new Map())
-let popId = 0
-
-function throwPop(event: MouseEvent, label: string) {
-  const wrap = wrapRef.value
-  if (!wrap) return
-  const rect = wrap.getBoundingClientRect()
-  // A wide fan, biased upward: a counter that drifts down goes straight under
-  // the finger that just pressed there, which is the one place it cannot be read.
-  const angle = -Math.PI / 2 + (Math.random() - 0.5) * 2.6
-  const distance = 34 + Math.random() * 26
-  const id = ++popId
-
-  pops.value = [
-    ...pops.value,
-    {
-      id,
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
-      label,
-      dx: Math.cos(angle) * distance,
-      dy: Math.sin(angle) * distance,
-      rot: (Math.random() - 0.5) * 34,
-    },
-  ]
-
-  setTimeout(() => {
-    pops.value = pops.value.filter((pop) => pop.id !== id)
-  }, POP_MS)
-}
+const { pops, countTap, reset: resetTapCounts } = useTapPops({ wrapRef })
 
 function selectSuggestion(product: ProductSuggestion, event?: MouseEvent) {
-  const key = productKey(product.name, product.maker)
-  const count = (tapCounts.value.get(key) ?? 0) + 1
-  tapCounts.value = new Map(tapCounts.value).set(key, count)
-  // Nothing on the first: one tap is one item, and the row's own flash and tick
-  // already say it landed. The count only becomes news once there is more than
-  // one of something.
-  if (count > 1 && event) throwPop(event, `x${count}`)
+  countTap(productKey(product.name, product.maker), event)
   emit('select', product)
+}
+
+// The rows commit on mousedown rather than click, so that pressing one never
+// takes focus off the input and drops the keyboard mid-flow (see the note on
+// the add button). That leaves the keyboard with no way in at all: Enter and
+// Space on a focused button raise `click`, never `mousedown`, and so does the
+// synthetic activation a screen reader sends — so tabbing to a suggestion and
+// pressing Enter did nothing.
+//
+// Both paths cannot simply be bound, or a pointer press would add the item
+// twice. `detail` is what separates them: it carries the click count, which is
+// 0 for exactly the activations that never had a pointer press behind them.
+// BackButton above can bind both because close() is idempotent; adding an item
+// is not.
+function isKeyboardActivation(event: MouseEvent): boolean {
+  return event.detail === 0
+}
+
+function onSuggestionClick(product: ProductSuggestion, event: MouseEvent) {
+  if (!isKeyboardActivation(event)) return
+  selectSuggestion(product, event)
+}
+
+function onAddCustomClick(event: MouseEvent) {
+  if (!isKeyboardActivation(event)) return
+  emit('add-custom')
 }
 
 // Before anything is typed the screen shows what this household buys, so the
@@ -219,229 +181,30 @@ const showingHint = computed(
 )
 
 // ─── Confirming the add ──────────────────────────────────────────────────────
-// Picking a product adds it and hands the screen straight back, ready for the
-// next item — which on the search screen means the tap has no visible result at
-// all, because the list it landed on is the thing this screen is covering.
-//
-// The answer is on the row that was tapped. It is still on screen: a pick no
-// longer clears the query, so the matches it came from are all still there. The
-// mark stays for as long as the panel is open rather than timing out, so the
-// results double as a record of what this search has already contributed — which
-// is the question you actually have on the third pass through "milk".
-//
-// Tapping an already-marked row still adds again; the merge sums it. The mark
-// says "this is on the list", not "this is spent".
-
-// How long the tapped row stays lit. Only the highlight is timed; the tick it
-// leaves behind is not.
-const ADDED_VISIBLE_MS = 2400
-
-const justAdded = ref<{ name: string; maker: string | null } | null>(null)
-let addedTimer: ReturnType<typeof setTimeout> | null = null
-
-// Every product added while this panel has been open, by productKey.
-const addedKeys = ref<Set<string>>(new Set())
-
-const justAddedKey = computed(() =>
-  justAdded.value ? productKey(justAdded.value.name, justAdded.value.maker) : '',
-)
-
-// Which of the two identical flash classes is in play. Tapping the same row
-// again has to flash it again -- that is how you see the third one land -- but
-// the row is already wearing the class, so nothing changes in the DOM and a CSS
-// animation only restarts when its declaration does. Alternating between two
-// rules that differ in name and nothing else is what forces that: one class
-// comes off, the other goes on, and the browser starts the animation over.
-const litPhase = ref(0)
-
-const isAdded = (product: ProductSuggestion) =>
-  addedKeys.value.has(productKey(product.name, product.maker))
-
-// The key of the most recent add, kept past the highlight's timer so a late
-// failure still knows which mark to take back.
-const lastAddedKey = ref('')
-
-watch(
-  () => props.lastAdded,
-  (product) => {
-    if (addedTimer) clearTimeout(addedTimer)
-    if (!product) {
-      // The parent only clears this when the add did not land after all (see
-      // clearLastAdded, "it did not land"). The mark has to come off with it, or
-      // a failed add leaves a product ticked as on a list it never reached.
-      justAdded.value = null
-      if (lastAddedKey.value) {
-        const next = new Set(addedKeys.value)
-        next.delete(lastAddedKey.value)
-        addedKeys.value = next
-        lastAddedKey.value = ''
-      }
-      return
-    }
-    justAdded.value = product
-    lastAddedKey.value = productKey(product.name, product.maker)
-    litPhase.value = litPhase.value === 0 ? 1 : 0
-    // Replaced rather than mutated: a Set added to in place is the same object,
-    // so the rows would not re-render and the tick would not appear until
-    // something else happened to redraw them.
-    addedKeys.value = new Set(addedKeys.value).add(productKey(product.name, product.maker))
-    addedTimer = setTimeout(() => {
-      justAdded.value = null
-      addedTimer = null
-    }, ADDED_VISIBLE_MS)
-  },
-)
+// Which rows this search has already put on the list, and which one to light
+// up about it. All of it lives in lib/useAddedConfirmation; what stays here is
+// the decision of when a visit to the search has ended.
+const { announcement, justAddedKey, litPhase, isAdded, forgetAdded } = useAddedConfirmation({
+  lastAdded: () => props.lastAdded,
+})
 
 // The record is of this visit to the search, not of the session. Leaving the
 // panel and coming back should not show ticks against a trip already finished.
 watch(panelOpen, (open) => {
   if (!open) {
-    addedKeys.value = new Set()
-    tapCounts.value = new Map()
+    forgetAdded()
+    resetTapCounts()
   }
 })
 
 // ─── Phone search mode ───────────────────────────────────────────────────────
-// On a phone the dropdown has nowhere to go: 72px of fixed topbar above it and
-// the keyboard below leave it a 275px slot in the middle of an empty screen.
-// Focusing the input turns the whole thing into a screen instead — the field
-// rises into a header band at the top edge and the matches run edge to edge
-// beneath it, on one surface, down to wherever the keyboard starts.
-//
-// Only the field travels; the band, the results and the way out fade in around
-// it. It is the one thing the user touched, so it is the one thing that should
-// not blink out and reappear somewhere else.
-
-// offsetTop + height is the visual viewport in layout coordinates, which is
-// what makes this right both on Android (the WebView resizes, offsetTop stays
-// 0) and on iOS (it does not resize, and offsetTop carries the difference).
-function measureScreen() {
-  const vv = typeof window !== 'undefined' ? window.visualViewport : null
-  if (!vv) {
-    screenBox.value = typeof window !== 'undefined' ? { top: '0px', height: `${window.innerHeight}px` } : null
-    return
-  }
-  screenBox.value = { top: `${Math.round(vv.offsetTop)}px`, height: `${Math.round(vv.height)}px` }
-}
-
-// A rotation can cross out of phone width with the screen still open, and a
-// phone's search screen stretched across a desktop column is not a layout.
-function onResize() {
-  if (!expanded.value) return
-  if (!mediaMatches(PHONE_QUERY)) collapse()
-  else measureScreen()
-}
-
-function bindViewportListeners(on: boolean) {
-  if (typeof window === 'undefined') return
-  const method = on ? 'addEventListener' : ('removeEventListener' as const)
-  window[method]('resize', onResize)
-  window.visualViewport?.[method]('resize', measureScreen)
-  window.visualViewport?.[method]('scroll', measureScreen)
-}
-
-// Move the field back to where it just was, with transitions off, then release
-// it: the browser animates the release rather than the jump. Without silencing
-// the transition first, this inverting step would itself animate — the wrong
-// way, at the wrong time.
-function slideFrom(startTop: number) {
-  const row = rowRef.value
-  if (!row) return
-  const delta = Math.round(startTop - row.getBoundingClientRect().top)
-  if (!delta || mediaMatches(REDUCED_MOTION_QUERY)) return
-  row.style.transition = 'none'
-  row.style.transform = `translateY(${delta}px)`
-  void row.offsetHeight
-  row.style.transition = ''
-  row.style.transform = ''
-}
-
-async function expand() {
-  const slot = slotRef.value
-  if (!slot || expanded.value) return
-
-  clearSlideTimer()
-  const from = slot.getBoundingClientRect()
-  slotStyle.value = { height: `${from.height}px` }
-  measureScreen()
-  closing.value = false
-  expanded.value = true
-
-  // The band's back row pushes the field down as it mounts, so the landing
-  // spot is only knowable once the screen has rendered.
-  await nextTick()
-  slideFrom(from.top)
-  bindViewportListeners(true)
-}
-
-function collapse() {
-  const slot = slotRef.value
-  const row = rowRef.value
-  // Escape closes by blurring, so this arrives twice: once from the key and
-  // once from the blur it caused. The second must not restart the slide.
-  if (!expanded.value || slideTimer) return
-  bindViewportListeners(false)
-
-  // The slot never left the flow, so its rect is the destination. Measured
-  // before `closing` changes anything, though nothing it fades takes the field
-  // out of the flow.
-  if (!slot || !row) {
-    settle()
-    return
-  }
-  const delta = Math.round(slot.getBoundingClientRect().top - row.getBoundingClientRect().top)
-  if (!delta || mediaMatches(REDUCED_MOTION_QUERY)) {
-    settle()
-    return
-  }
-  closing.value = true
-
-  row.addEventListener('transitionend', onSlideEnd)
-  slideTimer = setTimeout(settle, SLIDE_TIMEOUT_MS)
-  // Leaving, not arriving: --ease-rise decelerates into its destination, which
-  // on the way back down is the shape of a swiped row snapping into place. The
-  // fall curve at the cover's own duration reads as getting out of the way
-  // instead, and brings the field and the list back together. Inline rather
-  // than a class so it takes effect in the same recalc as the transform below.
-  row.style.transition = `border-color var(--transition-fast), transform var(--transition-fast) var(--ease-fall)`
-  row.style.transform = `translateY(${delta}px)`
-}
-
-// .add-row transitions its border colour on focus too, on this very element —
-// only the transform means the slide is over.
-function onSlideEnd(event: TransitionEvent) {
-  if (event.target !== rowRef.value || event.propertyName !== 'transform') return
-  settle()
-}
-
-function clearSlideTimer() {
-  if (slideTimer) clearTimeout(slideTimer)
-  slideTimer = null
-}
-
-async function settle() {
-  clearSlideTimer()
-  const row = rowRef.value
-  if (row) {
-    row.removeEventListener('transitionend', onSlideEnd)
-    // Silenced first: the offset is dropped while the screen is still open and
-    // the field still carries a transform transition, so clearing it live would
-    // animate the field back up to the top it just came down from.
-    row.style.transition = 'none'
-    row.style.transform = ''
-  }
-  expanded.value = false
-  closing.value = false
-  slotStyle.value = null
-  screenBox.value = null
-
-  await nextTick()
-  if (rowRef.value) rowRef.value.style.transition = ''
-}
+// Focusing the input on a phone turns the form into a screen rather than opening
+// a dropdown into a 275px gap. The measurement and the slide are
+// lib/usePhoneSearchScreen's; what stays here is when it happens.
 
 function onFocus() {
   inputFocused.value = true
-  if (mediaMatches(PHONE_QUERY)) void expand()
+  if (isPhoneWidth()) void expand()
 }
 
 // The one way out, whether it came from the cover, Escape or an ordinary
@@ -477,11 +240,10 @@ watch(inputFocused, (focused) => {
 })
 
 onBeforeUnmount(() => {
+  // The slide timer, the viewport listeners and the transitionend handler are
+  // usePhoneSearchScreen's own teardown, and the confirmation timer is
+  // useAddedConfirmation's. Only the layer registration is this component's.
   closeModal(layer)
-  clearSlideTimer()
-  if (addedTimer) clearTimeout(addedTimer)
-  bindViewportListeners(false)
-  rowRef.value?.removeEventListener('transitionend', onSlideEnd)
 })
 
 </script>
@@ -533,9 +295,14 @@ onBeforeUnmount(() => {
             v-model="name"
             ref="inputRef"
             type="text"
+            aria-label="Add an item"
             placeholder="Add an item…"
             :maxlength="maxLength"
             autocomplete="off"
+            role="combobox"
+            aria-autocomplete="list"
+            :aria-expanded="panelOpen"
+            :aria-controls="panelOpen ? listboxId : undefined"
             @focus="onFocus"
             @blur="close"
             @keydown.esc="close"
@@ -589,7 +356,7 @@ onBeforeUnmount(() => {
                and not drawn, because the visible half of its job now belongs to
                the row. -->
           <p class="added-announce" role="status" aria-live="polite">
-            {{ justAdded ? `${justAdded.name} added to your list` : '' }}
+            {{ announcement }}
           </p>
 
           <!-- Outside the listbox: a listbox exposes only its options, so a
@@ -599,6 +366,7 @@ onBeforeUnmount(() => {
 
           <ul
             class="suggestions"
+            :id="listboxId"
             role="listbox"
             :aria-label="showingRecents ? 'Products you buy often' : 'Product suggestions'"
             :aria-busy="suggestionsLoading"
@@ -607,7 +375,12 @@ onBeforeUnmount(() => {
                  matches are not this query's answers, and offering "Can't find it?"
                  before the search returns would be a lie. -->
             <template v-if="suggestionsLoading">
-              <li v-for="(width, idx) in skeletonWidths" :key="`skeleton-${idx}`" class="suggestion-skeleton">
+              <li
+                v-for="(width, idx) in skeletonWidths"
+                :key="`skeleton-${idx}`"
+                class="suggestion-skeleton"
+                role="presentation"
+              >
                 <SkeletonBlock width="1.9rem" height="1.9rem" radius="0.6rem" />
                 <span class="suggestion-skeleton__text">
                   <SkeletonBlock :width="width" height="0.8rem" />
@@ -617,7 +390,15 @@ onBeforeUnmount(() => {
             </template>
 
             <template v-else>
-              <li v-for="product in rows" :key="productKey(product.name, product.maker)">
+              <!-- The li is presentational so the listbox owns the options
+                   directly: a listbox may only contain options, and a plain
+                   list item between the two breaks that ownership and takes the
+                   options out of the accessibility tree with it. -->
+              <li
+                v-for="product in rows"
+                :key="productKey(product.name, product.maker)"
+                role="presentation"
+              >
                 <button
                   type="button"
                   class="suggestion"
@@ -630,6 +411,7 @@ onBeforeUnmount(() => {
                   }"
                   role="option"
                   @mousedown.prevent="selectSuggestion(product, $event)"
+                  @click="onSuggestionClick(product, $event)"
                 >
                   <span class="suggestion-emoji" aria-hidden="true">
                     {{ getProductEmoji(product.name, product.maker || '') }}
@@ -648,11 +430,16 @@ onBeforeUnmount(() => {
                 </button>
               </li>
 
-              <li v-if="canAddCustom" class="suggestions-hatch">
+              <li v-if="canAddCustom" class="suggestions-hatch" role="presentation">
+                <!-- An option like the products above it, not a stray button:
+                     it is one of the choices this list is offering, and a
+                     non-option child would be dropped from the listbox. -->
                 <button
                   type="button"
+                  role="option"
                   class="suggestion suggestion--custom"
                   @mousedown.prevent="emit('add-custom')"
+                  @click="onAddCustomClick($event)"
                 >
                   <span class="suggestion-emoji suggestion-emoji--custom" aria-hidden="true">
                     <span class="suggestion-icon"></span>

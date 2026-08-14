@@ -92,6 +92,77 @@ describe('AddItemForm suggestions', () => {
     expect(wrapper.emitted('add-custom')).toHaveLength(1)
   })
 
+  // The input and the results have to be announced as a pair, or they are two
+  // unrelated elements that happen to sit near each other.
+  describe('combobox wiring', () => {
+    it('points the input at the listbox while it is open', async () => {
+      const wrapper = await mountForm({ suggestions: PRODUCTS })
+      const input = wrapper.find('input')
+
+      expect(input.attributes('role')).toBe('combobox')
+      expect(input.attributes('aria-expanded')).toBe('true')
+      expect(input.attributes('aria-controls')).toBe(wrapper.find('ul').attributes('id'))
+    })
+
+    it('reports itself collapsed when there is nothing to offer', async () => {
+      const wrapper = await mountForm()
+
+      expect(wrapper.find('input').attributes('aria-expanded')).toBe('false')
+      expect(wrapper.find('input').attributes('aria-controls')).toBeUndefined()
+    })
+
+    // A listbox may only own options; a plain list item in between takes the
+    // options out of the accessibility tree with it.
+    it('lets the listbox own every option directly', async () => {
+      const wrapper = await mountForm({ suggestions: PRODUCTS, canAddCustom: true })
+
+      const children = wrapper.findAll('ul.suggestions > li')
+      expect(children.length).toBeGreaterThan(0)
+      for (const li of children) expect(li.attributes('role')).toBe('presentation')
+      // Products and the escape hatch alike.
+      expect(wrapper.findAll('[role="option"]')).toHaveLength(3)
+    })
+  })
+
+  // The rows commit on mousedown so the tap cannot steal focus from the input.
+  // That alone leaves the keyboard with no way in, because Enter and Space raise
+  // click and never mousedown — so both are bound, and `detail` is what keeps a
+  // pointer press from counting twice.
+  describe('keyboard activation', () => {
+    it('picks a product on Enter, which arrives as a click with no click count', async () => {
+      const wrapper = await mountForm({ suggestions: PRODUCTS })
+      await wrapper.findAll('.suggestion')[0].trigger('click', { detail: 0 })
+
+      expect(wrapper.emitted('select')).toHaveLength(1)
+      expect(wrapper.emitted('select')[0][0]).toEqual(PRODUCTS[0])
+    })
+
+    it('opens the custom-product modal on Enter', async () => {
+      const wrapper = await mountForm({ suggestions: [], canAddCustom: true })
+      await hatch(wrapper).trigger('click', { detail: 0 })
+
+      expect(wrapper.emitted('add-custom')).toHaveLength(1)
+    })
+
+    it('adds a pointer-picked product once, not twice', async () => {
+      const wrapper = await mountForm({ suggestions: PRODUCTS })
+      // What a real mouse sends: mousedown, then a click carrying the count.
+      const row = wrapper.findAll('.suggestion')[0]
+      await row.trigger('mousedown')
+      await row.trigger('click', { detail: 1 })
+
+      expect(wrapper.emitted('select')).toHaveLength(1)
+    })
+
+    it('opens the custom-product modal once on a pointer press', async () => {
+      const wrapper = await mountForm({ suggestions: [], canAddCustom: true })
+      await hatch(wrapper).trigger('mousedown')
+      await hatch(wrapper).trigger('click', { detail: 1 })
+
+      expect(wrapper.emitted('add-custom')).toHaveLength(1)
+    })
+  })
+
   // While a search is running the dropdown must not answer the question it is
   // still asking: no stale matches, and above all no "Can't find it?".
   describe('while a search is running', () => {

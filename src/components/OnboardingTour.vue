@@ -4,6 +4,7 @@
 // HomeView over the real list; dismissing marks it seen.
 import { ref, computed, watch } from 'vue'
 import AppModal from './AppModal.vue'
+import { useCopyFeedback } from '../lib/clipboard'
 import BackButton from './BackButton.vue'
 import addIcon from '../assets/add.svg?raw'
 import checkIcon from '../assets/check.svg?raw'
@@ -18,7 +19,9 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 const step = ref(0)
-const copied = ref(false)
+// 1800ms here rather than the 2000ms default, which is what this tour already
+// used — the step it sits on is short and the confirmation should not outlive it.
+const { copied, copy } = useCopyFeedback(1800)
 
 // Written against what the app actually does. Tapping a suggestion adds it
 // outright (HomeView.selectSuggestion calls addItem directly), and checking a
@@ -73,15 +76,11 @@ function finish() {
   emit('close')
 }
 
-async function copyCode() {
-  if (!props.inviteCode) return
-  try {
-    await navigator.clipboard.writeText(props.inviteCode)
-    copied.value = true
-    setTimeout(() => { copied.value = false }, 1800)
-  } catch {
-    // Clipboard blocked — the code is on screen to type by hand.
-  }
+function copyCode() {
+  // Shared with OverviewPanel via lib/clipboard, which also owns the timer this
+  // used to leak — and stacked, so two taps could cancel each other's tick.
+  // A blocked clipboard leaves `copied` false; the code is on screen to type.
+  void copy(props.inviteCode)
 }
 </script>
 

@@ -19,6 +19,14 @@ function makeStorage() {
     getItem: (k) => (map.has(k) ? map.get(k) : null),
     setItem: (k, v) => map.set(k, String(v)),
     removeItem: (k) => map.delete(k),
+    // length/key are part of the real Storage interface, and clearOfflineQueue
+    // uses them to find every account's queue when it is not told which one to
+    // clear. Without them here that branch would be skipped by its own
+    // capability guard and never actually run under test.
+    get length() {
+      return map.size
+    },
+    key: (i) => [...map.keys()][i] ?? null,
   }
 }
 
@@ -114,6 +122,36 @@ describe('flushOfflineQueue', () => {
     expect(hasQueuedOfflineMutations(storage, USER)).toBe(false)
   })
 
+  it('keeps each account queue separate when a session ends without signing out', () => {
+    const storage = makeStorage()
+    enqueueOfflineMutation(storage, USER, insertMutation('a'))
+    // A different account enqueues on the same device. This used to overwrite
+    // the single shared key and lose USER's unsent writes silently.
+    enqueueOfflineMutation(storage, 'user-2', insertMutation('b'))
+
+    expect(loadOfflineQueue(storage, USER).map((m) => m.id)).toEqual(['a'])
+    expect(loadOfflineQueue(storage, 'user-2').map((m) => m.id)).toEqual(['b'])
+  })
+
+  it('migrates a queue written under the pre-per-user key', () => {
+    const storage = makeStorage()
+    // Exactly what an older build left behind: one key, the account stamped inside.
+    storage.setItem(
+      'famcart-offline-queue',
+      JSON.stringify({ version: 1, userId: USER, mutations: [insertMutation('a')] }),
+    )
+
+    expect(loadOfflineQueue(storage, USER).map((m) => m.id)).toEqual(['a'])
+    // Another account still must not see it.
+    expect(loadOfflineQueue(storage, 'user-2')).toEqual([])
+
+    // The next save moves it across and retires the old key, so an emptied
+    // per-user queue cannot fall back to this stale copy.
+    enqueueOfflineMutation(storage, USER, insertMutation('b'))
+    expect(storage.getItem('famcart-offline-queue')).toBeNull()
+    expect(loadOfflineQueue(storage, USER).map((m) => m.id)).toEqual(['a', 'b'])
+  })
+
   it('is a no-op on an empty queue', async () => {
     const db = createFakeDb()
     const result = await flushOfflineQueue(makeStorage(), USER, db)
@@ -132,6 +170,43 @@ describe('flushOfflineQueue', () => {
     })
     db.handlers['shopping_list_items.select'] = () => ({
       data: [{ id: 'srv-1', name: 'milk', checked: false, quantity: 3 }],
+      error: null,
+    })
+    db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
+
+    const result = await flushOfflineQueue(storage, USER, db)
+
+    expect(result).toEqual({ flushed: 1, failed: 0, interrupted: false })
+    const update = db.calls.find((q) => q.op === 'update')
+    expect(update.filters.id).toBe('srv-1')
+    expect(update.payload).toEqual({ quantity: 5 })
+    expect(hasQueuedOfflineMutations(storage, USER)).toBe(false)
+  })
+
+  // The maker is half the match key (004_shopping_list.sql), and the fold used
+  // to ignore it — so a conflict on a product that has one found no target,
+  // counted as a permanent rejection, and was dropped. Every catalog pick and
+  // every barcode scan carries a maker, so this was the common path.
+  it('folds a conflicting insert into the same-name row with the same maker', async () => {
+    const storage = makeStorage()
+    enqueueOfflineMutation(
+      storage,
+      USER,
+      insertMutation('a', { name: 'Lapte 3.5% 1L', maker: 'Napolact', quantity: 2 }),
+    )
+
+    const db = createFakeDb()
+    db.handlers['shopping_list_items.insert'] = () => ({
+      data: null,
+      error: { code: '23505', message: 'duplicate key value' },
+    })
+    db.handlers['shopping_list_items.select'] = () => ({
+      data: [
+        // Same name, different maker: a different product, and not the row we
+        // collided with.
+        { id: 'srv-other', name: 'Lapte 3.5% 1L', maker: 'LaDorna', checked: false, quantity: 9 },
+        { id: 'srv-1', name: 'lapte 3.5% 1l', maker: 'napolact', checked: false, quantity: 3 },
+      ],
       error: null,
     })
     db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
@@ -286,5 +361,38 @@ describe('legacy pre-rename queue rows', () => {
     // What actually reaches the server carries the new column name.
     expect(db.calls[0].payload.household_id).toBe('fam-1')
     expect(db.calls[0].payload).not.toHaveProperty('family_id')
+  })
+
+  // Unbounded, the only limit was localStorage's own quota — a device-dependent
+  // cliff that arrives mid-write and was swallowed silently.
+  describe('the queue ceiling', () => {
+    // Distinct rows, so coalescing cannot collapse them and the count is real.
+    function fill(storage, count) {
+      for (let i = 0; i < count; i++) {
+        enqueueOfflineMutation(storage, USER, { kind: 'delete', id: `row-${i}` })
+      }
+    }
+
+    it('keeps everything below the ceiling', () => {
+      const storage = makeStorage()
+      fill(storage, 500)
+      expect(loadOfflineQueue(storage, USER)).toHaveLength(500)
+    })
+
+    it('stops growing once the ceiling is reached', () => {
+      const storage = makeStorage()
+      fill(storage, 520)
+      expect(loadOfflineQueue(storage, USER)).toHaveLength(500)
+    })
+
+    it('drops the oldest, keeping the write the user just made', () => {
+      const storage = makeStorage()
+      fill(storage, 510)
+
+      const queued = loadOfflineQueue(storage, USER)
+      // The ten earliest are gone; the most recent survived.
+      expect(queued[0]).toEqual({ kind: 'delete', id: 'row-10' })
+      expect(queued[queued.length - 1]).toEqual({ kind: 'delete', id: 'row-509' })
+    })
   })
 })

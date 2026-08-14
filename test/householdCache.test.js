@@ -31,6 +31,37 @@ function makeSnapshot(overrides = {}) {
   }
 }
 
+// The household id is the one field read back out as a query parameter rather
+// than as display text — lib/productSuggestions interpolates it into a
+// PostgREST `or` filter — and localStorage is not a trust boundary the app
+// controls. A snapshot whose id is not an opaque identifier is refused whole.
+describe('householdCache rejects a tampered household id', () => {
+  const REJECTED = {
+    'a PostgREST filter expression': 'fam-1,household_id.not.is.null',
+    'an operator suffix': 'fam-1.eq.anything',
+    'a parenthesised condition': 'fam-1,or(a.eq.b)',
+    'a quoted string': `fam-1'`,
+    'whitespace': 'fam-1 or true',
+    'nothing at all': '',
+  }
+
+  for (const [what, householdId] of Object.entries(REJECTED)) {
+    it(`refuses ${what}`, () => {
+      const storage = makeStorage()
+      saveHouseholdSnapshot(storage, 'user-1', makeSnapshot({ householdId }))
+      expect(loadHouseholdSnapshot(storage, 'user-1')).toBeNull()
+    })
+  }
+
+  it('still accepts an ordinary id', () => {
+    const storage = makeStorage()
+    saveHouseholdSnapshot(storage, 'user-1', makeSnapshot({
+      householdId: '3f2504e0-4f89-11d3-9a0c-0305e82c3301',
+    }))
+    expect(loadHouseholdSnapshot(storage, 'user-1')).not.toBeNull()
+  })
+})
+
 describe('householdCache', () => {
   it('round-trips a snapshot for the same user', () => {
     const storage = makeStorage()
