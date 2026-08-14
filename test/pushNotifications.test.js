@@ -129,23 +129,52 @@ describe('notification preference', () => {
     return {
       getItem: (key) => (key in data ? data[key] : null),
       setItem: (key, value) => { data[key] = value },
+      removeItem: (key) => { delete data[key] },
+      read: () => data,
     }
   }
 
   it('reports null when the user has never decided', () => {
-    expect(getNotificationPreference(fakeStorage())).toBe(null)
+    expect(getNotificationPreference(fakeStorage(), 'user_a')).toBe(null)
   })
 
   it('round-trips an explicit decision', () => {
     const storage = fakeStorage()
-    setNotificationPreference(storage, 'on')
-    expect(getNotificationPreference(storage)).toBe('on')
-    setNotificationPreference(storage, 'off')
-    expect(getNotificationPreference(storage)).toBe('off')
+    setNotificationPreference(storage, 'user_a', 'on')
+    expect(getNotificationPreference(storage, 'user_a')).toBe('on')
+    setNotificationPreference(storage, 'user_a', 'off')
+    expect(getNotificationPreference(storage, 'user_a')).toBe('off')
   })
 
   it('treats a corrupted stored value as undecided', () => {
-    expect(getNotificationPreference(fakeStorage({ 'famcart-notifications': 'maybe' }))).toBe(null)
+    expect(
+      getNotificationPreference(fakeStorage({ 'famcart-notifications:user_a': 'maybe' }), 'user_a'),
+    ).toBe(null)
+  })
+
+  // The bug this keying exists for: one account's standing answer must not
+  // become another account's, which is how somebody ended up subscribed to
+  // push on a shared device without ever being asked.
+  it('keeps one account decision away from another account', () => {
+    const storage = fakeStorage()
+    setNotificationPreference(storage, 'user_a', 'on')
+    expect(getNotificationPreference(storage, 'user_b')).toBe(null)
+    expect(getNotificationPreference(storage, 'user_a')).toBe('on')
+  })
+
+  // Deliberately not migrated: it carries no account, so adopting it for
+  // whoever is signed in now is the same bug narrowed to one device.
+  it('ignores the pre-upgrade device-wide value and clears it on the next write', () => {
+    const storage = fakeStorage({ 'famcart-notifications': 'on' })
+    expect(getNotificationPreference(storage, 'user_a')).toBe(null)
+    setNotificationPreference(storage, 'user_a', 'on')
+    expect(storage.read()['famcart-notifications']).toBeUndefined()
+  })
+
+  it('has nothing to store for a caller with no account', () => {
+    const storage = fakeStorage()
+    setNotificationPreference(storage, '', 'on')
+    expect(getNotificationPreference(storage, '')).toBe(null)
   })
 })
 
@@ -158,7 +187,7 @@ describe('notification preference', () => {
 // separate local preference, so it still said On. It only surfaced at the far
 // end, as an empty notification id with a non-zero targeted count.
 describe('re-binding the device on boot', () => {
-  const storage = (value) => ({ getItem: () => value })
+  const storage = (value) => ({ getItem: (key) => (key.startsWith('famcart-notifications:') ? value : null) })
 
   it('logs the device back in when notifications are on', async () => {
     vi.stubEnv('VITE_ONESIGNAL_APP_ID', 'app-123')

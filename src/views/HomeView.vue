@@ -34,6 +34,7 @@ import {
   clearActiveHouseholdId,
 } from '../lib/householdCache'
 import { flushOfflineQueue, isOfflineError } from '../lib/offlineQueue'
+import { captureException } from '../lib/errorReporting'
 // isCurrentlyOffline is the app's one answer to "are we offline", handed to
 // every composable below that has to choose between writing and queueing. The
 // composite it computes (Capacitor status first, navigator.onLine as the
@@ -120,6 +121,7 @@ const {
   householdProductStats,
   productStatsLoaded,
   loadHouseholdProductStats,
+  resetForHousehold,
   recentProducts,
   restartProducts,
   lookupBarcode,
@@ -210,6 +212,7 @@ const {
   limitReachedPopupOpen,
   closeLimitReachedPopup,
   ensureQueueFlushed,
+  flushQuantityWrites,
   loadItems,
   addItem,
   toggleItem,
@@ -249,8 +252,11 @@ const { setupRealtimeSubscriptions, cleanupRealtimeSubscriptions } = useHousehol
   householdMembers,
   loadItems,
   loadHouseholdHeader,
-  refreshMembershipOrRedirect,
   onHouseholdDeleted: () => void reconcileActiveHousehold(),
+  // Being removed from the active household is the same question as the active
+  // household vanishing: which household are we in now? Passed directly rather
+  // than through a wrapper that only forwarded it.
+  refreshMembershipOrRedirect: reconcileActiveHousehold,
   // A realtime UPDATE must not clobber a row whose own write is still in flight
   // (its authoritative echo is still coming) — same guard as loadItems.
   hasPendingWrite: (id) => pendingItemWrites.has(id),
@@ -360,16 +366,18 @@ onMounted(() => {
   // outstanding when the app goes away — which on a phone is most of the time,
   // and is exactly the moment the next cold boot depends on it. pagehide is the
   // one teardown event that fires reliably on mobile Safari and in a WebView.
-  window.addEventListener('pagehide', flushSnapshot)
-  document.addEventListener('visibilitychange', flushSnapshotIfHidden)
+  window.addEventListener('pagehide', flushPendingWork)
+  document.addEventListener('visibilitychange', flushPendingWorkIfHidden)
   void initializeHome()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('online', handleBackOnline)
-  window.removeEventListener('pagehide', flushSnapshot)
-  document.removeEventListener('visibilitychange', flushSnapshotIfHidden)
+  window.removeEventListener('pagehide', flushPendingWork)
+  document.removeEventListener('visibilitychange', flushPendingWorkIfHidden)
   if (stopReconnect) stopReconnect()
+  // Only the snapshot here: the quantity writes are flushed by the actions
+  // composable's own unmount hook, which runs alongside this one.
   flushSnapshot()
 })
 
@@ -744,8 +752,22 @@ function flushSnapshot() {
   persistSnapshot()
 }
 
-function flushSnapshotIfHidden() {
-  if (document.visibilityState === 'hidden') flushSnapshot()
+// Everything owed to somewhere durable when the app goes away. On a phone that
+// is most of the time, and is exactly when the next cold boot depends on it.
+//
+// Two different kinds of debt, both deferred for the same reason (coalescing a
+// burst) and both settled here. The snapshot goes to localStorage and is
+// synchronous, so it always lands. A quantity write goes to the server and
+// cannot be guaranteed — but issuing it now, rather than leaving it to a 300ms
+// timer the page may not survive, is the difference between usually landing and
+// never landing.
+function flushPendingWork() {
+  flushSnapshot()
+  void flushQuantityWrites()
+}
+
+function flushPendingWorkIfHidden() {
+  if (document.visibilityState === 'hidden') flushPendingWork()
 }
 
 function persistSnapshot() {
@@ -784,6 +806,17 @@ async function loadHouseholdHeader() {
     // { user_id, display_name, image_url, role } shape every consumer expects.
     db.from('household_members').select('user_id, role, profiles(display_name, image_url)').eq('household_id', householdId.value),
   ])
+
+  // Neither failure reaches the screen, and that is deliberate: this runs from
+  // the watchdog every 30 seconds while the socket is down, and a dialog per
+  // tick over a header that is merely stale would be worse than the staleness.
+  // But silence is not the same as ignoring it — dropped entirely, a household
+  // read that has started failing (a revoked membership, a transient 500) leaves
+  // a stale header up indefinitely with no trace anywhere. Offline is the
+  // expected case and is not a fault.
+  for (const err of [householdErr, membersErr]) {
+    if (err && !isOfflineError(err)) captureException(err)
+  }
 
   if (!householdErr && household) {
     householdName.value = household.name
@@ -849,11 +882,10 @@ async function switchHousehold(id: string) {
   // household whose cart is empty opens it on a blank list.
   listFilter.value = 'all'
   householdMembers.value = []
-  householdProductStats.value = new Map()
-  // The new household's history is unknown until it loads. Without this reset the
-  // cleared Map reads as "never shopped" and an empty list flashes "Nothing here
-  // yet" before the refetch turns it into "All bought".
-  productStatsLoaded.value = false
+  // Everything the suggestions composable holds about the household being left,
+  // cleared by the composable itself — it is the only thing that can see all of
+  // it. See the note on resetForHousehold.
+  resetForHousehold()
   boughtThisSession.value = false
   loadError.value = ''
   // Show the new name straight away (we already know it from the household list);
@@ -900,12 +932,6 @@ async function reconcileActiveHousehold() {
   clearHouseholdSnapshot(localStorage)
   clearActiveHouseholdId(localStorage)
   router.replace('/household-setup')
-}
-
-// Called when a member-removal realtime event lands: if it was us being removed
-// from the active household, reconcile moves us on.
-async function refreshMembershipOrRedirect() {
-  await reconcileActiveHousehold()
 }
 
 

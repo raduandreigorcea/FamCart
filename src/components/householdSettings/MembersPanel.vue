@@ -17,6 +17,7 @@ import ellipsisIcon from '../../assets/ellipsis.svg?raw'
 import shieldIcon from '../../assets/shield.svg?raw'
 import trashIcon from '../../assets/trash-2.svg?raw'
 import userRoundIcon from '../../assets/user-round.svg?raw'
+import { memberDisplayName } from '../../lib/userIdentity'
 
 // The roster, and what can be done to a row on it. The rules themselves live in
 // lib/memberRoles — this decides only what to render and what to write.
@@ -181,7 +182,7 @@ async function removeMember(memberUserId: string) {
               <img
                 v-if="member.image_url"
                 :src="member.image_url"
-                :alt="(member.display_name || 'Member') + ' avatar'"
+                :alt="memberDisplayName(member) + ' avatar'"
                 class="member-custom-avatar"
               />
               <span v-else class="member-custom-avatar member-custom-avatar--fallback">
@@ -189,7 +190,7 @@ async function removeMember(memberUserId: string) {
               </span>
               <div class="member-custom-details">
                 <span class="member-custom-name">
-                  {{ member.display_name || 'Member' }}
+                  {{ memberDisplayName(member) }}
                   <span v-if="member.user_id === userId" class="you-tag">(You)</span>
                 </span>
               </div>
@@ -286,7 +287,7 @@ async function removeMember(memberUserId: string) {
                 {{ (activeMenuMember.display_name || '?').slice(0, 1).toUpperCase() }}
               </span>
               <div class="member-sheet__meta">
-                <span class="member-sheet__name">{{ activeMenuMember.display_name || 'Member' }}</span>
+                <span class="member-sheet__name">{{ memberDisplayName(activeMenuMember) }}</span>
                 <span class="member-sheet__role">
                   {{ normalizeMemberRole(activeMenuMember.role) === 'moderator' ? 'Moderator' : 'Member' }}
                 </span>

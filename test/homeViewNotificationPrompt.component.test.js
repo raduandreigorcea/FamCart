@@ -124,7 +124,7 @@ describe('first-login notification prompt', () => {
     const wrapper = await mountHome()
     expect(prompt(wrapper).props('open')).toBe(true)
     // Just showing the prompt records nothing — only an answer does.
-    expect(getNotificationPreference(localStorage)).toBe(null)
+    expect(getNotificationPreference(localStorage, 'user-1')).toBe(null)
   })
 
   it('stays silent in desktop browsers, leaving the decision for a phone', async () => {
@@ -132,16 +132,16 @@ describe('first-login notification prompt', () => {
     const wrapper = await mountHome()
     expect(prompt(wrapper).props('open')).toBe(false)
     // Unset preference: the same account is still greeted on a mobile device.
-    expect(getNotificationPreference(localStorage)).toBe(null)
+    expect(getNotificationPreference(localStorage, 'user-1')).toBe(null)
   })
 
   it('stays silent when the user already decided', async () => {
-    setNotificationPreference(localStorage, 'off')
+    setNotificationPreference(localStorage, 'user-1', 'off')
     const wrapper = await mountHome()
     expect(prompt(wrapper).props('open')).toBe(false)
 
     localStorage.clear()
-    setNotificationPreference(localStorage, 'on')
+    setNotificationPreference(localStorage, 'user-1', 'on')
     const second = await mountHome()
     expect(prompt(second).props('open')).toBe(false)
   })
@@ -152,7 +152,7 @@ describe('first-login notification prompt', () => {
     await flushPromises()
 
     expect(prompt(wrapper).props('open')).toBe(false)
-    expect(getNotificationPreference(localStorage)).toBe('on')
+    expect(getNotificationPreference(localStorage, 'user-1')).toBe('on')
     expect(mocks.enablePush).toHaveBeenCalledWith('user-1')
     expect(notificationErrorMessage(wrapper)).toBe('')
   })
@@ -163,7 +163,7 @@ describe('first-login notification prompt', () => {
     prompt(wrapper).vm.$emit('accept')
     await flushPromises()
 
-    expect(getNotificationPreference(localStorage)).toBe('off')
+    expect(getNotificationPreference(localStorage, 'user-1')).toBe('off')
     expect(notificationErrorMessage(wrapper)).toContain('blocked')
   })
 
@@ -173,7 +173,7 @@ describe('first-login notification prompt', () => {
     prompt(wrapper).vm.$emit('accept')
     await flushPromises()
 
-    expect(getNotificationPreference(localStorage)).toBe('off')
+    expect(getNotificationPreference(localStorage, 'user-1')).toBe('off')
     expect(notificationErrorMessage(wrapper)).toContain('Could not enable notifications')
   })
 
@@ -183,7 +183,7 @@ describe('first-login notification prompt', () => {
     await flushPromises()
 
     expect(prompt(wrapper).props('open')).toBe(false)
-    expect(getNotificationPreference(localStorage)).toBe('off')
+    expect(getNotificationPreference(localStorage, 'user-1')).toBe('off')
     expect(mocks.enablePush).not.toHaveBeenCalled()
   })
 })

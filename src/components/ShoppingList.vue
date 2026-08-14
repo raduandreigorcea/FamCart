@@ -4,6 +4,7 @@ import ShoppingListItem from './ShoppingListItem.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import ListFilterMenu from './ListFilterMenu.vue'
 import { getProductEmoji } from '../lib/productEmoji'
+import { memberDisplayName } from '../lib/userIdentity'
 import { productKey } from '../lib/productSearch'
 import { sumActiveQuantities, sumCheckedQuantities } from '../lib/shoppingList'
 import type { ShoppingItemRow, HouseholdMemberProfile } from '../lib/householdRealtime'
@@ -58,10 +59,13 @@ const openQtyId = ref('')
 // there isn't one, ids are uuids -- is not the risk. The risk is the stepper
 // silently staying "open" on nothing, so a later press to open a different row
 // reads as a close.
+// Watches the one fact that matters — is the open row still here — rather than
+// building a joined string of every id on each change and splitting it again to
+// look one up. Same behaviour, and it says what it means.
 watch(
-  () => props.items.map((i) => i.id).join(','),
-  (ids) => {
-    if (openQtyId.value && !ids.split(',').includes(openQtyId.value)) openQtyId.value = ''
+  () => openQtyId.value !== '' && !props.items.some((i) => i.id === openQtyId.value),
+  (gone) => {
+    if (gone) openQtyId.value = ''
   },
 )
 
@@ -85,7 +89,7 @@ const visibleRows = computed(() => {
     return {
       item,
       avatarUrl: profile?.image_url || undefined,
-      avatarName: profile?.display_name || 'Member',
+      avatarName: memberDisplayName(profile),
       draining: drainOrder.has(item.id),
       // Position among the draining rows, so they fall into the bar in a
       // stagger. Checked rows sit wherever they were added, so the order comes
@@ -214,13 +218,19 @@ function finishCheckout(ids: string[]) {
 }
 
 onBeforeUnmount(() => {
+  // Flushed BEFORE the timers are cleared, not after. Unmounting mid-drain (a
+  // route change, a household switch tearing the list down) used to drop the
+  // checkout on the floor: the timer died with the component and the rows
+  // stayed checked in the database, having told the user they were bought. The
+  // confirmation already happened, so it is flushed here.
+  //
+  // But finishCheckout arms the success timer on its way out, so running it
+  // after the clears left that fresh timer to outlive the component. It only
+  // touches two refs of an instance nobody is rendering, which is why nothing
+  // ever showed — the ordering is the whole fix.
+  if (pendingCheckout) finishCheckout(pendingCheckout)
   if (drainTimer) clearTimeout(drainTimer)
   if (successTimer) clearTimeout(successTimer)
-  // Unmounting mid-drain (a route change, a household switch tearing the list
-  // down) used to drop the checkout on the floor: the timer died with the
-  // component and the rows stayed checked in the database, having told the user
-  // they were bought. The confirmation already happened — flush it.
-  if (pendingCheckout) finishCheckout(pendingCheckout)
 })
 
 // ─── Slide to confirm ─────────────────────────────────────────────────────────

@@ -174,7 +174,11 @@ async function handleSignOut() {
     // snapshot can't resurrect this account after signing out.
     forgetUser(localStorage)
     clearHouseholdSnapshot(localStorage)
-    clearOfflineQueue(localStorage)
+    // Scoped to this account where the topbar knows it. On the setup screen it
+    // renders without props and currentUserId is '', which clears every FamCart
+    // queue on the device instead — the safer answer when we cannot say whose
+    // this is.
+    clearOfflineQueue(localStorage, props.currentUserId || undefined)
     // Unlink this device in OneSignal so the next account's pushes don't land
     // on top of the old one's. Best-effort; sign-out must not wait on the CDN.
     void logoutPushUser()

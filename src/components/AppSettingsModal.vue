@@ -94,7 +94,8 @@ function syncPreferencesFromStorage() {
   // Only an explicit opt-in shows On. An unset preference means the user was
   // never asked (or never answered) — showing On there would claim a push
   // subscription that doesn't exist.
-  notificationMode.value = getNotificationPreference(localStorage) === 'on' ? 'on' : 'off'
+  notificationMode.value =
+    getNotificationPreference(localStorage, userId.value ?? '') === 'on' ? 'on' : 'off'
 }
 
 function applyResolvedTheme(mode: ThemeMode) {
@@ -120,8 +121,12 @@ function applyTheme(mode: ThemeMode) {
 }
 
 async function applyNotifications(mode: NotificationPreference) {
+  // Read once, up front, for the reason firstRunGreeting gives: the preference
+  // belongs to the account that touched the toggle, and enabling push is a
+  // round trip the session can end during.
+  const uid = userId.value ?? ''
   notificationMode.value = mode
-  setNotificationPreference(localStorage, mode)
+  setNotificationPreference(localStorage, uid, mode)
   notificationHint.value = ''
 
   if (mode === 'off') {
@@ -129,16 +134,16 @@ async function applyNotifications(mode: NotificationPreference) {
     return
   }
 
-  if (!userId.value) return
-  const result = await enablePushNotifications(userId.value)
+  if (!uid) return
+  const result = await enablePushNotifications(uid)
   if (result === 'permission-denied') {
     // The browser said no — reflect reality instead of a toggle that lies.
     notificationMode.value = 'off'
-    setNotificationPreference(localStorage, 'off')
+    setNotificationPreference(localStorage, uid, 'off')
     notificationHint.value = 'Notifications are blocked for FamCart in your device or browser settings.'
   } else if (result === 'error') {
     notificationMode.value = 'off'
-    setNotificationPreference(localStorage, 'off')
+    setNotificationPreference(localStorage, uid, 'off')
     notificationHint.value = 'Could not enable notifications. Please try again.'
   }
   // 'unsupported' / 'not-configured': push is unavailable in this environment;

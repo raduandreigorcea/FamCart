@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { findActiveItemByName, type ShoppingItem } from './shoppingList'
+import { captureException } from './errorReporting'
 
 // Write queue for shopping-list mutations made while offline. The views apply
 // every mutation optimistically already; when the browser reports no
@@ -38,9 +39,40 @@ interface StoredQueue {
 // through. Structural rather than the whole client so tests can hand in a fake.
 type Db = Pick<SupabaseClient, 'from'>
 
-const STORAGE_KEY = 'famcart-offline-queue'
+// One queue per account, rather than one queue with an account stamped on it.
+//
+// The stamped version was safe to READ — a queue belonging to someone else was
+// ignored, so writes were never replayed as the wrong user. It was not safe to
+// WRITE: the ignored queue still occupied the one key, so the next mutation
+// enqueued by a different account overwrote it wholesale, and the first
+// account's unsent writes were gone with nothing said. Signing out clears the
+// queue deliberately (see clearOfflineQueue), so this only bit when a session
+// ended some other way — an expired Clerk session, then somebody else signing in
+// on the same device — which is exactly the case the queue exists to survive.
+const STORAGE_PREFIX = 'famcart-offline-queue'
+// What every build before this one wrote: a single key holding whichever
+// account's queue was last saved. Read once and migrated on the next save.
+const LEGACY_STORAGE_KEY = STORAGE_PREFIX
 const VERSION = 1
 const TABLE = 'shopping_list_items'
+
+// A ceiling on how many unsent mutations one account may accumulate.
+//
+// Without one the only limit was localStorage's own quota, which is a bad place
+// to find the edge: it is device-dependent, it arrives as an exception in the
+// middle of a write, and saveOfflineQueue swallows it — so the queue silently
+// stopped accepting anything and the user was told nothing. A fixed bound turns
+// that into a predictable, reportable event well before the browser's cliff.
+//
+// Deliberately generous. Coalescing already collapses repeat edits to a row
+// (see enqueueOfflineMutation), so reaching this means hundreds of DISTINCT
+// operations without connectivity — far past any real shopping trip, and a
+// strong hint that something else is wrong.
+const MAX_QUEUED_MUTATIONS = 500
+
+function queueKey(userId: string): string {
+  return `${STORAGE_PREFIX}:${userId}`
+}
 
 // A queued insert carries the literal row it will POST, so a mutation enqueued
 // before the families→households rename still says `family_id` — a column that
@@ -56,11 +88,17 @@ function renameLegacyRowKeys(row: Record<string, unknown>): Record<string, unkno
 
 export function loadOfflineQueue(storage: Storage, userId: string): OfflineMutation[] {
   try {
-    const raw = storage.getItem(STORAGE_KEY)
+    // The legacy single key is the fallback, not the primary: a queue written by
+    // the previous build is still worth replaying, and it carries the userId
+    // check below to decide whether it is this account's. The next save moves it
+    // to the per-user key.
+    const raw = storage.getItem(queueKey(userId)) ?? storage.getItem(LEGACY_STORAGE_KEY)
     if (!raw) return []
     const stored = JSON.parse(raw) as StoredQueue
     if (stored.version !== VERSION) return []
     // Never replay one account's writes as another account on the same browser.
+    // Still checked despite the key now carrying the user id, because the legacy
+    // key read above has no such guarantee.
     if (stored.userId !== userId) return []
     if (!Array.isArray(stored.mutations)) return []
     return stored.mutations.map((mutation) =>
@@ -73,17 +111,33 @@ export function loadOfflineQueue(storage: Storage, userId: string): OfflineMutat
   }
 }
 
-function saveOfflineQueue(storage: Storage, userId: string, mutations: OfflineMutation[]): void {
+// Enforced here rather than at the append, because "append" is three different
+// paths: a plain push, and the coalescing update and delete branches that each
+// rewrite the list and return early. This is the one place all of them, and the
+// flush's own shrinking rewrites, have to pass through.
+function saveOfflineQueue(storage: Storage, userId: string, queued: OfflineMutation[]): void {
+  const mutations = enforceQueueBound(queued)
   try {
+    // Whatever happens to this account's queue, the legacy single key is
+    // superseded by it — it held this same queue a moment ago, and leaving it
+    // would let loadOfflineQueue fall back to a stale copy once the per-user key
+    // is emptied below.
+    storage.removeItem(LEGACY_STORAGE_KEY)
     if (!mutations.length) {
-      storage.removeItem(STORAGE_KEY)
+      storage.removeItem(queueKey(userId))
       return
     }
     const stored: StoredQueue = { version: VERSION, userId, mutations }
-    storage.setItem(STORAGE_KEY, JSON.stringify(stored))
-  } catch {
+    storage.setItem(queueKey(userId), JSON.stringify(stored))
+  } catch (error) {
     // Quota exceeded or storage disabled — the write is lost on restart, but
     // the in-session optimistic state still stands.
+    //
+    // Reported rather than merely swallowed. This is unsent work disappearing,
+    // which is the exact failure this whole file exists to prevent, and with
+    // the bound above it should now be unreachable — so if it does happen, the
+    // reasoning behind MAX_QUEUED_MUTATIONS is wrong and that is worth knowing.
+    captureException(error)
   }
 }
 
@@ -138,13 +192,58 @@ export function enqueueOfflineMutation(
   saveOfflineQueue(storage, userId, mutations)
 }
 
+// Keep the queue inside its ceiling, dropping from the front when it is over.
+//
+// Which end to drop is the real decision, and neither answer is free — at this
+// point work is being lost either way. The oldest goes because the newest is
+// what the user just did and is looking at right now: refusing that one instead
+// would leave a row on screen that was never going to be saved, which is the
+// more dishonest of the two. Replay is in order, so the front is also the part
+// most likely already reflected in what the server has.
+//
+// Only ever reached in a situation this queue was not designed for, so it
+// reports: silently discarding a user's writes is precisely the outcome this
+// file is built to avoid, and it should never be inferred from a support
+// ticket.
+function enforceQueueBound(mutations: OfflineMutation[]): OfflineMutation[] {
+  if (mutations.length <= MAX_QUEUED_MUTATIONS) return mutations
+  const dropped = mutations.length - MAX_QUEUED_MUTATIONS
+  captureException(
+    new Error(
+      `Offline queue exceeded ${MAX_QUEUED_MUTATIONS} mutations; dropped ${dropped} of the oldest.`,
+    ),
+  )
+  return mutations.slice(dropped)
+}
+
 export function hasQueuedOfflineMutations(storage: Storage, userId: string): boolean {
   return loadOfflineQueue(storage, userId).length > 0
 }
 
-export function clearOfflineQueue(storage: Storage): void {
+// Called on sign-out, which is a deliberate "this account is done on this
+// device" — so unsent writes going with it is the intended behaviour, not the
+// accident this file's per-user keying exists to prevent.
+//
+// `userId` scopes it to one account. Without one — a sign-out from a screen that
+// does not know who is signed in — every FamCart queue on the device is cleared,
+// which is the safer end of the trade on a shared browser.
+export function clearOfflineQueue(storage: Storage, userId?: string): void {
   try {
-    storage.removeItem(STORAGE_KEY)
+    storage.removeItem(LEGACY_STORAGE_KEY)
+    if (userId) {
+      storage.removeItem(queueKey(userId))
+      return
+    }
+    // Guarded: the Storage stub the unit tests hand in implements only the three
+    // accessors, and enumeration is not part of what this function needs to work.
+    if (typeof storage.length !== 'number' || typeof storage.key !== 'function') return
+    const doomed: string[] = []
+    for (let i = 0; i < storage.length; i += 1) {
+      const key = storage.key(i)
+      if (key && key.startsWith(`${STORAGE_PREFIX}:`)) doomed.push(key)
+    }
+    // Collected first: removing while iterating renumbers the remaining keys.
+    for (const key of doomed) storage.removeItem(key)
   } catch {
     // Storage disabled — nothing to clear.
   }
@@ -209,7 +308,29 @@ async function applyMutation(
         .eq('household_id', mutation.row.household_id)
         .eq('checked', false)
       if (selectErr) return { ok: false, transient: isOfflineError(selectErr) }
-      const target = findActiveItemByName((data ?? []) as ShoppingItem[], String(mutation.row.name))
+      // The live equivalent of this lookup is resolveActiveItemByName in
+      // shoppingListActions.ts, which the add and uncheck paths share. This one
+      // stays separate deliberately: it has no local list to splice a fetched
+      // row into, and it has to classify the failure as transient or permanent
+      // for the replay loop. Change the match rule in either and check the
+      // other — that is exactly what went wrong below.
+      //
+      // The maker is half the match key, and leaving it out was silent data
+      // loss. shopping_list_items_unique_active_name (004_shopping_list.sql) is
+      // on (household_id, name, coalesce(maker, '')), so a 23505 on a row that
+      // HAS a maker means the row it collided with has that same maker — while
+      // findActiveItemByName with no maker option looks for '' and matches only
+      // maker-less rows. It therefore found nothing, this returned a permanent
+      // rejection, and the flush dropped the mutation by design. Every catalog
+      // pick and every barcode scan carries a maker, so that was the common
+      // path, not an edge one.
+      const target = findActiveItemByName((data ?? []) as ShoppingItem[], String(mutation.row.name), {
+        maker: (mutation.row.maker as string | null) ?? null,
+      })
+      // Still nothing to fold into: the server says this product is already
+      // active here and we cannot see the row (checked between the insert and
+      // this read, or gone). Dropped rather than kept, because a replay would
+      // hit the same 23505 forever and wedge the queue behind it.
       if (!target) return { ok: false, transient: false }
       const merged = (Number(target.quantity) || 1) + (Number(mutation.row.quantity) || 1)
       const { error: updateErr } = await db

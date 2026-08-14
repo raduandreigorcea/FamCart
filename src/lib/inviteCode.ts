@@ -16,8 +16,13 @@ const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 export const INVITE_CODE_LENGTH = 8
 
 // What a code must look like to be worth sending to the server. Mirrors
-// ALPHABET: A-H, J-N, P-Z, 2-9.
-export const INVITE_CODE_REGEX = /^[A-HJ-NP-Z2-9]{8}$/
+// ALPHABET: A-H, J-N, P-Z, 2-9, and households_invite_code_format_check in
+// 003_households_and_members.sql.
+//
+// Not exported: isValidInviteCode below is the whole public surface. A caller
+// holding the raw pattern is a caller who can test an unnormalized string
+// against it and reject a perfectly good lowercase paste.
+const INVITE_CODE_REGEX = /^[A-HJ-NP-Z2-9]{8}$/
 
 // A fresh code. Uses a CSPRNG rather than Math.random(): this is the credential
 // that admits someone to a household's list, so a predictable one is a way in.

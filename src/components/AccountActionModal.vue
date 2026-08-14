@@ -492,6 +492,11 @@ function switchHousehold(id: string) {
   color: var(--text-primary);
 }
 
+/* 16px, and .account-household-emoji matches it. Every row in this menu leads
+   with a mark on the same gap, so the two kinds have to occupy the same width
+   or the labels do not share a left edge -- which is what happened while the
+   emoji sat in a 26px tile and started the household rows' text 10px right of
+   every other row. */
 .account-item-icon {
   width: 16px;
   height: 16px;
@@ -528,24 +533,25 @@ function switchHousehold(id: string) {
   flex-shrink: 0;
 }
 
-/* A household wears its own emoji where the other rows wear an icon — same slot,
-   same gap, but a bigger tile, because it identifies one particular household
-   rather than naming a kind of destination. */
+/* A household wears its own emoji where the other rows wear an icon: it
+   identifies one particular household rather than naming a kind of destination.
+   The same 16px slot the line icons get, so a household row starts its name on
+   the left edge every other row starts its label on.
+
+   No tile behind it any more. The tinted square was what the extra 10px were
+   for, and at this size it has nothing left to hold -- the emoji fills the box,
+   so the background reads as a smudge rather than a surface. The emoji is the
+   mark here, the way the glyph is on every other row. */
 .account-household-emoji {
   flex-shrink: 0;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-sm);
+  width: 16px;
+  height: 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--text-lg);
+  /* One step under the box, so a wide emoji cannot push it out. */
+  font-size: var(--text-sm);
   line-height: 1;
-  background: var(--bg-surface-alt);
-}
-
-.account-household-item:hover .account-household-emoji {
-  background: var(--bg-surface);
 }
 
 /* Names run to 25 characters and "Current" must survive beside them. */
