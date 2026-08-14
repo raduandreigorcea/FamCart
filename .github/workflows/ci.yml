@@ -32,6 +32,17 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Dependency advisories, which nothing else here would notice. Scoped to
+      # production dependencies on purpose: a dev-only advisory is real but
+      # cannot reach a user, and failing the build over one means the next
+      # genuine finding arrives in a step that is already red and being ignored.
+      # --audit-level=high for the same reason — moderate advisories on a
+      # transitive build tool are noise at this project's size.
+      - run: npm audit --omit=dev --audit-level=high
+      # Before typecheck: lint failures are usually the cheaper thing to read,
+      # and this is the step most likely to catch a template mistake vue-tsc
+      # cannot see.
+      - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
@@ -44,7 +55,14 @@ jobs:
       - uses: supabase/setup-cli@v1
         with:
           version: latest
-      # Starts local Postgres and applies supabase/migrations, then runs the
-      # pgTAP suites in supabase/tests.
       - run: supabase db start
+      # `db start` does NOT reliably apply supabase/migrations: where a local
+      # backup exists it restores that and skips them. A cold runner has no
+      # backup, so this job happened to be testing the real schema — but the same
+      # two commands are what gets run on a developer's machine, where the backup
+      # does exist and the suite then passes against a schema the migrations were
+      # never applied to. `db reset` rebuilds from supabase/migrations every time,
+      # so CI and local runs are testing the same thing.
+      - run: supabase db reset
+      # The pgTAP suites in supabase/tests, against that schema.
       - run: supabase test db

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, onBeforeUnmount, type PropType } from 'vue'
+import { type PropType } from 'vue'
 import type { HouseholdMemberProfile } from '../../lib/householdRealtime'
+import { useCopyFeedback } from '../../lib/clipboard'
 import copyIcon from '../../assets/copy.svg?raw'
 import checkIcon from '../../assets/check.svg?raw'
 
@@ -27,26 +28,10 @@ defineProps({
   },
 })
 
-const copied = ref(false)
-let copiedTimer: ReturnType<typeof setTimeout> | null = null
-
-async function copyInviteCode(code: string) {
-  if (!code) return
-  try {
-    await navigator.clipboard.writeText(code)
-    copied.value = true
-    if (copiedTimer) clearTimeout(copiedTimer)
-    copiedTimer = setTimeout(() => {
-      copied.value = false
-    }, 2000)
-  } catch {
-    // Clipboard denied or unavailable — the code is on screen to read either way.
-  }
-}
-
-onBeforeUnmount(() => {
-  if (copiedTimer) clearTimeout(copiedTimer)
-})
+// The clipboard write, the "Copied" hold and its timer cleanup all live in
+// lib/clipboard now — OnboardingTour asks the same thing of it. A failed copy
+// leaves `copied` false, which is right: the code is on screen to read either way.
+const { copied, copy: copyInviteCode } = useCopyFeedback()
 </script>
 
 <template>

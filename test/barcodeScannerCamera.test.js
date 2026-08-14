@@ -10,6 +10,26 @@ import { defineComponent, h } from 'vue'
 import BarcodeScannerModal from '../src/components/BarcodeScannerModal.vue'
 import { useBarcodeScanner, __resetDetectorForTest } from '../src/lib/barcodeScanner'
 
+// Stub the bundled-decoder fallback. Without these, every test that reaches
+// resolveDetector() with no native BarcodeDetector present tried to load the
+// real ponyfill and its wasm — and the wasm URL resolves against happy-dom's
+// default origin, so each run made a genuine connection attempt to
+// 127.0.0.1:3000 and printed an ECONNREFUSED aggregate error. The tests passed
+// only because resolveDetector swallows the failure and returns null, which
+// meant the fallback path was never actually being exercised: the suite was
+// asserting against a network error rather than against the decoder.
+vi.mock('barcode-detector/ponyfill', () => ({
+  setZXingModuleOverrides: () => {},
+  // Never selected in these tests — the native detector below is what they
+  // install — but it has to construct rather than throw when it is reached.
+  BarcodeDetector: class {
+    async detect() {
+      return []
+    }
+  },
+}))
+vi.mock('zxing-wasm/reader/zxing_reader.wasm?url', () => ({ default: 'test://zxing.wasm' }))
+
 // A frame is always ready: HAVE_CURRENT_DATA is the floor the loop checks before
 // handing anything to the decoder.
 const fakeVideo = () => ({

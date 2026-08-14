@@ -144,3 +144,56 @@ describe('persisting the household snapshot', () => {
     expect(stored()?.items).toHaveLength(0)
   })
 })
+
+// A quantity change is debounced for 300ms before it is sent, so the app going
+// away inside that window used to drop it: the snapshot kept the new number
+// locally while the server kept the old one, and the next load quietly put the
+// old one back. The same teardown that settles the snapshot now settles these.
+describe('flushing pending quantity writes', () => {
+  const quantityUpdates = () =>
+    mocks.db.calls.filter((c) => c.table === 'shopping_list_items' && c.op === 'update')
+
+  async function bumpQuantity() {
+    const wrapper = await bootHome()
+    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
+    // The live row, not a copy of it: the optimistic bump mutates the object it
+    // is handed, and the flush reads the number back off the row in the list.
+    const row = wrapper.findComponent(ShoppingList).props('items')[0]
+    wrapper.findComponent(ShoppingList).vm.$emit('set-quantity', { item: row, quantity: 4 })
+    await flushPromises()
+    // Still inside the debounce: nothing has been sent yet.
+    expect(quantityUpdates()).toHaveLength(0)
+    return wrapper
+  }
+
+  it('sends the change when the page goes away', async () => {
+    await bumpQuantity()
+
+    window.dispatchEvent(new Event('pagehide'))
+    await flushPromises()
+
+    expect(quantityUpdates()).toHaveLength(1)
+    expect(quantityUpdates()[0].payload).toMatchObject({ quantity: 4 })
+  })
+
+  it('sends the change when the app is backgrounded', async () => {
+    await bumpQuantity()
+
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+
+    expect(quantityUpdates()).toHaveLength(1)
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+  })
+
+  it('sends the change when the view unmounts', async () => {
+    const wrapper = await bumpQuantity()
+
+    wrappers.pop()
+    wrapper.unmount()
+    await flushPromises()
+
+    expect(quantityUpdates()).toHaveLength(1)
+  })
+})

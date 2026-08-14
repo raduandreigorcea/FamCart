@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, type PropType } from 'vue'
 import SkeletonBlock from './SkeletonBlock.vue'
+import { memberDisplayName } from '../lib/userIdentity'
 import type { HouseholdMemberProfile } from '../lib/householdRealtime'
 
 const props = defineProps({
@@ -37,13 +38,13 @@ const extraMembers = computed(() => Math.max(0, props.members.length - visibleMe
       <img
         v-if="member.image_url"
         :src="member.image_url"
-        :alt="(member.display_name || 'Member') + ' avatar'"
+        :alt="memberDisplayName(member) + ' avatar'"
         class="member-avatar"
       />
       <span
         v-else
         class="member-avatar member-avatar--fallback"
-        :title="member.display_name || 'Member'"
+        :title="memberDisplayName(member)"
       >
         {{ (member.display_name || member.user_id || '?').slice(0, 1).toUpperCase() }}
       </span>

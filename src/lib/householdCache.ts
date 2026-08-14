@@ -72,6 +72,34 @@ function normaliseStored(parsed: StoredSnapshot & LegacyStoredSnapshot): StoredS
 // Older than this and the snapshot is more likely to confuse than help.
 export const SNAPSHOT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
+// Everything else in a snapshot is display text that gets escaped on its way to
+// the DOM, and is overwritten by the first fetch anyway. The household id is
+// different: it is read back out as a QUERY parameter, and one of its uses
+// (lib/productSuggestions) interpolates it into a PostgREST `or` filter, whose
+// syntax is comma- and dot-separated. The comment there is right that the id is
+// server-issued — but only on the live path. Restored from a snapshot it is
+// whatever localStorage happened to hold, and localStorage is not a trust
+// boundary the app controls.
+//
+// RLS is still what decides which rows anyone may see, so this is not the thing
+// standing between a tampered cache and another household's list. It is the
+// cheap check that keeps a value that was never an id from being spliced into a
+// filter expression at all.
+//
+// Deliberately "an opaque identifier" rather than "a uuid", though in
+// production it is always the latter. What has to be excluded is PostgREST's
+// filter syntax — the comma that separates conditions, the dot that separates
+// column from operator, parens, colons, quotes, whitespace — and an allowlist
+// of identifier characters excludes all of it. Demanding the full uuid shape
+// would additionally assert a storage format this module has no reason to
+// care about, and would break on any future id scheme without being any safer
+// against the thing it is actually guarding.
+const HOUSEHOLD_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
+
+function isHouseholdId(value: unknown): value is string {
+  return typeof value === 'string' && HOUSEHOLD_ID_PATTERN.test(value)
+}
+
 export function loadHouseholdSnapshot(
   storage: Storage,
   userId: string,
@@ -85,7 +113,7 @@ export function loadHouseholdSnapshot(
     // Never show one account's list to another account on the same browser.
     if (stored.userId !== userId) return null
     if (now - stored.savedAt > SNAPSHOT_MAX_AGE_MS) return null
-    if (!stored.householdId || !Array.isArray(stored.items) || !Array.isArray(stored.householdMembers)) {
+    if (!isHouseholdId(stored.householdId) || !Array.isArray(stored.items) || !Array.isArray(stored.householdMembers)) {
       return null
     }
     return {
@@ -150,7 +178,12 @@ export function loadActiveHouseholdId(storage: Storage, userId: string): string 
     if (!raw) return null
     const stored = JSON.parse(raw) as { userId?: string; householdId?: string; familyId?: string }
     if (stored.userId !== userId) return null
-    return stored.householdId || stored.familyId || null
+    // Same reasoning as the snapshot above. This one is checked against live
+    // memberships before it is used, so it is the better-guarded of the two —
+    // but both end up in the same place, and only one of them being validated
+    // is how the unvalidated one gets forgotten.
+    const active = stored.householdId || stored.familyId || null
+    return isHouseholdId(active) ? active : null
   } catch {
     return null
   }

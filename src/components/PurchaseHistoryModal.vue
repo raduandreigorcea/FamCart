@@ -4,6 +4,7 @@ import { useSupabase } from '../supabase'
 import AppModal from './AppModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
+import { MEMBER_FALLBACK_NAME } from '../lib/userIdentity'
 import { getProductEmoji } from '../lib/productEmoji'
 import { groupCheckouts, trimPartialTail, type CheckoutEntry } from '../lib/purchaseHistory'
 import type { HouseholdMemberProfile } from '../lib/householdRealtime'
@@ -174,14 +175,14 @@ function formatTime(iso: string) {
                     <img
                       v-if="entry.added_by_image_url"
                       :src="entry.added_by_image_url"
-                      :alt="(entry.added_by_name || 'Member') + ' added this'"
+                      :alt="(entry.added_by_name || MEMBER_FALLBACK_NAME) + ' added this'"
                       class="history-adder"
-                      :title="'Added by ' + (entry.added_by_name || 'Member')"
+                      :title="'Added by ' + (entry.added_by_name || MEMBER_FALLBACK_NAME)"
                     />
                     <span
                       v-else
                       class="history-adder history-adder--fallback"
-                      :title="'Added by ' + (entry.added_by_name || 'Member')"
+                      :title="'Added by ' + (entry.added_by_name || MEMBER_FALLBACK_NAME)"
                     >
                       {{ (entry.added_by_name || '?').slice(0, 1).toUpperCase() }}
                     </span>

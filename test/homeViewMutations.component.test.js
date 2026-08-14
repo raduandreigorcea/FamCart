@@ -685,6 +685,34 @@ describe('addItem', () => {
     const update = mocks.db.calls.find((q) => q.op === 'update')
     expect(update.filters.id).toBe('srv-1')
   })
+
+  // The fold above is a write like any other, and it was the one path that did
+  // not take the guard. The winning row spends the round trip holding a summed
+  // quantity the server has not seen, so an echo landing in that window is
+  // merged as news and sets the count back — the same visible countdown the
+  // stepper's own guard exists to prevent.
+  it('guards the winning row while the folded quantity is on the wire', async () => {
+    const wrapper = await mountHome()
+    const serverRow = makeItem({ id: 'srv-1', name: 'Milk', quantity: 2 })
+    mocks.db.handlers['shopping_list_items.insert'] = () => ({
+      data: null,
+      error: { code: '23505', message: 'duplicate key value' },
+    })
+    mocks.db.handlers['shopping_list_items.select'] = () => ({ data: [serverRow], error: null })
+    let finishUpdate
+    mocks.db.handlers['shopping_list_items.update'] = () =>
+      new Promise((resolve) => {
+        finishUpdate = () => resolve({ data: null, error: null })
+      })
+
+    await submitAdd(wrapper, 'Milk')
+
+    expect(wrapper.vm.pendingItemWrites.has('srv-1')).toBe(true)
+
+    finishUpdate()
+    await flushPromises()
+    expect(wrapper.vm.pendingItemWrites.has('srv-1')).toBe(false)
+  })
 })
 
 describe('toggleItem', () => {
@@ -720,6 +748,35 @@ describe('toggleItem', () => {
     expect(items[0].quantity).toBe(5)
     const del = mocks.db.calls.find((q) => q.op === 'delete')
     expect(del.filters.id).toBe('item-a')
+  })
+
+  // Both halves of a merge are mid-write for the whole of it, and neither was
+  // guarded. The target holds a summed quantity the server has not seen; the
+  // source has been taken off the list while the server still has it, so an
+  // echo for it would find no local row and fall through to a refetch that puts
+  // it straight back — undoing the merge in front of the user.
+  it('guards both rows while the merge is on the wire', async () => {
+    const checked = makeItem({ id: 'item-a', name: 'Milk', quantity: 2, checked: true })
+    const active = makeItem({ id: 'item-b', name: 'Milk', quantity: 3 })
+    const wrapper = await mountHome({ items: [active, checked] })
+    let finishUpdate
+    mocks.db.handlers['shopping_list_items.update'] = () =>
+      new Promise((resolve) => {
+        finishUpdate = () => resolve({ data: null, error: null })
+      })
+    mocks.db.handlers['shopping_list_items.delete'] = () => ({ data: null, error: null })
+
+    const source = listedItems(wrapper).find((i) => i.id === 'item-a')
+    wrapper.findComponent(ShoppingList).vm.$emit('toggle', source)
+    await flushPromises()
+
+    expect(wrapper.vm.pendingItemWrites.has('item-a')).toBe(true)
+    expect(wrapper.vm.pendingItemWrites.has('item-b')).toBe(true)
+
+    finishUpdate()
+    await flushPromises()
+    expect(wrapper.vm.pendingItemWrites.has('item-a')).toBe(false)
+    expect(wrapper.vm.pendingItemWrites.has('item-b')).toBe(false)
   })
 
   it('restores both rows when the merge delete fails', async () => {

@@ -14,7 +14,7 @@
 // Escape, Android's Back press (via modalStack), the scroll lock, and focus
 // coming back to the button that opened it. The band at the top is the search
 // screen's band, in the same place, so Back is where the hand already expects it.
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import AppButton from './AppButton.vue'
 import AppModal from './AppModal.vue'
 import BackButton from './BackButton.vue'
@@ -66,6 +66,12 @@ const { status, videoRef, paused, start, stop } = useBarcodeScanner({
 // a second lookup on top of its own. A code that turned out to be unknown leaves
 // the camera live: scanning the next thing is a likelier answer to "we don't
 // have this one" than stopping to name it.
+// The modal is mounted under a v-if, so closing it mid-flash genuinely unmounts
+// this component with the timer still pending.
+onBeforeUnmount(() => {
+  if (flashTimer) clearTimeout(flashTimer)
+})
+
 watch(() => props.busy, (busy) => { paused.value = busy }, { immediate: true })
 
 // immediate, because this component is mounted only once it is already open —

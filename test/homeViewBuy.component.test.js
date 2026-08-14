@@ -188,6 +188,23 @@ describe('buyCheckedItems', () => {
     expect(queued).toEqual([{ kind: 'delete', id: 'a' }])
   })
 
+  // An offline checkout writes no purchase history by design, so nothing on the
+  // server will ever confirm it happened. That left the emptied list reading
+  // "Nothing here yet" — the sentence for a household that has never shopped —
+  // to a household that had just shopped in front of us. hasShopped is what
+  // picks between the two sentences.
+  it('offline: the emptied list still counts as having shopped', async () => {
+    const items = [makeItem({ id: 'a', name: 'Milk', checked: true })]
+    const wrapper = await mountHome({ items })
+    expect(wrapper.findComponent(ShoppingList).props('hasShopped')).toBe(false)
+    vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false)
+
+    await emitBuy(wrapper, ['a'])
+
+    expect(listedItems(wrapper)).toHaveLength(0)
+    expect(wrapper.findComponent(ShoppingList).props('hasShopped')).toBe(true)
+  })
+
   it('restores the list and surfaces an error when the RPC is rejected', async () => {
     const items = [
       makeItem({ id: 'a', name: 'Milk', checked: true }),

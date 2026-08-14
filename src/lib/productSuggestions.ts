@@ -41,6 +41,20 @@ export interface ProductSuggestions {
   /** Whether the fold has run. An empty map means "none" only once it has. */
   productStatsLoaded: Ref<boolean>
   loadHouseholdProductStats: () => Promise<void>
+  /**
+   * Forget everything scoped to the household being left, before the next one
+   * loads.
+   *
+   * Owned here rather than done by the caller. HomeView used to clear
+   * householdProductStats and productStatsLoaded itself on a switch, which meant
+   * this composable's reset rule lived at a call site that could not see the
+   * rest of its state — and did not: recentsExcluded, a picked product and the
+   * last-added confirmation all belonged to the previous household and all
+   * survived the switch. The second of those had already caused a visible bug
+   * once (an empty list in a new household reading "All bought"), which is the
+   * kind that comes back every time state is added here and not there.
+   */
+  resetForHousehold: () => void
   /** The regulars, for the search screen before anything is typed. */
   recentProducts: Ref<ProductSuggestion[]>
   /** The same list, shorter, for the empty list's one-tap adds. */
@@ -162,6 +176,32 @@ export function useProductSuggestions(options: {
 
   function clearSuggestions(): void {
     suggestions.value = []
+  }
+
+  // See the note on the interface. Ordered as: what the next household has to
+  // re-answer, then what the previous one had already answered.
+  function resetForHousehold(): void {
+    householdProductStats.value = new Map()
+    // Deliberately false rather than left alone: an empty map reads as "never
+    // shopped" until the refetch lands, which is what made a new household's
+    // empty list flash "Nothing here yet" before turning into "All bought".
+    productStatsLoaded.value = false
+    // Frozen from the previous household's list when its search screen opened.
+    recentsExcluded.value = []
+    // All three describe the catalog query, the pick and the add that belonged
+    // to the household being left. A stale one is not merely useless here, it is
+    // about a different list.
+    suggestions.value = []
+    suggestionsLoading.value = false
+    selectedProduct.value = null
+    lastAdded.value = null
+    // A response already on the wire must not land in the new household's
+    // dropdown; bumping the id is what makes fetchSuggestions discard it.
+    suggestRequestId++
+    if (suggestTimer) {
+      clearTimeout(suggestTimer)
+      suggestTimer = null
+    }
   }
 
   async function fetchSuggestions(text: string): Promise<void> {
@@ -352,6 +392,7 @@ export function useProductSuggestions(options: {
     householdProductStats,
     productStatsLoaded,
     loadHouseholdProductStats,
+    resetForHousehold,
     recentProducts,
     restartProducts,
     lookupBarcode,

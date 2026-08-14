@@ -5,7 +5,6 @@ import { useRouter, useRoute } from 'vue-router'
 import { useSupabase } from '../supabase'
 import { saveActiveHouseholdId } from '../lib/householdCache'
 import { deriveProfileFields } from '../lib/userIdentity'
-import { upsertOwnProfile } from '../lib/profile'
 import AppTopbar from '../components/AppTopbar.vue'
 import InputRow from '../components/InputRow.vue'
 import ErrorModal from '../components/ErrorModal.vue'
@@ -99,51 +98,53 @@ async function createHousehold() {
   loading.value = true
   try {
     const code = randomInviteCode()
+    const { display_name, image_url } = deriveProfileFields(user.value)
 
-    // Establish the profile first: the membership insert below references it
-    // (FK), and this is where the creator's Clerk name/avatar lands.
-    const { error: profileErr } = await upsertOwnProfile(db, uid, user.value)
-    if (profileErr) throw profileErr
+    // One server-side step, exactly like the join path below: the profile (which
+    // the membership references), the household and the membership are one
+    // transaction, so a rejected membership takes the household row back with it.
+    //
+    // This used to be three client writes with a compensating delete if the last
+    // one failed. When that delete failed too — it is a network call like any
+    // other — the leftover household permanently occupied the account's one
+    // ownership slot (households_one_per_owner) while being invisible to every
+    // list in the app, which are all built from household_members. There was no
+    // way back from it without SQL.
+    const { data: household, error: createErr } = await db
+      .rpc('create_household', {
+        p_name: nextHouseholdName,
+        p_invite_code: code,
+        p_display_name: display_name,
+        p_image_url: image_url,
+      })
+      .maybeSingle<{ id: string; name: string }>()
 
-    const { data: household, error: householdErr } = await db
-      .from('households')
-      .insert({ name: nextHouseholdName, invite_code: code, created_by: uid })
-      .select('id')
-      .single<{ id: string }>()
-
-    // A user may own only one household (003_households_and_members.sql). The unique index rejects a
-    // second with a 23505; turn that one case into a message that explains it
-    // rather than leaking the raw constraint text.
-    if (householdErr) {
-      if (householdErr.message?.includes('households_one_per_owner')) {
+    if (createErr) {
+      // A user may own only one household (003_households_and_members.sql). The
+      // unique index rejects a second with a 23505; turn that one case into a
+      // message that explains it rather than leaking the raw constraint text.
+      if (createErr.message?.includes('households_one_per_owner')) {
         throw new UserFacingError('You can only own one household. Leave or delete your current one before creating another.')
       }
-      throw householdErr
-    }
-
-    const { error: memberErr } = await db
-      .from('household_members')
-      .insert({
-        household_id: household.id,
-        user_id: uid,
-        role: 'moderator',
-      })
-
-    if (memberErr) {
-      // The household row was created but the membership was rejected (e.g. the
-      // membership cap, 003_households_and_members.sql). Remove the orphan so it
-      // can't linger
-      // with no members, then explain the one case the user can act on.
-      await db.from('households').delete().eq('id', household.id)
-      // The sentinel is raised as the exception DETAIL, which supabase-js exposes
-      // on error.details, not error.message.
-      if ((memberErr.details ?? memberErr.message ?? '').includes('membership_limit_exceeded')) {
+      // The sentinels are raised as the exception DETAIL, which supabase-js
+      // exposes on error.details, not error.message.
+      const detail = createErr.details ?? createErr.message ?? ''
+      if (detail.includes('membership_limit_exceeded')) {
         throw new UserFacingError(
           `You can be part of at most ${HOUSEHOLD_MEMBERSHIP_CAP} households. Leave one before creating another.`,
         )
       }
-      throw memberErr
+      if (detail.includes('household_name_invalid')) {
+        throw new UserFacingError(
+          `Household name must be ${HOUSEHOLD_NAME_MAX_LENGTH} characters or fewer.`,
+        )
+      }
+      throw createErr
     }
+    // The function returns no row only for an unauthenticated caller, which the
+    // uid check above has already ruled out. Treated as a plain failure rather
+    // than dereferenced.
+    if (!household) throw new UserFacingError('Failed to create household.')
 
     // Make the new household the active one so HomeView opens straight to it.
     saveActiveHouseholdId(localStorage, uid, household.id)
@@ -298,7 +299,7 @@ async function joinHousehold() {
             <p class="sub">This is how your household list will appear for everyone.</p>
           </div>
           <form @submit.prevent="createHousehold" class="input-form">
-            <InputRow v-model="householdName" placeholder="e.g. The Smiths" :loading="loading" required autofocus />
+            <InputRow v-model="householdName" aria-label="Household name" placeholder="e.g. The Smiths" :loading="loading" required autofocus />
             <p class="field-counter" :class="{ 'field-counter--danger': householdNameOverLimit }">
               {{ householdNameLength }}/{{ HOUSEHOLD_NAME_MAX_LENGTH }}
             </p>          </form>
@@ -315,7 +316,7 @@ async function joinHousehold() {
             <p class="sub">Ask a household member for their invite code.</p>
           </div>
           <form @submit.prevent="joinHousehold" class="input-form">
-            <InputRow v-model="inviteCode" placeholder="e.g. AB3K7XYZ" maxlength="8" :loading="loading" :uppercase="true" required autofocus />          </form>
+            <InputRow v-model="inviteCode" aria-label="Invite code" placeholder="e.g. AB3K7XYZ" maxlength="8" :loading="loading" :uppercase="true" required autofocus />          </form>
         </template>
 
       </AppCard>

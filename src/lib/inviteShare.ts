@@ -17,6 +17,7 @@
 // however it left the phone.
 
 import { Capacitor } from '@capacitor/core'
+import { copyText } from './clipboard'
 
 export type InviteShareOutcome = 'shared' | 'copied' | 'cancelled' | 'unavailable'
 
@@ -82,13 +83,10 @@ function isDismissal(error: unknown): boolean {
 }
 
 async function copyInvite(text: string): Promise<InviteShareOutcome> {
-  try {
-    await navigator.clipboard.writeText(text)
-    return 'copied'
-  } catch {
-    // Clipboard refused: a non-secure context, a permission, an older WebView.
-    return 'unavailable'
-  }
+  // Clipboard refused (a non-secure context, a permission, an older WebView) is
+  // reported as 'unavailable', which is what sends the caller to the settings
+  // dialog where the code can be read off the screen instead.
+  return (await copyText(text)) ? 'copied' : 'unavailable'
 }
 
 // Deliberately not `async`. navigator.share must be called inside the user
