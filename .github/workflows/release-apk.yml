@@ -55,15 +55,49 @@ jobs:
 
       # Vite quietly bakes `undefined` into the bundle when an env var is
       # missing, which would ship a broken app — fail loudly instead.
+      #
+      # Every secret the build step below consumes is checked here, and the two
+      # lists must stay in step. They drifted once already: the check tested two
+      # of the five and the message named all five, so a blank ANON_KEY or
+      # ONESIGNAL_APP_ID passed the guard, built green, and published.
+      #
+      # The split between fatal and warning is what the app itself does with a
+      # missing value, not how important the service feels:
+      #
+      #   REQUIRED  nothing works without it. No Supabase URL or anon key and
+      #             every query fails; no Clerk key and there is no sign-in.
+      #   OPTIONAL  src/lib/pushNotifications.ts and src/lib/errorReporting.ts
+      #             both check for their value and no-op when it is absent, by
+      #             design, so a build without them is degraded but functional.
+      #             Failing here would block a release over a working app —
+      #             but losing one silently is how Android ran with no error
+      #             reporting at all, so it is loud in the log instead.
       - name: Check build secrets
         env:
           SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           CLERK_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
+          ONESIGNAL_APP_ID: ${{ secrets.VITE_ONESIGNAL_APP_ID }}
+          SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
         run: |
-          if [ -z "$SUPABASE_URL" ] || [ -z "$CLERK_KEY" ]; then
-            echo "Missing repo secrets: set VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY, VITE_SUPABASE_ANON_KEY, VITE_CLERK_PUBLISHABLE_KEY and VITE_ONESIGNAL_APP_ID under Settings → Secrets and variables → Actions."
+          missing=
+          for name in SUPABASE_URL SUPABASE_ANON_KEY CLERK_KEY; do
+            # Indirect expansion: ${!name} is the value of the variable *named*
+            # by $name, so one loop covers every required secret.
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required repo secrets:$missing"
+            echo "Set VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY and VITE_CLERK_PUBLISHABLE_KEY under Settings → Secrets and variables → Actions."
             exit 1
           fi
+
+          # Warnings, not failures — see the note above. ::warning:: surfaces
+          # these in the run summary, so a release that quietly lost push or
+          # error reporting is visible without digging through the log.
+          [ -n "$ONESIGNAL_APP_ID" ] || echo "::warning::VITE_ONESIGNAL_APP_ID is empty — this build ships with push notifications disabled."
+          [ -n "$SENTRY_DSN" ] || echo "::warning::VITE_SENTRY_DSN is empty — this build ships with no error reporting."
 
       # The signing key is not optional here, and failing without it has to be
       # loud. android/app/build.gradle falls back to the debug key when no
@@ -135,13 +169,25 @@ jobs:
 
       - run: npm ci
 
+      # Keep this list and the "Check build secrets" step above in step.
+      #
+      # VITE_SENTRY_DSN was absent here for the life of the workflow, and
+      # nothing caught it: startErrorReporting() in src/lib/errorReporting.ts
+      # treats an empty DSN as "reporting is off" and returns before importing
+      # the SDK — the same path dev, CI and tests take — so every published APK
+      # built green, ran fine, and reported no crash it ever hit. The web app
+      # was unaffected because Vercel supplies the value from its own project
+      # environment, which is why Sentry looked healthy.
+      #
+      # VITE_SUPABASE_PUBLISHABLE_KEY used to be passed here too. Nothing in
+      # src/ reads it; the client is built from VITE_SUPABASE_ANON_KEY.
       - name: Build web app
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
           VITE_ONESIGNAL_APP_ID: ${{ secrets.VITE_ONESIGNAL_APP_ID }}
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
         run: npm run build
 
       - run: npx cap sync android
