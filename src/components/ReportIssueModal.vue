@@ -60,14 +60,15 @@ const canSend = computed(() =>
   isReportSendable({ kind: kind.value, surface: surface.value, message: message.value }),
 )
 
-// Both kinds are asked where, and only the wording changes — a section that
-// mounts and unmounts resized the whole dialog under the finger every time
-// someone switched, and reserving the space instead would have left a blank
-// gap. The place is worth having either way: "the scanner is confusing" is as
-// much easier to act on as "the scanner is broken".
-const whereLabel = computed(() =>
-  isBug.value ? 'Where did you run into it?' : 'Which part of the app?',
-)
+// Both kinds are asked where, and now in the same words. A section that mounts
+// and unmounts resized the whole dialog under the finger every time someone
+// switched, and reserving the space instead would have left a blank gap — so it
+// stays put. It used to reword itself between the two kinds as well, which was
+// one more thing moving for no gain: "Where in the app?" is true of a bug and of
+// an idea, and only the optional badge needs to differ. The place is worth
+// having either way: "the scanner is confusing" is as easy to act on as "the
+// scanner is broken".
+const WHERE_LABEL = 'Where in the app?'
 
 const prompt = computed(() => (isBug.value ? 'What happened?' : 'What could be better?'))
 
@@ -176,9 +177,13 @@ watch(
       </div>
 
       <div v-else class="report-dialog__body">
+        <!-- No label over these two. They are the first thing in the dialog and
+             they say what they are, so a line asking what kind of report this is
+             only makes someone read the question before reading the answers. The
+             group still carries the question for a screen reader, which cannot
+             see that the buttons are self-describing. -->
         <div class="report-field">
-          <p class="report-label" id="report-kind-label">What kind of report is this?</p>
-          <div class="report-segmented" role="group" aria-labelledby="report-kind-label">
+          <div class="report-segmented" role="group" aria-label="What kind of report is this?">
             <button
               class="report-segmented__btn"
               :class="{ 'report-segmented__btn--on': kind === 'bug' }"
@@ -208,7 +213,7 @@ watch(
              below it; only the label changes, and it stays one line. -->
         <div class="report-field">
           <p class="report-label" id="report-where-label">
-            {{ whereLabel }}
+            {{ WHERE_LABEL }}
             <span v-if="!isBug" class="report-optional">optional</span>
           </p>
           <div class="report-places" role="group" aria-labelledby="report-where-label">
@@ -250,13 +255,13 @@ watch(
 
         <p v-if="failed" class="report-failed" role="alert">
           <span class="report-failed__icon" aria-hidden="true" v-html="wifiOffIconRaw"></span>
-          <span>Nothing was sent — this needs a connection. Your report is still here; try again once you're back online.</span>
+          <span>Nothing was sent because you're offline. Your text is still here, so try again once you're back.</span>
         </p>
 
         <div class="report-actions">
           <AppButton variant="secondary" block @click="emit('close')">Cancel</AppButton>
           <AppButton variant="primary" block :disabled="!canSend || sending" @click="send">
-            {{ sending ? 'Sending' : 'Send report' }}
+            {{ sending ? 'Sending' : 'Send' }}
           </AppButton>
         </div>
       </div>

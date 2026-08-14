@@ -31,12 +31,32 @@ create table if not exists public.profiles (
   updated_at   timestamptz not null default now(),
   constraint profiles_display_name_length
     check (char_length(display_name) between 1 and 80),
-  -- https-only: an arbitrary scheme lets a member point an <img src> at a
-  -- logging/beacon endpoint. The client mirrors this in deriveProfileFields()
-  -- (src/lib/userIdentity.ts), but this is the authority.
+  -- Clerk's image host only. An arbitrary scheme lets a member point an <img
+  -- src> at a logging/beacon endpoint — but so does an arbitrary https HOST,
+  -- which is what this check allowed for a while: every co-member's browser
+  -- fetches whatever is here, handing the person who chose it their IP, device
+  -- and viewing time. Clerk serves every avatar from img.clerk.com whatever the
+  -- original source, so nothing legitimate is excluded. The client mirrors this
+  -- in deriveProfileFields() (src/lib/userIdentity.ts), but this is the authority.
   constraint profiles_image_url_scheme
-    check (image_url is null or (image_url ~ '^https://' and char_length(image_url) <= 2048))
+    check (
+      image_url is null
+      or (image_url ~ '^https://img\.clerk\.com/' and char_length(image_url) <= 2048)
+    )
 );
+
+-- Restated as an explicit ALTER for the reason the households block below spells
+-- out at length: everything inside `create table if not exists` is skipped on a
+-- database where the table already exists, which is every database this file has
+-- run against more than once. The bound above therefore reaches new databases
+-- only, and tightening it there alone would leave production accepting the
+-- arbitrary https host this was changed to close.
+alter table public.profiles drop constraint if exists profiles_image_url_scheme;
+alter table public.profiles add constraint profiles_image_url_scheme
+  check (
+    image_url is null
+    or (image_url ~ '^https://img\.clerk\.com/' and char_length(image_url) <= 2048)
+  );
 
 alter table public.profiles enable row level security;
 
@@ -627,6 +647,105 @@ before insert or update on public.profiles
 for each row
 execute function public.enforce_profile_write_rate_limit();
 
+-- ─── creating a household ────────────────────────────────────────────────────
+-- The counterpart to join_household_with_code below, and it exists for the same
+-- reason that one does: a household is not one row, and doing it in pieces from
+-- the client means the pieces can come apart.
+--
+-- Creation used to be three client writes — upsert the profile (the FK target),
+-- insert the household, insert the membership — with a compensating DELETE if
+-- the third failed. That compensation is itself a network call, and when it
+-- failed the result was unrecoverable by the user:
+--
+--   • households_one_per_owner is a unique index on created_by, so the orphan
+--     permanently occupies the account's one ownership slot;
+--   • every household list in the app is derived from household_members, so the
+--     orphan appears nowhere the user could leave or delete it;
+--   • the setup screen's own ownership probe reads households by created_by, so
+--     it finds the orphan and correctly hides the create option — telling the
+--     user they already own a household they cannot see.
+--
+-- A function body is one transaction, so the membership limit trigger raising
+-- now rolls the household insert back with it. There is no window to compensate
+-- for, which is a different thing from a smaller one.
+--
+-- The invite code still comes from the client (src/lib/inviteCode.ts mints it
+-- with a CSPRNG) rather than being generated here, so this change is only about
+-- atomicity. The format is re-checked below anyway: households_invite_code_format_check
+-- would catch a malformed one, but as a constraint violation rather than as the
+-- named error the caller can act on.
+create or replace function public.create_household(
+  p_name text,
+  p_invite_code text,
+  p_display_name text default null,
+  p_image_url text default null
+)
+returns table (id uuid, name text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user text := requesting_user_id();
+  v_name text := btrim(coalesce(p_name, ''));
+  v_household_id uuid;
+begin
+  if v_user is null then
+    return;
+  end if;
+
+  -- Mirrors households_name_length_check and src/lib/limits.ts. Raised by name
+  -- so the client can tell this apart from the ownership conflict below.
+  if char_length(v_name) < 1 or char_length(v_name) > 25 then
+    raise exception 'household name must be 1-25 characters'
+      using detail = 'household_name_invalid';
+  end if;
+
+  if coalesce(p_invite_code, '') !~ '^[A-HJ-NP-Z2-9]{8}$' then
+    raise exception 'invite code is malformed'
+      using detail = 'invite_code_invalid';
+  end if;
+
+  -- Same clamping as the join path: an overlong name or a non-https avatar is
+  -- trimmed rather than allowed to fail the whole creation.
+  insert into public.profiles (user_id, display_name, image_url, updated_at)
+  values (
+    v_user,
+    coalesce(nullif(left(btrim(p_display_name), 80), ''), 'Member'),
+    -- Clamped to null rather than allowed to hit profiles_image_url_scheme:
+    -- these two RPCs are how someone creates or joins a household, and an avatar
+    -- the check would reject must cost them their photo, not their membership.
+    case
+      when p_image_url ~ '^https://img\.clerk\.com/' and char_length(p_image_url) <= 2048
+      then p_image_url
+      else null
+    end,
+    now()
+  )
+  on conflict (user_id) do update
+    set display_name = excluded.display_name,
+        image_url = excluded.image_url,
+        updated_at = now();
+
+  -- households_one_per_owner raises 23505 here for a second household. Left to
+  -- surface as-is: the caller already recognises the constraint name, and unlike
+  -- the checks above it is not something this function can phrase better.
+  insert into public.households (name, invite_code, created_by)
+  values (v_name, p_invite_code, v_user)
+  returning households.id into v_household_id;
+
+  -- The membership limit trigger can raise here. That rollback taking the
+  -- household row with it is the entire point of this function.
+  insert into public.household_members (household_id, user_id, role)
+  values (v_household_id, v_user, 'moderator');
+
+  return query select v_household_id, v_name;
+end;
+$$;
+
+revoke all on function public.create_household(text, text, text, text) from public;
+grant execute on function public.create_household(text, text, text, text) to authenticated;
+
 -- ─── joining by invite code ──────────────────────────────────────────────────
 -- The invite code is a real credential, and this is the only thing that checks
 -- it. Verifying the code, upserting the joiner's profile and inserting the
@@ -713,7 +832,14 @@ begin
   values (
     v_user,
     coalesce(nullif(left(btrim(p_display_name), 80), ''), 'Member'),
-    case when p_image_url ~ '^https://' and char_length(p_image_url) <= 2048 then p_image_url else null end,
+    -- Clamped to null rather than allowed to hit profiles_image_url_scheme:
+    -- these two RPCs are how someone creates or joins a household, and an avatar
+    -- the check would reject must cost them their photo, not their membership.
+    case
+      when p_image_url ~ '^https://img\.clerk\.com/' and char_length(p_image_url) <= 2048
+      then p_image_url
+      else null
+    end,
     now()
   )
   on conflict (user_id) do update

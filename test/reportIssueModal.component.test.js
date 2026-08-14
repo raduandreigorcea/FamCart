@@ -48,16 +48,22 @@ describe('asking where', () => {
   })
 
   // The section stays put when the kind changes: mounting and unmounting it
-  // resized the whole dialog under the finger. Only the wording moves, and it
-  // stays optional for feedback so the stability costs no extra tap.
-  it('keeps the question in place for feedback, reworded and optional', async () => {
+  // resized the whole dialog under the finger. It stays optional for feedback,
+  // so that stability costs no extra tap.
+  //
+  // The label used to reword itself between the two kinds as well. It does not
+  // any more -- one question that is true of both is one less thing moving --
+  // so what is pinned here is that nothing shifts, not which words are used.
+  it('keeps the question in place for feedback, unchanged and optional', async () => {
     const wrapper = mountReport()
     const before = places(wrapper).length
+    const label = wrapper.find('#report-where-label').text()
 
     await kinds(wrapper)[1].trigger('click')
 
     expect(places(wrapper)).toHaveLength(before)
-    expect(wrapper.text()).toContain('Which part of the app?')
+    expect(wrapper.find('#report-where-label').text()).toContain('Where in the app?')
+    expect(label).toContain('Where in the app?')
     expect(wrapper.find('.report-optional').exists()).toBe(true)
   })
 

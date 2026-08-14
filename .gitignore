@@ -12,8 +12,8 @@ dist
 dist-ssr
 *.local
 
-# Every env file, including .env.scripts (service-role key) and
-# .env.sentry-build-plugin (upload token). Nothing here is ever committed.
+# Every env file, including .env.sentry-build-plugin (upload token). Nothing
+# here is ever committed.
 .env*
 
 # Editor directories and files

@@ -212,7 +212,7 @@ function onDigitInput(index: number, event: Event) {
         digitRefs.value[index + 1]?.focus()
     }
     if (digits.value.every(d => d !== '')) {
-        handleCodeSubmit()
+        void handleCodeSubmit()
     }
 }
 
@@ -228,7 +228,7 @@ function onDigitPaste(event: ClipboardEvent) {
     pasted.split('').forEach((ch: string, i: number) => { digits.value[i] = ch })
     const next = Math.min(pasted.length, 5)
     nextTick(() => digitRefs.value[next]?.focus())
-    if (pasted.length === 6) handleCodeSubmit()
+    if (pasted.length === 6) void handleCodeSubmit()
 }
 
 function goBack() {
@@ -252,16 +252,26 @@ function goBack() {
 
             <!-- Email form -->
             <form v-if="step === 'email'" @submit.prevent="handleEmailSubmit" class="email-form">
-                <InputRow v-model="email" type="email" placeholder="your@email.com" autocomplete="email" :loading="loading" required />
+                <InputRow v-model="email" type="email" aria-label="Email address" placeholder="your@email.com" autocomplete="email" :loading="loading" required />
             </form>
 
             <!-- OTP code form -->
             <div v-else class="otp-section">
                 <p class="code-hint">Enter the 6-digit code sent to <strong>{{ email }}</strong></p>
-                <div class="otp-row" :class="{ 'otp-row--loading': loading }">
+                <!-- One field per digit is a sighted-user affordance; to a screen
+                     reader it is six unlabelled boxes unless each says which one
+                     it is. The group carries the overall name, the boxes carry
+                     their position. -->
+                <div
+                    class="otp-row"
+                    :class="{ 'otp-row--loading': loading }"
+                    role="group"
+                    aria-label="6-digit verification code"
+                >
                     <input
                         v-for="(_, i) in digits"
                         :key="i"
+                        :aria-label="`Digit ${i + 1} of ${digits.length}`"
                         :ref="(el) => { if (el) digitRefs[i] = el as HTMLInputElement }"
                         v-model="digits[i]"
                         type="text"

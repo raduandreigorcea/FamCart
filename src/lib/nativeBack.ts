@@ -53,7 +53,9 @@ export function handleBackPress(
 // Registers the listener. A no-op off native, where Back is the browser's own
 // and belongs to the browser.
 export function startNativeBack(router: Router): () => void {
-  let isNative = false
+  // No initializer: every path out of the try either assigns it or returns, so
+  // a starting value would only ever be overwritten unread.
+  let isNative: boolean
   try {
     isNative = Capacitor.isNativePlatform()
   } catch {

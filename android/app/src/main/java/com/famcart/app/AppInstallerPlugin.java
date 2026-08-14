@@ -17,6 +17,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.Locale;
 
 /**
  * Installing a new FamCart APK from inside the old one.
@@ -52,6 +53,25 @@ public class AppInstallerPlugin extends Plugin {
     private static final String UPDATE_FILE = "FamCart-update.apk";
     private static final int MAX_REDIRECTS = 5;
     private static final int BUFFER_SIZE = 64 * 1024;
+
+    /**
+     * Drop an APK left over from a previous run.
+     *
+     * A successful install replaces this process, so there is no "after the
+     * install" moment in this app to clean up from — the download used to be
+     * cleared only at the start of the *next* one, which left ~30 MB sitting in
+     * the cache directory indefinitely on a device that had updated once.
+     * Startup is the next moment we are running at all, and by then the file has
+     * either been installed or abandoned; either way nothing needs it.
+     */
+    @Override
+    public void load() {
+        File stale = new File(new File(getContext().getCacheDir(), UPDATE_DIR), UPDATE_FILE);
+        if (stale.exists() && !stale.delete()) {
+            // Cache files are the OS's to reclaim if we cannot. Nothing to report.
+            stale.deleteOnExit();
+        }
+    }
 
     /**
      * Whether Android would let this app install a package right now.
@@ -171,11 +191,40 @@ public class AppInstallerPlugin extends Plugin {
         }
     }
 
+    /**
+     * Rejects anything that is not an https URL on a GitHub host.
+     *
+     * This is checked on the initial URL and again on every redirect target,
+     * because following redirects by hand means opting out of the protection
+     * that comes with not doing so: HttpURLConnection refuses to follow
+     * https→http automatically, and setInstanceFollowRedirects(false) below
+     * turns that refusal off along with everything else. HttpsURLConnection
+     * extends HttpURLConnection, so the cast in open() succeeds just as happily
+     * for a plaintext hop — nothing would have complained.
+     *
+     * The host allowlist is not the load-bearing half (the signing key is: an
+     * APK signed with a different one cannot install over FamCart). It is here
+     * because the URL's only legitimate source is the release API, so anything
+     * else is already wrong by the time it reaches this method.
+     */
+    private void requireTrustedUrl(URL url) {
+        if (!"https".equalsIgnoreCase(url.getProtocol())) {
+            throw new SecurityException("Refusing a non-https download URL.");
+        }
+        String host = url.getHost() == null ? "" : url.getHost().toLowerCase(Locale.ROOT);
+        boolean trusted = host.equals("github.com") || host.endsWith(".githubusercontent.com");
+        if (!trusted) {
+            throw new SecurityException("Refusing a download from an unexpected host.");
+        }
+    }
+
     /** Opens {@code url}, following redirects across hosts itself. */
     private HttpURLConnection open(String url) throws Exception {
         String current = url;
         for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
-            HttpURLConnection connection = (HttpURLConnection) new URL(current).openConnection();
+            URL parsed = new URL(current);
+            requireTrustedUrl(parsed);
+            HttpURLConnection connection = (HttpURLConnection) parsed.openConnection();
             connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(30000);
             connection.setReadTimeout(30000);

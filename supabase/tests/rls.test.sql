@@ -48,11 +48,16 @@
 --  15. Table privileges match what the policies describe: anon reaches nothing,
 --      and a signed-in user cannot write purchase_history or product_catalog even
 --      though hosted Supabase grants those at provisioning (003-006).
+--  16. Creating a household is all-or-nothing: a membership the limit trigger
+--      rejects takes the households row back with it. Done as three client
+--      writes, a failed compensating delete left an orphan that permanently
+--      occupied the account's one ownership slot and that no screen in the app
+--      could reach (003_households_and_members.sql).
 --
 -- Tests run inside a transaction that is rolled back, so they leave no data behind.
 
 begin;
-select plan(90);
+select plan(96);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 -- Three households, because promoting a contributed product to the global catalog
@@ -1228,6 +1233,98 @@ select throws_ok(
   '42501',
   null,
   'a signed-in user cannot write the product catalog directly'
+);
+
+-- ── An avatar may only point at Clerk ───────────────────────────────────────
+-- profiles.image_url is member-controlled and rendered as an <img src> for every
+-- co-member, so an arbitrary https host is a beacon: it reports their IP, device
+-- and viewing time to whoever chose it. Clerk serves every avatar from
+-- img.clerk.com whatever the original source, so nothing legitimate is lost.
+--
+-- Asserted here because the bound lives inside `create table if not exists` as
+-- well as in an explicit ALTER, and only the ALTER reaches a database that
+-- already exists. A future edit to the inline copy alone would look right and
+-- change nothing.
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"user_avatar"}';
+
+select throws_ok(
+  $$ insert into public.profiles (user_id, display_name, image_url)
+     values ('user_avatar', 'Beacon', 'https://attacker.example/pixel.png') $$,
+  '23514',
+  null,
+  'a profile avatar cannot point at an arbitrary https host'
+);
+
+select lives_ok(
+  $$ insert into public.profiles (user_id, display_name, image_url)
+     values ('user_avatar', 'Legit', 'https://img.clerk.com/abc123.png') $$,
+  'a Clerk-hosted avatar is accepted'
+);
+
+-- ── create_household() is all-or-nothing ────────────────────────────────────
+-- Creating a household is three writes (profile, household, membership) and it
+-- used to be three round trips from the client, with a compensating DELETE if
+-- the last one failed. When that compensation failed too, the leftover household
+-- permanently occupied the account's one ownership slot
+-- (households_one_per_owner) while being invisible to every list in the app --
+-- all of which are built from household_members. Nothing in the UI could reach
+-- it to leave or delete it.
+--
+-- These two cases are the guarantee that replaced it: the failure path leaves
+-- nothing behind, and the success path leaves a household with its creator
+-- already in it.
+-- Seeded as the superuser so RLS is out of the way, the same way the fixtures at
+-- the top of this file are: the direct-insert policy only covers a creator
+-- seeding their own household, which is not what is being set up here.
+reset role;
+
+-- user_cap is already at the membership ceiling (3), so the membership insert
+-- inside create_household() is guaranteed to be rejected by the limit trigger.
+insert into public.profiles (user_id, display_name) values ('user_cap', 'Capped');
+insert into public.household_members (household_id, user_id, role) values
+  ('00000000-0000-0000-0000-0000000000a1', 'user_cap', 'member'),
+  ('00000000-0000-0000-0000-0000000000b1', 'user_cap', 'member'),
+  ('00000000-0000-0000-0000-0000000000c1', 'user_cap', 'member');
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"user_cap"}';
+
+-- The message is asserted, not just the SQLSTATE: create_household() raises
+-- P0001 for a malformed name and a malformed invite code too, so a bare code
+-- check here would pass on the wrong rejection entirely. (It did, first time --
+-- the code below originally contained a 0 and a 1, which the alphabet excludes.)
+select throws_ok(
+  $$ select public.create_household('Fourth', 'CREATEAB', 'Capped', null) $$,
+  'P0001',
+  'You can be part of at most 3 households.',
+  'creating a fourth household is refused by the membership limit'
+);
+
+-- The whole point. Before this function existed, the households row survived a
+-- rejected membership and there was no way for its owner to reach it again.
+select is(
+  (select count(*)::int from public.households where created_by = 'user_cap'),
+  0,
+  'a refused membership rolls the household row back with it, leaving no orphan'
+);
+
+-- And the success path, so the rollback above is not passing merely because the
+-- function never writes anything.
+set local request.jwt.claims = '{"sub":"user_make"}';
+select is(
+  (select name from public.create_household('Made', 'CREATECD', 'Maker', null)),
+  'Made',
+  'create_household returns the household it created'
+);
+
+select is(
+  (select role from public.household_members m
+    join public.households h on h.id = m.household_id
+   where h.created_by = 'user_make' and m.user_id = 'user_make'),
+  'moderator',
+  'the creator is seeded as a moderator of the household in the same transaction'
 );
 
 select * from finish();
