@@ -22,6 +22,11 @@ function fakeSdk({ permission = 'granted' } = {}) {
         optOut: vi.fn(async () => {}),
       },
     },
+    // Part of the OneSignalWebSdk interface all along, but only reached once
+    // the SDK stopped being fetched at boot: the init command that registers
+    // the foreground suppressor is now queued by whichever path first needs
+    // the SDK, so draining the queue in these tests runs it.
+    Notifications: { addEventListener: vi.fn() },
   }
   vi.stubGlobal('Notification', { permission })
   return sdk
@@ -62,6 +67,44 @@ describe('environment guards', () => {
 
   it('rejects an empty user id before touching any SDK', async () => {
     expect(await enablePushNotifications('')).toBe('error')
+  })
+})
+
+describe('boot cost', () => {
+  // Fresh module per test: whether the SDK has been asked for is module state,
+  // and these two tests are entirely about that flag's starting value.
+  async function freshModule() {
+    vi.resetModules()
+    return import('../src/lib/pushNotifications')
+  }
+
+  it('does not fetch the web SDK at startup', async () => {
+    vi.stubEnv('VITE_ONESIGNAL_APP_ID', 'app-123')
+    const win = stubPushCapableBrowser()
+    const push = await freshModule()
+
+    push.initPushNotifications()
+
+    // Nothing queued means nothing fetched. Until somebody turns notifications
+    // on there is nothing for the SDK to do, and this used to download ~100KB
+    // from a third-party CDN on every cold start for every visitor — including
+    // the desktop users the app deliberately never even prompts.
+    expect(win.OneSignalDeferred).toHaveLength(0)
+  })
+
+  it('fetches it the moment somebody turns notifications on', async () => {
+    vi.stubEnv('VITE_ONESIGNAL_APP_ID', 'app-123')
+    const win = stubPushCapableBrowser()
+    const sdk = fakeSdk()
+    const push = await freshModule()
+
+    const pending = push.enablePushNotifications('user-1')
+    // The init command is queued by the path that needs the SDK now, not by boot.
+    expect(win.OneSignalDeferred.length).toBeGreaterThan(0)
+    drainDeferred(win, sdk)
+    await pending
+
+    expect(sdk.init).toHaveBeenCalled()
   })
 })
 

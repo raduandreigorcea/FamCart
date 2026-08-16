@@ -16,6 +16,9 @@
 
 import type { App } from 'vue'
 import type { Router } from 'vue-router'
+// The same deferral the OneSignal web SDK uses. Shared rather than copied so
+// "after the app is up" cannot come to mean two different things.
+import { whenIdle } from './idle'
 
 // Only the one function is held, never the module namespace. Keeping the
 // namespace alive (`sentry = module`) forces the bundler to retain every export
@@ -130,16 +133,6 @@ export function captureEarlyErrors(): () => void {
     window.removeEventListener('error', onError)
     window.removeEventListener('unhandledrejection', onRejection)
   }
-}
-
-// Defer to whenever the browser is next idle, so the SDK competes with nothing
-// that matters. The timeout is the ceiling: on a busy page idle may never come,
-// and an error reporter that waits forever reports nothing.
-function whenIdle(run: () => void): void {
-  const idle = (globalThis as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => void })
-    .requestIdleCallback
-  if (typeof idle === 'function') idle(run, { timeout: 4000 })
-  else setTimeout(run, 2000)
 }
 
 // Called once from main.ts. Resolves when reporting is live, which tests use;
