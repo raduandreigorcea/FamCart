@@ -19,7 +19,15 @@ interface Layer {
   // How this layer asks to be dismissed. Dialogs emit 'close' to their caller,
   // which flips the prop that opened them; menus flip their own model. Either
   // way the layer is never torn down from here, only asked.
-  close: (() => void) | null
+  //
+  // Required, and that is the point. It was optional, and closeTopModal
+  // answered `false` for a layer that had not supplied one — which sends
+  // handleBackPress on to its root-route case and exits the app with something
+  // still painted over the page. Every caller happens to pass a close today, so
+  // the branch was unreachable; the type is what keeps the fourth one from
+  // quietly reintroducing the exact failure nativeBack.ts was written to
+  // eliminate.
+  close: () => void
   // Menus scroll with the page behind them by design; dialogs do not.
   locksScroll: boolean
 }
@@ -39,14 +47,14 @@ export function isTopModal(token: symbol): boolean {
 
 export function openModal(
   token: symbol,
-  options: { close?: () => void; locksScroll?: boolean } = {},
+  options: { close: () => void; locksScroll?: boolean },
 ): void {
   const locksScroll = options.locksScroll !== false
   if (locksScroll && !locksAnything() && typeof document !== 'undefined') {
     previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
   }
-  stack.push({ token, close: options.close ?? null, locksScroll })
+  stack.push({ token, close: options.close, locksScroll })
 }
 
 // Removes by identity rather than popping, because dialogs do not always close
@@ -69,7 +77,9 @@ export function closeModal(token: symbol): void {
 // state — exactly as if it had been dismissed by hand.
 export function closeTopModal(): boolean {
   const top = stack[stack.length - 1]
-  if (!top?.close) return false
+  // An empty stack is the only `false` now: every layer on it can be asked to
+  // close, because the type says so.
+  if (!top) return false
   top.close()
   return true
 }

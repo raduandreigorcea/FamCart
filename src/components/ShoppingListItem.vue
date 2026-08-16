@@ -304,6 +304,12 @@ function settle() {
   armed.value = false
   offset.value = 0
   axis = null
+  // The gesture is over however it got here, so the pointer it belonged to is
+  // no longer ours. onPointerUp clears this itself because its delete branch
+  // deliberately does not settle — it leaves the face flung off-screen for the
+  // removal animation — so the two together are what cover every exit.
+  // pointercancel had only this one, and left the id behind.
+  pointerId = null
 }
 
 </script>

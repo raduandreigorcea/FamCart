@@ -73,7 +73,14 @@ function focusables() {
 // overlay makes unreachable to a mouse but not to a keyboard.
 function trapTab(event: KeyboardEvent) {
   const items = focusables()
-  if (!items.length) return
+  if (!items.length) {
+    // Nothing in here to move to, so the right answer to Tab is that it does
+    // nothing. Returning without this let it walk straight out into the page
+    // the overlay has made unreachable to every other kind of input — the one
+    // hole in the trap, open only for a dialog with no focusable content.
+    event.preventDefault()
+    return
+  }
   const first = items[0]
   const last = items[items.length - 1]
   const active = document.activeElement
