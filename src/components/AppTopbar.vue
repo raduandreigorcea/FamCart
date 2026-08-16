@@ -9,9 +9,7 @@ import type { HouseholdMemberProfile } from '../lib/householdRealtime'
 import { DEFAULT_HOUSEHOLD_EMOJI } from '../lib/householdEmoji'
 import { ITEM_LIMIT_DEFAULT } from '../lib/limits'
 import { getUserDisplayName, getUserInitial, getUserPrimaryEmail } from '../lib/userIdentity'
-import { forgetUser } from '../lib/session'
-import { clearHouseholdSnapshot } from '../lib/householdCache'
-import { clearOfflineQueue } from '../lib/offlineQueue'
+import { forgetLocalUserState } from '../lib/session'
 import { logoutPushUser } from '../lib/pushNotifications'
 import { captureException } from '../lib/errorReporting'
 import { shareInvite } from '../lib/inviteShare'
@@ -171,14 +169,15 @@ async function handleSignOut() {
   signingOut.value = true
   try {
     // Drop the cached session and local data so the offline-boot path and the
-    // snapshot can't resurrect this account after signing out.
-    forgetUser(localStorage)
-    clearHouseholdSnapshot(localStorage)
+    // snapshot can't resurrect this account after signing out. The list of what
+    // that means lives in lib/session, next to the thing that writes the first
+    // entry — spelled out here, it was one key short.
+    //
     // Scoped to this account where the topbar knows it. On the setup screen it
     // renders without props and currentUserId is '', which clears every FamCart
-    // queue on the device instead — the safer answer when we cannot say whose
-    // this is.
-    clearOfflineQueue(localStorage, props.currentUserId || undefined)
+    // queue and snapshot on the device instead — the safer answer when we cannot
+    // say whose this is.
+    forgetLocalUserState(localStorage, props.currentUserId || undefined)
     // Unlink this device in OneSignal so the next account's pushes don't land
     // on top of the old one's. Best-effort; sign-out must not wait on the CDN.
     void logoutPushUser()
