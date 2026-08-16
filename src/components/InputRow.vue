@@ -15,10 +15,15 @@ defineProps({
   placeholder: String,
   autocomplete: String,
   maxlength: [String, Number],
-  required: Boolean,
-  autofocus: Boolean,
   loading: { type: Boolean, default: false },
   uppercase: { type: Boolean, default: false },
+  // Both are set by HouseholdSetupView on the household-name and invite-code
+  // fields. They were briefly removed as unused — a search for `:required=` and
+  // `required="` misses the bare valueless form the callers actually use, and
+  // with no prop to bind to they fell through onto the wrapper <div>, where
+  // neither does anything. The setup screen quietly stopped focusing its field.
+  required: { type: Boolean, default: false },
+  autofocus: { type: Boolean, default: false },
 })
 
 defineEmits(['update:modelValue'])

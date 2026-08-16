@@ -35,7 +35,18 @@ export const RELEASES_PAGE_URL =
 // A version the user said "Later" to. Re-prompting on the next launch for a
 // version already declined is nagging; a *newer* version than the declined one
 // is news, so this stores the version rather than a boolean.
-const SKIPPED_VERSION_KEY = 'famcart_update_skipped_version'
+//
+// Kebab-case like every other key this app writes (famcart-theme,
+// famcart-last-user, famcart-offline-queue, famcart-household-snapshot). These
+// two were the only snake_case ones, which meant the storage surface needed two
+// grep patterns to enumerate — and the pair was duly missed when auditing what
+// signing out clears.
+const SKIPPED_VERSION_KEY = 'famcart-update-skipped-version'
+// The snake_case name both keys were written under until now. Read as a fallback
+// rather than dropped: this one holds a version somebody already declined, and
+// losing it re-offers that exact update on the next launch — the nagging the key
+// exists to prevent. Retired on the next write.
+const LEGACY_SKIPPED_VERSION_KEY = 'famcart_update_skipped_version'
 
 // The GitHub API allows 60 unauthenticated requests an hour per IP, shared by
 // everyone in the house behind one router. Checking on every single app open
@@ -51,7 +62,12 @@ const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
 // Renamed from famcart_update_last_check, which recorded the other fact. Any
 // value left under the old name is stale by definition and is simply ignored,
 // which is the point of moving rather than reusing it.
-const QUIET_SINCE_KEY = 'famcart_update_quiet_since'
+//
+// Kebab now, for the reason above. No fallback read for this one, deliberately:
+// all it can say is "we looked recently and found nothing", and losing that
+// costs exactly one extra release check on one launch. Carrying a migration for
+// it would be more machinery than the fact is worth.
+const QUIET_SINCE_KEY = 'famcart-update-quiet-since'
 
 export interface AvailableUpdate {
   version: string
@@ -145,7 +161,11 @@ export async function fetchLatestRelease(
 
 function readSkippedVersion(storage: Storage): string {
   try {
-    return storage.getItem(SKIPPED_VERSION_KEY) ?? ''
+    return (
+      storage.getItem(SKIPPED_VERSION_KEY)
+      ?? storage.getItem(LEGACY_SKIPPED_VERSION_KEY)
+      ?? ''
+    )
   } catch {
     return ''
   }
@@ -155,6 +175,9 @@ function readSkippedVersion(storage: Storage): string {
 export function skipVersion(storage: Storage, version: string): void {
   try {
     storage.setItem(SKIPPED_VERSION_KEY, version)
+    // Superseded by the line above; leaving it would let the fallback read
+    // resurrect an older declined version once the new key moves on.
+    storage.removeItem(LEGACY_SKIPPED_VERSION_KEY)
   } catch {
     // Storage disabled: the prompt reappears next launch. Mildly annoying,
     // never broken.

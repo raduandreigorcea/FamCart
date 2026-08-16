@@ -18,6 +18,19 @@ export const HOUSEHOLD_NAME_MAX_LENGTH = 25
 /** Longest a shopping-list item name may be. Mirrors 004_shopping_list.sql. */
 export const ITEM_NAME_MAX_LENGTH = 120
 
+/**
+ * Longest a product's maker may be. Mirrors product_catalog_maker_length in
+ * 006_product_catalog.sql, which add_custom_product() and the promotion sweep
+ * both re-check.
+ *
+ * It was a prop on CustomProductModal with a default of 60 that no caller ever
+ * passed — so it was a database constraint living as a component default,
+ * configurable in principle by nobody and invisible from here. This file's whole
+ * reason for existing is that a client cap drifting from its migration is
+ * silent, and a number hidden in a defineProps is the easiest kind to miss.
+ */
+export const PRODUCT_MAKER_MAX_LENGTH = 60
+
 /** How many households one user may belong to. Mirrors 003_households_and_members.sql. */
 export const HOUSEHOLD_MEMBERSHIP_CAP = 3
 
