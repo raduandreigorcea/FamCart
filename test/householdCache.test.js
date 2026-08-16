@@ -12,6 +12,14 @@ function makeStorage() {
     getItem: (key) => (map.has(key) ? map.get(key) : null),
     setItem: (key, value) => map.set(key, String(value)),
     removeItem: (key) => map.delete(key),
+    // length/key are part of the real Storage interface, and
+    // clearHouseholdSnapshot uses them to find every account's snapshot when it
+    // is not told which one to clear. Without them here that branch would be
+    // skipped by its own capability guard and never actually run under test.
+    get length() {
+      return map.size
+    },
+    key: (i) => [...map.keys()][i] ?? null,
     map,
   }
 }
@@ -142,7 +150,7 @@ describe('householdCache', () => {
 // rewritten under the new key.
 describe('legacy pre-rename snapshot', () => {
   const LEGACY_KEY = 'famcart-family-snapshot'
-  const KEY = 'famcart-household-snapshot'
+  const KEY = 'famcart-household-snapshot:user-1'
 
   function writeLegacy(storage, now) {
     storage.setItem(
@@ -216,5 +224,74 @@ describe('legacy pre-rename snapshot', () => {
     clearHouseholdSnapshot(storage)
     expect(storage.getItem(KEY)).toBeNull()
     expect(storage.getItem(LEGACY_KEY)).toBeNull()
+  })
+})
+
+// ─── one snapshot per account ────────────────────────────────────────────────
+// The single device-wide key was never a leak (the userId check below has always
+// rejected somebody else's snapshot) but it was a loss: whoever saved last
+// owned the key, so signing in as B threw A's cache away.
+describe('per-user snapshot keys', () => {
+  const SHARED_LEGACY_KEY = 'famcart-household-snapshot'
+
+  it('keeps two accounts on one device from overwriting each other', () => {
+    const storage = makeStorage()
+    saveHouseholdSnapshot(storage, 'user-a', makeSnapshot({ householdName: 'A House' }))
+    saveHouseholdSnapshot(storage, 'user-b', makeSnapshot({ householdName: 'B House' }))
+
+    // Before this, B's save took the one key and A's snapshot was simply gone.
+    expect(loadHouseholdSnapshot(storage, 'user-a').householdName).toBe('A House')
+    expect(loadHouseholdSnapshot(storage, 'user-b').householdName).toBe('B House')
+  })
+
+  it('adopts a snapshot left under the old device-wide key', () => {
+    const storage = makeStorage()
+    const now = Date.now()
+    storage.setItem(
+      SHARED_LEGACY_KEY,
+      JSON.stringify({ ...makeSnapshot({ householdName: 'Carried over' }), version: 1, userId: 'user-1', savedAt: now }),
+    )
+
+    expect(loadHouseholdSnapshot(storage, 'user-1', now).householdName).toBe('Carried over')
+
+    // And retires it on the next save, so it cannot come back as a stale
+    // fallback once the per-user key is cleared.
+    saveHouseholdSnapshot(storage, 'user-1', makeSnapshot({ householdName: 'Fresh' }), now)
+    expect(storage.getItem(SHARED_LEGACY_KEY)).toBeNull()
+    expect(loadHouseholdSnapshot(storage, 'user-1', now).householdName).toBe('Fresh')
+  })
+
+  it('still refuses a device-wide snapshot belonging to another account', () => {
+    const storage = makeStorage()
+    const now = Date.now()
+    storage.setItem(
+      SHARED_LEGACY_KEY,
+      JSON.stringify({ ...makeSnapshot(), version: 1, userId: 'someone-else', savedAt: now }),
+    )
+    expect(loadHouseholdSnapshot(storage, 'user-1', now)).toBeNull()
+  })
+
+  it('clears only the named account when told which one', () => {
+    const storage = makeStorage()
+    saveHouseholdSnapshot(storage, 'user-a', makeSnapshot())
+    saveHouseholdSnapshot(storage, 'user-b', makeSnapshot())
+
+    clearHouseholdSnapshot(storage, 'user-a')
+
+    expect(loadHouseholdSnapshot(storage, 'user-a')).toBeNull()
+    expect(loadHouseholdSnapshot(storage, 'user-b')).not.toBeNull()
+  })
+
+  it('clears every account when it cannot say whose it is', () => {
+    const storage = makeStorage()
+    saveHouseholdSnapshot(storage, 'user-a', makeSnapshot())
+    saveHouseholdSnapshot(storage, 'user-b', makeSnapshot())
+
+    // Signing out from a screen that never learned who was signed in: the safer
+    // end of the trade on a shared browser.
+    clearHouseholdSnapshot(storage)
+
+    expect(loadHouseholdSnapshot(storage, 'user-a')).toBeNull()
+    expect(loadHouseholdSnapshot(storage, 'user-b')).toBeNull()
   })
 })
