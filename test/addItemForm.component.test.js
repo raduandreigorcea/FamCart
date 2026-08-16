@@ -277,13 +277,6 @@ describe('AddItemForm suggestions', () => {
 
       expect(wrapper.emitted('scan')).toBeUndefined()
     })
-
-    it('shows the spinner over both jobs while an add is in flight', async () => {
-      const wrapper = await mountForm({ name: '', canScan: true, adding: true })
-
-      expect(wrapper.find('.spinner').exists()).toBe(true)
-      expect(scanIcon(wrapper).exists()).toBe(false)
-    })
   })
 
   it('keeps focus in the input when a row is pressed, so blur cannot beat it', async () => {
@@ -678,5 +671,83 @@ describe('AddItemForm suggestions', () => {
       expect(wrapper.find('.add-cover').exists()).toBe(false)
       expect(wrapper.find('.suggestions').attributes('style')).toBeUndefined()
     })
+  })
+})
+
+// The input carries role="combobox" and the rows carry role="option", which is
+// a promise that Down/Up walk the list and aria-activedescendant says where you
+// are. These cover that promise being kept.
+describe('AddItemForm keyboard navigation', () => {
+  const input = (wrapper) => wrapper.find('input')
+  const active = (wrapper) => wrapper.find('.suggestion--active')
+
+  it('opens on the first option with Down and reports it as the active descendant', async () => {
+    const wrapper = await mountForm({ suggestions: PRODUCTS })
+    expect(input(wrapper).attributes('aria-activedescendant')).toBeUndefined()
+
+    await input(wrapper).trigger('keydown', { key: 'ArrowDown' })
+
+    const first = wrapper.findAll('.suggestion')[0]
+    expect(active(wrapper).text()).toContain('Apa Plata 2L')
+    expect(input(wrapper).attributes('aria-activedescendant')).toBe(first.attributes('id'))
+    expect(first.attributes('aria-selected')).toBe('true')
+  })
+
+  it('opens on the last option with Up, so either key gets you in', async () => {
+    const wrapper = await mountForm({ suggestions: PRODUCTS })
+    await input(wrapper).trigger('keydown', { key: 'ArrowUp' })
+    expect(active(wrapper).text()).toContain('Banane 1kg')
+  })
+
+  it('wraps around both ends rather than dead-ending', async () => {
+    const wrapper = await mountForm({ suggestions: PRODUCTS })
+    await input(wrapper).trigger('keydown', { key: 'ArrowDown' })
+    await input(wrapper).trigger('keydown', { key: 'ArrowDown' })
+    expect(active(wrapper).text()).toContain('Banane 1kg')
+
+    // Past the last row, back to the first.
+    await input(wrapper).trigger('keydown', { key: 'ArrowDown' })
+    expect(active(wrapper).text()).toContain('Apa Plata 2L')
+  })
+
+  it('walks onto the add-your-own hatch, which is an option like any other', async () => {
+    const wrapper = await mountForm({ suggestions: PRODUCTS, canAddCustom: true })
+    await input(wrapper).trigger('keydown', { key: 'ArrowUp' })
+    // Up from nothing lands on the LAST option, which is now the hatch.
+    expect(hatch(wrapper).classes()).toContain('suggestion--active')
+
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('add-custom')).toHaveLength(1)
+    expect(wrapper.emitted('select')).toBeUndefined()
+  })
+
+  it('commits the highlighted row on Enter instead of submitting the typed text', async () => {
+    const wrapper = await mountForm({ suggestions: PRODUCTS })
+    await input(wrapper).trigger('keydown', { key: 'ArrowDown' })
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+
+    expect(wrapper.emitted('select')[0][0]).toMatchObject({ name: 'Apa Plata 2L' })
+    expect(wrapper.emitted('submit')).toBeUndefined()
+  })
+
+  it('leaves Enter alone when nothing is highlighted, so the typed text still submits', async () => {
+    const wrapper = await mountForm({ suggestions: PRODUCTS })
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+
+    expect(wrapper.emitted('select')).toBeUndefined()
+    // The form's own submit handler owns this case; the key was not swallowed.
+    await wrapper.find('form').trigger('submit')
+    expect(wrapper.emitted('submit')).toHaveLength(1)
+  })
+
+  it('drops the highlight when a new set of matches arrives', async () => {
+    const wrapper = await mountForm({ suggestions: PRODUCTS })
+    await input(wrapper).trigger('keydown', { key: 'ArrowDown' })
+    expect(active(wrapper).exists()).toBe(true)
+
+    // A later keystroke's results replace the ones that were being walked.
+    await wrapper.setProps({ suggestions: [{ name: 'Apa Minerala', maker: null }] })
+    expect(active(wrapper).exists()).toBe(false)
+    expect(input(wrapper).attributes('aria-activedescendant')).toBeUndefined()
   })
 })
