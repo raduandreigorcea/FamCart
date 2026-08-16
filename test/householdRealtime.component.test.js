@@ -171,6 +171,65 @@ describe('household channel', () => {
   })
 })
 
+describe('refresh coalescing', () => {
+  // The coalescing window is 250ms and these tests measure it rather than mock
+  // it away, so they wait it out on real timers. Comfortably past the window,
+  // still short enough not to be felt in the suite.
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 400))
+
+  it('collapses three channels resubscribing into one fetch of each half', async () => {
+    const { listChannel, membersChannel, householdChannel, loadItems, loadHouseholdHeader, wrapper } =
+      await mountRealtime()
+    // Let the refresh the initial subscribe asked for run to completion, so what
+    // is measured below is only what the reconnect itself costs.
+    await settle()
+    loadItems.mockClear()
+    loadHouseholdHeader.mockClear()
+
+    // What a reconnect looks like from here: all three acknowledgements land
+    // within a few milliseconds of each other. Before coalescing this was one
+    // loadItems and two loadHouseholdHeaders, on top of the pair the reconnect
+    // had already issued itself.
+    listChannel.statusCallback('SUBSCRIBED')
+    membersChannel.statusCallback('SUBSCRIBED')
+    householdChannel.statusCallback('SUBSCRIBED')
+    await settle()
+
+    expect(loadItems).toHaveBeenCalledTimes(1)
+    expect(loadHouseholdHeader).toHaveBeenCalledTimes(1)
+
+    wrapper.unmount()
+  })
+
+  it('asks only for the half the resubscribed channel is responsible for', async () => {
+    const { membersChannel, loadItems, loadHouseholdHeader, wrapper } = await mountRealtime()
+    await settle()
+    loadItems.mockClear()
+    loadHouseholdHeader.mockClear()
+
+    // The roster came back; the item list never went anywhere.
+    membersChannel.statusCallback('SUBSCRIBED')
+    await settle()
+
+    expect(loadHouseholdHeader).toHaveBeenCalledTimes(1)
+    expect(loadItems).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('drops a refresh still inside its window when the view goes away', async () => {
+    const { listChannel, loadItems, wrapper } = await mountRealtime()
+    await settle()
+    loadItems.mockClear()
+
+    listChannel.statusCallback('SUBSCRIBED')
+    wrapper.unmount()
+    await settle()
+
+    expect(loadItems).not.toHaveBeenCalled()
+  })
+})
+
 describe('channel health', () => {
   it('marks realtime unhealthy on CLOSED and healthy again on resubscribe', async () => {
     const { listChannel, api, wrapper } = await mountRealtime()

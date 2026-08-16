@@ -64,13 +64,77 @@ export function useHouseholdRealtime({
   const RECONNECT_RETRY_MS = 2500
   const FALLBACK_REFRESH_MS = 30000
 
+  // ─── Pulling fresh state back, once ──────────────────────────────────────────
+  // Everything here reads the same two things — the item list and the household
+  // header — and three separate paths used to ask for them independently, none
+  // able to see the others: the visibility handler, the reconnect it schedules,
+  // and each channel's own SUBSCRIBED callback. Coming back to the app ran all
+  // of them, so one foreground cost fourteen queries where four answer the
+  // question. On a phone, foregrounding is most of what happens to an app.
+  //
+  // A trailing window rather than a lock, because the asks are naturally
+  // simultaneous: three subscribe acknowledgements land within milliseconds of
+  // each other, so waiting a moment before fetching is the whole of what turns
+  // them into one fetch. Long enough to catch the burst, far short of anything
+  // a user waiting for their list would notice.
+  const REFRESH_COALESCE_MS = 250
+
+  let refreshTimer: ReturnType<typeof setTimeout> | null = null
+  let refreshInFlight = false
+  let refreshAgain = false
+  // Which halves have been asked for since the last fetch started. Tracked
+  // separately because the channels genuinely differ: a members channel coming
+  // back has no reason to re-read the item list, and vice versa. Only a caller
+  // that wants both pays for both.
+  let wantItems = false
+  let wantHeader = false
+
+  function requestRefresh(parts: { items?: boolean; header?: boolean }): void {
+    if (parts.items) wantItems = true
+    if (parts.header) wantHeader = true
+    // Already fetching: schedule exactly one more pass rather than queueing per
+    // caller. A channel that resubscribed after the read went out may have
+    // missed a change that read could not have seen, so the request is real —
+    // but any number of them collapse into the same single re-run.
+    if (refreshInFlight) {
+      refreshAgain = true
+      return
+    }
+    if (refreshTimer) return
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null
+      void runRefresh()
+    }, REFRESH_COALESCE_MS)
+  }
+
+  async function runRefresh(): Promise<void> {
+    refreshInFlight = true
+    try {
+      do {
+        refreshAgain = false
+        // Claimed before awaiting, so a request arriving mid-fetch sets the
+        // flags again for the next pass rather than being swallowed by this one.
+        const items = wantItems
+        const header = wantHeader
+        wantItems = false
+        wantHeader = false
+        if (!items && !header) return
+        await Promise.all([
+          items ? loadItems() : Promise.resolve(),
+          header ? loadHouseholdHeader() : Promise.resolve(),
+        ])
+      } while (refreshAgain)
+    } finally {
+      refreshInFlight = false
+    }
+  }
+
   function handleVisibilityOrOnline() {
     if (!hasInitialized.value) return
 
     if (document.visibilityState === 'visible') {
       if (!isCurrentlyOffline()) {
-        void loadItems()
-        void loadHouseholdHeader()
+        requestRefresh({ items: true, header: true })
         scheduleRealtimeReconnect('focus/online', 0)
       }
     } else {
@@ -107,8 +171,7 @@ export function useHouseholdRealtime({
       if (!shouldKeepRealtimeActive()) return
       if (realtimeHealthy.value) return
       scheduleRealtimeReconnect('watchdog tick', 0)
-      void loadItems()
-      void loadHouseholdHeader()
+      requestRefresh({ items: true, header: true })
     }, FALLBACK_REFRESH_MS)
   }
 
@@ -121,6 +184,14 @@ export function useHouseholdRealtime({
       clearInterval(fallbackRefreshIntervalId)
       fallbackRefreshIntervalId = null
     }
+    // A refresh still inside its coalescing window would otherwise fire from a
+    // view that has gone, reading into refs nobody is rendering.
+    if (refreshTimer) {
+      clearTimeout(refreshTimer)
+      refreshTimer = null
+    }
+    wantItems = false
+    wantHeader = false
   }
 
   function handleUserActivity() {
@@ -141,7 +212,13 @@ export function useHouseholdRealtime({
       db.realtime.setAuth()
       db.realtime.connect()
       await setupRealtimeSubscriptions()
-      await Promise.all([loadItems(), loadHouseholdHeader()])
+      // Not awaited any more: the loads report their own failures (loadItems
+      // sets loadError, loadHouseholdHeader captures anything that is not
+      // offline), so holding reconnectInProgress open across two round trips
+      // bought nothing and only delayed the next legitimate reconnect. The
+      // subscribe acknowledgements below ask for the same refresh, and the
+      // window is what makes all of it one fetch.
+      requestRefresh({ items: true, header: true })
     } catch (error) {
       // A reconnect that throws is a real fault, unlike the ordinary CLOSED /
       // TIMED_OUT statuses the watchdog already handles by retrying. `reason`
@@ -173,11 +250,13 @@ export function useHouseholdRealtime({
     if (status === 'SUBSCRIBED') {
       realtimeHealthy.value = true
       // A channel that has just (re)subscribed may have missed changes while it
-      // was down, so each one pulls back whatever it is responsible for.
+      // was down, so each one asks for whatever it is responsible for — and only
+      // that. Three acknowledgements arriving together therefore become one
+      // fetch of each half rather than one fetch per channel.
       if (hasInitialized.value) {
-        if (channelName === 'listChannel') void loadItems()
+        if (channelName === 'listChannel') requestRefresh({ items: true })
         if (channelName === 'membersChannel' || channelName === 'householdChannel') {
-          void loadHouseholdHeader()
+          requestRefresh({ header: true })
         }
       }
       return
@@ -367,7 +446,11 @@ export function useHouseholdRealtime({
   let stopReconnect: (() => void) | null = null
 
   onMounted(() => {
-    window.addEventListener('visibilitychange', handleVisibilityOrOnline)
+    // On `document`, which is where the event is actually dispatched. It bubbles
+    // to window, so the old binding worked — but HomeView listens on document
+    // for the same signal, and two spellings of one API is a pause for whoever
+    // reads them next.
+    document.addEventListener('visibilitychange', handleVisibilityOrOnline)
     // Not window's 'online' event: in a WebView it can simply never fire, which
     // left this the dead half of the recovery path. lib/connectivity fires its
     // handlers off the Capacitor status (with the window events as its own web
@@ -382,7 +465,7 @@ export function useHouseholdRealtime({
   onBeforeUnmount(() => {
     cleanupRealtimeSubscriptions()
     cleanupReconnectResources()
-    window.removeEventListener('visibilitychange', handleVisibilityOrOnline)
+    document.removeEventListener('visibilitychange', handleVisibilityOrOnline)
     if (stopReconnect) {
       stopReconnect()
       stopReconnect = null
