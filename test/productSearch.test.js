@@ -30,6 +30,14 @@ describe('escapeIlikePattern', () => {
   it('leaves plain text alone', () => {
     expect(escapeIlikePattern('apa plata')).toBe('apa plata')
   })
+
+  // PostgREST rewrites * to % on its way to SQL, so an unescaped asterisk was a
+  // wildcard that never went through Postgres's pattern syntax at all: typing
+  // one matched the whole catalog.
+  it('escapes the asterisk PostgREST would rewrite into a wildcard', () => {
+    expect(escapeIlikePattern('*')).toBe('\\*')
+    expect(escapeIlikePattern('a*b')).toBe('a\\*b')
+  })
 })
 
 describe('productKey', () => {

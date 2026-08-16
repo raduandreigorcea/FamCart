@@ -51,8 +51,23 @@ export function normalizeSearchText(text: string): string {
 
 // ilike treats %, _ and \ as pattern syntax; escape them so the user's literal
 // input can never widen (or break) the match.
+//
+// `*` is in the class for a reason that is not Postgres's. PostgREST accepts an
+// asterisk as a synonym for % in its like/ilike filters and rewrites it on the
+// way to SQL, so a typed one arrived as a wildcard however carefully the three
+// characters above were handled — searching for `*` matched the entire catalog.
+// Nothing unsafe came of that (RLS still decides which rows exist, and this is a
+// read), but it was the one input this function was named for and did not cover.
+//
+// Worth being exact about what escaping buys here, since it is not the usual
+// full fix: the rewrite happens after we send, so `\*` reaches Postgres as `\%`
+// and a search for a literal asterisk finds a literal percent instead. The
+// widening is gone, which is the whole of the bug; expressing "an actual
+// asterisk" is not reachable through an operator that spends the character
+// before we are consulted. No product name in the catalog contains either, so
+// the residue is theoretical — but it is a residue, not a clean win.
 export function escapeIlikePattern(text: string): string {
-  return text.replace(/[\\%_]/g, (ch) => `\\${ch}`)
+  return text.replace(/[\\%_*]/g, (ch) => `\\${ch}`)
 }
 
 // Identity of a product across the catalog and a household's history. Name + maker,
