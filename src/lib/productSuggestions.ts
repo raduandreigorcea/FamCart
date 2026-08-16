@@ -219,8 +219,17 @@ export function useProductSuggestions(options: {
       // Scope to the global catalog plus THIS household's own contributions. RLS
       // already blocks other households' rows, but a user in more than one household
       // would otherwise see (and, via recordProductAdd, bump) the products they
-      // contributed elsewhere while shopping here. householdId is a server-issued
-      // uuid, never typed input, so it is safe to interpolate into the filter.
+      // contributed elsewhere while shopping here.
+      //
+      // The id is interpolated into a PostgREST `or` filter, whose syntax is
+      // comma- and dot-separated, so what makes that safe is worth naming
+      // precisely. It is NOT that the id is server-issued: it is on the live
+      // path, but a household id can also arrive from a restored snapshot, and
+      // localStorage is not a trust boundary this app controls. What makes it
+      // safe is isHouseholdId in lib/householdCache, which rejects anything
+      // outside an identifier allowlist before a cached id is ever handed back.
+      // If that guard is ever removed, this line is one of the two reasons it
+      // exists.
       pool = householdId.value
         ? pool.or(`household_id.is.null,household_id.eq.${householdId.value}`)
         : pool.is('household_id', null)

@@ -109,7 +109,11 @@ describe('which tabs a viewer gets', () => {
   })
 
   it('falls back to Overview when the current tab stops existing', async () => {
-    const wrapper = mountSettings({ initialTab: 'household' })
+    // Reached by pressing the tab rather than by an initialTab prop no caller
+    // ever passed: this is how anyone actually gets to Preferences, so it is
+    // also what the fallback below has to survive.
+    const wrapper = mountSettings()
+    await tabs(wrapper).find((t) => t.text().includes('Preferences')).trigger('click')
     expect(current(wrapper).text()).toContain('Preferences')
 
     // Demoted while the panel is open: the tab goes, and the content area must

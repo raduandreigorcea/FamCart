@@ -29,7 +29,6 @@ import trashIcon from '../assets/trash-2.svg?raw'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
-  initialTab: { type: String, default: 'overview' },
   householdId: { type: String, default: '' },
   householdName: { type: String, default: '' },
   inviteCode: { type: String, default: '' },
@@ -71,7 +70,7 @@ watch(
   () => props.open,
   (open) => {
     if (!open) return
-    activeTab.value = props.initialTab || 'overview'
+    activeTab.value = 'overview'
     closeMemberMenu()
   },
   { immediate: true },
