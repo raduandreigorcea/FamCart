@@ -1,4 +1,5 @@
 import type { HouseholdMemberProfile, ShoppingItemRow } from './householdRealtime'
+import { clearUserScopedKeys, userScopedKey } from './perUserStorage'
 
 // Last known household state, keyed to one user. Read on startup so a returning
 // user sees their list instantly (stale-while-revalidate) instead of skeletons
@@ -43,7 +44,8 @@ interface StoredSnapshot extends HouseholdSnapshot {
 // anyway: a snapshot is only a cache, so losing one costs a slower boot rather
 // than a user's unsent writes or a consent nobody gave. It is the same shape of
 // problem one severity down, and leaving the shape in place is how it survives
-// to reappear somewhere it does matter.
+// to reappear somewhere it does matter — which is why the keying itself now
+// lives in lib/perUserStorage rather than being spelled out a third time here.
 const STORAGE_PREFIX = 'famcart-household-snapshot'
 // What every build up to this one wrote: a single device-wide key. Read as a
 // fallback rather than discarded — it carries the same userId field the check
@@ -58,7 +60,7 @@ const LEGACY_FAMILY_KEY = 'famcart-family-snapshot'
 const VERSION = 1
 
 function snapshotKey(userId: string): string {
-  return `${STORAGE_PREFIX}:${userId}`
+  return userScopedKey(STORAGE_PREFIX, userId)
 }
 
 // The pre-rename snapshot, exactly as it was written.
@@ -185,28 +187,18 @@ export function saveHouseholdSnapshot(
 // `userId` scopes it to one account. Without one — a caller that cannot say
 // whose snapshot this is — every account's is cleared, which is the safer end of
 // the trade on a shared browser. Same signature and same reasoning as
-// clearOfflineQueue.
+// clearOfflineQueue, and now the same implementation.
 export function clearHouseholdSnapshot(storage: Storage, userId?: string): void {
   try {
+    // The two device-wide predecessors, which only this module knows the names
+    // of. Always removed: neither belongs to an account, so there is nothing to
+    // scope them by.
     storage.removeItem(LEGACY_SHARED_KEY)
     storage.removeItem(LEGACY_FAMILY_KEY)
-    if (userId) {
-      storage.removeItem(snapshotKey(userId))
-      return
-    }
-    // Guarded: the Storage stub the unit tests hand in implements only the three
-    // accessors, and enumeration is not part of what the scoped path needs.
-    if (typeof storage.length !== 'number' || typeof storage.key !== 'function') return
-    const doomed: string[] = []
-    for (let i = 0; i < storage.length; i += 1) {
-      const key = storage.key(i)
-      if (key && key.startsWith(`${STORAGE_PREFIX}:`)) doomed.push(key)
-    }
-    // Collected first: removing while iterating renumbers the remaining keys.
-    for (const key of doomed) storage.removeItem(key)
   } catch {
     // Storage disabled — nothing to clear.
   }
+  clearUserScopedKeys(storage, STORAGE_PREFIX, userId)
 }
 
 // Which of a user's households is currently active, so the choice survives reloads.

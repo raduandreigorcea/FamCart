@@ -8,6 +8,7 @@ import { initPushNotifications } from './lib/pushNotifications'
 import { captureEarlyErrors, startErrorReporting } from './lib/errorReporting'
 import { startNativeBack } from './lib/nativeBack'
 import { startAppUpdates } from './lib/appUpdate'
+import { applyResolvedTheme, loadThemeMode } from './lib/theme'
 
 // First statement in the module on purpose: everything below can throw or reject,
 // and until the Sentry SDK loads (deferred to idle) nothing else is listening.
@@ -42,13 +43,10 @@ window.addEventListener('vite:preloadError', (event) => {
   window.location.reload()
 })
 
-const savedTheme = localStorage.getItem('famcart-theme')
-const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-if (savedTheme === 'light' || savedTheme === 'dark') {
-  document.documentElement.setAttribute('data-theme', savedTheme)
-} else {
-  document.documentElement.setAttribute('data-theme', systemPrefersDark ? 'dark' : 'light')
-}
+// Before mount, so the first paint is already the right colour. The key, the
+// modes and the resolver live in lib/theme, shared with the settings dialog
+// that lets the user change them.
+applyResolvedTheme(loadThemeMode(localStorage))
 
 const app = createApp(App)
 

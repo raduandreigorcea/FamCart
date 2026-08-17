@@ -29,8 +29,23 @@ create table if not exists public.shopping_list_items (
   constraint shopping_list_items_maker_length_check
     check (maker is null or char_length(maker) between 1 and 60),
   constraint shopping_list_items_quantity_check
-    check (quantity >= 1)
+    check (quantity between 1 and 999)
 );
+
+-- Restated as an explicit ALTER for the reason 003 spells out at length:
+-- everything inside `create table if not exists` is skipped wherever the table
+-- already exists, so the ceiling added above reaches new databases only.
+--
+-- The ceiling itself: the floor was always here, but nothing above it was, so a
+-- hand-crafted request could park 2,147,483,647 on a shared row — mischief
+-- inside one's own household rather than a breach, and still not a number any
+-- list should be able to hold. 999 rather than the stepper's 99
+-- (ITEM_QUANTITY_MAX in src/lib/limits.ts) because that cap is a product
+-- decision and merges legitimately sum quantities past it; this bound only has
+-- to exclude the absurd.
+alter table public.shopping_list_items drop constraint if exists shopping_list_items_quantity_check;
+alter table public.shopping_list_items add constraint shopping_list_items_quantity_check
+  check (quantity between 1 and 999);
 
 alter table public.shopping_list_items enable row level security;
 

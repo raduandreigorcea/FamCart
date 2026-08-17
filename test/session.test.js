@@ -12,23 +12,7 @@ import {
   loadActiveHouseholdId,
 } from '../src/lib/householdCache'
 import { enqueueOfflineMutation, hasQueuedOfflineMutations } from '../src/lib/offlineQueue'
-
-// A minimal in-memory Storage stand-in.
-function makeStorage() {
-  const map = new Map()
-  return {
-    getItem: (k) => (map.has(k) ? map.get(k) : null),
-    setItem: (k, v) => map.set(k, String(v)),
-    removeItem: (k) => map.delete(k),
-    // Part of the real Storage interface, and the unscoped clears that
-    // forgetLocalUserState delegates to use them to sweep every account's keys.
-    get length() {
-      return map.size
-    },
-    key: (i) => [...map.keys()][i] ?? null,
-    map,
-  }
-}
+import { makeStorage } from './support/fakeStorage'
 
 describe('session', () => {
   let storage

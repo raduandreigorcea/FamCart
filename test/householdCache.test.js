@@ -5,24 +5,7 @@ import {
   clearHouseholdSnapshot,
   SNAPSHOT_MAX_AGE_MS,
 } from '../src/lib/householdCache'
-
-function makeStorage() {
-  const map = new Map()
-  return {
-    getItem: (key) => (map.has(key) ? map.get(key) : null),
-    setItem: (key, value) => map.set(key, String(value)),
-    removeItem: (key) => map.delete(key),
-    // length/key are part of the real Storage interface, and
-    // clearHouseholdSnapshot uses them to find every account's snapshot when it
-    // is not told which one to clear. Without them here that branch would be
-    // skipped by its own capability guard and never actually run under test.
-    get length() {
-      return map.size
-    },
-    key: (i) => [...map.keys()][i] ?? null,
-    map,
-  }
-}
+import { makeStorage } from './support/fakeStorage'
 
 function makeSnapshot(overrides = {}) {
   return {

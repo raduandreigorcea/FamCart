@@ -81,26 +81,24 @@ export function useHouseholdRealtime({
 
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
   let refreshInFlight = false
-  let refreshAgain = false
-  // Which halves have been asked for since the last fetch started. Tracked
-  // separately because the channels genuinely differ: a members channel coming
-  // back has no reason to re-read the item list, and vice versa. Only a caller
-  // that wants both pays for both.
+  // Which halves have been asked for and not yet fetched. These two ARE the
+  // pending request — there is no separate "asked again" flag, because a want
+  // that is still set is what being asked again means. Tracked separately
+  // because the channels genuinely differ: a members channel coming back has no
+  // reason to re-read the item list, and vice versa. Only a caller that wants
+  // both pays for both.
   let wantItems = false
   let wantHeader = false
 
   function requestRefresh(parts: { items?: boolean; header?: boolean }): void {
     if (parts.items) wantItems = true
     if (parts.header) wantHeader = true
-    // Already fetching: schedule exactly one more pass rather than queueing per
-    // caller. A channel that resubscribed after the read went out may have
-    // missed a change that read could not have seen, so the request is real —
-    // but any number of them collapse into the same single re-run.
-    if (refreshInFlight) {
-      refreshAgain = true
-      return
-    }
-    if (refreshTimer) return
+    // Already fetching, or already waiting out the window: in both cases the
+    // flags just set are picked up without scheduling anything more. A channel
+    // that resubscribed after the read went out may have missed a change that
+    // read could not have seen, so the request is real — but any number of them
+    // collapse into the same single re-run.
+    if (refreshInFlight || refreshTimer) return
     refreshTimer = setTimeout(() => {
       refreshTimer = null
       void runRefresh()
@@ -110,20 +108,20 @@ export function useHouseholdRealtime({
   async function runRefresh(): Promise<void> {
     refreshInFlight = true
     try {
-      do {
-        refreshAgain = false
-        // Claimed before awaiting, so a request arriving mid-fetch sets the
-        // flags again for the next pass rather than being swallowed by this one.
+      // Re-checked after every pass, so a request arriving mid-fetch is served
+      // by one more round rather than being swallowed by the one in progress.
+      // Teardown clears both flags, which is also how this loop is stopped.
+      while (wantItems || wantHeader) {
+        // Claimed before awaiting, for the same reason.
         const items = wantItems
         const header = wantHeader
         wantItems = false
         wantHeader = false
-        if (!items && !header) return
         await Promise.all([
           items ? loadItems() : Promise.resolve(),
           header ? loadHouseholdHeader() : Promise.resolve(),
         ])
-      } while (refreshAgain)
+      }
     } finally {
       refreshInFlight = false
     }

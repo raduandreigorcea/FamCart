@@ -166,6 +166,55 @@ describe('disable', () => {
   })
 })
 
+// Both of these reach the SDK through a module instance that has never fetched
+// it — which is the state of any session that never ran syncPushUser, and that
+// is more reachable than it looks: syncPushUser is called from HomeView alone,
+// while AppTopbar (and so the settings dialog and sign-out) also renders on
+// HouseholdSetupView.
+//
+// The 'opts the web subscription out' test above cannot catch this. It shares
+// one module instance with the enable tests that run before it, so the SDK is
+// always already loaded by the time it asks — the flag it depends on is set by
+// its neighbours rather than by anything it does.
+describe('turning off and signing out without the SDK already loaded', () => {
+  async function freshModule() {
+    vi.resetModules()
+    return import('../src/lib/pushNotifications')
+  }
+
+  // Skipping the opt-out here saves a download and leaves the device
+  // subscribed: the toggle reads Off and the pushes keep arriving, which is the
+  // one outcome this whole toggle exists to prevent.
+  it('opts out even when nothing has fetched the SDK yet', async () => {
+    vi.stubEnv('VITE_ONESIGNAL_APP_ID', 'app-123')
+    const win = stubPushCapableBrowser()
+    const sdk = fakeSdk()
+    const push = await freshModule()
+
+    const pending = push.disablePushNotifications()
+    drainDeferred(win, sdk)
+    await pending
+
+    expect(sdk.User.PushSubscription.optOut).toHaveBeenCalled()
+  })
+
+  // Same shape on the way out: a device left bound to the account that just
+  // signed out is exactly the detached-binding failure syncPushUser was written
+  // to repair, arrived at from the other end.
+  it('detaches the device on sign-out even when nothing has fetched the SDK yet', async () => {
+    vi.stubEnv('VITE_ONESIGNAL_APP_ID', 'app-123')
+    const win = stubPushCapableBrowser()
+    const sdk = fakeSdk()
+    const push = await freshModule()
+
+    const pending = push.logoutPushUser()
+    drainDeferred(win, sdk)
+    await pending
+
+    expect(sdk.logout).toHaveBeenCalled()
+  })
+})
+
 describe('notification preference', () => {
   function fakeStorage(initial = {}) {
     const data = { ...initial }

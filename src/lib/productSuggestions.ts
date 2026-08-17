@@ -330,7 +330,12 @@ export function useProductSuggestions(options: {
   // (005_purchase_history.sql) already caps history at 60 checkouts / 30 days, so this is a
   // small, naturally-recent window and can be fetched whole.
   async function loadHouseholdProductStats(): Promise<void> {
-    if (!householdId.value || isOffline()) {
+    // Pinned before the await: this fetch can span a household switch, and a
+    // response is only an answer for the household it was asked about. The
+    // suggestions fetch guards the same race with suggestRequestId; here the
+    // id itself is the request's identity.
+    const requestedHouseholdId = householdId.value
+    if (!requestedHouseholdId || isOffline()) {
       // Nothing is coming, so stop the empty list waiting on an answer it will
       // never get.
       productStatsLoaded.value = true
@@ -340,7 +345,12 @@ export function useProductSuggestions(options: {
       const { data, error } = await db
         .from('purchase_history')
         .select('name, maker, purchased_at')
-        .eq('household_id', householdId.value)
+        .eq('household_id', requestedHouseholdId)
+      // Stale: the household changed while this was in flight. Its rows would
+      // become the new household's ranking signal — and its `finally` below
+      // would claim the new household's still-pending answer has arrived,
+      // which is what turns a fresh empty list into a false "All bought".
+      if (householdId.value !== requestedHouseholdId) return
       if (error) return
       householdProductStats.value = buildHouseholdProductStats(data ?? [])
     } catch {
@@ -348,8 +358,9 @@ export function useProductSuggestions(options: {
     } finally {
       // Every path resolves the question, including the failures above: a household
       // whose history we could not read is not a household that never shopped, but
-      // it is one we cannot hold a blank screen for.
-      productStatsLoaded.value = true
+      // it is one we cannot hold a blank screen for. Only for the household that
+      // asked, though — a stale response answers nothing.
+      if (householdId.value === requestedHouseholdId) productStatsLoaded.value = true
     }
   }
 

@@ -35,10 +35,13 @@ export const PRODUCT_MAKER_MAX_LENGTH = 60
 export const HOUSEHOLD_MEMBERSHIP_CAP = 3
 
 /**
- * Most of one product a single row may carry. This one is the app's own:
- * 004_shopping_list.sql only requires quantity >= 1, so nothing but this stops a
- * row reading x400 after a stuck finger on the stepper. Anyone genuinely buying
- * more than this wants two rows, or a wholesaler.
+ * Most of one product the stepper will set. Deliberately STRICTER than the
+ * database bound, which is the one pairing in this file where the two numbers
+ * differ on purpose: 004_shopping_list.sql enforces 1..999, a mischief ceiling
+ * against a hand-crafted request parking 2^31-1 on a shared row, while this is
+ * the product decision — nothing but a stuck finger wants x100, and anyone
+ * genuinely buying more wants two rows, or a wholesaler. The gap between the
+ * two exists because merges legitimately sum quantities past this cap.
  */
 export const ITEM_QUANTITY_MAX = 99
 

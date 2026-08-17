@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { findActiveItemByName, type ShoppingItem } from './shoppingList'
 import { captureException } from './errorReporting'
+import { clearUserScopedKeys, userScopedKey } from './perUserStorage'
 
 // Write queue for shopping-list mutations made while offline. The views apply
 // every mutation optimistically already; when the browser reports no
@@ -71,7 +72,7 @@ const TABLE = 'shopping_list_items'
 const MAX_QUEUED_MUTATIONS = 500
 
 function queueKey(userId: string): string {
-  return `${STORAGE_PREFIX}:${userId}`
+  return userScopedKey(STORAGE_PREFIX, userId)
 }
 
 // A queued insert carries the literal row it will POST, so a mutation enqueued
@@ -229,24 +230,13 @@ export function hasQueuedOfflineMutations(storage: Storage, userId: string): boo
 // which is the safer end of the trade on a shared browser.
 export function clearOfflineQueue(storage: Storage, userId?: string): void {
   try {
+    // The device-wide predecessor, whose name only this module knows. Always
+    // removed: it belongs to no account, so there is nothing to scope it by.
     storage.removeItem(LEGACY_STORAGE_KEY)
-    if (userId) {
-      storage.removeItem(queueKey(userId))
-      return
-    }
-    // Guarded: the Storage stub the unit tests hand in implements only the three
-    // accessors, and enumeration is not part of what this function needs to work.
-    if (typeof storage.length !== 'number' || typeof storage.key !== 'function') return
-    const doomed: string[] = []
-    for (let i = 0; i < storage.length; i += 1) {
-      const key = storage.key(i)
-      if (key && key.startsWith(`${STORAGE_PREFIX}:`)) doomed.push(key)
-    }
-    // Collected first: removing while iterating renumbers the remaining keys.
-    for (const key of doomed) storage.removeItem(key)
   } catch {
     // Storage disabled — nothing to clear.
   }
+  clearUserScopedKeys(storage, STORAGE_PREFIX, userId)
 }
 
 // A request that died at the network layer (or while the browser still reports
