@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, useId, watch, type PropType } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useId, watch, type PropType } from 'vue'
 import { closeModal, openModal } from '../lib/modalStack'
 import { isPhoneWidth, usePhoneSearchScreen } from '../lib/usePhoneSearchScreen'
 import { useTapPops } from '../lib/useTapPops'
@@ -10,6 +10,7 @@ import SkeletonBlock from './SkeletonBlock.vue'
 import checkIcon from '../assets/check.svg?raw'
 import scanBarcodeIcon from '../assets/scan-barcode.svg?raw'
 import { productKey, type ProductSuggestion } from '../lib/productSearch'
+import { ITEM_NAME_MAX_LENGTH } from '../lib/limits'
 
 // Presentational: the typed name lives in the parent (via v-model) so the add
 // flow can restore it when an optimistic insert fails. The suggestions list is
@@ -29,8 +30,10 @@ const name = defineModel('name', { type: String, default: '' })
 const expanded = defineModel('expanded', { type: Boolean, default: false })
 
 const props = defineProps({
-  adding: { type: Boolean, default: false },
-  maxLength: { type: Number, default: 120 },
+  // The item-name cap, from lib/limits rather than a literal: it mirrors
+  // 004_shopping_list.sql, and a second copy of a migration's bound is free to
+  // drift from it without anything saying so.
+  maxLength: { type: Number, default: ITEM_NAME_MAX_LENGTH },
   // Product catalog matches for the current input: [{ name, maker }].
   suggestions: { type: Array as PropType<ProductSuggestion[]>, default: () => [] },
   // What this household buys most, same shape as suggestions. Shown on the phone
@@ -180,6 +183,84 @@ const showingHint = computed(
     !props.canAddCustom,
 )
 
+// ─── Walking the results from the keyboard ───────────────────────────────────
+// The input declares role="combobox" with aria-controls pointing at the list
+// below, and every row declares role="option". That set of attributes is a
+// promise: it tells assistive tech to expect the ARIA combobox pattern, where
+// Down and Up move through the options and aria-activedescendant reports which
+// one is current. None of it existed — the only key this handled was Escape —
+// so the markup announced a list of suggestions and then the documented way to
+// move through it did nothing at all.
+//
+// The rows were never unreachable. Each is a real button, and the detail === 0
+// split below is what lets Tab-then-Enter commit one. But reaching the sixth
+// match meant six presses of Tab, past every row in between, which is not what
+// the roles said would happen and is the exact friction the pattern exists to
+// remove.
+//
+// -1 means nothing is active: the query itself is the selection, and Enter
+// submits what was typed. Every new set of matches returns here, because a
+// highlight belongs to the list it was placed in and not to the one that
+// replaced it.
+const activeIndex = ref(-1)
+
+// The "Can't find it?" hatch carries role="option" like the rows do, so it is
+// one of this listbox's options and has to be walkable too — otherwise the
+// roles are lying in the other direction. It sits one past the last row.
+const optionCount = computed(() => rows.value.length + (props.canAddCustom ? 1 : 0))
+
+function optionId(index: number): string {
+  return `${listboxId}-option-${index}`
+}
+
+// Only ever an id that is actually rendered. A stale activedescendant pointing
+// at nothing is worse than none: the reader announces a blank.
+const activeOptionId = computed(() =>
+  activeIndex.value >= 0 && activeIndex.value < optionCount.value
+    ? optionId(activeIndex.value)
+    : undefined,
+)
+
+// Wraps at both ends, as the pattern specifies — a list this short is quicker to
+// walk round than to reverse out of. From nothing, Down takes the first option
+// and Up takes the last, so either key gets you in.
+function moveActive(delta: number) {
+  const count = optionCount.value
+  if (!count) return
+  const from = activeIndex.value
+  const next = from < 0 ? (delta > 0 ? 0 : count - 1) : (from + delta + count) % count
+  activeIndex.value = next
+  // The panel scrolls, and a highlight the list has not scrolled to is a
+  // highlight nobody can see. 'nearest' so it only moves when it has to.
+  void nextTick(() => {
+    document.getElementById(optionId(next))?.scrollIntoView({ block: 'nearest' })
+  })
+}
+
+// What Enter means depends on whether a row is highlighted. With one, it is
+// that row — the same commit a tap makes, down to the tap counter. Without, it
+// is the typed text, and the form's own submit owns that, so this must not
+// swallow the event.
+function onEnter(event: KeyboardEvent) {
+  if (activeIndex.value < 0) return
+  event.preventDefault()
+  const product = rows.value[activeIndex.value]
+  if (product) {
+    selectSuggestion(product)
+    return
+  }
+  // Past the last row is the hatch.
+  if (props.canAddCustom) emit('add-custom')
+}
+
+// A fresh set of matches is a fresh list to choose from. Watching the rendered
+// rows rather than the query catches every way they can change — a search
+// landing, the recents taking over on an emptied field, a household switch
+// clearing them.
+watch([rows, () => props.canAddCustom], () => {
+  activeIndex.value = -1
+})
+
 // ─── Confirming the add ──────────────────────────────────────────────────────
 // Which rows this search has already put on the list, and which one to light
 // up about it. All of it lives in lib/useAddedConfirmation; what stays here is
@@ -194,6 +275,9 @@ watch(panelOpen, (open) => {
   if (!open) {
     forgetAdded()
     resetTapCounts()
+    // The highlight belongs to the visit too. Coming back to a list still
+    // pointing at the row left behind last time would be a selection nobody made.
+    activeIndex.value = -1
   }
 })
 
@@ -303,9 +387,13 @@ onBeforeUnmount(() => {
             aria-autocomplete="list"
             :aria-expanded="panelOpen"
             :aria-controls="panelOpen ? listboxId : undefined"
+            :aria-activedescendant="activeOptionId"
             @focus="onFocus"
             @blur="close"
             @keydown.esc="close"
+            @keydown.down.prevent="moveActive(1)"
+            @keydown.up.prevent="moveActive(-1)"
+            @keydown.enter="onEnter"
           />
           <!-- One control, two jobs. type follows the job so Enter in the field
                still submits when there is something to add, and the scan state is
@@ -315,13 +403,12 @@ onBeforeUnmount(() => {
             class="add-btn"
             @mousedown.prevent
             @click="onAction"
-            :disabled="adding || (!showScan && !name.trim())"
+            :disabled="!showScan && !name.trim()"
             :aria-label="showScan ? 'Scan a barcode' : 'Add'"
           >
             <Transition name="btn-swap" mode="out-in">
-              <span v-if="adding" key="busy" class="spinner"></span>
               <span
-                v-else-if="showScan"
+                v-if="showScan"
                 key="scan"
                 class="scan-icon"
                 aria-hidden="true"
@@ -395,7 +482,7 @@ onBeforeUnmount(() => {
                    list item between the two breaks that ownership and takes the
                    options out of the accessibility tree with it. -->
               <li
-                v-for="product in rows"
+                v-for="(product, index) in rows"
                 :key="productKey(product.name, product.maker)"
                 role="presentation"
               >
@@ -404,12 +491,15 @@ onBeforeUnmount(() => {
                   class="suggestion"
                   :class="{
                     'suggestion--added': isAdded(product),
+                    'suggestion--active': activeIndex === index,
                     'suggestion--lit-a':
                       litPhase === 0 && productKey(product.name, product.maker) === justAddedKey,
                     'suggestion--lit-b':
                       litPhase === 1 && productKey(product.name, product.maker) === justAddedKey,
                   }"
                   role="option"
+                  :id="optionId(index)"
+                  :aria-selected="activeIndex === index"
                   @mousedown.prevent="selectSuggestion(product, $event)"
                   @click="onSuggestionClick(product, $event)"
                 >
@@ -438,6 +528,9 @@ onBeforeUnmount(() => {
                   type="button"
                   role="option"
                   class="suggestion suggestion--custom"
+                  :class="{ 'suggestion--active': activeIndex === rows.length }"
+                  :id="optionId(rows.length)"
+                  :aria-selected="activeIndex === rows.length"
                   @mousedown.prevent="emit('add-custom')"
                   @click="onAddCustomClick($event)"
                 >
@@ -724,8 +817,14 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+/* The keyboard highlight shares the hover surface deliberately: it is the same
+   state — "this is the one you are about to commit" — reached a different way.
+   It needs its own class rather than :focus-visible because focus never leaves
+   the input during arrow navigation; aria-activedescendant is what moves, and
+   it moves virtually. */
 .suggestion:hover,
-.suggestion:focus-visible {
+.suggestion:focus-visible,
+.suggestion--active {
   background: var(--bg-hover);
 }
 
@@ -1049,19 +1148,6 @@ onBeforeUnmount(() => {
   transform: scale(0.7);
 }
 
-
-.spinner {
-  width: 16px;
-  height: 16px;
-  border: var(--border-width-thick) solid var(--spinner-stroke);
-  border-top-color: var(--text-inverse);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
 
 /* The screen still opens — it is where the room comes from — it just opens at
    once. The JS checks the same query and skips its half of the slide. */

@@ -1,6 +1,17 @@
 <script setup lang="ts">
 import arrowRightIcon from '../assets/arrow-right.svg?raw'
 
+// Anything not declared below lands on the <input>, not on the wrapper <div>.
+//
+// Without this, every undeclared attribute a caller writes falls through onto
+// the wrapper, where it silently does nothing — which is how `required` and
+// `autofocus` were once lost, and the setup screen quietly stopped focusing its
+// field. Declaring a prop per attribute fixes only the attribute somebody
+// noticed; `inputmode`, `pattern`, `readonly`, `name` and the rest would each
+// fail the same invisible way in turn. No caller passes class or style, so
+// nothing that belongs on the wrapper moves off it.
+defineOptions({ inheritAttrs: false })
+
 defineProps({
   modelValue: String,
   type: { type: String, default: 'text' },
@@ -15,8 +26,8 @@ defineProps({
   placeholder: String,
   autocomplete: String,
   maxlength: [String, Number],
-  required: Boolean,
-  autofocus: Boolean,
+  // Both belong to the wrapper's own controls, so they stay props: `loading`
+  // drives the submit button, `uppercase` styles the input.
   loading: { type: Boolean, default: false },
   uppercase: { type: Boolean, default: false },
 })
@@ -27,14 +38,13 @@ defineEmits(['update:modelValue'])
 <template>
   <div class="input-row">
     <input
+      v-bind="$attrs"
       :value="modelValue"
       :type="type"
       :aria-label="ariaLabel"
       :placeholder="placeholder"
       :autocomplete="autocomplete"
       :maxlength="maxlength"
-      :required="required"
-      :autofocus="autofocus"
       :class="{ 'input--uppercase': uppercase }"
       @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
     />

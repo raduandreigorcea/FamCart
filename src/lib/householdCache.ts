@@ -1,4 +1,5 @@
 import type { HouseholdMemberProfile, ShoppingItemRow } from './householdRealtime'
+import { clearUserScopedKeys, userScopedKey } from './perUserStorage'
 
 // Last known household state, keyed to one user. Read on startup so a returning
 // user sees their list instantly (stale-while-revalidate) instead of skeletons
@@ -28,14 +29,39 @@ interface StoredSnapshot extends HouseholdSnapshot {
   savedAt: number
 }
 
-const STORAGE_KEY = 'famcart-household-snapshot'
-// What every build before the families→households rename wrote, under the old
-// key and with familyId/familyMembers/... field names. It is still sitting in
-// the browser of everyone who used the app before that deploy, so this is read
-// once, rewritten under the key above, and then deleted. Dropping it instead
-// would cost a returning user their instant-paint list for no reason.
-const LEGACY_STORAGE_KEY = 'famcart-family-snapshot'
+// One snapshot per account, rather than one snapshot with an account stamped on
+// it.
+//
+// The read below has always rejected a snapshot belonging to somebody else, so
+// the single key was never a leak. It was a loss: the one key held whichever
+// account saved last, so B signing in overwrote A's snapshot outright, and A's
+// next open was a column of skeletons for a cache that had been sitting there a
+// moment earlier. offlineQueue.ts and the notification preference were both
+// moved off exactly this design, each with its own note explaining why; this was
+// the last one still on it.
+//
+// Milder than either of those, and worth saying why it is fixed the same way
+// anyway: a snapshot is only a cache, so losing one costs a slower boot rather
+// than a user's unsent writes or a consent nobody gave. It is the same shape of
+// problem one severity down, and leaving the shape in place is how it survives
+// to reappear somewhere it does matter — which is why the keying itself now
+// lives in lib/perUserStorage rather than being spelled out a third time here.
+const STORAGE_PREFIX = 'famcart-household-snapshot'
+// What every build up to this one wrote: a single device-wide key. Read as a
+// fallback rather than discarded — it carries the same userId field the check
+// below applies to everything — and removed on the next save.
+const LEGACY_SHARED_KEY = STORAGE_PREFIX
+// And before that, the pre-rename key, with familyId/familyMembers/... field
+// names. Still sitting in the browser of anyone who used the app before that
+// deploy, so it is read once, rewritten under the per-user key, and deleted.
+// Dropping it instead would cost a returning user their instant-paint list for
+// no reason.
+const LEGACY_FAMILY_KEY = 'famcart-family-snapshot'
 const VERSION = 1
+
+function snapshotKey(userId: string): string {
+  return userScopedKey(STORAGE_PREFIX, userId)
+}
 
 // The pre-rename snapshot, exactly as it was written.
 interface LegacyStoredSnapshot {
@@ -106,7 +132,12 @@ export function loadHouseholdSnapshot(
   now: number = Date.now(),
 ): HouseholdSnapshot | null {
   try {
-    const raw = storage.getItem(STORAGE_KEY) ?? storage.getItem(LEGACY_STORAGE_KEY)
+    // This account's own key first; the two device-wide predecessors only as
+    // fallbacks, each still subject to the userId check below.
+    const raw =
+      storage.getItem(snapshotKey(userId))
+      ?? storage.getItem(LEGACY_SHARED_KEY)
+      ?? storage.getItem(LEGACY_FAMILY_KEY)
     if (!raw) return null
     const stored = normaliseStored(JSON.parse(raw))
     if (stored.version !== VERSION) return null
@@ -142,23 +173,32 @@ export function saveHouseholdSnapshot(
 ): void {
   const stored: StoredSnapshot = { ...snapshot, version: VERSION, userId, savedAt: now }
   try {
-    storage.setItem(STORAGE_KEY, JSON.stringify(stored))
-    // The legacy copy has been superseded by this write. Removing it here rather
-    // than on read means a browser that only ever reads (a session that never
-    // saves) keeps its fallback instead of being left with neither.
-    storage.removeItem(LEGACY_STORAGE_KEY)
+    storage.setItem(snapshotKey(userId), JSON.stringify(stored))
+    // Both device-wide copies have been superseded by this write. Removing them
+    // here rather than on read means a browser that only ever reads (a session
+    // that never saves) keeps its fallback instead of being left with neither.
+    storage.removeItem(LEGACY_SHARED_KEY)
+    storage.removeItem(LEGACY_FAMILY_KEY)
   } catch {
     // Quota exceeded or storage disabled — skip; the app works without it.
   }
 }
 
-export function clearHouseholdSnapshot(storage: Storage): void {
+// `userId` scopes it to one account. Without one — a caller that cannot say
+// whose snapshot this is — every account's is cleared, which is the safer end of
+// the trade on a shared browser. Same signature and same reasoning as
+// clearOfflineQueue, and now the same implementation.
+export function clearHouseholdSnapshot(storage: Storage, userId?: string): void {
   try {
-    storage.removeItem(STORAGE_KEY)
-    storage.removeItem(LEGACY_STORAGE_KEY)
+    // The two device-wide predecessors, which only this module knows the names
+    // of. Always removed: neither belongs to an account, so there is nothing to
+    // scope them by.
+    storage.removeItem(LEGACY_SHARED_KEY)
+    storage.removeItem(LEGACY_FAMILY_KEY)
   } catch {
     // Storage disabled — nothing to clear.
   }
+  clearUserScopedKeys(storage, STORAGE_PREFIX, userId)
 }
 
 // Which of a user's households is currently active, so the choice survives reloads.

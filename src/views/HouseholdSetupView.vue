@@ -84,15 +84,13 @@ async function createHousehold() {
   if (loading.value) return
   const uid = userId.value
   if (!uid) return
+  // On the untrimmed value, matching the counter the field shows. Trimming can
+  // only shorten, so a name that passes here cannot re-fail after the trim.
   if (householdNameOverLimit.value) {
     openLimitModal(`Household name must be ${HOUSEHOLD_NAME_MAX_LENGTH} characters or fewer.`)
     return
   }
   const nextHouseholdName = householdName.value.trim()
-  if (nextHouseholdName.length > HOUSEHOLD_NAME_MAX_LENGTH) {
-    openLimitModal(`Household name must be ${HOUSEHOLD_NAME_MAX_LENGTH} characters or fewer.`)
-    return
-  }
   if (!nextHouseholdName) return
   error.value = ''
   loading.value = true

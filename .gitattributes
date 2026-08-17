@@ -1,0 +1,23 @@
+# Every text file in this repo is LF, in the index and in the working tree, on
+# every machine. Without this file that was only true by luck: core.autocrlf on
+# a Windows clone rewrites LF to CRLF on checkout, Git prints a warning per
+# touched file, and a diff can fill with line-ending churn that buries the real
+# change. eol=lf pins the working tree too, so the two Windows clones and any
+# future one all see identical bytes.
+* text=auto eol=lf
+
+# cmd.exe is the one consumer that genuinely wants CRLF. gradlew.bat is the
+# only .bat here; build-apk.ps1 stays LF like everything else, since PowerShell
+# does not care.
+*.bat text eol=crlf
+
+# Binaries, named so text=auto can never misjudge one. Git usually detects
+# these on its own; being explicit costs nothing and removes "usually".
+*.png binary
+*.webp binary
+*.ico binary
+*.woff2 binary
+*.jar binary
+*.keystore binary
+*.apk binary
+*.wasm binary

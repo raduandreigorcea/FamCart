@@ -22,6 +22,11 @@ function fakeSdk({ permission = 'granted' } = {}) {
         optOut: vi.fn(async () => {}),
       },
     },
+    // Part of the OneSignalWebSdk interface all along, but only reached once
+    // the SDK stopped being fetched at boot: the init command that registers
+    // the foreground suppressor is now queued by whichever path first needs
+    // the SDK, so draining the queue in these tests runs it.
+    Notifications: { addEventListener: vi.fn() },
   }
   vi.stubGlobal('Notification', { permission })
   return sdk
@@ -62,6 +67,44 @@ describe('environment guards', () => {
 
   it('rejects an empty user id before touching any SDK', async () => {
     expect(await enablePushNotifications('')).toBe('error')
+  })
+})
+
+describe('boot cost', () => {
+  // Fresh module per test: whether the SDK has been asked for is module state,
+  // and these two tests are entirely about that flag's starting value.
+  async function freshModule() {
+    vi.resetModules()
+    return import('../src/lib/pushNotifications')
+  }
+
+  it('does not fetch the web SDK at startup', async () => {
+    vi.stubEnv('VITE_ONESIGNAL_APP_ID', 'app-123')
+    const win = stubPushCapableBrowser()
+    const push = await freshModule()
+
+    push.initPushNotifications()
+
+    // Nothing queued means nothing fetched. Until somebody turns notifications
+    // on there is nothing for the SDK to do, and this used to download ~100KB
+    // from a third-party CDN on every cold start for every visitor — including
+    // the desktop users the app deliberately never even prompts.
+    expect(win.OneSignalDeferred).toHaveLength(0)
+  })
+
+  it('fetches it the moment somebody turns notifications on', async () => {
+    vi.stubEnv('VITE_ONESIGNAL_APP_ID', 'app-123')
+    const win = stubPushCapableBrowser()
+    const sdk = fakeSdk()
+    const push = await freshModule()
+
+    const pending = push.enablePushNotifications('user-1')
+    // The init command is queued by the path that needs the SDK now, not by boot.
+    expect(win.OneSignalDeferred.length).toBeGreaterThan(0)
+    drainDeferred(win, sdk)
+    await pending
+
+    expect(sdk.init).toHaveBeenCalled()
   })
 })
 
@@ -120,6 +163,55 @@ describe('disable', () => {
     vi.stubEnv('VITE_ONESIGNAL_APP_ID', '')
     stubPushCapableBrowser()
     await expect(disablePushNotifications()).resolves.toBeUndefined()
+  })
+})
+
+// Both of these reach the SDK through a module instance that has never fetched
+// it — which is the state of any session that never ran syncPushUser, and that
+// is more reachable than it looks: syncPushUser is called from HomeView alone,
+// while AppTopbar (and so the settings dialog and sign-out) also renders on
+// HouseholdSetupView.
+//
+// The 'opts the web subscription out' test above cannot catch this. It shares
+// one module instance with the enable tests that run before it, so the SDK is
+// always already loaded by the time it asks — the flag it depends on is set by
+// its neighbours rather than by anything it does.
+describe('turning off and signing out without the SDK already loaded', () => {
+  async function freshModule() {
+    vi.resetModules()
+    return import('../src/lib/pushNotifications')
+  }
+
+  // Skipping the opt-out here saves a download and leaves the device
+  // subscribed: the toggle reads Off and the pushes keep arriving, which is the
+  // one outcome this whole toggle exists to prevent.
+  it('opts out even when nothing has fetched the SDK yet', async () => {
+    vi.stubEnv('VITE_ONESIGNAL_APP_ID', 'app-123')
+    const win = stubPushCapableBrowser()
+    const sdk = fakeSdk()
+    const push = await freshModule()
+
+    const pending = push.disablePushNotifications()
+    drainDeferred(win, sdk)
+    await pending
+
+    expect(sdk.User.PushSubscription.optOut).toHaveBeenCalled()
+  })
+
+  // Same shape on the way out: a device left bound to the account that just
+  // signed out is exactly the detached-binding failure syncPushUser was written
+  // to repair, arrived at from the other end.
+  it('detaches the device on sign-out even when nothing has fetched the SDK yet', async () => {
+    vi.stubEnv('VITE_ONESIGNAL_APP_ID', 'app-123')
+    const win = stubPushCapableBrowser()
+    const sdk = fakeSdk()
+    const push = await freshModule()
+
+    const pending = push.logoutPushUser()
+    drainDeferred(win, sdk)
+    await pending
+
+    expect(sdk.logout).toHaveBeenCalled()
   })
 })
 
