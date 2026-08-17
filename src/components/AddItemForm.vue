@@ -10,6 +10,7 @@ import SkeletonBlock from './SkeletonBlock.vue'
 import checkIcon from '../assets/check.svg?raw'
 import scanBarcodeIcon from '../assets/scan-barcode.svg?raw'
 import { productKey, type ProductSuggestion } from '../lib/productSearch'
+import { ITEM_NAME_MAX_LENGTH } from '../lib/limits'
 
 // Presentational: the typed name lives in the parent (via v-model) so the add
 // flow can restore it when an optimistic insert fails. The suggestions list is
@@ -29,7 +30,10 @@ const name = defineModel('name', { type: String, default: '' })
 const expanded = defineModel('expanded', { type: Boolean, default: false })
 
 const props = defineProps({
-  maxLength: { type: Number, default: 120 },
+  // The item-name cap, from lib/limits rather than a literal: it mirrors
+  // 004_shopping_list.sql, and a second copy of a migration's bound is free to
+  // drift from it without anything saying so.
+  maxLength: { type: Number, default: ITEM_NAME_MAX_LENGTH },
   // Product catalog matches for the current input: [{ name, maker }].
   suggestions: { type: Array as PropType<ProductSuggestion[]>, default: () => [] },
   // What this household buys most, same shape as suggestions. Shown on the phone

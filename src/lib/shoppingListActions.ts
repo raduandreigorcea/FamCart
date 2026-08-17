@@ -484,10 +484,7 @@ export function useShoppingListActions(options: {
       created_at: new Date().toISOString(),
     } as unknown as ShoppingItemRow)
     draftQuantity.value = 1
-      // The pick is spent: it is on the list now. The query watcher would
-      // normally drop it when the text changes, but the text no longer changes
-      // on an add — so without this, typing nothing and pressing Add again would
-      // put the TYPED words on the list carrying the picked product's maker.
+    // The pick is spent — same reason as the merge branch above.
     selectedProduct.value = null
     reportAdded(name, maker)
 
@@ -816,11 +813,13 @@ export function useShoppingListActions(options: {
     const { error } = await db.rpc('buy_items', { p_item_ids: toBuy })
     if (error) {
       // Never reached the server: keep them off the list and fall back to queued
-      // deletes, same as the offline path.
+      // deletes, same as the offline path — including counting as a checkout,
+      // for the reason that path gives. The screen said "bought" either way.
       if (isOfflineError(error)) {
         for (const id of toBuy) {
           enqueueOfflineMutation(localStorage, userId.value, { kind: 'delete', id })
         }
+        onCheckedOut()
         return
       }
       items.value = snapshot
@@ -945,8 +944,8 @@ export function useShoppingListActions(options: {
     if (item.checked) return
 
     const previous = Number(item.quantity) || 1
-    // 004_shopping_list.sql only enforces >= 1; the ceiling is this app's, and it
-    // matches what the row's stepper will offer.
+    // Clamped to the stepper's own cap, which is deliberately tighter than the
+    // database's 1..999 (see the note on ITEM_QUANTITY_MAX in lib/limits.ts).
     const target = Math.max(1, Math.min(ITEM_QUANTITY_MAX, Math.round(next)))
     if (target === previous) return
 
