@@ -7,16 +7,20 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import AppButton from './AppButton.vue'
 import AppModal from './AppModal.vue'
+import { ITEM_NAME_MAX_LENGTH, PRODUCT_MAKER_MAX_LENGTH } from '../lib/limits'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
   // What was already typed into the add form, so the modal continues that
   // thought instead of making the user type it a second time.
   initialName: { type: String, default: '' },
-  // Mirror the DB's length checks (004_shopping_list.sql) so the form rejects
-  // what the row would reject anyway.
-  nameMaxLength: { type: Number, default: 120 },
-  makerMaxLength: { type: Number, default: 60 },
+  // Mirror the DB's length check (004_shopping_list.sql) so the form rejects
+  // what the row would reject anyway. Passed in because the caller already holds
+  // it; the maker's own cap is read straight from lib/limits below, since no
+  // caller ever passed one and a database constraint should not be a component
+  // default. The fallback here comes from the same place for the same reason —
+  // a literal would be a second copy of the migration's bound, free to drift.
+  nameMaxLength: { type: Number, default: ITEM_NAME_MAX_LENGTH },
   // The code this dialog opens with — set when it was reached from a scan the
   // catalog could not answer, empty when the user typed their way here. Either
   // way the field below is editable: a misread digit is worth correcting, and a
@@ -128,7 +132,7 @@ function submit() {
               v-model="maker"
               type="text"
               placeholder="Bertolli"
-              :maxlength="makerMaxLength"
+              :maxlength="PRODUCT_MAKER_MAX_LENGTH"
               autocomplete="off"
             />
           </label>

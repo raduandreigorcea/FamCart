@@ -12,23 +12,7 @@ import {
   isRateLimitedError,
 } from '../src/lib/offlineQueue'
 import { createFakeDb } from './support/fakeSupabase.js'
-
-function makeStorage() {
-  const map = new Map()
-  return {
-    getItem: (k) => (map.has(k) ? map.get(k) : null),
-    setItem: (k, v) => map.set(k, String(v)),
-    removeItem: (k) => map.delete(k),
-    // length/key are part of the real Storage interface, and clearOfflineQueue
-    // uses them to find every account's queue when it is not told which one to
-    // clear. Without them here that branch would be skipped by its own
-    // capability guard and never actually run under test.
-    get length() {
-      return map.size
-    },
-    key: (i) => [...map.keys()][i] ?? null,
-  }
-}
+import { makeStorage } from './support/fakeStorage.js'
 
 const USER = 'user-1'
 

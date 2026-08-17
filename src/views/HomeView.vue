@@ -644,7 +644,7 @@ async function runInitializeHome() {
   }
 
   if (!households.value.length) {
-    clearHouseholdSnapshot(localStorage)
+    clearHouseholdSnapshot(localStorage, effectiveUserId.value)
     clearActiveHouseholdId(localStorage)
     router.replace('/household-setup')
     return
@@ -696,7 +696,9 @@ function discardCachedPaint() {
   paintedFromCache.value = false
   items.value = []
   householdMembers.value = []
-  householdId.value = ''
+  // null, not '': it is the ref's declared "no household", and the rest of this
+  // file tests it with truthiness that would let a second sentinel hide.
+  householdId.value = null
   householdName.value = ''
   householdInviteCode.value = ''
   householdOwnerId.value = ''
@@ -929,7 +931,7 @@ async function reconcileActiveHousehold() {
     return
   }
   cleanupRealtimeSubscriptions()
-  clearHouseholdSnapshot(localStorage)
+  clearHouseholdSnapshot(localStorage, effectiveUserId.value)
   clearActiveHouseholdId(localStorage)
   router.replace('/household-setup')
 }

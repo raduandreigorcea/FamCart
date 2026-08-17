@@ -9,8 +9,24 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- Auto Backup off. This was Capacitor's scaffolded `true` and had never
+         been revisited, which meant Android was copying the app's data
+         directory to the user's Google Drive: the WebView's localStorage —
+         the household snapshot, the remembered user id, and any offline writes
+         still waiting to be sent — along with whatever Clerk persists beside
+         it. For a shopping list that is mild; for the session state sitting in
+         the same store it is auth material leaving the device, off to a place
+         this app has no say over and cannot clear on sign-out.
+
+         `false` rather than a dataExtractionRules/fullBackupContent allowlist
+         because minSdk 24 to targetSdk 36 spans both mechanisms, and there is
+         nothing here worth backing up anyway: every byte of it is a cache or a
+         hint that the server can rebuild on the next sign-in. If backup is ever
+         wanted for something that genuinely cannot be rebuilt, turn it on with
+         a ruleset that excludes the WebView data directory rather than
+         reverting this line. -->
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"

@@ -6,18 +6,22 @@ import type { HouseholdMemberProfile } from '../lib/householdRealtime'
 
 const props = defineProps({
   members: { type: Array as PropType<HouseholdMemberProfile[]>, default: () => [] },
-  maxVisible: { type: Number, default: 4 },
   loading: { type: Boolean, default: false },
 })
 
+// How many faces the stack draws before it starts counting instead. A constant
+// rather than the prop it used to be: no caller ever set it, so the "option" was
+// a default with a configuration story attached to it.
+const MAX_VISIBLE = 4
+
 // Collapsing to "+1" hides one avatar to show a "+1" bubble in its place — it
 // saves no room and just looks odd. So only collapse when it actually hides two
-// or more: up to maxVisible + 1 members all render; beyond that we show
-// maxVisible avatars and roll the rest into "+n".
+// or more: up to MAX_VISIBLE + 1 members all render; beyond that we show
+// MAX_VISIBLE avatars and roll the rest into "+n".
 const visibleMembers = computed(() =>
-  props.members.length <= props.maxVisible + 1
+  props.members.length <= MAX_VISIBLE + 1
     ? props.members
-    : props.members.slice(0, props.maxVisible),
+    : props.members.slice(0, MAX_VISIBLE),
 )
 const extraMembers = computed(() => Math.max(0, props.members.length - visibleMembers.value.length))
 </script>

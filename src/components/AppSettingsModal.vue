@@ -15,6 +15,12 @@ import {
   setNotificationPreference,
   type NotificationPreference,
 } from '../lib/pushNotifications'
+import {
+  applyResolvedTheme,
+  loadThemeMode,
+  saveThemeMode,
+  type ThemeMode,
+} from '../lib/theme'
 
 // Settings that belong to the app on this device rather than to a household or
 // to the account: how it looks, whether it may notify, and what it is.
@@ -27,9 +33,6 @@ import {
 // Sections stacked in one scroll rather than tabs: Appearance is three buttons
 // and Notifications is two, and a tab pane holding three buttons reads as an
 // empty room. Household Settings earns its sidebar because its panels are big.
-
-// The three theme choices the control offers; 'system' follows the OS.
-type ThemeMode = 'light' | 'dark' | 'system'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -82,30 +85,16 @@ const notificationHint = ref('')
 let mediaQuery: MediaQueryList | null = null
 
 function syncPreferencesFromStorage() {
-  const savedTheme = localStorage.getItem('famcart-theme')
-  if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system') {
-    themeMode.value = savedTheme
-    applyResolvedTheme(savedTheme)
-  } else {
-    themeMode.value = 'system'
-    applyResolvedTheme('system')
-  }
+  // lib/theme owns the key and the fallback-to-system rule; this only mirrors
+  // the answer into the radio group and onto the page.
+  themeMode.value = loadThemeMode(localStorage)
+  applyResolvedTheme(themeMode.value)
 
   // Only an explicit opt-in shows On. An unset preference means the user was
   // never asked (or never answered) — showing On there would claim a push
   // subscription that doesn't exist.
   notificationMode.value =
     getNotificationPreference(localStorage, userId.value ?? '') === 'on' ? 'on' : 'off'
-}
-
-function applyResolvedTheme(mode: ThemeMode) {
-  const root = document.documentElement
-  if (mode === 'system') {
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    root.setAttribute('data-theme', prefersDark ? 'dark' : 'light')
-    return
-  }
-  root.setAttribute('data-theme', mode)
 }
 
 function handleSystemThemeChange() {
@@ -116,7 +105,7 @@ function handleSystemThemeChange() {
 
 function applyTheme(mode: ThemeMode) {
   themeMode.value = mode
-  localStorage.setItem('famcart-theme', mode)
+  saveThemeMode(localStorage, mode)
   applyResolvedTheme(mode)
 }
 

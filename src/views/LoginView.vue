@@ -139,7 +139,7 @@ async function signInWithOAuth(providerId: string) {
             // The provider list below is the only caller, and every entry in it
             // is a strategy Clerk accepts; @clerk/types is not a direct
             // dependency, so the narrowing happens here rather than at the top.
-            strategy: providerId as 'oauth_google' | 'oauth_apple',
+            strategy: providerId as 'oauth_google' | 'oauth_apple' | 'oauth_microsoft',
             redirectUrl: '/sso-callback',
             redirectUrlComplete: `${window.location.origin}/`,
         })

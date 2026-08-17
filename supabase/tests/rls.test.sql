@@ -57,7 +57,7 @@
 -- Tests run inside a transaction that is rolled back, so they leave no data behind.
 
 begin;
-select plan(96);
+select plan(98);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 -- Three households, because promoting a contributed product to the global catalog
@@ -122,6 +122,33 @@ select throws_ok(
   '23505',
   null,
   'a user can own at most one household'
+);
+
+-- 8b. Quantity is bounded at both ends, 1..999. The floor was always here;
+-- the ceiling exists because the client's 99 (ITEM_QUANTITY_MAX in
+-- src/lib/limits.ts) is a stepper product decision a hand-crafted request never
+-- sees, and without a server bound such a request could park 2^31-1 on a shared
+-- row. 999 rather than 99 because merges legitimately sum quantities past the
+-- stepper's cap. Asserted as the superuser: this is a check constraint, and RLS
+-- has no say in it.
+select lives_ok(
+  $$ insert into public.shopping_list_items (id, household_id, name, added_by, checked, quantity)
+     values ('00000000-0000-0000-0000-0000000000a9',
+             '00000000-0000-0000-0000-0000000000a1', 'ceiling probe', 'user_a', true, 999) $$,
+  'quantity 999 is inside the bound'
+);
+
+-- The probe row must not survive into the fixtures: section 4 buys every
+-- checked item user_a holds in Household A and counts what it archived.
+delete from public.shopping_list_items
+where id = '00000000-0000-0000-0000-0000000000a9';
+
+select throws_ok(
+  $$ insert into public.shopping_list_items (household_id, name, added_by, quantity)
+     values ('00000000-0000-0000-0000-0000000000a1', 'ceiling probe', 'user_a', 1000) $$,
+  '23514',
+  null,
+  'quantity 1000 is rejected by the check constraint'
 );
 
 -- Checked, so only the membership check in buy_items() can protect it.

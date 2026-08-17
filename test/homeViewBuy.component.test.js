@@ -205,6 +205,24 @@ describe('buyCheckedItems', () => {
     expect(wrapper.findComponent(ShoppingList).props('hasShopped')).toBe(true)
   })
 
+  // Same situation as the offline test above, reached the other way round: the
+  // WebView said online, so the RPC was attempted, and it died at the network
+  // layer. The deletes are queued like the up-front offline path — and the
+  // checkout has to count as shopping for the same reason, or a household's
+  // first-ever checkout on a lying connection reads "Nothing here yet".
+  it('network-failed RPC: queues deletes and still counts as having shopped', async () => {
+    const items = [makeItem({ id: 'a', name: 'Milk', checked: true })]
+    const wrapper = await mountHome({ items })
+    expect(wrapper.findComponent(ShoppingList).props('hasShopped')).toBe(false)
+    mocks.db.handlers['rpc.buy_items'] = () => ({ data: null, error: { message: 'Failed to fetch' } })
+
+    await emitBuy(wrapper, ['a'])
+
+    expect(listedItems(wrapper)).toHaveLength(0)
+    expect(loadOfflineQueue(localStorage, 'user-1')).toEqual([{ kind: 'delete', id: 'a' }])
+    expect(wrapper.findComponent(ShoppingList).props('hasShopped')).toBe(true)
+  })
+
   it('restores the list and surfaces an error when the RPC is rejected', async () => {
     const items = [
       makeItem({ id: 'a', name: 'Milk', checked: true }),

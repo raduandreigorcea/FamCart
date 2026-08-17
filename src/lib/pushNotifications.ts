@@ -9,6 +9,8 @@
 // config the toggle still saves the local preference and nothing else happens.
 
 import { Capacitor } from '@capacitor/core'
+import { whenIdle } from './idle'
+import { userScopedKey } from './perUserStorage'
 
 // Minimal slice of the v16 web SDK surface this module touches.
 interface OneSignalWebSdk {
@@ -58,7 +60,7 @@ const PREFERENCE_PREFIX = 'famcart-notifications'
 const LEGACY_PREFERENCE_KEY = PREFERENCE_PREFIX
 
 function preferenceKey(userId: string): string {
-  return `${PREFERENCE_PREFIX}:${userId}`
+  return userScopedKey(PREFERENCE_PREFIX, userId)
 }
 
 // The legacy value is deliberately NOT migrated onto the first account to read
@@ -147,25 +149,39 @@ function webSdk(timeoutMs = 15000): Promise<OneSignalWebSdk | null> {
   })
 }
 
-// Call once at app startup (main.ts). Loads/initializes the right SDK; a
-// missing app id means push is unconfigured and this becomes a no-op.
-export function initPushNotifications(): void {
+// Whether the web SDK script has been asked for. Keeps ensureWebSdkLoaded
+// idempotent: several paths can want the SDK, and only the first should fetch it.
+let webSdkRequested = false
+
+// Fetch and initialize the OneSignal web SDK, once.
+//
+// Deliberately NOT called from initPushNotifications. This is ~100KB from a
+// third-party CDN plus a service-worker registration, and until somebody has
+// actually turned notifications on there is nothing for any of it to do — yet
+// it used to load on every cold start for every visitor, including the desktop
+// users isDesktopBrowser goes out of its way never even to prompt. That is the
+// exact cost lib/errorReporting takes trouble to avoid for Sentry ("on a
+// grocery list opened on a phone in a shop, that is the wrong thing to spend a
+// connection on"), and the same reasoning applies here; it simply had not been
+// applied yet.
+//
+// So the SDK is fetched by the two paths that actually need it: syncPushUser for
+// a device already opted in, and enableWebPush for one turning it on. `immediate`
+// is what separates them — someone who just tapped the toggle is waiting on an
+// answer, so the script goes now; boot-time re-binding is background repair with
+// nobody watching, so it waits for idle like Sentry does.
+//
+// Turning push OFF and signing out fetch it too, and immediately. That looks
+// like the same wasted download this function exists to avoid and is not: the
+// flag below only knows about THIS session, while a subscription outlives one,
+// so gating those two on it left a device subscribed after being told to stop.
+// See the note in disablePushNotifications.
+function ensureWebSdkLoaded(options: { immediate?: boolean } = {}): void {
+  if (webSdkRequested) return
   const appId = getOneSignalAppId()
-  if (!appId) return
+  if (!appId || !isPushSupported()) return
+  webSdkRequested = true
 
-  if (Capacitor.isNativePlatform()) {
-    void import('@onesignal/capacitor-plugin').then(({ default: OneSignal }) => {
-      void OneSignal.initialize(appId)
-      // The list is already live in front of an open app (Supabase Realtime);
-      // a banner over it is noise. Suppress while the app is foregrounded.
-      OneSignal.Notifications.addEventListener('foregroundWillDisplay', (event) => {
-        event.preventDefault()
-      })
-    })
-    return
-  }
-
-  if (!isPushSupported()) return
   deferredQueue().push((sdk) => {
     // init() rejects when the OneSignal app has no web-push configuration
     // ("App not configured for web push", code 2) — a project-config state, not
@@ -179,15 +195,46 @@ export function initPushNotifications(): void {
         allowLocalhostAsSecureOrigin: true,
       })
       .catch(() => {})
-    // Same reason as the native branch: no banners over a visible live list.
+    // The list is already live in front of an open app (Supabase Realtime); a
+    // banner over it is noise. Suppress while the app is foregrounded.
     sdk.Notifications.addEventListener('foregroundWillDisplay', (event) => {
       event.preventDefault()
     })
   })
-  const script = document.createElement('script')
-  script.src = WEB_SDK_URL
-  script.defer = true
-  document.head.appendChild(script)
+
+  // Guarded because the unit tests drive the deferred queue directly, in a node
+  // environment with no document — the queue above is the whole contract they
+  // rely on, and the script tag is the half only a browser has.
+  if (typeof document === 'undefined') return
+  const append = () => {
+    const script = document.createElement('script')
+    script.src = WEB_SDK_URL
+    script.defer = true
+    document.head.appendChild(script)
+  }
+  if (options.immediate) append()
+  else whenIdle(append)
+}
+
+// Call once at app startup (main.ts).
+//
+// Native only, now. The Capacitor plugin is initialized eagerly because it is a
+// local dynamic import rather than a network fetch, and because the native SDK
+// throws if anything touches it before initialize(). The web SDK is not fetched
+// here at all — see ensureWebSdkLoaded for why, and for who fetches it instead.
+export function initPushNotifications(): void {
+  const appId = getOneSignalAppId()
+  if (!appId) return
+  if (!Capacitor.isNativePlatform()) return
+
+  void import('@onesignal/capacitor-plugin').then(({ default: OneSignal }) => {
+    void OneSignal.initialize(appId)
+    // The list is already live in front of an open app (Supabase Realtime);
+    // a banner over it is noise. Suppress while the app is foregrounded.
+    OneSignal.Notifications.addEventListener('foregroundWillDisplay', (event) => {
+      event.preventDefault()
+    })
+  })
 }
 
 export type EnablePushResult =
@@ -218,6 +265,10 @@ async function enableNativePush(userId: string): Promise<EnablePushResult> {
 
 async function enableWebPush(userId: string): Promise<EnablePushResult> {
   if (!getOneSignalAppId()) return 'not-configured'
+  // The tap that got here is the first thing in the app that genuinely needs
+  // the SDK, and someone is watching the toggle — so it is fetched now rather
+  // than at the next idle moment.
+  ensureWebSdkLoaded({ immediate: true })
   const sdk = await webSdk()
   if (!sdk) return 'error'
   try {
@@ -273,9 +324,16 @@ export async function syncPushUser(
       await OneSignal.login(userId)
       return
     }
-    // Short of the full cap: this is background repair, not a user waiting on a
-    // toggle, and the next boot will try again.
-    const sdk = await webSdk(5000)
+    // This is the path that fetches the web SDK for a device already opted in,
+    // and it is the reason boot no longer does. At idle, because nobody is
+    // waiting on it — the preference is already 'on', so the only thing at
+    // stake is re-binding a device that is usually still bound.
+    ensureWebSdkLoaded()
+    // The full cap rather than the shorter one this used to take: the script is
+    // no longer fetched during boot, so the wait now has an idle callback and a
+    // CDN download in front of it. Nobody is watching, and a repair that times
+    // out one launch short of arriving is a repair that never happens.
+    const sdk = await webSdk()
     await sdk?.login(userId)
   } catch {
     // Best-effort. A failed re-bind leaves push exactly as broken as it already
@@ -296,7 +354,27 @@ export async function disablePushNotifications(): Promise<void> {
       return
     }
     if (!isPushSupported() || !getOneSignalAppId()) return
-    // Short cap: if the SDK never loaded there is no subscription to turn off.
+    // Fetched here if nothing has fetched it yet, which is the whole of what
+    // turning this off requires: the subscription lives on OneSignal's side, so
+    // a local preference alone leaves pushes arriving for someone who just said
+    // stop.
+    //
+    // This deliberately does NOT gate on `webSdkRequested`. That flag says
+    // "loaded during THIS session", and it is set only by syncPushUser (called
+    // from HomeView) and enableWebPush — so a session that reached the settings
+    // dialog another way, which AppTopbar allows from HouseholdSetupView, has
+    // it false while the device is genuinely subscribed from a previous
+    // session. Skipping the opt-out there is the one outcome this toggle exists
+    // to prevent, and it is unfalsifiable from the client: the toggle reads Off
+    // and the notifications keep coming.
+    //
+    // The cost is a ~100KB fetch for someone turning off something they never
+    // turned on. You can only turn off a toggle that is showing on, so that is
+    // rare, user-initiated, and the right side of the trade. The optimisation
+    // that actually mattered — not fetching this during boot for every visitor
+    // — is untouched: initPushNotifications is native-only and syncPushUser
+    // still gates on the stored preference.
+    ensureWebSdkLoaded({ immediate: true })
     const sdk = await webSdk(3000)
     await sdk?.User.PushSubscription.optOut()
   } catch {
@@ -317,6 +395,17 @@ export async function logoutPushUser(): Promise<void> {
       return
     }
     if (!isPushSupported()) return
+    // Loaded rather than merely waited for, and for the same reason as
+    // disablePushNotifications: a device bound in an earlier session is bound
+    // whether or not anything has fetched the SDK in this one, and leaving it
+    // bound is the detached-binding failure syncPushUser exists to repair,
+    // arrived at from the other end — the next person to sign in on this device
+    // inherits the old account's pushes.
+    //
+    // Waiting without loading was worse than either: it spent 3 seconds on a
+    // script nothing had requested and left its callback sitting in
+    // OneSignalDeferred, which nothing will ever drain.
+    ensureWebSdkLoaded({ immediate: true })
     const sdk = await webSdk(3000)
     await sdk?.logout()
   } catch {

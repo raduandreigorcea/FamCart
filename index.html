@@ -5,6 +5,22 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <!-- The latin subset only, and deliberately so. This is about first paint,
+         not about total bytes: the service worker precaches both subsets anyway,
+         so latin-ext arrives regardless. What a preload buys is arrival BEFORE
+         the stylesheet asking for it has been parsed, and only latin is needed
+         by every screen — putting latin-ext on the critical path would delay the
+         one file every session actually blocks on, to no benefit.
+         crossorigin is required on font preloads even same-origin: fonts are
+         fetched in CORS mode, and without it the browser treats the preloaded
+         response as a different resource and fetches the file a second time. -->
+    <link
+      rel="preload"
+      href="/fonts/plus-jakarta-sans-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <meta name="theme-color" content="#4d8c65" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="A shared grocery list for your family, with live updates." />
