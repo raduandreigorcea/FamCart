@@ -3,9 +3,9 @@ import { computed, ref, watch } from 'vue'
 import AppModal from './AppModal.vue'
 import AppButton from './AppButton.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
+import ErrorModal from './ErrorModal.vue'
 import flagIconRaw from '../assets/flag.svg?raw'
 import checkIconRaw from '../assets/check.svg?raw'
-import wifiOffIconRaw from '../assets/wifi-off.svg?raw'
 import {
   REPORT_MAX_LENGTH,
   REPORT_SURFACES,
@@ -15,6 +15,7 @@ import {
   submitReport,
   type ReportKind,
 } from '../lib/issueReport'
+import { isCurrentlyOffline } from '../lib/connectivity'
 
 // The form for "Report an issue".
 //
@@ -44,10 +45,24 @@ const surface = ref('')
 const message = ref('')
 const sending = ref(false)
 const sent = ref(false)
-// Set when a send is attempted and finds nowhere to send it. Never shown
-// pre-emptively: a note about being offline on a form someone has not filled in
-// yet is an obstacle, not a warning.
-const failed = ref(false)
+// What to say about a send that went nowhere, empty when there is nothing to
+// say. A string rather than a flag because ErrorModal opens on a non-empty
+// message, which is the same contract every other failure in the app uses.
+//
+// Never set pre-emptively: a note about being offline on a form someone has not
+// filled in yet is an obstacle, not a warning.
+const failure = ref('')
+
+// The two ways a send fails, told apart at the moment it happens rather than
+// assumed. Offline is the obvious one. The other is a send that fails on a
+// perfectly good connection: the request to Sentry's ingest host is on every ad
+// blocker's list, so a browser drops it on sight, and telling that person to try
+// again once they are back online points them at the one thing that is fine.
+const OFFLINE_FAILURE =
+  "Nothing was sent because you're offline. Your text is still here, so try again once you're back."
+const UNREACHABLE_FAILURE =
+  "Nothing was sent. The report couldn't reach us. Your text is still here, so try again. If it keeps failing, a browser privacy extension may be blocking it."
+
 
 const diagnostics = computed(() =>
   collectDiagnostics({ householdId: props.householdId, userId: props.userId }),
@@ -94,18 +109,18 @@ function selectKind(next: ReportKind) {
   // The place carries across: the question is still on screen and still asked
   // of the same app, so clearing it would discard an answer the person can see
   // themselves having given.
-  failed.value = false
+  failure.value = ''
 }
 
 function selectSurface(id: string) {
   surface.value = surface.value === id ? '' : id
-  failed.value = false
+  failure.value = ''
 }
 
 async function send() {
   if (!canSend.value || sending.value) return
   sending.value = true
-  failed.value = false
+  failure.value = ''
   try {
     const ok = await submitReport({
       kind: kind.value,
@@ -114,7 +129,7 @@ async function send() {
       diagnostics: diagnostics.value,
     })
     if (ok) sent.value = true
-    else failed.value = true
+    else failure.value = isCurrentlyOffline() ? OFFLINE_FAILURE : UNREACHABLE_FAILURE
   } finally {
     sending.value = false
   }
@@ -131,7 +146,7 @@ watch(
     message.value = ''
     sending.value = false
     sent.value = false
-    failed.value = false
+    failure.value = ''
   },
 )
 </script>
@@ -253,11 +268,6 @@ watch(
           </ul>
         </div>
 
-        <p v-if="failed" class="report-failed" role="alert">
-          <span class="report-failed__icon" aria-hidden="true" v-html="wifiOffIconRaw"></span>
-          <span>Nothing was sent because you're offline. Your text is still here, so try again once you're back.</span>
-        </p>
-
         <div class="report-actions">
           <AppButton variant="secondary" block @click="emit('close')">Cancel</AppButton>
           <AppButton variant="primary" block :disabled="!canSend || sending" @click="send">
@@ -267,6 +277,13 @@ watch(
       </div>
     </div>
   </AppModal>
+
+  <!-- A send that went nowhere, said the way every other failure in the app is
+       said. Stacks above the form rather than replacing it, so dismissing it
+       leaves the text exactly where it was and Send can simply be pressed
+       again. This was a paragraph under the button until it was the only
+       failure in the app that was not a dialog. -->
+  <ErrorModal title="Report not sent" :message="failure" @dismiss="failure = ''" />
 </template>
 
 <style scoped>
@@ -331,7 +348,6 @@ watch(
 }
 
 .report-header-icon :deep(svg),
-.report-failed__icon :deep(svg),
 .report-done__mark :deep(svg) {
   width: 100%;
   height: 100%;
@@ -515,27 +531,6 @@ watch(
   font-size: var(--text-xs);
   color: var(--text-secondary);
   line-height: 1.45;
-}
-
-.report-failed {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  margin: 0;
-  padding: 0.65rem 0.8rem;
-  border-radius: var(--radius-md);
-  background: var(--warning-bg);
-  color: var(--warning-text);
-  font-size: var(--text-xs);
-  line-height: 1.45;
-}
-
-.report-failed__icon {
-  width: 15px;
-  height: 15px;
-  flex-shrink: 0;
-  margin-top: 0.1rem;
-  display: inline-flex;
 }
 
 .report-actions {

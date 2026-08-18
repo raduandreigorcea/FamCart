@@ -4,7 +4,7 @@
 // user. The account button and menu must still show who's signed in, pulled
 // from the cached household roster for the current user.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { ref } from 'vue'
 import AppTopbar from '../src/components/AppTopbar.vue'
 import AccountActionModal from '../src/components/AccountActionModal.vue'
@@ -27,6 +27,14 @@ vi.mock('../src/supabase', () => ({
   }),
 }))
 
+// Sign out detaches the account from error reporting; the module is mocked so
+// the call can be asserted on without an SDK anywhere near the test.
+const identifyUser = vi.hoisted(() => vi.fn())
+vi.mock('../src/lib/errorReporting', () => ({
+  captureException: vi.fn(),
+  identifyUser,
+}))
+
 vi.mock('../src/lib/pushNotifications', async (importOriginal) => ({
   // Keep the real localStorage-backed preference helpers; only the SDK-touching
   // functions need stubbing.
@@ -44,6 +52,7 @@ function mountTopbar(props) {
 
 beforeEach(() => {
   clerkUser.value = null
+  identifyUser.mockClear()
 })
 
 afterEach(() => {
@@ -367,5 +376,24 @@ describe('AccountActionModal row icons', () => {
     expect(row.text()).toContain('Signing out')
     expect(row.find('.account-spinner').exists()).toBe(true)
     expect(row.find('.account-item-icon').exists()).toBe(false)
+  })
+})
+
+// Sentry's setUser is sticky module state rather than something stamped on each
+// event, so an account left attached at sign-out would be blamed for whatever
+// the next person on the device hits. The redirect usually ends the page first;
+// this covers the case where it does not.
+describe('AppTopbar sign out', () => {
+  it('detaches the account from error reporting', async () => {
+    const wrapper = mountTopbar({
+      householdName: 'Home',
+      memberProfiles: profiles,
+      currentUserId: 'u_self',
+    })
+
+    wrapper.findComponent(AccountActionModal).vm.$emit('sign-out')
+    await flushPromises()
+
+    expect(identifyUser).toHaveBeenCalledWith(null)
   })
 })

@@ -10,12 +10,41 @@
 // triaged — which is how a report goes unread.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const sentry = vi.hoisted(() => ({
-  init: vi.fn(),
-  captureException: vi.fn(),
-  captureFeedback: vi.fn(),
-  browserTracingIntegration: vi.fn(() => ({ name: 'tracing' })),
-}))
+// Every export startErrorReporting destructures has to be here, including ones
+// this file never asserts on. Vitest throws on reading an export the mock does
+// not declare, that throw lands in the SDK load's deliberately silent .catch(),
+// and the symptom is not "setUser is missing" but every test below failing with
+// captureFeedback never called. setUser arrived exactly that way.
+//
+// getClient is here for a second reason on top of that one: the delivery check
+// below is the only thing that can tell a report that reached Sentry from one an
+// ad blocker ate, and it hangs off the client's afterSendEvent hook.
+const sentry = vi.hoisted(() => {
+  const hooks = {}
+  // Stands in for Sentry accepting the envelope, which is what happens unless
+  // something eats the request. Tests that want the other answer override the
+  // implementation for one call.
+  const deliver = (response) => {
+    queueMicrotask(() => hooks.afterSendEvent?.({ event_id: 'evt-1' }, response))
+  }
+  return {
+    hooks,
+    deliver,
+    init: vi.fn(),
+    captureException: vi.fn(),
+    captureFeedback: vi.fn(() => {
+      deliver({ statusCode: 200 })
+      return 'evt-1'
+    }),
+    setUser: vi.fn(),
+    getClient: vi.fn(() => ({
+      on: (name, handler) => {
+        hooks[name] = handler
+      },
+    })),
+    browserTracingIntegration: vi.fn(() => ({ name: 'tracing' })),
+  }
+})
 vi.mock('@sentry/vue', () => sentry)
 
 vi.mock('@capacitor/core', () => ({
@@ -119,5 +148,57 @@ describe('a sent report', () => {
 
     expect(ok).toBe(false)
     expect(sentry.captureFeedback).not.toHaveBeenCalled()
+  })
+})
+
+// The reason this file exists in the shape it does.
+//
+// captureFeedback hands the envelope to the transport and returns an id; the POST
+// happens after. So "we called captureFeedback" is not "the report arrived", and
+// the difference is not hypothetical: Sentry's ingest host is on EasyPrivacy, so
+// every ad blocker drops the request, and three reports sent from a desktop
+// browser were lost this way while the dialog said they had been sent. Telling
+// someone their report went when it did not is worse than telling them it didn't
+// — they are waiting on an answer that is never coming.
+//
+// afterSendEvent is what distinguishes the two. A blocked or failed request still
+// fires it, but with no statusCode, because the client swallows the transport
+// error and hands back an empty response.
+describe('a report that never reaches Sentry', () => {
+  it('is reported as failed when the request is blocked', async () => {
+    await live()
+    sentry.captureFeedback.mockImplementationOnce(() => {
+      // What a blocked POST looks like from here: fired, but empty.
+      sentry.deliver({})
+      return 'evt-1'
+    })
+
+    const ok = await submitReport({
+      kind: 'bug',
+      surface: 'list',
+      message: 'the list forgets what I ticked',
+      diagnostics: collectDiagnostics({ userId: 'u1' }),
+    })
+
+    expect(ok).toBe(false)
+  })
+
+  // A 429 means Sentry got it and threw it away, which is still not a report
+  // anyone will read.
+  it('is reported as failed when Sentry rejects the envelope', async () => {
+    await live()
+    sentry.captureFeedback.mockImplementationOnce(() => {
+      sentry.deliver({ statusCode: 429 })
+      return 'evt-1'
+    })
+
+    const ok = await submitReport({
+      kind: 'idea',
+      surface: '',
+      message: 'let me sort the list by aisle',
+      diagnostics: collectDiagnostics({ userId: 'u1' }),
+    })
+
+    expect(ok).toBe(false)
   })
 })

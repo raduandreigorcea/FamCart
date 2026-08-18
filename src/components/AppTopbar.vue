@@ -11,7 +11,7 @@ import { ITEM_LIMIT_DEFAULT } from '../lib/limits'
 import { getUserDisplayName, getUserInitial, getUserPrimaryEmail } from '../lib/userIdentity'
 import { forgetLocalUserState } from '../lib/session'
 import { logoutPushUser } from '../lib/pushNotifications'
-import { captureException } from '../lib/errorReporting'
+import { captureException, identifyUser } from '../lib/errorReporting'
 import { shareInvite } from '../lib/inviteShare'
 
 // The settings modal is by far the heaviest part of the topbar; load its chunk
@@ -178,6 +178,13 @@ async function handleSignOut() {
     // queue and snapshot on the device instead — the safer answer when we cannot
     // say whose this is.
     forgetLocalUserState(localStorage, props.currentUserId || undefined)
+    // Detach the account from error reporting for the same reason. Sentry's
+    // setUser is sticky module state, not per-event, so anything raised after
+    // this point would still be filed under the person who just left. The
+    // redirect below usually tears the page down before that can happen -- but
+    // it is a redirect Clerk performs, and the catch below exists precisely
+    // because it does not always get there.
+    identifyUser(null)
     // Unlink this device in OneSignal so the next account's pushes don't land
     // on top of the old one's. Best-effort; sign-out must not wait on the CDN.
     void logoutPushUser()
