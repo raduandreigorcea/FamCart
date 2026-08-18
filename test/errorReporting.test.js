@@ -12,7 +12,11 @@
 // gets reported twice, and a duplicate is the kind of regression nobody notices
 // until they are reading the same stack trace in two issues.
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { captureEarlyErrors, startErrorReporting } from '../src/lib/errorReporting'
+import {
+  captureEarlyErrors,
+  isExpectedOfflineFailure,
+  startErrorReporting,
+} from '../src/lib/errorReporting'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -78,5 +82,67 @@ describe('captureEarlyErrors', () => {
     const removed = remove.mock.calls.map(([n]) => n)
     expect(removed).toContain('error')
     expect(removed).toContain('unhandledrejection')
+  })
+})
+
+// Clerk's plugin install fetches its UI bundle from clerk.accounts.dev, and
+// `app.use(clerkPlugin, ...)` returns before that lands, so a failure surfaces
+// as an unhandled rejection with nothing at the call site able to catch it.
+//
+// Offline that is not a fault: the app has an offline route it deliberately
+// boots into, and a remote script that cannot be fetched with no network is the
+// expected outcome, not news. Online it is the opposite: that person cannot
+// sign in, and it is the one report worth keeping.
+//
+// Both halves are pinned here because the bug this replaces was reported five
+// times from a device sitting on /offline, and "just filter Clerk out" would
+// have silenced the one event that mattered along with them.
+describe('isExpectedOfflineFailure', () => {
+  // Exactly the shape Sentry recorded on Android, minified class name and all.
+  const clerkUiFailure = {
+    exception: {
+      values: [
+        { type: 'e', value: 'Clerk: Failed to load Clerk UI\n\n(code="failed_to_load_clerk_ui")' },
+      ],
+    },
+  }
+
+  it('drops a Clerk UI load failure raised while offline', () => {
+    expect(isExpectedOfflineFailure(clerkUiFailure, true)).toBe(true)
+  })
+
+  it('keeps the same failure when the device is online', () => {
+    expect(isExpectedOfflineFailure(clerkUiFailure, false)).toBe(false)
+  })
+
+  // The variant seen from a real user on an old WebView: same cause, but the
+  // script URL is appended, so a match on the exact string would miss it.
+  it('recognises the variant that names the script it could not fetch', () => {
+    const withUrl = {
+      exception: {
+        values: [
+          {
+            type: 'e',
+            value:
+              'Clerk: Failed to load Clerk UI, failed to load script: '
+              + 'https://needed-bass-4.clerk.accounts.dev/npm/@clerk/ui@1/dist/ui.browser.js',
+          },
+        ],
+      },
+    }
+    expect(isExpectedOfflineFailure(withUrl, true)).toBe(true)
+  })
+
+  it('keeps an unrelated error even when offline', () => {
+    const other = {
+      exception: {
+        values: [{ type: 'TypeError', value: "Cannot read properties of undefined (reading 'title')" }],
+      },
+    }
+    expect(isExpectedOfflineFailure(other, true)).toBe(false)
+  })
+
+  it('survives an event carrying no exception at all', () => {
+    expect(isExpectedOfflineFailure({}, true)).toBe(false)
   })
 })

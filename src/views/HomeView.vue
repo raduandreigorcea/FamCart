@@ -34,7 +34,7 @@ import {
   clearActiveHouseholdId,
 } from '../lib/householdCache'
 import { flushOfflineQueue, isOfflineError } from '../lib/offlineQueue'
-import { captureException } from '../lib/errorReporting'
+import { captureException, identifyUser } from '../lib/errorReporting'
 // isCurrentlyOffline is the app's one answer to "are we offline", handed to
 // every composable below that has to choose between writing and queueing. The
 // composite it computes (Capacitor status first, navigator.onLine as the
@@ -611,6 +611,11 @@ async function runInitializeHome() {
 
   // Confirmed signed in: remember this user so a later offline open can boot.
   rememberUser(localStorage, userId.value)
+  // And tell error reporting who this is, so a crash can say how many people it
+  // reached. Here rather than in main.ts because this is the first point the
+  // answer is actually known: Clerk has resolved, and the id is the real one
+  // rather than the remembered hint effectiveUserId falls back to offline.
+  identifyUser(userId.value)
   // Keep our profile row (name + Clerk avatar) current, so a changed photo shows
   // up across every household. Best-effort and non-blocking: boot must not wait on
   // it, and the next load reconciles if it fails.

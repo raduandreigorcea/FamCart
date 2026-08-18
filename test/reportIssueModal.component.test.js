@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ReportIssueModal from '../src/components/ReportIssueModal.vue'
+import { __setOnlineForTest } from '../src/lib/connectivity'
 
 const send = vi.hoisted(() => vi.fn())
 vi.mock('../src/lib/issueReport', async (importOriginal) => ({
@@ -32,6 +33,7 @@ async function fillBug(wrapper, text = 'ticked milk and it came back after a rel
 
 beforeEach(() => {
   send.mockReset().mockResolvedValue(true)
+  __setOnlineForTest(true)
 })
 
 afterEach(() => {
@@ -135,6 +137,10 @@ describe('sending', () => {
   })
 
   // The one thing a report form must never get wrong.
+  //
+  // It says so through ErrorModal, which is where every other failure in the app
+  // is announced. This one used to be a paragraph under the Send button, the
+  // only failure in the app that was not a dialog.
   it('says nothing was sent when nothing was, and keeps the text', async () => {
     send.mockResolvedValue(false)
     const wrapper = mountReport()
@@ -142,9 +148,58 @@ describe('sending', () => {
     await sendBtn(wrapper).trigger('click')
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.find('.report-failed').exists()).toBe(true)
+    expect(wrapper.find('.confirm-dialog').exists()).toBe(true)
+    expect(wrapper.find('.confirm-dialog__title').text()).toBe('Report not sent')
     expect(wrapper.text()).toContain('Nothing was sent')
+    // The form is still behind the dialog, holding what they typed, so
+    // dismissing it lands them back on a filled form rather than a blank one.
     expect(wrapper.find('.report-textarea').element.value).toBe('scanner froze on the third item')
+  })
+
+  // Dismissing is the way back to the form, not out of the report.
+  it('closes the error without closing the report', async () => {
+    send.mockResolvedValue(false)
+    const wrapper = mountReport()
+    await fillBug(wrapper, 'scanner froze on the third item')
+    await sendBtn(wrapper).trigger('click')
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('.confirm-dialog__actions button').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.confirm-dialog').exists()).toBe(false)
+    expect(wrapper.find('.report-textarea').element.value).toBe('scanner froze on the third item')
+    expect(wrapper.emitted('close')).toBeFalsy()
+  })
+
+  // Being offline is one reason a send fails and it used to be treated as the
+  // only one, so the message named it outright. It is not the only one: an ad
+  // blocker drops the request to Sentry's ingest host on sight, which is a
+  // failure on a perfectly good connection. Telling that person to try again
+  // when they are back online sends them looking at the wrong thing, and they
+  // are already back online.
+  it('does not blame the connection for a send that failed on a good one', async () => {
+    __setOnlineForTest(true)
+    send.mockResolvedValue(false)
+    const wrapper = mountReport()
+    await fillBug(wrapper)
+    await sendBtn(wrapper).trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const message = wrapper.find('.confirm-dialog__message').text()
+    expect(message).toContain('Nothing was sent')
+    expect(message).not.toContain('offline')
+  })
+
+  it('does say so when there really is no connection', async () => {
+    __setOnlineForTest(false)
+    send.mockResolvedValue(false)
+    const wrapper = mountReport()
+    await fillBug(wrapper)
+    await sendBtn(wrapper).trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.confirm-dialog__message').text()).toContain('offline')
   })
 })
 

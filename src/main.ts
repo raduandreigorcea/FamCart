@@ -50,9 +50,14 @@ applyResolvedTheme(loadThemeMode(localStorage))
 
 const app = createApp(App)
 
-// Error monitoring is opt-in per environment (no DSN in dev, CI or tests) and
-// loaded after the app is idle rather than as part of the initial download —
-// the SDK is about a third of the JavaScript here. See lib/errorReporting.
+// Error monitoring is opt-in on a DSN being present (CI has none, since .env is
+// gitignored) and loaded after the app is idle rather than as part of the
+// initial download: the SDK is about a third of the JavaScript here.
+//
+// A local `npm run dev` DOES report, which this comment used to deny. Vite
+// loads .env in every mode, so the DSN is there in dev too, and three dev-server
+// errors sat in the production issue stream before anyone read the URL tag on
+// them. They are told apart by the environment tag now. See lib/errorReporting.
 //
 // Once it resolves, reporting is live (or there is no DSN and never will be),
 // so the stand-in handlers installed at the top hand over. Without this they
