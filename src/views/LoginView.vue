@@ -2,7 +2,7 @@
 import { useAuth, useClerk, useSignIn, useSignUp } from '@clerk/vue'
 import { Capacitor } from '@capacitor/core'
 import { captureException } from '../lib/errorReporting'
-import { ref, nextTick, toRaw, watch } from 'vue'
+import { computed, ref, nextTick, toRaw, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
     startNativeOAuth,
@@ -15,6 +15,7 @@ import ConfirmModal from '../components/ConfirmModal.vue'
 import AppCard from '../components/AppCard.vue'
 import BackButton from '../components/BackButton.vue'
 import { isOfflineError } from '../lib/offlineQueue'
+import { t, tAccent } from '../lib/i18n'
 
 const clerk = useClerk()
 const { signIn, isLoaded: signInLoaded } = useSignIn()
@@ -59,7 +60,7 @@ function handleSignInError(e: unknown, fallback: string) {
     // A network failure has no Clerk error array; show a plain offline message
     // rather than the raw "Failed to fetch".
     if (isOfflineError(e) && !clerkErrors?.length) {
-        error.value = 'You appear to be offline. Check your connection and try again.'
+        error.value = t('error.offline')
         return
     }
     error.value = clerkErrors?.[0]?.longMessage ?? clerkErrors?.[0]?.message ?? fallback
@@ -69,6 +70,11 @@ function goToApp() {
     // Full reload so Clerk re-reads the active session before HomeView boots.
     window.location.href = '/'
 }
+
+// The tagline's second half is coloured, and which words that is differs per
+// language, so the marker travels inside the string. Provider names below
+// stay untranslated — they are brands.
+const tagline = computed(() => tAccent('login.tagline'))
 
 const oauthProviders = [
     {
@@ -128,7 +134,7 @@ async function signInWithOAuth(providerId: string) {
             // (no-op without a DSN). The dialog shows the diagnosis the
             // error carries: which state the attempt got stuck in.
             captureException(e)
-            handleSignInError(e, (e as Error)?.message || 'Could not sign in with that provider.')
+            handleSignInError(e, (e as Error)?.message || t('error.oauthFailed'))
         }
         loadingProvider.value = null
         return
@@ -144,7 +150,7 @@ async function signInWithOAuth(providerId: string) {
             redirectUrlComplete: `${window.location.origin}/`,
         })
     } catch (e) {
-        handleSignInError(e, 'Could not sign in with that provider.')
+        handleSignInError(e, t('error.oauthFailed'))
         loadingProvider.value = null
     }
 }
@@ -161,7 +167,7 @@ async function handleEmailSubmit() {
             (f) => f.strategy === 'email_code',
         )
         if (!otpFactor) {
-            error.value = 'This account cannot sign in with an email code.'
+            error.value = t('error.noEmailCode')
             return
         }
         await signIn.value!.prepareFirstFactor({
@@ -173,7 +179,7 @@ async function handleEmailSubmit() {
         await nextTick()
         digitRefs.value[0]?.focus()
     } catch (e) {
-        handleSignInError(e, 'Something went wrong.')
+        handleSignInError(e, t('error.generic'))
     } finally {
         loading.value = false
     }
@@ -193,10 +199,10 @@ async function handleCodeSubmit() {
         if (result.status === 'complete') {
             window.location.href = '/'
         } else {
-            error.value = 'Verification incomplete. Please try again.'
+            error.value = t('error.verificationIncomplete')
         }
     } catch (e) {
-        handleSignInError(e, 'Invalid code.')
+        handleSignInError(e, t('error.invalidCode'))
         digits.value = ['', '', '', '', '', '']
         await nextTick()
         digitRefs.value[0]?.focus()
@@ -244,20 +250,23 @@ function goBack() {
             <!-- Brand -->
             <div class="brand">
                 <div class="brand-top">
-                    <img src="/icons/pwa-192.png" alt="FamCart logo" class="brand-logo" />
+                    <img src="/icons/pwa-192.png" :alt="t('login.logoAlt')" class="brand-logo" />
                     <!-- <span class="brand-name">Fam<span class="brand-name--accent">Cart</span></span> -->
                 </div>
-                <p class="brand-tagline">Household Groceries, <span class="brand-tagline--accent">fresh together daily</span></p>
+                <!-- The accented half is marked inside the string, so each
+                     language can put the emphasis where its own phrasing does. -->
+                <p class="brand-tagline">{{ tagline[0]
+                  }}<span class="brand-tagline--accent">{{ tagline[1] }}</span>{{ tagline[2] }}</p>
             </div>
 
             <!-- Email form -->
             <form v-if="step === 'email'" @submit.prevent="handleEmailSubmit" class="email-form">
-                <InputRow v-model="email" type="email" aria-label="Email address" placeholder="your@email.com" autocomplete="email" :loading="loading" required />
+                <InputRow v-model="email" type="email" :aria-label="t('login.emailLabel')" :placeholder="t('login.emailPlaceholder')" autocomplete="email" :loading="loading" required />
             </form>
 
             <!-- OTP code form -->
             <div v-else class="otp-section">
-                <p class="code-hint">Enter the 6-digit code sent to <strong>{{ email }}</strong></p>
+                <p class="code-hint">{{ t('login.codeHint') }} <strong>{{ email }}</strong></p>
                 <!-- One field per digit is a sighted-user affordance; to a screen
                      reader it is six unlabelled boxes unless each says which one
                      it is. The group carries the overall name, the boxes carry
@@ -266,12 +275,12 @@ function goBack() {
                     class="otp-row"
                     :class="{ 'otp-row--loading': loading }"
                     role="group"
-                    aria-label="6-digit verification code"
+                    :aria-label="t('login.codeGroupLabel')"
                 >
                     <input
                         v-for="(_, i) in digits"
                         :key="i"
-                        :aria-label="`Digit ${i + 1} of ${digits.length}`"
+                        :aria-label="t('login.digitLabel', { i: i + 1, n: digits.length })"
                         :ref="(el) => { if (el) digitRefs[i] = el as HTMLInputElement }"
                         v-model="digits[i]"
                         type="text"
@@ -293,7 +302,7 @@ function goBack() {
             </div>
 
             <!-- Divider -->
-            <div class="divider"><span>or</span></div>
+            <div class="divider"><span>{{ t('login.or') }}</span></div>
 
             <!-- OAuth icon buttons -->
             <div class="oauth-row">
@@ -309,15 +318,15 @@ function goBack() {
 
         <ConfirmModal
             :open="alreadySignedInOpen"
-            title="You're already signed in"
-            message="This device already has an active FamCart session."
-            confirm-text="Go to my list"
+            :title="t('login.alreadyTitle')"
+            :message="t('login.alreadyMessage')"
+            :confirm-text="t('login.goToList')"
             :show-cancel="false"
             @confirm="goToApp"
             @cancel="goToApp"
         />
 
-        <ErrorModal title="Could not sign in" :message="error" @dismiss="error = ''" />
+        <ErrorModal :title="t('login.errorTitle')" :message="error" @dismiss="error = ''" />
     </div>
 </template>
 

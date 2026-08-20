@@ -13,6 +13,7 @@ import AppButton from './AppButton.vue'
 import AppModal from './AppModal.vue'
 import downloadIcon from '../assets/download.svg?raw'
 import type { UpdatePhase } from '../lib/updatePrompt'
+import { t, tAccent } from '../lib/i18n'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -30,6 +31,11 @@ const emit = defineEmits(['install', 'later', 'open-settings', 'open-releases', 
 const dismissable = computed(() => props.phase === 'available' || props.phase === 'error')
 
 const percent = computed(() => Math.round(Math.min(Math.max(props.progress, 0), 1) * 100))
+
+// The Android setting's own name is bolded inside the sentence, so the
+// string marks it with brackets and tAccent hands back the three
+// pieces to render.
+const permissionMessage = computed(() => tAccent('update.permissionMessage'))
 </script>
 
 <template>
@@ -63,32 +69,31 @@ const percent = computed(() => Math.round(Math.min(Math.max(props.progress, 0), 
 
       <div class="update-dialog__body">
         <h4 id="update-prompt-title" class="update-dialog__title">
-          {{ phase === 'permission' ? 'One permission first' : 'Update available' }}
+          {{ phase === 'permission' ? t('update.permissionTitle') : t('update.availableTitle') }}
         </h4>
 
         <p v-if="phase === 'available'" class="update-dialog__message">
-          FamCart {{ version }} is ready to install.
-          <template v-if="currentVersion"> You're on {{ currentVersion }}.</template>
+          {{ t('update.readyToInstall', { version }) }}
+          <template v-if="currentVersion"> {{ t('update.currentVersion', { version: currentVersion }) }}</template>
         </p>
 
         <p v-else-if="phase === 'permission'" class="update-dialog__message">
-          Android only lets an app install updates once you allow it. Turn on
-          <strong>Allow from this source</strong> for FamCart, then come back and
-          press Update.
+          <!-- The setting's own name is bolded mid-sentence, so the string
+               carries a [marker] round it and tAccent places the pieces —
+               which words sit either side differs per language. -->
+          {{ permissionMessage[0] }}<strong>{{ permissionMessage[1] }}</strong>{{ permissionMessage[2] }}
         </p>
 
         <p v-else-if="phase === 'downloading'" class="update-dialog__message">
-          Downloading FamCart {{ version }}…
+          {{ t('update.downloadingMessage', { version }) }}
         </p>
 
         <p v-else-if="phase === 'installing'" class="update-dialog__message">
-          Android is taking over from here. Follow the install prompt to finish.
-          Your list and household stay exactly as they are.
+          {{ t('update.installingMessage') }}
         </p>
 
         <p v-else class="update-dialog__message">
-          The update couldn't be downloaded. It may just be the connection. Try
-          again, or get the APK from the releases page.
+          {{ t('update.failedMessage') }}
         </p>
       </div>
 
@@ -96,7 +101,7 @@ const percent = computed(() => Math.round(Math.min(Math.max(props.progress, 0), 
         <div
           class="update-dialog__track"
           role="progressbar"
-          aria-label="Download progress"
+          :aria-label="t('update.progressLabel')"
           :aria-valuenow="progress >= 0 ? percent : undefined"
           aria-valuemin="0"
           aria-valuemax="100"
@@ -114,19 +119,19 @@ const percent = computed(() => Math.round(Math.min(Math.max(props.progress, 0), 
 
       <div class="update-dialog__actions">
         <template v-if="phase === 'available'">
-          <AppButton variant="secondary" block @click="emit('later')">Later</AppButton>
-          <AppButton variant="primary" block @click="emit('install')">Update</AppButton>
+          <AppButton variant="secondary" block @click="emit('later')">{{ t('update.later') }}</AppButton>
+          <AppButton variant="primary" block @click="emit('install')">{{ t('update.install') }}</AppButton>
         </template>
 
         <template v-else-if="phase === 'permission'">
-          <AppButton variant="secondary" block @click="emit('later')">Not now</AppButton>
+          <AppButton variant="secondary" block @click="emit('later')">{{ t('update.notNow') }}</AppButton>
           <AppButton variant="primary" block @click="emit('open-settings')">
-            Open settings
+            {{ t('update.openSettings') }}
           </AppButton>
         </template>
 
         <template v-else-if="phase === 'downloading'">
-          <AppButton variant="secondary" block disabled>Downloading…</AppButton>
+          <AppButton variant="secondary" block disabled>{{ t('update.downloading') }}</AppButton>
         </template>
 
         <!-- Try again is the safety net. Normally this phase is not reachable
@@ -136,15 +141,15 @@ const percent = computed(() => Math.round(Math.min(Math.max(props.progress, 0), 
              listener never registered — so the one case where this text is
              actually read is the one where Close alone would strand you. -->
         <template v-else-if="phase === 'installing'">
-          <AppButton variant="secondary" block @click="emit('close')">Close</AppButton>
-          <AppButton variant="primary" block @click="emit('install')">Try again</AppButton>
+          <AppButton variant="secondary" block @click="emit('close')">{{ t('common.close') }}</AppButton>
+          <AppButton variant="primary" block @click="emit('install')">{{ t('common.tryAgain') }}</AppButton>
         </template>
 
         <template v-else>
           <AppButton variant="secondary" block @click="emit('open-releases')">
-            Open releases
+            {{ t('update.openReleases') }}
           </AppButton>
-          <AppButton variant="primary" block @click="emit('install')">Try again</AppButton>
+          <AppButton variant="primary" block @click="emit('install')">{{ t('common.tryAgain') }}</AppButton>
         </template>
       </div>
     </div>

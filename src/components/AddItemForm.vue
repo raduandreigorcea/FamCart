@@ -11,6 +11,7 @@ import checkIcon from '../assets/check.svg?raw'
 import scanBarcodeIcon from '../assets/scan-barcode.svg?raw'
 import { productKey, type ProductSuggestion } from '../lib/productSearch'
 import { ITEM_NAME_MAX_LENGTH } from '../lib/limits'
+import { t } from '../lib/i18n'
 
 // Presentational: the typed name lives in the parent (via v-model) so the add
 // flow can restore it when an optimistic insert fails. The suggestions list is
@@ -379,8 +380,8 @@ onBeforeUnmount(() => {
             v-model="name"
             ref="inputRef"
             type="text"
-            aria-label="Add an item"
-            placeholder="Add an item…"
+            :aria-label="t('add.inputLabel')"
+            :placeholder="t('add.inputPlaceholder')"
             :maxlength="maxLength"
             autocomplete="off"
             role="combobox"
@@ -404,7 +405,7 @@ onBeforeUnmount(() => {
             @mousedown.prevent
             @click="onAction"
             :disabled="!showScan && !name.trim()"
-            :aria-label="showScan ? 'Scan a barcode' : 'Add'"
+            :aria-label="showScan ? t('add.scanLabel') : t('add.submitLabel')"
           >
             <Transition name="btn-swap" mode="out-in">
               <span
@@ -449,13 +450,13 @@ onBeforeUnmount(() => {
           <!-- Outside the listbox: a listbox exposes only its options, so a
                heading inside it would be dropped on the way to a screen reader.
                Out here it is ordinary text, and aria-label carries the name. -->
-          <p v-if="showingRecents" class="suggestions-label">Buy again</p>
+          <p v-if="showingRecents" class="suggestions-label">{{ t('list.buyAgain') }}</p>
 
           <ul
             class="suggestions"
             :id="listboxId"
             role="listbox"
-            :aria-label="showingRecents ? 'Products you buy often' : 'Product suggestions'"
+            :aria-label="showingRecents ? t('add.listRecents') : t('add.listSuggestions')"
             :aria-busy="suggestionsLoading"
           >
             <!-- While searching, the skeleton is all there is: the previous query's
@@ -516,7 +517,7 @@ onBeforeUnmount(() => {
                   </span>
                   <!-- The tick is decoration; this is what carries the state into
                        the option's accessible name. -->
-                  <span v-if="isAdded(product)" class="added-announce">on your list</span>
+                  <span v-if="isAdded(product)" class="added-announce">{{ t('add.onYourList') }}</span>
                 </button>
               </li>
 
@@ -538,8 +539,8 @@ onBeforeUnmount(() => {
                     <span class="suggestion-icon"></span>
                   </span>
                   <span class="suggestion-text">
-                    <span class="suggestion-name suggestion-name--custom">Can't find it?</span>
-                    <span class="suggestion-maker suggestion-maker--custom">Add your own</span>
+                    <span class="suggestion-name suggestion-name--custom">{{ t('add.cantFind') }}</span>
+                    <span class="suggestion-maker suggestion-maker--custom">{{ t('add.addYourOwn') }}</span>
                   </span>
                 </button>
               </li>
@@ -548,7 +549,7 @@ onBeforeUnmount(() => {
 
           <!-- A household with nothing bought yet has no usuals to open on. An
                empty screen should say what to do with it. -->
-          <p v-if="showingHint" class="suggestions-hint">Type a product name to search.</p>
+          <p v-if="showingHint" class="suggestions-hint">{{ t('add.typeToSearch') }}</p>
 
           <!-- Last in the wrap and outside the scrolling results, so a counter
                thrown from the top row is not sliced off by the list's own edge.

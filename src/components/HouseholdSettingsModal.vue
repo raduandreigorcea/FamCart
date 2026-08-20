@@ -26,6 +26,7 @@ import layoutGridIcon from '../assets/layout-grid.svg?raw'
 import settingsIconRaw from '../assets/settings.svg?raw'
 import usersIcon from '../assets/users-round.svg?raw'
 import trashIcon from '../assets/trash-2.svg?raw'
+import { t } from '../lib/i18n'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -57,9 +58,12 @@ const { state: confirmModal, confirm, resolveWith } = useConfirm()
 // Whatever the last action failed with. Panels emit `error` rather than opening
 // their own dialog, so every failure in here arrives on one surface.
 const actionError = ref('')
-const actionErrorTitle = ref('Something went wrong')
+const actionErrorTitle = ref('')
 
-function showError(message: string, title = 'Something went wrong') {
+function showError(message: string, title = '') {
+  // Empty means "no title of its own"; ErrorModal fills in the generic one,
+  // per render, in the current language. A t() call in the default would run
+  // once at import and freeze.
   actionErrorTitle.value = title
   actionError.value = message
 }
@@ -123,12 +127,19 @@ interface SettingsTab {
 // tablist below is one v-for rather than five near-identical buttons carrying
 // their own v-ifs — which is how the Danger tab came to be written out twice.
 const tabs = computed<SettingsTab[]>(() => {
-  const list: SettingsTab[] = [{ id: 'overview', label: 'Overview', icon: layoutGridIcon }]
+  const list: SettingsTab[] = [
+    { id: 'overview', label: t('household.tab.overview'), icon: layoutGridIcon },
+  ]
   if (isOwnerOrModerator.value) {
-    list.push({ id: 'household', label: 'Preferences', icon: settingsIconRaw })
+    list.push({ id: 'household', label: t('household.tab.preferences'), icon: settingsIconRaw })
   }
-  list.push({ id: 'members', label: 'Members', icon: usersIcon, badge: memberCount.value })
-  list.push({ id: 'danger', label: 'Danger Zone', icon: trashIcon, danger: true })
+  list.push({
+    id: 'members',
+    label: t('household.tab.members'),
+    icon: usersIcon,
+    badge: memberCount.value,
+  })
+  list.push({ id: 'danger', label: t('household.tab.danger'), icon: trashIcon, danger: true })
   // No About tab: an app's version and its data-licence credit are not a
   // property of any one household. They live in AppSettingsModal, reached from
   // the account dialog. Every tab here now changes something about THIS
@@ -163,7 +174,7 @@ function onHouseholdDeleted() {
     transition="modal-fade"
     @close="dismiss"
   >
-      <div class="settings-modal" role="dialog" aria-modal="true" aria-label="Settings">
+      <div class="settings-modal" role="dialog" aria-modal="true" :aria-label="t('household.title')">
 
         <!-- Modal Header -->
         <div class="settings-modal__header">
@@ -172,7 +183,7 @@ function onHouseholdDeleted() {
               <span class="header-icon" aria-hidden="true" v-html="settingsIconRaw"></span>
             </div>
             <div>
-              <h3>Household Settings</h3>
+              <h3>{{ t('household.title') }}</h3>
               <!-- Which household this is. It used to read "Manage your
                    household and members", which described the panels below
                    rather than saying anything you could not already see — and
@@ -180,10 +191,10 @@ function onHouseholdDeleted() {
                    Renaming, removing members and deleting all happen in here,
                    and someone in more than one household had nothing on screen
                    confirming they were in the right one. -->
-              <p class="settings-modal__subtitle">{{ householdName || 'Your household' }}</p>
+              <p class="settings-modal__subtitle">{{ householdName || t('account.householdFallback') }}</p>
             </div>
           </div>
-          <ModalCloseButton aria-label="Close settings" @click="requestClose()" />
+          <ModalCloseButton :aria-label="t('household.close')" @click="requestClose()" />
         </div>
 
         <!-- Modal Body Container -->
@@ -196,7 +207,7 @@ function onHouseholdDeleted() {
             class="settings-sidebar"
             role="tablist"
             aria-orientation="vertical"
-            aria-label="Settings sections"
+            :aria-label="t('household.sections')"
           >
             <button
               v-for="tab in tabs"

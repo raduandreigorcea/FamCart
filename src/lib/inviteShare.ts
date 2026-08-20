@@ -18,6 +18,7 @@
 
 import { Capacitor } from '@capacitor/core'
 import { copyText } from './clipboard'
+import { t } from './i18n'
 
 export type InviteShareOutcome = 'shared' | 'copied' | 'cancelled' | 'unavailable'
 
@@ -53,11 +54,16 @@ export function buildInviteMessage(
   origin = shareableOrigin(),
 ): InviteMessage {
   const named = householdName.trim()
-  const where = named ? `"${named}"` : 'my household'
-  const text = `Join ${where} on FamCart so we can share one shopping list. Your invite code is ${code}.`
+  // Two whole sentences per case rather than one with a {where} hole in it. The
+  // hole was cheaper here and unfillable in half the catalogs: the name takes a
+  // different preposition and a different article depending on the language, so
+  // a translator handed a fragment cannot produce a correct sentence.
+  const text = named
+    ? t('invite.shareBody', { name: named, code })
+    : t('invite.shareBodyGeneric', { code })
 
   return {
-    title: named ? `Join ${named} on FamCart` : 'Join my household on FamCart',
+    title: named ? t('invite.shareTitle', { name: named }) : t('invite.shareTitleGeneric'),
     // The link goes in the text as well as in `url`: share targets that take
     // plain text only (SMS, most chat apps) drop the separate url field.
     text: origin ? `${text} ${origin}` : text,
@@ -108,7 +114,7 @@ export function shareInvite(
           title: message.title,
           text: message.text,
           url: message.url || undefined,
-          dialogTitle: 'Invite to FamCart',
+          dialogTitle: t('invite.shareDialogTitle'),
         }),
       )
       .then((): InviteShareOutcome => 'shared')

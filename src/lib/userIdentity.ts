@@ -1,3 +1,5 @@
+import { t } from './i18n'
+
 // Minimal structural view of a Clerk user, so lib stays free of @clerk imports.
 export interface UserLike {
   fullName?: string | null
@@ -73,12 +75,27 @@ export function getUserPrimaryEmail(user: UserLike | null | undefined): string {
 // 003/005. It was also written out inline in six components, which is one
 // spelling away from a roster that says "Member" and a history that says
 // "Unknown" for the same person.
+//
+// So it is NOT translated, and deriveProfileFields above still writes this
+// exact string: it is a value the database stores, and a German user's profile
+// row must not read "Mitglied" where every query and every other member's app
+// expects "Member".
 export const MEMBER_FALLBACK_NAME = 'Member'
 
+// The display side of the same idea, and the only place the two part company.
+// A member with no name is described in the reader's language rather than in
+// the column default's.
+//
+// The seam is real and worth naming: a row where the DATABASE already wrote
+// 'Member' has a display_name, so it takes the first branch and still shows
+// English. Nothing here can fix that without treating a stored name as absent,
+// which would rename anyone who genuinely calls themselves Member. Accepted:
+// it affects rows created before a name was known, and it corrects itself the
+// moment that person's profile syncs.
 export function memberDisplayName(
   member: { display_name?: string | null } | null | undefined,
 ): string {
-  return member?.display_name || MEMBER_FALLBACK_NAME
+  return member?.display_name || t('common.memberFallback')
 }
 
 export function getUserInitial(user: UserLike | null | undefined): string {

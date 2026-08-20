@@ -15,6 +15,7 @@ import {
   type FlushResult,
 } from './offlineQueue'
 import { userMessage } from './errorMessages'
+import { t } from './i18n'
 import { captureException } from './errorReporting'
 import { ITEM_NAME_MAX_LENGTH, ITEM_QUANTITY_MAX } from './limits'
 import type { ShoppingItemRow } from './householdRealtime'
@@ -258,7 +259,7 @@ export function useShoppingListActions(options: {
     // Genuine server errors get a plain message, never a raw "Failed to fetch".
     const readError = uncheckedRes.error || checkedRes.error
     if (readError) {
-      if (!isOfflineError(readError)) loadError.value = 'Could not load your list. Please try again.'
+      if (!isOfflineError(readError)) loadError.value = t('error.loadListFailed')
       return
     }
 
@@ -372,7 +373,7 @@ export function useShoppingListActions(options: {
 
     const target = await resolveActiveItemByName(name, { maker })
     if (!target) {
-      addError.value = 'Could not add that item.'
+      addError.value = t('error.addItemFailed')
       return false
     }
 
@@ -393,7 +394,7 @@ export function useShoppingListActions(options: {
         if (deferIfOffline(error, { kind: 'update', id: target.id, patch: { quantity: target.quantity } }))
           return true
         target.quantity = previousQty
-        addError.value = userMessage(error, 'Could not update that item.')
+        addError.value = userMessage(error, t('error.updateItemFailed'))
         return false
       }
       return true
@@ -411,7 +412,7 @@ export function useShoppingListActions(options: {
     const name = (product?.name ?? draftName.value).trim()
     if (!name) return
     if (name.length > ITEM_NAME_MAX_LENGTH) {
-      addError.value = `Item name must be ${ITEM_NAME_MAX_LENGTH} characters or fewer.`
+      addError.value = t('error.itemNameTooLong', { max: ITEM_NAME_MAX_LENGTH })
       return
     }
     addError.value = ''
@@ -548,8 +549,8 @@ export function useShoppingListActions(options: {
         // userMessage() — that reports to Sentry, and a limit doing its job is
         // not a fault. The server already audits it to security_events.
         addError.value = isRateLimitedError(error)
-          ? 'You are adding items too quickly. Wait a minute and try again.'
-          : userMessage(error, 'Failed to add item.')
+          ? t('error.addTooFast')
+          : userMessage(error, t('error.addItemGeneric'))
         // Only when there is nothing to put back over: adding no longer empties
         // the field, so the text is normally still sitting there -- possibly
         // edited since -- and restoring would overwrite what is being typed now.
@@ -641,7 +642,7 @@ export function useShoppingListActions(options: {
           enqueueOfflineMutation(localStorage, userId.value, { kind: 'delete', id: source.id })
           return
         }
-        rollback(userMessage(updateErr, 'Could not merge those items.'))
+        rollback(userMessage(updateErr, t('error.mergeItemsFailed')))
         return
       }
 
@@ -673,7 +674,7 @@ export function useShoppingListActions(options: {
         })) {
           captureException(undoErr)
         }
-        rollback(userMessage(deleteErr, 'Could not merge those items.'))
+        rollback(userMessage(deleteErr, t('error.mergeItemsFailed')))
       }
     } finally {
       endItemWrite(source.id)
@@ -755,7 +756,7 @@ export function useShoppingListActions(options: {
             return
           }
         }
-        loadError.value = userMessage(error, 'Could not update that item.')
+        loadError.value = userMessage(error, t('error.updateItemFailed'))
       }
     } finally {
       endItemWrite(item.id)
@@ -823,7 +824,7 @@ export function useShoppingListActions(options: {
         return
       }
       items.value = snapshot
-      loadError.value = userMessage(error, 'Could not complete the checkout.')
+      loadError.value = userMessage(error, t('error.checkoutFailed'))
       return
     }
 
@@ -927,7 +928,7 @@ export function useShoppingListActions(options: {
         if (deferIfOffline(error, { kind: 'update', id: item.id, patch })) return
         item.quantity = before // rollback, to where the burst started
         onError?.()
-        loadError.value = userMessage(error, 'Could not update that item.')
+        loadError.value = userMessage(error, t('error.updateItemFailed'))
       }
     } finally {
       endItemWrite(item.id)
@@ -975,7 +976,7 @@ export function useShoppingListActions(options: {
       // it actually belongs, which is what every other restore here does.
       items.value.splice(index, 0, removed)
       items.value = sortItemsForDisplay(items.value)
-      loadError.value = userMessage(error, 'Could not delete that item.')
+      loadError.value = userMessage(error, t('error.deleteItemFailed'))
     }
   }
 

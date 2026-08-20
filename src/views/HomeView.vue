@@ -50,6 +50,7 @@ import {
   ITEM_LIMIT_DEFAULT,
   ITEM_NAME_MAX_LENGTH,
 } from '../lib/limits'
+import { t } from '../lib/i18n'
 
 const { userId, isLoaded } = useAuth()
 const { user } = useUser()
@@ -289,16 +290,19 @@ const hasShopped = computed(
 // dialog each stacked two overlays on top of each other. Show the first that has
 // something to say and leave the rest queued behind it; dismissing reveals the
 // next, so nothing is silently dropped.
+// Titles resolved per read rather than baked in here: this array is built once
+// at setup, so t() calls in it would freeze in whatever language was current
+// when HomeView first mounted.
 const ERROR_CHANNELS = [
-  { ref: () => loadError, title: 'Something went wrong' },
-  { ref: () => addError, title: 'Something went wrong' },
-  { ref: () => notificationError, title: 'Notifications' },
+  { ref: () => loadError, title: () => t('error.genericTitle') },
+  { ref: () => addError, title: () => t('error.genericTitle') },
+  { ref: () => notificationError, title: () => t('settings.notifications') },
 ]
 const activeError = computed(() => {
   const channel = ERROR_CHANNELS.find((c) => c.ref().value)
   if (!channel) return { title: '', message: '', dismiss: () => {} }
   return {
-    title: channel.title,
+    title: channel.title(),
     message: channel.ref().value,
     dismiss: () => {
       channel.ref().value = ''
@@ -550,7 +554,7 @@ async function handleBackOnline() {
     do {
       syncAgain = false
       const { failed } = await ensureQueueFlushed()
-      if (failed) loadError.value = 'Some changes made offline could not be synced.'
+      if (failed) loadError.value = t('error.offlineSyncFailed')
       await loadHouseholdHeader()
       await loadItems()
       await setupRealtimeSubscriptions()
@@ -643,8 +647,8 @@ async function runInitializeHome() {
       return
     }
     loadError.value = isOfflineError(mErr)
-      ? 'You appear to be offline. Check your connection and try again.'
-      : 'Could not load your household.'
+      ? t('error.offline')
+      : t('error.loadHouseholdFailed')
     return
   }
 
@@ -870,7 +874,11 @@ async function loadHouseholds() {
   }))
 
   // Stable, name-ordered so the list never reshuffles between loads.
-  households.value = list.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+  // Pinned to 'en' so the household switcher lists in the same order on
+  // every device, whatever language each member is reading it in.
+  households.value = list.sort(
+    (a, b) => a.name.localeCompare(b.name, 'en') || a.id.localeCompare(b.id, 'en'),
+  )
   return { error: null }
 }
 
@@ -1006,9 +1014,9 @@ async function reconcileActiveHousehold() {
 
     <ConfirmModal
       :open="limitReachedPopupOpen"
-      title="Limit reached"
-      :message="`You reached your limit of ${householdItemLimit} active items. Check or delete items before adding more.`"
-      confirm-text="Got it"
+      :title="t('error.limitReachedTitle')"
+      :message="t('error.limitReached', { n: householdItemLimit })"
+      :confirm-text="t('common.gotIt')"
       :show-cancel="false"
       @confirm="closeLimitReachedPopup"
       @cancel="closeLimitReachedPopup"

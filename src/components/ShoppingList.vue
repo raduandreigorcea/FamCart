@@ -11,6 +11,7 @@ import type { ShoppingItemRow, HouseholdMemberProfile } from '../lib/householdRe
 import type { ProductSuggestion } from '../lib/productSearch'
 import cartIcon from '../assets/shopping-cart.svg?raw'
 import checkIcon from '../assets/check.svg?raw'
+import { t, tn } from '../lib/i18n'
 
 // Presentational: renders the list with its move animations, the initial-load
 // skeleton, and the empty state. All mutations stay with the parent, which owns
@@ -113,11 +114,16 @@ const viewingChecked = computed(
     filter.value === 'checked' ||
     (filter.value === 'all' && props.items.length > 0 && uncheckedItems.value.length === 0),
 )
-const metaLabel = computed(() => (viewingChecked.value ? 'Checked' : 'To buy'))
+const metaLabel = computed(() =>
+  viewingChecked.value ? t('list.meta.checked') : t('list.meta.toBuy'),
+)
+// tn, not a ternary on === 1. Romanian needs three forms here and picks
+// between them by rules English does not have: 19 is 'produse', 20 is
+// 'de produse'.
 const metaCount = computed(() =>
   viewingChecked.value
-    ? `${checkedItems.value.length} ${checkedItems.value.length === 1 ? 'item' : 'items'}`
-    : `${leftCount.value} left`,
+    ? tn('list.meta.itemCount', checkedItems.value.length)
+    : tn('list.meta.leftCount', leftCount.value),
 )
 
 // The list has rows, the filter just hides all of them. Distinct from the empty
@@ -314,8 +320,8 @@ const inverseLabelStyle = computed(() => ({
 }))
 const labelText = computed(() =>
   buttonSuccess.value
-    ? 'Checked out!'
-    : `Slide to check out ${checkedUnitCount.value} ${checkedUnitCount.value === 1 ? 'item' : 'items'}`,
+    ? t('list.buyBar.checkedOut')
+    : tn('list.buyBar.slide', checkedUnitCount.value),
 )
 </script>
 
@@ -363,7 +369,7 @@ const labelText = computed(() =>
   </TransitionGroup>
 
   <p v-if="filteredToNothing" class="filter-empty">
-    {{ filter === 'checked' ? 'Nothing checked yet.' : 'Everything here is checked.' }}
+    {{ filter === 'checked' ? t('list.filteredEmpty.checked') : t('list.filteredEmpty.active') }}
   </p>
 
   <!-- Keeps the last checked row clear of the fixed buy bar. -->
@@ -376,17 +382,15 @@ const labelText = computed(() =>
        So the regulars are here as one tap each, and the screen is a way to
        start rather than a notice that there is nothing to see. -->
   <div v-if="showEmpty" class="empty-state">
-    <p class="empty-state__title">{{ hasShopped ? 'All bought' : 'Nothing here yet' }}</p>
+    <p class="empty-state__title">{{ hasShopped ? t('list.empty.titleShopped') : t('list.empty.titleNew') }}</p>
     <p class="empty-state__text">
-      {{ hasShopped
-        ? 'Nothing left to pick up.'
-        : 'Add the first thing and everyone in the household sees it straight away.' }}
+      {{ hasShopped ? t('list.empty.textShopped') : t('list.empty.textNew') }}
     </p>
 
     <!-- Same name as the search screen's section, because it is the same idea
          and one name for it is how it gets learned. -->
     <div v-if="showRestart" class="restart">
-      <p class="restart__label">Buy again</p>
+      <p class="restart__label">{{ t('list.buyAgain') }}</p>
 
       <!-- The words above arrive from the cached snapshot, on the first painted
            frame; the chips have to wait for the purchase history to say which
@@ -407,7 +411,7 @@ const labelText = computed(() =>
           :key="productKey(product.name, product.maker)"
           type="button"
           class="chip"
-          :aria-label="`Add ${product.name}`"
+          :aria-label="t('list.addProduct', { name: product.name })"
           @click="emit('add', product)"
         >
           <span class="chip__emoji" aria-hidden="true">
@@ -439,7 +443,7 @@ const labelText = computed(() =>
           type="button"
           :style="thumbStyle"
           :disabled="buying"
-          :aria-label="`Check out ${checkedUnitCount} ${checkedUnitCount === 1 ? 'item' : 'items'}`"
+          :aria-label="tn('list.buyBar.checkOut', checkedUnitCount)"
           @pointerdown="onThumbDown"
           @pointermove="onThumbMove"
           @pointerup="onThumbUp"

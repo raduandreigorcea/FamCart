@@ -20,6 +20,7 @@ import AppModal from './AppModal.vue'
 import BackButton from './BackButton.vue'
 import { useBarcodeScanner } from '../lib/barcodeScanner'
 import scanBarcodeIcon from '../assets/scan-barcode.svg?raw'
+import { t } from '../lib/i18n'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -99,20 +100,20 @@ const failure = computed(() => {
   switch (status.value) {
     case 'denied':
       return {
-        title: 'FamCart has no camera access',
-        detail: 'Allow the camera for this app, then try again.',
+        title: t('scanner.denied.title'),
+        detail: t('scanner.denied.detail'),
         retry: true,
       }
     case 'unavailable':
       return {
-        title: "This device can't scan",
-        detail: 'Add the item by name instead.',
+        title: t('scanner.unavailable.title'),
+        detail: t('scanner.unavailable.detail'),
         retry: false,
       }
     case 'error':
       return {
-        title: "The camera didn't start",
-        detail: 'Another app may be using it.',
+        title: t('scanner.error.title'),
+        detail: t('scanner.error.detail'),
         retry: true,
       }
     case 'timeout':
@@ -120,8 +121,8 @@ const failure = computed(() => {
       // one thing the user can act on is whether they were ever asked, so that
       // is what this says rather than guessing at a cause.
       return {
-        title: 'The camera never answered',
-        detail: "If nothing asked for camera access, check FamCart's camera permission in your device settings.",
+        title: t('scanner.timeout.title'),
+        detail: t('scanner.timeout.detail'),
         retry: true,
       }
     default:
@@ -198,12 +199,12 @@ function retry() {
           <h4 id="scanner-title" class="scanner__title">{{ failure.title }}</h4>
           <p class="scanner__detail">{{ failure.detail }}</p>
           <AppButton v-if="failure.retry" variant="primary" type="button" @click="retry">
-            Try again
+            {{ t('scanner.tryAgain') }}
           </AppButton>
         </div>
 
         <p v-if="!failure" id="scanner-title" class="scanner__instruction">
-          {{ live ? 'Point the camera at a barcode' : 'Starting the camera' }}
+          {{ live ? t('scanner.pointCamera') : t('scanner.starting') }}
         </p>
       </div>
 
@@ -216,7 +217,7 @@ function retry() {
               <span class="result-row__code-glyph" v-html="scanBarcodeIcon"></span>
             </span>
             <span class="result-row__text">
-              <span class="result-row__name">Not in the catalog</span>
+              <span class="result-row__name">{{ t('scanner.notInCatalog') }}</span>
               <span class="result-row__note result-row__note--quiet">{{ unknownCode }}</span>
             </span>
             <AppButton
@@ -224,7 +225,7 @@ function retry() {
               type="button"
               @click="emit('name-unknown', unknownCode)"
             >
-              Add your own
+              {{ t('add.addYourOwn') }}
             </AppButton>
           </div>
 
@@ -233,7 +234,7 @@ function retry() {
               <span class="scanner-spinner scanner-spinner--dark"></span>
             </span>
             <span class="result-row__text">
-              <span class="result-row__name">Looking it up</span>
+              <span class="result-row__name">{{ t('scanner.lookingUp') }}</span>
             </span>
           </div>
         </Transition>

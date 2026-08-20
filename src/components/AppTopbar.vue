@@ -43,6 +43,7 @@ function prefetch(load: () => Promise<unknown>) {
 // rather than the first time someone opens the dialog — deferring the chunk
 // would leave the app in the wrong theme until then.
 import AppSettingsModal from './AppSettingsModal.vue'
+import { t } from '../lib/i18n'
 
 const props = defineProps({
   householdId: { type: String, default: '' },
@@ -211,7 +212,7 @@ const cachedProfile = computed(() =>
 
 const userAvatarUrl = computed(() => user.value?.imageUrl || cachedProfile.value?.image_url || '')
 const userDisplayName = computed(
-  () => getUserDisplayName(user.value) || cachedProfile.value?.display_name || 'Account',
+  () => getUserDisplayName(user.value) || cachedProfile.value?.display_name || t('account.fallbackName'),
 )
 const userEmail = computed(() => getUserPrimaryEmail(user.value))
 const userInitial = computed(() => {
@@ -249,7 +250,7 @@ const orderedActiveMembers = computed(() =>
         <button
           class="household-btn"
           type="button"
-          :aria-label="`${householdName} settings`"
+          :aria-label="t('topbar.householdSettings', { name: householdName })"
           @pointerdown="prefetch(loadHouseholdSettingsModal)"
           @click="openHouseholdSettings"
         >
@@ -277,6 +278,7 @@ const orderedActiveMembers = computed(() =>
         </div>
       </template>
       <template v-else>
+        <!-- eslint-disable-next-line vue/no-bare-strings-in-template -- brand name, the same in every language -->
         <img src="/icons/pwa-192.png" alt="FamCart" class="topbar-logo" />
       </template>
     </div>
@@ -286,7 +288,7 @@ const orderedActiveMembers = computed(() =>
         v-if="householdName"
         class="topbar-icon-btn"
         type="button"
-        aria-label="Checkout history"
+        :aria-label="t('topbar.history')"
         @pointerdown="prefetch(loadPurchaseHistoryModal)"
         @click="openHistory"
       >
@@ -296,13 +298,13 @@ const orderedActiveMembers = computed(() =>
       <button
         class="user-avatar-btn"
         type="button"
-        aria-label="Your account"
+        :aria-label="t('topbar.account')"
         @click="openAccountMenu"
       >
         <img
           v-if="userAvatarUrl"
           :src="userAvatarUrl"
-          alt="Your avatar"
+          :alt="t('topbar.avatarAlt')"
           class="user-avatar-img"
         />
         <span v-else class="user-avatar-fallback">{{ userInitial }}</span>

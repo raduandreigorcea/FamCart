@@ -18,6 +18,7 @@ import shieldIcon from '../../assets/shield.svg?raw'
 import trashIcon from '../../assets/trash-2.svg?raw'
 import userRoundIcon from '../../assets/user-round.svg?raw'
 import { memberDisplayName } from '../../lib/userIdentity'
+import { t } from '../../lib/i18n'
 
 // The roster, and what can be done to a row on it. The rules themselves live in
 // lib/memberRoles — this decides only what to render and what to write.
@@ -126,7 +127,7 @@ async function setMemberRole(memberUserId: string, role: string) {
       .eq('household_id', props.householdId)
       .eq('user_id', memberUserId)
     if (error) {
-      emit('error', userMessage(error, "Could not update that member's role."))
+      emit('error', userMessage(error, t('error.roleUpdateFailed')))
       return
     }
     emit('refresh-household')
@@ -140,9 +141,8 @@ async function removeMember(memberUserId: string) {
   // Dismiss first: on mobile the action sheet covers the confirm dialog.
   closeMemberMenu()
   const confirmed = await props.confirm({
-    title: 'Remove Member?',
-    message:
-      'This person will immediately lose access to the household shopping list. They can join again with the invite code.',
+    title: t('members.confirmRemoveTitle'),
+    message: t('members.confirmRemoveMessage'),
     danger: true,
   })
   if (!confirmed) return
@@ -154,7 +154,7 @@ async function removeMember(memberUserId: string) {
       .eq('household_id', props.householdId)
       .eq('user_id', memberUserId)
     if (error) {
-      emit('error', userMessage(error, 'Could not remove that member.'))
+      emit('error', userMessage(error, t('error.removeMemberFailed')))
       return
     }
     emit('refresh-household')
@@ -167,8 +167,8 @@ async function removeMember(memberUserId: string) {
 <template>
   <div class="tab-panel tab-panel--overlay">
     <div class="panel-section">
-      <h4 class="panel-section-title">Household Members ({{ memberProfiles.length }})</h4>
-      <p class="panel-section-desc">Below are the people who have access to this shopping list.</p>
+      <h4 class="panel-section-title">{{ t('members.title', { n: memberProfiles.length }) }}</h4>
+      <p class="panel-section-desc">{{ t('members.desc') }}</p>
 
       <div class="members-list-wrapper">
         <ul class="members-custom-list">
@@ -182,7 +182,7 @@ async function removeMember(memberUserId: string) {
               <img
                 v-if="member.image_url"
                 :src="member.image_url"
-                :alt="memberDisplayName(member) + ' avatar'"
+                :alt="t('common.avatarAlt', { name: memberDisplayName(member) })"
                 class="member-custom-avatar"
               />
               <span v-else class="member-custom-avatar member-custom-avatar--fallback">
@@ -191,14 +191,14 @@ async function removeMember(memberUserId: string) {
               <div class="member-custom-details">
                 <span class="member-custom-name">
                   {{ memberDisplayName(member) }}
-                  <span v-if="member.user_id === userId" class="you-tag">(You)</span>
+                  <span v-if="member.user_id === userId" class="you-tag">{{ t('members.you') }}</span>
                 </span>
               </div>
             </div>
             <div class="member-custom-right">
               <span v-if="member.user_id === ownerUserId" class="member-role-badge role-owner">
                 <span class="badge-icon-wrap" aria-hidden="true" v-html="crownIcon"></span>
-                Owner
+                {{ t('overview.owner') }}
               </span>
 
               <div
@@ -210,7 +210,7 @@ async function removeMember(memberUserId: string) {
                 <button
                   class="member-actions-trigger"
                   type="button"
-                  aria-label="Open member actions"
+                  :aria-label="t('members.openActions')"
                   :disabled="memberActionPendingId === member.user_id"
                   @click.stop="toggleMemberMenu(member.user_id)"
                 >
@@ -227,8 +227,8 @@ async function removeMember(memberUserId: string) {
                   >
                     <span class="member-action-icon" aria-hidden="true" v-html="shieldIcon"></span>
                     <span class="member-action-text">
-                      <span class="member-action-label">Promote to moderator</span>
-                      <span class="member-action-hint">Can manage items and members</span>
+                      <span class="member-action-label">{{ t('members.promote') }}</span>
+                      <span class="member-action-hint">{{ t('members.promoteHint') }}</span>
                     </span>
                   </button>
                   <button
@@ -239,8 +239,8 @@ async function removeMember(memberUserId: string) {
                   >
                     <span class="member-action-icon" aria-hidden="true" v-html="userRoundIcon"></span>
                     <span class="member-action-text">
-                      <span class="member-action-label">Demote to member</span>
-                      <span class="member-action-hint">Removes moderator permissions</span>
+                      <span class="member-action-label">{{ t('members.demote') }}</span>
+                      <span class="member-action-hint">{{ t('members.demoteHint') }}</span>
                     </span>
                   </button>
                   <button
@@ -250,15 +250,15 @@ async function removeMember(memberUserId: string) {
                   >
                     <span class="member-action-icon" aria-hidden="true" v-html="trashIcon"></span>
                     <span class="member-action-text">
-                      <span class="member-action-label">Remove from household</span>
-                      <span class="member-action-hint">Loses access to the shopping list</span>
+                      <span class="member-action-label">{{ t('members.remove') }}</span>
+                      <span class="member-action-hint">{{ t('members.removeHint') }}</span>
                     </span>
                   </button>
                 </div>
               </div>
 
-              <span v-if="member.user_id !== ownerUserId && normalizeMemberRole(member.role) === 'moderator'" class="member-role-badge role-moderator">Moderator</span>
-              <span v-if="member.user_id !== ownerUserId && normalizeMemberRole(member.role) !== 'moderator'" class="member-role-badge role-member">Member</span>
+              <span v-if="member.user_id !== ownerUserId && normalizeMemberRole(member.role) === 'moderator'" class="member-role-badge role-moderator">{{ t('members.roleModerator') }}</span>
+              <span v-if="member.user_id !== ownerUserId && normalizeMemberRole(member.role) !== 'moderator'" class="member-role-badge role-member">{{ t('members.roleMember') }}</span>
             </div>
           </li>
         </ul>
@@ -275,7 +275,9 @@ async function removeMember(memberUserId: string) {
           class="member-sheet-overlay"
           @click.self="closeMemberMenu()"
         >
-          <div class="member-sheet" role="dialog" aria-modal="true" :aria-label="`Actions for ${activeMenuMember.display_name || 'member'}`">
+          <div class="member-sheet" role="dialog" aria-modal="true" :aria-label="activeMenuMember.display_name
+              ? t('members.sheetLabel', { name: activeMenuMember.display_name })
+              : t('members.sheetLabelGeneric')">
             <div class="member-sheet__head">
               <img
                 v-if="activeMenuMember.image_url"
@@ -289,7 +291,11 @@ async function removeMember(memberUserId: string) {
               <div class="member-sheet__meta">
                 <span class="member-sheet__name">{{ memberDisplayName(activeMenuMember) }}</span>
                 <span class="member-sheet__role">
-                  {{ normalizeMemberRole(activeMenuMember.role) === 'moderator' ? 'Moderator' : 'Member' }}
+                  {{
+                    normalizeMemberRole(activeMenuMember.role) === 'moderator'
+                      ? t('members.roleModerator')
+                      : t('members.roleMember')
+                  }}
                 </span>
               </div>
             </div>
@@ -303,8 +309,8 @@ async function removeMember(memberUserId: string) {
               >
                 <span class="member-sheet__action-icon" aria-hidden="true" v-html="shieldIcon"></span>
                 <span class="member-sheet__action-text">
-                  <span class="member-sheet__action-label">Promote to moderator</span>
-                  <span class="member-sheet__action-hint">Can manage items and members</span>
+                  <span class="member-sheet__action-label">{{ t('members.promote') }}</span>
+                  <span class="member-sheet__action-hint">{{ t('members.promoteHint') }}</span>
                 </span>
               </button>
 
@@ -316,8 +322,8 @@ async function removeMember(memberUserId: string) {
               >
                 <span class="member-sheet__action-icon" aria-hidden="true" v-html="userRoundIcon"></span>
                 <span class="member-sheet__action-text">
-                  <span class="member-sheet__action-label">Demote to member</span>
-                  <span class="member-sheet__action-hint">Removes moderator permissions</span>
+                  <span class="member-sheet__action-label">{{ t('members.demote') }}</span>
+                  <span class="member-sheet__action-hint">{{ t('members.demoteHint') }}</span>
                 </span>
               </button>
 
@@ -328,13 +334,13 @@ async function removeMember(memberUserId: string) {
               >
                 <span class="member-sheet__action-icon" aria-hidden="true" v-html="trashIcon"></span>
                 <span class="member-sheet__action-text">
-                  <span class="member-sheet__action-label">Remove from household</span>
-                  <span class="member-sheet__action-hint">Loses access to the shopping list</span>
+                  <span class="member-sheet__action-label">{{ t('members.remove') }}</span>
+                  <span class="member-sheet__action-hint">{{ t('members.removeHint') }}</span>
                 </span>
               </button>
             </div>
 
-            <button class="member-sheet__cancel" type="button" @click="closeMemberMenu()">Cancel</button>
+            <button class="member-sheet__cancel" type="button" @click="closeMemberMenu()">{{ t('common.cancel') }}</button>
           </div>
         </div>
       </Transition>

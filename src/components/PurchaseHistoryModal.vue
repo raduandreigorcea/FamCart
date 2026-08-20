@@ -4,11 +4,16 @@ import { useSupabase } from '../supabase'
 import AppModal from './AppModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
-import { MEMBER_FALLBACK_NAME } from '../lib/userIdentity'
 import { getProductEmoji } from '../lib/productEmoji'
-import { groupCheckouts, trimPartialTail, type CheckoutEntry } from '../lib/purchaseHistory'
+import {
+  groupCheckouts,
+  trimPartialTail,
+  type CheckoutEntry,
+  type DayLabel,
+} from '../lib/purchaseHistory'
 import type { HouseholdMemberProfile } from '../lib/householdRealtime'
 import historyIconRaw from '../assets/history.svg?raw'
+import { formatDate, formatTime, t } from '../lib/i18n'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -58,7 +63,7 @@ async function loadHistory() {
     .limit(HISTORY_LIMIT)
 
   if (fetchError) {
-    error.value = 'Could not load history. Check your connection and try again.'
+    error.value = t('error.loadHistoryFailed')
     entries.value = []
   } else {
     // If the fetch filled the row cap, the oldest checkout may have been cut
@@ -75,18 +80,27 @@ function buyerProfile(userId: string | null | undefined) {
 }
 
 function buyerName(userId: string | null | undefined) {
-  if (userId && userId === props.currentUserId) return 'You'
-  return buyerProfile(userId)?.display_name || 'Someone'
+  if (userId && userId === props.currentUserId) return t('history.you')
+  return buyerProfile(userId)?.display_name || t('history.someone')
 }
 
 function buyerInitial(userId: string | null | undefined) {
   return (buyerName(userId) || '?').slice(0, 1).toUpperCase()
 }
 
-function formatTime(iso: string) {
+// Both of these follow the APP's language now, not the device's. They used to
+// pass `undefined`/`[]`, which meant a Romanian phone reading the app in
+// English got English labels above device-formatted dates.
+function checkoutTime(iso: string) {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return formatTime(d)
+}
+
+function dayLabel(label: DayLabel) {
+  if (label.kind === 'today') return t('history.today')
+  if (label.kind === 'yesterday') return t('history.yesterday')
+  return formatDate(label.iso, { weekday: 'short', month: 'short', day: 'numeric' })
 }
 </script>
 
@@ -97,18 +111,18 @@ function formatTime(iso: string) {
     transition="modal-fade"
     @close="emit('close')"
   >
-      <div class="history-modal" role="dialog" aria-modal="true" aria-label="Purchase history">
+      <div class="history-modal" role="dialog" aria-modal="true" :aria-label="t('history.buttonLabel')">
         <div class="history-modal__header">
           <div class="history-modal__title-wrap">
             <div class="history-modal__icon-bg">
               <span class="header-icon" aria-hidden="true" v-html="historyIconRaw"></span>
             </div>
             <div>
-              <h3>Checkout history</h3>
-              <p class="history-modal__subtitle">Your recent checkouts</p>
+              <h3>{{ t('history.title') }}</h3>
+              <p class="history-modal__subtitle">{{ t('history.subtitle') }}</p>
             </div>
           </div>
-          <ModalCloseButton aria-label="Close history" @click="emit('close')" />
+          <ModalCloseButton :aria-label="t('history.close')" @click="emit('close')" />
         </div>
 
         <div class="history-modal__body">
@@ -139,29 +153,29 @@ function formatTime(iso: string) {
           <!-- Error / empty -->
           <p v-else-if="error" class="history-empty">{{ error }}</p>
           <p v-else-if="!entries.length" class="history-empty">
-            No checkouts yet. Items you check out will show up here.
+            {{ t('history.empty') }}
           </p>
 
           <!-- Day -> checkout -> items. A description list so the day labels
                (dt) can stick to the top of the scrolling body; each checkout
                is a dd under its day. -->
           <dl v-else class="history-days">
-            <template v-for="day in days" :key="day.label">
-              <dt class="history-day__label">{{ day.label }}</dt>
+            <template v-for="day in days" :key="day.day">
+              <dt class="history-day__label">{{ dayLabel(day.label) }}</dt>
 
               <dd v-for="checkout in day.checkouts" :key="checkout.key" class="checkout">
                 <div class="checkout__head">
                   <img
                     v-if="buyerProfile(checkout.purchasedBy)?.image_url"
                     :src="buyerProfile(checkout.purchasedBy)?.image_url ?? ''"
-                    :alt="buyerName(checkout.purchasedBy) + ' avatar'"
+                    :alt="t('common.avatarAlt', { name: buyerName(checkout.purchasedBy) })"
                     class="checkout__avatar"
                   />
                   <span v-else class="checkout__avatar checkout__avatar--fallback">
                     {{ buyerInitial(checkout.purchasedBy) }}
                   </span>
                   <span class="checkout__buyer">{{ buyerName(checkout.purchasedBy) }}</span>
-                  <span class="checkout__time">{{ formatTime(checkout.purchasedAt) }}</span>
+                  <span class="checkout__time">{{ checkoutTime(checkout.purchasedAt) }}</span>
                 </div>
 
                 <ul class="history-list">
@@ -175,14 +189,14 @@ function formatTime(iso: string) {
                     <img
                       v-if="entry.added_by_image_url"
                       :src="entry.added_by_image_url"
-                      :alt="(entry.added_by_name || MEMBER_FALLBACK_NAME) + ' added this'"
+                      :alt="t('history.addedThis', { name: entry.added_by_name || t('common.memberFallback') })"
                       class="history-adder"
-                      :title="'Added by ' + (entry.added_by_name || MEMBER_FALLBACK_NAME)"
+                      :title="t('history.addedBy', { name: entry.added_by_name || t('common.memberFallback') })"
                     />
                     <span
                       v-else
                       class="history-adder history-adder--fallback"
-                      :title="'Added by ' + (entry.added_by_name || MEMBER_FALLBACK_NAME)"
+                      :title="t('history.addedBy', { name: entry.added_by_name || t('common.memberFallback') })"
                     >
                       {{ (entry.added_by_name || '?').slice(0, 1).toUpperCase() }}
                     </span>

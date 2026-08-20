@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { useAuth, useUser } from '@clerk/vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSupabase } from '../supabase'
@@ -12,13 +12,14 @@ import AppCard from '../components/AppCard.vue'
 import AppButton from '../components/AppButton.vue'
 import ChoiceButton from '../components/ChoiceButton.vue'
 import BackButton from '../components/BackButton.vue'
+import LanguagePicker from '../components/LanguagePicker.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import { isOfflineError } from '../lib/offlineQueue'
 import { UserFacingError, userMessage } from '../lib/errorMessages'
 import { isValidInviteCode, normalizeInviteCode, randomInviteCode } from '../lib/inviteCode'
 import { HOUSEHOLD_MEMBERSHIP_CAP, HOUSEHOLD_NAME_MAX_LENGTH } from '../lib/limits'
-
-const OFFLINE_MESSAGE = 'You appear to be offline. Check your connection and try again.'
+import { getLocale, setLocale, t, tAccent, type Locale } from '../lib/i18n'
+import { hasUserLocale } from '../lib/locale'
 
 const { userId } = useAuth()
 const { user } = useUser()
@@ -41,6 +42,7 @@ const ownershipChecked = ref(false)
 const showCreate = computed(() => !isAddingHousehold.value || (ownershipChecked.value && !ownsHousehold.value))
 onMounted(async () => {
   if (!isAddingHousehold.value || !userId.value) return
+
   try {
     const { data } = await db
       .from('households')
@@ -54,10 +56,61 @@ onMounted(async () => {
   }
 })
 
+// The language step, ahead of the welcome hero.
+//
+// A warm English welcome is the wrong first thing to show someone whose phone
+// has been Romanian all along, and this is the one screen where changing it
+// costs nothing. Someone adding a second household from the account dialog
+// already answered this, so they skip it — checked in both the seed below and
+// the computed, deliberately, because re-asking there would be the obvious bug.
+//
+// "Already chosen" is the scoped key EXISTING, not the locale differing from
+// English: English is a real answer somebody gave, and treating it as "not yet
+// asked" would re-ask every English speaker on every fresh install.
+const languageChosen = ref(true)
+const showLanguage = computed(() => !languageChosen.value && !isAddingHousehold.value)
+// Whatever the boot resolver landed on — the device's own language if this is
+// a fresh device, or a hint left by a previous account. Either way it is
+// where the grid starts highlighted; see LanguagePicker for why that is not
+// the same thing as a "suggestion".
+const currentLocale = computed(() => getLocale())
+const languageTitle = computed(() => tAccent('setup.language.title'))
+
+// Starts hidden and only appears once there is an account to have an opinion
+// about, for the same reason ownershipChecked withholds the create option:
+// flashing a question and pulling it away is worse than a beat of nothing.
+watch(
+  userId,
+  (uid) => {
+    if (isAddingHousehold.value) {
+      languageChosen.value = true
+      return
+    }
+    if (!uid) return
+    languageChosen.value = hasUserLocale(localStorage, uid)
+  },
+  { immediate: true },
+)
+
+async function chooseLanguage(next: Locale) {
+  // Fired only on Confirm, never on a tap alone — LanguagePicker previews the
+  // tap internally and holds off emitting until the user commits. So by the
+  // time this runs, swapping the catalog and revealing the welcome hero are
+  // both landing exactly where the user meant them to.
+  await setLocale(next, localStorage, userId.value ?? '')
+  languageChosen.value = true
+}
+
 // Brand-new users open on a warm welcome before the create/join picker; someone
 // adding a household from the account dialog already knows the app, so they skip it.
 const welcomed = ref(false)
-const showWelcome = computed(() => !welcomed.value && !isAddingHousehold.value)
+const showWelcome = computed(
+  () => !welcomed.value && !isAddingHousehold.value && languageChosen.value,
+)
+const welcomeTitle = computed(() => tAccent('setup.welcome.title'))
+const pickerTitle = computed(() =>
+  tAccent(isAddingHousehold.value ? 'setup.picker.titleAdd' : 'setup.picker.titleNew'),
+)
 
 const mode = ref<'create' | 'join' | null>(null)
 const householdName = ref('')
@@ -71,7 +124,7 @@ const limitModal = ref({ open: false, title: '', message: '' })
 function openLimitModal(message: string) {
   limitModal.value = {
     open: true,
-    title: 'Name Too Long',
+    title: t('error.nameTooLongTitle'),
     message,
   }
 }
@@ -87,7 +140,7 @@ async function createHousehold() {
   // On the untrimmed value, matching the counter the field shows. Trimming can
   // only shorten, so a name that passes here cannot re-fail after the trim.
   if (householdNameOverLimit.value) {
-    openLimitModal(`Household name must be ${HOUSEHOLD_NAME_MAX_LENGTH} characters or fewer.`)
+    openLimitModal(t('error.householdNameTooLong', { max: HOUSEHOLD_NAME_MAX_LENGTH }))
     return
   }
   const nextHouseholdName = householdName.value.trim()
@@ -122,19 +175,19 @@ async function createHousehold() {
       // unique index rejects a second with a 23505; turn that one case into a
       // message that explains it rather than leaking the raw constraint text.
       if (createErr.message?.includes('households_one_per_owner')) {
-        throw new UserFacingError('You can only own one household. Leave or delete your current one before creating another.')
+        throw new UserFacingError(t('error.ownOneHousehold'))
       }
       // The sentinels are raised as the exception DETAIL, which supabase-js
       // exposes on error.details, not error.message.
       const detail = createErr.details ?? createErr.message ?? ''
       if (detail.includes('membership_limit_exceeded')) {
         throw new UserFacingError(
-          `You can be part of at most ${HOUSEHOLD_MEMBERSHIP_CAP} households. Leave one before creating another.`,
+          t('error.membershipCapCreate', { cap: HOUSEHOLD_MEMBERSHIP_CAP }),
         )
       }
       if (detail.includes('household_name_invalid')) {
         throw new UserFacingError(
-          `Household name must be ${HOUSEHOLD_NAME_MAX_LENGTH} characters or fewer.`,
+          t('error.householdNameTooLong', { max: HOUSEHOLD_NAME_MAX_LENGTH }),
         )
       }
       throw createErr
@@ -142,13 +195,15 @@ async function createHousehold() {
     // The function returns no row only for an unauthenticated caller, which the
     // uid check above has already ruled out. Treated as a plain failure rather
     // than dereferenced.
-    if (!household) throw new UserFacingError('Failed to create household.')
+    if (!household) throw new UserFacingError(t('error.createHouseholdFailed'))
 
     // Make the new household the active one so HomeView opens straight to it.
     saveActiveHouseholdId(localStorage, uid, household.id)
     router.replace('/')
   } catch (e) {
-    error.value = isOfflineError(e) ? OFFLINE_MESSAGE : userMessage(e, 'Failed to create household.')
+    error.value = isOfflineError(e)
+      ? t('error.offline')
+      : userMessage(e, t('error.createHouseholdFailed'))
   } finally {
     loading.value = false
   }
@@ -163,7 +218,7 @@ async function joinHousehold() {
   try {
     const code = normalizeInviteCode(inviteCode.value)
     if (!isValidInviteCode(code)) {
-      error.value = 'Invite code must be 8 characters, letters and numbers only.'
+      error.value = t('error.inviteCodeInvalid')
       return
     }
     const { display_name, image_url } = deriveProfileFields(user.value)
@@ -183,13 +238,13 @@ async function joinHousehold() {
     if (joinErr) {
       // The sentinel is raised as the exception DETAIL (error.details), not message.
       if ((joinErr.details ?? joinErr.message ?? '').includes('membership_limit_exceeded')) {
-        error.value = `You can be part of at most ${HOUSEHOLD_MEMBERSHIP_CAP} households. Leave one before joining another.`
+        error.value = t('error.membershipCapJoin', { cap: HOUSEHOLD_MEMBERSHIP_CAP })
         return
       }
       throw joinErr
     }
     if (!household) {
-      error.value = 'No household found with that invite code.'
+      error.value = t('error.noHouseholdForCode')
       return
     }
 
@@ -197,7 +252,9 @@ async function joinHousehold() {
     saveActiveHouseholdId(localStorage, uid, household.id)
     router.replace('/')
   } catch (e) {
-    error.value = isOfflineError(e) ? OFFLINE_MESSAGE : userMessage(e, 'Failed to join household.')
+    error.value = isOfflineError(e)
+      ? t('error.offline')
+      : userMessage(e, t('error.joinHouseholdFailed'))
   } finally {
     loading.value = false
   }
@@ -213,8 +270,19 @@ async function joinHousehold() {
     <main class="setup-main">
       <AppCard>
 
+        <!-- Language (brand-new users only, before anything else) -->
+        <template v-if="showLanguage">
+          <div class="card-header">
+            <p class="card-eyebrow">{{ t('setup.language.eyebrow') }}</p>
+            <h2 class="heading">{{ languageTitle[0]
+              }}<span class="heading--accent">{{ languageTitle[1] }}</span>{{ languageTitle[2] }}</h2>
+            <p class="sub">{{ t('setup.language.sub') }}</p>
+          </div>
+          <LanguagePicker :current="currentLocale" @confirm="chooseLanguage" />
+        </template>
+
         <!-- Welcome (brand-new users only) -->
-        <template v-if="showWelcome">
+        <template v-else-if="showWelcome">
           <!-- A shared list caught mid-use: three items, three different people,
                one of them just done. Real names rather than grey bars, because a
                row of placeholder bars is the visual language of content that
@@ -222,34 +290,35 @@ async function joinHousehold() {
                The finished row plays once on arrival and then rests. Looping it
                meant a completed item repeatedly un-completing itself, which reads
                as a glitch rather than as the live update it is meant to show. -->
+          <!-- eslint-disable vue/no-bare-strings-in-template -- decorative emoji;
+           the block is aria-hidden and the words beside them come from t() -->
           <div class="welcome-hero" aria-hidden="true">
             <ul class="wl-card">
               <li class="wl-row">
                 <span class="wl-emoji">🥑</span>
-                <span class="wl-name">Avocado</span>
+                <span class="wl-name">{{ t('setup.hero.avocado') }}</span>
                 <span class="wl-who wl-who--a">🧑</span>
               </li>
               <li class="wl-row wl-row--done">
                 <span class="wl-emoji">🥛</span>
-                <span class="wl-name">Lapte</span>
+                <span class="wl-name">{{ t('setup.hero.milk') }}</span>
                 <span class="wl-who wl-who--b">👩</span>
               </li>
               <li class="wl-row">
                 <span class="wl-emoji">🍞</span>
-                <span class="wl-name">Pâine</span>
+                <span class="wl-name">{{ t('setup.hero.bread') }}</span>
                 <span class="wl-who wl-who--c">🧒</span>
               </li>
             </ul>
           </div>
+          <!-- eslint-enable vue/no-bare-strings-in-template -->
           <div class="card-header card-header--welcome">
-            <p class="card-eyebrow">Welcome to FamCart 🛒</p>
-            <h2 class="heading">The list your whole <span class="heading--accent">household</span> shares</h2>
-            <p class="sub">
-              Everyone adds, everyone checks off, and it all updates for the whole
-              household the moment it happens, so nothing gets forgotten at the store.
-            </p>
+            <p class="card-eyebrow">{{ t('setup.welcome.eyebrow') }}</p>
+            <h2 class="heading">{{ welcomeTitle[0]
+              }}<span class="heading--accent">{{ welcomeTitle[1] }}</span>{{ welcomeTitle[2] }}</h2>
+            <p class="sub">{{ t('setup.welcome.sub') }}</p>
           </div>
-          <AppButton variant="primary" block @click="welcomed = true">Get started</AppButton>
+          <AppButton variant="primary" block @click="welcomed = true">{{ t('setup.welcome.cta') }}</AppButton>
         </template>
 
         <!-- Picker -->
@@ -258,29 +327,31 @@ async function joinHousehold() {
             <BackButton @click="router.replace('/')" />
           </div>
           <div class="card-header">
-            <p class="card-eyebrow">{{ isAddingHousehold ? 'Add a household' : 'Welcome aboard 👋' }}</p>
-            <h2 class="heading">
-              <template v-if="isAddingHousehold">Add another <span class="heading--accent">household</span></template>
-              <template v-else>Set up your <span class="heading--accent">household</span></template>
-            </h2>
+            <p class="card-eyebrow">{{ t(isAddingHousehold ? 'setup.picker.eyebrowAdd' : 'setup.picker.eyebrowNew') }}</p>
+            <h2 class="heading">{{ pickerTitle[0]
+              }}<span class="heading--accent">{{ pickerTitle[1] }}</span>{{ pickerTitle[2] }}</h2>
+            <!-- Three whole sentences rather than a stem with a clause appended.
+                 The English original concatenated ', or create a new one.' onto
+                 the end, which only reads correctly in a language that puts the
+                 clause there. -->
             <p class="sub">
               {{ isAddingHousehold
-                ? 'Join another household with their invite code' + (showCreate ? ', or create a new one.' : '.')
-                : 'Create a shared grocery list for your household, or join one using an invite code.' }}
+                ? (showCreate ? t('setup.picker.subAddOrCreate') : t('setup.picker.subAdd'))
+                : t('setup.picker.subNew') }}
             </p>
           </div>
           <div class="choice-row">
             <ChoiceButton
               v-if="showCreate"
               icon="🏠"
-              label="Create a household"
-              description="Start a new list and get a shareable invite code"
+              :label="t('setup.picker.createLabel')"
+              :description="t('setup.picker.createDescription')"
               @click="mode = 'create'"
             />
             <ChoiceButton
               icon="🔗"
-              label="Join a household"
-              description="Paste the invite code your household shared with you"
+              :label="t('setup.picker.joinLabel')"
+              :description="t('setup.picker.joinDescription')"
               @click="mode = 'join'"
             />
           </div>
@@ -292,12 +363,12 @@ async function joinHousehold() {
             <BackButton @click="mode = null; error = ''" />
           </div>
           <div class="card-header">
-            <p class="card-eyebrow">New household</p>
-            <h2 class="heading">What's your household name?</h2>
-            <p class="sub">This is how your household list will appear for everyone.</p>
+            <p class="card-eyebrow">{{ t('setup.create.eyebrow') }}</p>
+            <h2 class="heading">{{ t('setup.create.title') }}</h2>
+            <p class="sub">{{ t('setup.create.sub') }}</p>
           </div>
           <form @submit.prevent="createHousehold" class="input-form">
-            <InputRow v-model="householdName" aria-label="Household name" placeholder="e.g. The Smiths" :loading="loading" required autofocus />
+            <InputRow v-model="householdName" :aria-label="t('setup.create.nameLabel')" :placeholder="t('setup.create.namePlaceholder')" :loading="loading" required autofocus />
             <p class="field-counter" :class="{ 'field-counter--danger': householdNameOverLimit }">
               {{ householdNameLength }}/{{ HOUSEHOLD_NAME_MAX_LENGTH }}
             </p>          </form>
@@ -309,12 +380,12 @@ async function joinHousehold() {
             <BackButton @click="mode = null; error = ''" />
           </div>
           <div class="card-header">
-            <p class="card-eyebrow">Join a household</p>
-            <h2 class="heading">Enter your invite code</h2>
-            <p class="sub">Ask a household member for their invite code.</p>
+            <p class="card-eyebrow">{{ t('setup.join.eyebrow') }}</p>
+            <h2 class="heading">{{ t('setup.join.title') }}</h2>
+            <p class="sub">{{ t('setup.join.sub') }}</p>
           </div>
           <form @submit.prevent="joinHousehold" class="input-form">
-            <InputRow v-model="inviteCode" aria-label="Invite code" placeholder="e.g. AB3K7XYZ" maxlength="8" :loading="loading" :uppercase="true" required autofocus />          </form>
+            <InputRow v-model="inviteCode" :aria-label="t('setup.join.codeLabel')" :placeholder="t('setup.join.codePlaceholder')" maxlength="8" :loading="loading" :uppercase="true" required autofocus />          </form>
         </template>
 
       </AppCard>
@@ -325,7 +396,7 @@ async function joinHousehold() {
       :title="limitModal.title"
       :message="limitModal.message"
       :danger="true"
-      confirm-text="OK"
+      :confirm-text="t('common.ok')"
       :show-cancel="false"
       @confirm="closeLimitModal"
       @cancel="closeLimitModal"

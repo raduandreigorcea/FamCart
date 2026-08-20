@@ -4,6 +4,7 @@ import type { ShoppingItem } from '../lib/shoppingList'
 import PopoverMenu from './PopoverMenu.vue'
 import slidersIcon from '../assets/sliders-horizontal.svg?raw'
 import checkIcon from '../assets/check-2.svg?raw'
+import { t } from '../lib/i18n'
 
 // The button that filters the list, and the rows it offers. PopoverMenu owns
 // the panel itself — where it lands, how it dismisses, what a row looks like.
@@ -36,11 +37,15 @@ const counts = computed(() => {
 // "Ticked, not checked out" made the reader hold "checked" and "checked out"
 // side by side and work out the difference; naming the next step tells them
 // where they are in the same breath, and matches the buy bar's own wording.
-const OPTIONS = [
-  { value: 'all', label: 'No filter', hint: 'Everything on the list' },
-  { value: 'active', label: 'To buy', hint: 'Still to pick up' },
-  { value: 'checked', label: 'Checked', hint: 'In the cart, ready to check out' },
-]
+// A computed, not a plain const. The array is built once when this component
+// sets up, so plain t() calls in it would freeze the three labels in whatever
+// language was current at that moment and never follow a change made from
+// settings afterwards.
+const OPTIONS = computed(() => [
+  { value: 'all', label: t('filter.all.label'), hint: t('filter.all.hint') },
+  { value: 'active', label: t('filter.active.label'), hint: t('filter.active.hint') },
+  { value: 'checked', label: t('filter.checked.label'), hint: t('filter.checked.hint') },
+])
 
 // A filtered list that looks unfiltered is how items get declared missing, so
 // the button carries a mark whenever it is hiding something.
@@ -55,7 +60,7 @@ const isFiltered = computed(() => model.value !== 'all')
     :class="{ 'filter-btn--on': isFiltered }"
     aria-haspopup="menu"
     :aria-expanded="open"
-    :aria-label="isFiltered ? 'Filter items (filtered)' : 'Filter items'"
+    :aria-label="isFiltered ? t('filter.buttonLabelFiltered') : t('filter.buttonLabel')"
     @click="open = !open"
   >
     <span class="filter-btn__icon" aria-hidden="true" v-html="slidersIcon"></span>
@@ -66,9 +71,9 @@ const isFiltered = computed(() => model.value !== 'all')
     v-model="open"
     :trigger="btnEl"
     align="right"
-    label="Filter items"
-    heading="Filters"
-    hint="What this list shows"
+    :label="t('filter.buttonLabel')"
+    :heading="t('filter.heading')"
+    :hint="t('filter.hint')"
     :icon="slidersIcon"
   >
     <template #default="{ close }">

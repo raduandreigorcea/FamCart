@@ -8,6 +8,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 import AppButton from './AppButton.vue'
 import AppModal from './AppModal.vue'
 import { ITEM_NAME_MAX_LENGTH, PRODUCT_MAKER_MAX_LENGTH } from '../lib/limits'
+import { t } from '../lib/i18n'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -103,21 +104,18 @@ function submit() {
                three labels for a single action. What actually differs between
                the two routes is one field's starting value, so that is all that
                differs now. -->
-          <h4 id="custom-product-title" class="custom-product-dialog__title">Add your own</h4>
-          <p class="custom-product-dialog__message">
-            Describe it and it goes straight on your list. We'll suggest it to
-            your household next time.
-          </p>
+          <h4 id="custom-product-title" class="custom-product-dialog__title">{{ t('add.addYourOwn') }}</h4>
+          <p class="custom-product-dialog__message">{{ t('custom.message') }}</p>
         </div>
 
         <form class="custom-product-form" @submit.prevent="submit" @keydown.esc="emit('cancel')">
           <label class="custom-product-field">
-            <span class="custom-product-label">Product</span>
+            <span class="custom-product-label">{{ t('custom.productLabel') }}</span>
             <input
               ref="nameInput"
               v-model="name"
               type="text"
-              placeholder="Olive Oil 500ml"
+              :placeholder="t('custom.productPlaceholder')"
               :maxlength="nameMaxLength"
               autocomplete="off"
             />
@@ -125,13 +123,13 @@ function submit() {
 
           <label class="custom-product-field">
             <span class="custom-product-label">
-              Manufacturer
-              <span class="custom-product-optional">optional</span>
+              {{ t('custom.makerLabel') }}
+              <span class="custom-product-optional">{{ t('custom.optional') }}</span>
             </span>
             <input
               v-model="maker"
               type="text"
-              placeholder="Bertolli"
+              :placeholder="t('custom.makerPlaceholder')"
               :maxlength="PRODUCT_MAKER_MAX_LENGTH"
               autocomplete="off"
             />
@@ -150,14 +148,14 @@ function submit() {
                entire reason this field is visible. -->
           <label class="custom-product-field">
             <span class="custom-product-label">
-              Barcode
-              <span class="custom-product-optional">optional</span>
+              {{ t('custom.barcodeLabel') }}
+              <span class="custom-product-optional">{{ t('custom.optional') }}</span>
             </span>
             <input
               v-model="barcode"
               type="text"
               inputmode="numeric"
-              placeholder="8 to 14 digits"
+              :placeholder="t('custom.barcodePlaceholder')"
               maxlength="14"
               autocomplete="off"
               class="custom-product-barcode"
@@ -174,7 +172,7 @@ function submit() {
               id="custom-product-barcode-hint"
               class="custom-product-note"
             >
-              Saved with the product, so the next scan finds it.
+              {{ t('custom.barcodeNote') }}
             </span>
             <!-- Says what a barcode is rather than that this one is wrong: the
                  user is mid-typing, and the count is the thing they can act on. -->
@@ -183,13 +181,13 @@ function submit() {
               id="custom-product-barcode-hint"
               class="custom-product-hint"
             >
-              A barcode is 8 to 14 digits. Clear the field to skip it.
+              {{ t('custom.barcodeInvalid') }}
             </span>
           </label>
 
           <div class="custom-product-dialog__actions">
-            <AppButton variant="secondary" block type="button" @click="emit('cancel')">Cancel</AppButton>
-            <AppButton variant="primary" block type="submit" :disabled="!canSubmit">Add to list</AppButton>
+            <AppButton variant="secondary" block type="button" @click="emit('cancel')">{{ t('common.cancel') }}</AppButton>
+            <AppButton variant="primary" block type="submit" :disabled="!canSubmit">{{ t('custom.submit') }}</AppButton>
           </div>
         </form>
       </div>

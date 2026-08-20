@@ -38,7 +38,10 @@ export function topHouseholdProducts(
     .sort((a, b) => {
       if (a.count !== b.count) return b.count - a.count
       if (a.lastPurchasedAt !== b.lastPurchasedAt) return b.lastPurchasedAt - a.lastPurchasedAt
-      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+      // Pinned to 'en', not the device or the app language: this is a
+      // tie-breaker over catalog data, and a locale-dependent collation
+      // would order the same list differently on two phones for no gain.
+      return a.name.localeCompare(b.name, 'en', { sensitivity: 'base' })
     })
     .slice(0, limit)
     .map((stat) => ({ name: stat.name, maker: stat.maker }))

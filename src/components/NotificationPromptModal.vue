@@ -5,6 +5,7 @@
 import AppButton from './AppButton.vue'
 import AppModal from './AppModal.vue'
 import bellIcon from '../assets/bell.svg?raw'
+import { t } from '../lib/i18n'
 
 defineProps({
   open: { type: Boolean, default: false },
@@ -26,16 +27,13 @@ const emit = defineEmits(['accept', 'decline'])
         </div>
 
         <div class="notify-dialog__body">
-          <h4 id="notify-prompt-title" class="notify-dialog__title">Turn on notifications?</h4>
-          <p class="notify-dialog__message">
-            Know the moment someone in your household adds something to the
-            list or checks items off, so nothing gets forgotten at the store.
-          </p>
+          <h4 id="notify-prompt-title" class="notify-dialog__title">{{ t('notify.title') }}</h4>
+          <p class="notify-dialog__message">{{ t('notify.message') }}</p>
         </div>
 
         <div class="notify-dialog__actions">
-          <AppButton variant="secondary" block @click="emit('decline')">Not now</AppButton>
-          <AppButton variant="primary" block @click="emit('accept')">Turn on</AppButton>
+          <AppButton variant="secondary" block @click="emit('decline')">{{ t('notify.notNow') }}</AppButton>
+          <AppButton variant="primary" block @click="emit('accept')">{{ t('notify.turnOn') }}</AppButton>
         </div>
       </div>
   </AppModal>

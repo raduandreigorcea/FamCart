@@ -1,5 +1,6 @@
 import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { productKey, type ProductSuggestion } from './productSearch'
+import { t } from './i18n'
 
 // What the search screen has already put on the list, and which row to light up
 // about it.
@@ -71,7 +72,7 @@ export function useAddedConfirmation(options: {
   )
 
   const announcement = computed(() =>
-    justAdded.value ? `${justAdded.value.name} added to your list` : '',
+    justAdded.value ? t('add.announced', { name: justAdded.value.name }) : '',
   )
 
   // Which of the two identical flash classes is in play. Tapping the same row

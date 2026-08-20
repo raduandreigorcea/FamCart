@@ -37,13 +37,23 @@ export interface UseConfirm {
   resolveWith: (result: boolean) => void
 }
 
+// Empty strings for the button copy, and that is the whole point of them:
+// ConfirmModal resolves `confirmText || t('common.confirm')` in a computed, so
+// that it follows a language change after the component was created. A literal
+// 'Confirm' here is not a friendlier default, it is the value that stops that
+// fallback from ever running — and since no caller in the app passes its own
+// button text, it made every confirm dialog English in all six languages.
+//
+// t() cannot be called here instead: this object is built once at import and
+// would freeze in whichever language happened to be current then. The empty
+// string is what defers the decision to render time, where it belongs.
 const CLOSED: ConfirmState = {
   open: false,
   title: '',
   message: '',
   danger: false,
-  confirmText: 'Confirm',
-  cancelText: 'Cancel',
+  confirmText: '',
+  cancelText: '',
   showCancel: true,
 }
 

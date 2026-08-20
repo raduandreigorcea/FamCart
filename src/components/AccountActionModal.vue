@@ -20,6 +20,7 @@ import logOutIconRaw from '../assets/log-out.svg?raw'
 import chevronRightIconRaw from '../assets/chevron-right.svg?raw'
 import { DEFAULT_HOUSEHOLD_EMOJI } from '../lib/householdEmoji'
 import { HOUSEHOLD_MEMBERSHIP_CAP } from '../lib/limits'
+import { t, tn } from '../lib/i18n'
 
 // Who is signed in, and the ways out of here. Appearance and notifications used
 // to live in this dialog; they are settings for the app on this device rather
@@ -38,7 +39,10 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   loadingSignOut: { type: Boolean, default: false },
   avatarUrl: { type: String, default: '' },
-  displayName: { type: String, default: 'Account' },
+  // Resolved in a computed rather than defaulted here: this object literal is
+  // evaluated once at import, so a t() call in it would freeze in whatever
+  // language was current then.
+  displayName: { type: String, default: '' },
   email: { type: String, default: '' },
   initial: { type: String, default: '?' },
   householdName: { type: String, default: '' },
@@ -65,6 +69,8 @@ const emit = defineEmits([
   'switch-household',
   'add-household',
 ])
+
+const resolvedDisplayName = computed(() => props.displayName || t('account.fallbackName'))
 
 // Only worth listing when there is somewhere to go: with one household the rows
 // would be a single row you are already on.
@@ -98,11 +104,11 @@ function switchHousehold(id: string) {
               <span class="account-header-icon" aria-hidden="true" v-html="userRoundIconRaw"></span>
             </div>
             <div>
-              <h3 id="account-modal-title">Account Settings</h3>
-              <p class="account-dialog__subtitle">Manage your profile and preferences</p>
+              <h3 id="account-modal-title">{{ t('account.title') }}</h3>
+              <p class="account-dialog__subtitle">{{ t('account.subtitle') }}</p>
             </div>
           </div>
-          <ModalCloseButton aria-label="Close account modal" @click="emit('close')" />
+          <ModalCloseButton :aria-label="t('account.close')" @click="emit('close')" />
         </div>
 
         <div class="account-dialog__body">
@@ -116,7 +122,7 @@ function switchHousehold(id: string) {
           <button
             class="account-user-card"
             type="button"
-            aria-label="Edit your profile: name, photo, password"
+            :aria-label="t('account.editProfile')"
             @click="emit('edit-account')"
           >
             <div class="account-user-card__avatar-wrap">
@@ -124,8 +130,8 @@ function switchHousehold(id: string) {
               <span v-else class="account-user-card__avatar account-user-card__avatar--fallback">{{ initial }}</span>
             </div>
             <div class="account-user-card__identity">
-              <h4>{{ displayName }}</h4>
-              <p>{{ email || 'No email available' }}</p>
+              <h4>{{ resolvedDisplayName }}</h4>
+              <p>{{ email || t('account.noEmail') }}</p>
             </div>
             <span class="account-user-card__chevron" aria-hidden="true" v-html="chevronRightIconRaw"></span>
           </button>
@@ -134,26 +140,26 @@ function switchHousehold(id: string) {
             <button class="account-menu-item" type="button" @click="emit('manage-household')">
               <span class="account-menu-item__label">
                 <span class="account-item-icon" aria-hidden="true" v-html="houseIconRaw"></span>
-                <span>Manage household</span>
+                <span>{{ t('account.manageHousehold') }}</span>
               </span>
-              <span class="account-menu-item__hint">{{ householdName || 'Household' }}</span>
+              <span class="account-menu-item__hint">{{ householdName || t('account.householdFallback') }}</span>
             </button>
             <button class="account-menu-item" type="button" @click="emit('invite-members')">
               <span class="account-menu-item__label">
                 <span class="account-item-icon" aria-hidden="true" v-html="userRoundPlusIconRaw"></span>
-                <span>Invite people</span>
+                <span>{{ t('account.invitePeople') }}</span>
               </span>
               <span class="account-menu-item__hint">
-                {{ householdMemberCount }} {{ householdMemberCount === 1 ? 'member' : 'members' }}
+                {{ tn('account.memberCount', householdMemberCount) }}
               </span>
             </button>
 
             <button class="account-menu-item" type="button" @click="emit('app-settings')">
               <span class="account-menu-item__label">
                 <span class="account-item-icon" aria-hidden="true" v-html="gearIconRaw"></span>
-                <span>App settings</span>
+                <span>{{ t('account.appSettings') }}</span>
               </span>
-              <span class="account-menu-item__hint">Appearance, notifications, about</span>
+              <span class="account-menu-item__hint">{{ t('account.appSettingsHint') }}</span>
             </button>
 
             <!-- Households you can move to, and the way to gain another. Absent
@@ -175,9 +181,9 @@ function switchHousehold(id: string) {
                   <span class="account-household-emoji" aria-hidden="true">
                     {{ household.emoji || DEFAULT_HOUSEHOLD_EMOJI }}
                   </span>
-                  <span class="account-household-name">{{ household.name || 'Household' }}</span>
+                  <span class="account-household-name">{{ household.name || t('account.householdFallback') }}</span>
                 </span>
-                <span v-if="household.id === householdId" class="account-menu-item__hint">Current</span>
+                <span v-if="household.id === householdId" class="account-menu-item__hint">{{ t('account.current') }}</span>
               </button>
 
               <button
@@ -188,7 +194,7 @@ function switchHousehold(id: string) {
               >
                 <span class="account-menu-item__label">
                   <span class="account-item-icon" aria-hidden="true" v-html="plusIconRaw"></span>
-                  <span>Join or create a household</span>
+                  <span>{{ t('account.joinOrCreate') }}</span>
                 </span>
               </button>
             </template>
@@ -205,9 +211,9 @@ function switchHousehold(id: string) {
             >
               <span class="account-menu-item__label">
                 <span class="account-item-icon" aria-hidden="true" v-html="flagIconRaw"></span>
-                <span>Report an issue</span>
+                <span>{{ t('account.reportIssue') }}</span>
               </span>
-              <span class="account-menu-item__hint">Bugs and feedback</span>
+              <span class="account-menu-item__hint">{{ t('account.reportHint') }}</span>
             </button>
 
             <button
@@ -224,7 +230,7 @@ function switchHousehold(id: string) {
               <span class="account-menu-item__label account-menu-item__label--danger">
                 <span v-if="loadingSignOut" class="account-spinner" aria-hidden="true"></span>
                 <span v-else class="account-item-icon" aria-hidden="true" v-html="logOutIconRaw"></span>
-                <span>{{ loadingSignOut ? 'Signing out' : 'Sign out' }}</span>
+                <span>{{ loadingSignOut ? t('account.signingOut') : t('account.signOut') }}</span>
               </span>
             </button>
           </div>

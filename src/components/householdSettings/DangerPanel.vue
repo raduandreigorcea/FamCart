@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, type PropType } from 'vue'
+import { computed, onBeforeUnmount, ref, type PropType } from 'vue'
 import { useAuth } from '@clerk/vue'
 import { useSupabase } from '../../supabase'
 import { userMessage } from '../../lib/errorMessages'
 import { randomInviteCode } from '../../lib/inviteCode'
 import type { ConfirmOptions } from '../../lib/useConfirm'
 import checkIcon from '../../assets/check.svg?raw'
+import { t, tAccent } from '../../lib/i18n'
 
 // The actions that cannot be undone: rotating the invite code, leaving, and
 // deleting the household. An owner sees delete, everyone else sees leave — the
@@ -33,6 +34,11 @@ const emit = defineEmits<{
 const { userId } = useAuth()
 const db = useSupabase()
 
+// Split on the marker, then interpolated, so the bolded run is the household's
+// own name wherever that language puts it in the sentence — and so a name
+// carrying a bracket of its own cannot move where the bolding starts or ends.
+const deleteDesc = computed(() => tAccent('danger.deleteDesc', { name: props.householdName }))
+
 const regenerating = ref(false)
 const codeRegenerated = ref(false)
 const leavingHousehold = ref(false)
@@ -46,9 +52,8 @@ onBeforeUnmount(() => {
 async function regenerateInviteCode() {
   if (!props.householdId || regenerating.value) return
   const confirmed = await props.confirm({
-    title: 'Regenerate Invite Code?',
-    message:
-      'This will immediately invalidate the current invite code. Existing members are unaffected, but anyone with the old code will no longer be able to join.',
+    title: t('danger.confirmRegenerateTitle'),
+    message: t('danger.confirmRegenerateMessage'),
     danger: false,
   })
   if (!confirmed) return
@@ -61,7 +66,7 @@ async function regenerateInviteCode() {
     if (error) {
       // Includes the rare unique-index collision on the new code; retrying
       // draws a different one, which is what the message asks for.
-      emit('error', userMessage(error, 'Could not regenerate the invite code. Please try again.'))
+      emit('error', userMessage(error, t('error.regenerateCodeFailed')))
       return
     }
     emit('refresh-household')
@@ -78,8 +83,8 @@ async function regenerateInviteCode() {
 async function leaveHousehold() {
   if (!props.householdId || leavingHousehold.value) return
   const confirmed = await props.confirm({
-    title: 'Leave Household?',
-    message: 'You will lose access to the shopping list and will need a new invite code to rejoin.',
+    title: t('danger.confirmLeaveTitle'),
+    message: t('danger.confirmLeaveMessage'),
     danger: true,
   })
   if (!confirmed) return
@@ -91,7 +96,7 @@ async function leaveHousehold() {
       .eq('household_id', props.householdId)
       .eq('user_id', userId.value)
     if (error) {
-      emit('error', userMessage(error, 'Could not leave the household.'))
+      emit('error', userMessage(error, t('error.leaveHouseholdFailed')))
       return
     }
     // HomeView moves to another household, or to setup if none remain.
@@ -104,8 +109,8 @@ async function leaveHousehold() {
 async function deleteHousehold() {
   if (!props.householdId || deletingHousehold.value) return
   const confirmed = await props.confirm({
-    title: 'Delete Household?',
-    message: `Deleting "${props.householdName}" will permanently remove all members, shopping list items, and history. This action cannot be undone.`,
+    title: t('danger.confirmDeleteTitle'),
+    message: t('danger.confirmDeleteMessage', { name: props.householdName }),
     danger: true,
   })
   if (!confirmed) return
@@ -113,7 +118,7 @@ async function deleteHousehold() {
   try {
     const { error } = await db.from('households').delete().eq('id', props.householdId)
     if (error) {
-      emit('error', userMessage(error, 'Could not delete the household.'))
+      emit('error', userMessage(error, t('error.deleteHouseholdFailed')))
       return
     }
     // HomeView reconciles: switch to another household, or setup if none remain.
@@ -128,10 +133,10 @@ async function deleteHousehold() {
   <div class="tab-panel tab-panel--overlay">
     <!-- Invite code rotation -->
     <div class="panel-section" v-if="isOwnerOrModerator">
-      <h4 class="panel-section-title">Invite Code Administration</h4>
+      <h4 class="panel-section-title">{{ t('danger.inviteTitle') }}</h4>
       <div class="card-item card-item--action">
         <div class="card-item__info">
-          <p>Immediately invalidates the current invite code. Existing members are unaffected, but future members must use the new code.</p>
+          <p>{{ t('danger.inviteDesc') }}</p>
         </div>
         <button
           class="panel-action-btn"
@@ -142,30 +147,35 @@ async function deleteHousehold() {
           <span v-if="regenerating" class="btn-spinner"></span>
           <span v-else-if="codeRegenerated" class="success-state animate-pop">
             <span class="success-icon-wrap" aria-hidden="true" v-html="checkIcon"></span>
-            Regenerated
+            {{ t('danger.regenerated') }}
           </span>
-          <span v-else>Regenerate</span>
+          <span v-else>{{ t('danger.regenerate') }}</span>
         </button>
       </div>
     </div>
 
     <!-- Leave (non-owners) -->
     <div class="panel-section" v-if="!isOwner">
-      <h4 class="panel-section-title text-danger">Leave Household</h4>
+      <h4 class="panel-section-title text-danger">{{ t('danger.leaveTitle') }}</h4>
       <div class="card-item card-item--action">
         <div class="card-item__info">
-          <p>This will remove you from the household. You will no longer have access to the shopping list.</p>
+          <p>{{ t('danger.leaveDesc') }}</p>
         </div>
-        <button class="danger-action-btn" type="button" :disabled="leavingHousehold" @click="leaveHousehold">Leave Household</button>
+        <button class="danger-action-btn" type="button" :disabled="leavingHousehold" @click="leaveHousehold">{{ t('danger.leaveTitle') }}</button>
       </div>
     </div>
 
     <!-- Delete (owner only) -->
     <div class="panel-section" v-if="isOwner">
-      <h4 class="panel-section-title text-danger">Delete Household</h4>
+      <h4 class="panel-section-title text-danger">{{ t('danger.deleteTitle') }}</h4>
       <div class="card-item card-item--action card-item--danger">
         <div class="card-item__info">
-          <p>Permanently deletes <strong>{{ householdName }}</strong>, removes all members, and erases all shopping list data. This cannot be undone.</p>
+          <!-- The household's name is bolded mid-sentence, so the string
+               carries a [marker] round it and tAccent places the three
+               pieces — the same mechanism the setup headings use, and for the
+               same reason: which words sit either side of the name differs
+               per language. -->
+          <p>{{ deleteDesc[0] }}<strong>{{ deleteDesc[1] }}</strong>{{ deleteDesc[2] }}</p>
         </div>
         <button
           class="danger-action-btn danger-action-btn--delete"
@@ -174,7 +184,7 @@ async function deleteHousehold() {
           @click="deleteHousehold"
         >
           <span v-if="deletingHousehold" class="btn-spinner btn-spinner--light"></span>
-          <span v-else>Delete Household</span>
+          <span v-else>{{ t('danger.deleteTitle') }}</span>
         </button>
       </div>
     </div>

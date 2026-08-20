@@ -3,6 +3,7 @@ import { onMounted, onBeforeUnmount, ref } from 'vue'
 import AppCard from '../components/AppCard.vue'
 import wifiOffIcon from '../assets/wifi-off.svg?raw'
 import { refreshConnectivity, onReconnect } from '../lib/connectivity'
+import { t } from '../lib/i18n'
 
 // Shown when the app opens with no connection. It recovers on its own the moment
 // connectivity returns, and offers a manual retry for flaky links.
@@ -62,17 +63,14 @@ onBeforeUnmount(() => {
     <AppCard variant="narrow">
       <div class="offline-content">
         <span class="offline-icon" aria-hidden="true" v-html="wifiOffIcon"></span>
-        <h1 class="offline-title">No connection</h1>
-        <p class="offline-text">
-          FamCart can't reach the internet right now. Check your connection and
-          your list will load as soon as you're back online.
-        </p>
+        <h1 class="offline-title">{{ t('offline.title') }}</h1>
+        <p class="offline-text">{{ t('offline.text') }}</p>
         <button class="offline-retry" type="button" :disabled="checking" @click="retry">
           <span v-if="checking" class="offline-retry-spinner"></span>
-          <span v-else>Try again</span>
+          <span v-else>{{ t('common.tryAgain') }}</span>
         </button>
         <p v-if="stillOffline" class="offline-hint is-shaking" role="status" aria-live="polite">
-          Still no connection. Check your Wi-Fi or mobile data, then try again.
+          {{ t('offline.stillOffline') }}
         </p>
       </div>
     </AppCard>
