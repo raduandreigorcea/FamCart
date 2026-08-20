@@ -102,7 +102,20 @@ $$;
 -- EXECUTE defaults to PUBLIC in Postgres. Nothing outside this schema's own
 -- definer functions and triggers has any reason to write audit rows, so no role
 -- is granted execute at all — the callers run as the owner already.
-revoke all on function public.log_security_event(text, uuid, jsonb) from public;
+-- anon and authenticated are named here, not just PUBLIC, and that distinction
+-- is the whole point. `revoke ... from public` removes only the PUBLIC grant.
+-- Hosted Supabase runs `alter default privileges ... grant execute on functions
+-- to anon, authenticated, service_role`, so every function created here also
+-- carries an EXPLICIT grant to those roles, which a revoke from PUBLIC leaves
+-- untouched.
+--
+-- A database built from these migrations alone has no default privileges, so
+-- revoking from PUBLIC looks sufficient there and the pgTAP suite agreed. On
+-- production it was not: import_catalog_products below was callable over
+-- /rest/v1/rpc by anyone holding the publishable key that ships in the client
+-- bundle, and security_digest exposed the audit summary the same way. Verified
+-- against the live project, then closed here.
+revoke all on function public.log_security_event(text, uuid, jsonb) from public, anon, authenticated;
 
 -- ─── rate limiting ───────────────────────────────────────────────────────────
 -- The target is catalog write amplification. bump_product_popularity() and
@@ -208,7 +221,7 @@ exception
 end;
 $$;
 
-revoke all on function public.rate_limit_hit(text, integer, interval) from public;
+revoke all on function public.rate_limit_hit(text, integer, interval) from public, anon, authenticated;
 
 -- ─── reading the trail back ──────────────────────────────────────────────────
 -- security_events records the right things, but nothing surfaces them, so in
@@ -273,7 +286,7 @@ $$;
 -- Never reachable from the client. SECURITY DEFINER means this function *can*
 -- read the locked-down table, so the grant is the only thing standing between a
 -- signed-in user and the audit trail — it goes to service_role alone.
-revoke all on function public.security_digest(integer) from public;
+revoke all on function public.security_digest(integer) from public, anon, authenticated;
 grant execute on function public.security_digest(integer) to service_role;
 
 -- ─── the poller's role ───────────────────────────────────────────────────────

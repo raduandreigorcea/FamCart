@@ -639,7 +639,7 @@ begin
 end;
 $$;
 
-revoke all on function public.enforce_profile_write_rate_limit() from public;
+revoke all on function public.enforce_profile_write_rate_limit() from public, anon, authenticated;
 
 drop trigger if exists trg_enforce_profile_write_rate_limit on public.profiles;
 create trigger trg_enforce_profile_write_rate_limit

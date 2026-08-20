@@ -311,7 +311,7 @@ begin
 end;
 $$;
 
-revoke all on function public.enforce_item_insert_rate_limit() from public;
+revoke all on function public.enforce_item_insert_rate_limit() from public, anon, authenticated;
 
 drop trigger if exists trg_prevent_item_ownership_change on public.shopping_list_items;
 create trigger trg_prevent_item_ownership_change

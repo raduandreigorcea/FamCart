@@ -163,7 +163,7 @@ begin
 end;
 $$;
 
-revoke all on function public.rls_auto_enable() from public;
+revoke all on function public.rls_auto_enable() from public, anon, authenticated;
 
 -- Exactly one event trigger, whatever it was called before.
 --
