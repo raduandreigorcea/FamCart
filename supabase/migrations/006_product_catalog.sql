@@ -260,7 +260,7 @@ $$;
 
 -- Internal helper. The functions below are SECURITY DEFINER and owned by the same
 -- role, so they keep their own EXECUTE; clients have no reason to call this.
-revoke all on function public.product_search_text(text, text) from public;
+revoke all on function public.product_search_text(text, text) from public, anon, authenticated;
 
 -- ─── contribution and promotion ──────────────────────────────────────────────
 -- The body, unthrottled. add_custom_product() below is the public entry point and
@@ -516,8 +516,7 @@ $$;
 -- signed-in user, and the 120/hour limit was one RPC name away from being
 -- bypassed entirely. Defining the inner function outright, never granting it, is
 -- what closes that.
-revoke all on function public.add_custom_product_unthrottled(uuid, text, text, text) from public;
-revoke all on function public.add_custom_product_unthrottled(uuid, text, text, text) from authenticated;
+revoke all on function public.add_custom_product_unthrottled(uuid, text, text, text) from public, anon, authenticated;
 
 -- Dropped for the same reason the inner function is: the three-argument version
 -- is granted to `authenticated`, and leaving it behind would leave a second,
@@ -994,7 +993,7 @@ begin
 end;
 $$;
 
-revoke all on function public.import_catalog_products(jsonb, text, text, boolean) from public;
+revoke all on function public.import_catalog_products(jsonb, text, text, boolean) from public, anon, authenticated;
 grant execute on function public.import_catalog_products(jsonb, text, text, boolean) to service_role;
 
 -- The seed script and the importer both reach this table directly (the importer

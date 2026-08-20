@@ -207,7 +207,17 @@ $$;
 
 -- Internal helper. The functions below are SECURITY DEFINER and owned by the
 -- same role, so they keep their own EXECUTE; clients have no reason to call it.
-revoke all on function public.product_search_text(text, text) from public;
+--
+-- anon and authenticated are named explicitly, and that is not belt-and-braces.
+-- `revoke ... from public` removes only the PUBLIC grant; hosted Supabase runs
+-- `alter default privileges ... grant execute on functions to anon,
+-- authenticated, service_role`, so every function created here also carries an
+-- EXPLICIT grant to those roles that a revoke from PUBLIC does not touch. On a
+-- local database built from migrations alone there are no default privileges,
+-- so revoking from PUBLIC looks sufficient and the pgTAP suite agrees -- which
+-- is exactly why this was missed in the app schema, where it left
+-- import_catalog_products callable by anyone holding the publishable key.
+revoke all on function public.product_search_text(text, text) from public, anon, authenticated;
 
 -- ─── popularity ──────────────────────────────────────────────────────────────
 -- Adding a product from the suggestions bumps the count that ordered them. This
@@ -243,7 +253,9 @@ begin
 end;
 $$;
 
-revoke all on function public.bump_product_popularity(text, text) from public;
+-- Revoked from anon by name, then granted back to authenticated only. See the
+-- note above product_search_text for why revoking from PUBLIC is not enough.
+revoke all on function public.bump_product_popularity(text, text) from public, anon, authenticated;
 grant execute on function public.bump_product_popularity(text, text) to authenticated;
 
 -- ─── search ──────────────────────────────────────────────────────────────────
@@ -317,7 +329,7 @@ begin
 end;
 $$;
 
-revoke all on function public.search_catalog(text, integer) from public;
+revoke all on function public.search_catalog(text, integer) from public, anon, authenticated;
 grant execute on function public.search_catalog(text, integer) to authenticated;
 
 -- ─── bulk import ─────────────────────────────────────────────────────────────
@@ -542,7 +554,11 @@ begin
 end;
 $$;
 
-revoke all on function public.import_catalog_products(jsonb, text, text, boolean) from public;
+-- The one that matters most. This is a SECURITY DEFINER function that WRITES
+-- the catalog, so leaving anon holding the default grant makes the import path
+-- reachable by anyone with the publishable key. service_role and nobody else.
+revoke all on function public.import_catalog_products(jsonb, text, text, boolean)
+  from public, anon, authenticated;
 grant execute on function public.import_catalog_products(jsonb, text, text, boolean) to service_role;
 
 -- The importer reads the table directly as well as calling the RPC (it builds

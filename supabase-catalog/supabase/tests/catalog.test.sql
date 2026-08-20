@@ -32,7 +32,7 @@
 -- moved and 003_product_catalog.sql's header is out of date.
 
 begin;
-select plan(45);
+select plan(47);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 -- search_text is written explicitly: it has no default, because every real write
@@ -444,6 +444,31 @@ select throws_ok(
   '23514',
   null,
   'a barcode that is not a barcode is rejected'
+);
+
+-- ── 7. The grants, which a local database cannot fully test ──────────────────
+-- Hosted Supabase runs `alter default privileges ... grant execute on functions
+-- to anon, authenticated, service_role`, so every function there carries an
+-- explicit grant to those roles. `revoke ... from public` does not remove an
+-- explicit grant, only the PUBLIC one -- which is how the app schema ended up
+-- with import_catalog_products callable by anyone holding the publishable key.
+--
+-- A database built from these migrations alone has no default privileges, so
+-- anon never held the grant here and these two assertions pass whether or not
+-- the revoke names anon. They are worth keeping anyway: they fail the moment
+-- somebody grants either function to anon on purpose, and they say in the suite
+-- what the intended end state is. The check that actually catches the hosted
+-- case is `get_advisors`/`db advisors` against the real project after a push.
+select is(
+  has_function_privilege('anon', 'public.import_catalog_products(jsonb,text,text,boolean)', 'execute'),
+  false,
+  'the import path is not reachable by an unauthenticated caller'
+);
+
+select is(
+  has_function_privilege('anon', 'public.search_catalog(text,integer)', 'execute'),
+  false,
+  'nor is the search, which is granted to signed-in users only'
 );
 
 select * from finish();

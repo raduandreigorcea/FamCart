@@ -87,7 +87,7 @@ $$;
 
 -- EXECUTE defaults to PUBLIC in Postgres. Only the definer functions in 003 have
 -- any reason to write audit rows, and they run as the owner already.
-revoke all on function public.log_security_event(text, jsonb) from public;
+revoke all on function public.log_security_event(text, jsonb) from public, anon, authenticated;
 
 -- ─── rate limiting ───────────────────────────────────────────────────────────
 create table if not exists public.rate_limit_counters (
@@ -176,4 +176,4 @@ exception
 end;
 $$;
 
-revoke all on function public.rate_limit_hit(text, integer, interval) from public;
+revoke all on function public.rate_limit_hit(text, integer, interval) from public, anon, authenticated;
