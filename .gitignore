@@ -55,3 +55,9 @@ supabase-catalog/supabase/.temp
 # whatever machine generated it — never here.
 *.keystore
 *.jks
+
+# One-off export of the global catalog rows before they moved to the catalog
+# project. The 256 'curated' rows in here have no other source: the seed script
+# that wrote them was deleted in 9a4366e along with its products.json. Not
+# committed -- it is data, not code -- but worth keeping off the machine too.
+*.backup.json
