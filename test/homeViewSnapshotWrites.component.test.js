@@ -20,7 +20,10 @@ import { __setOnlineForTest } from '../src/lib/connectivity'
 
 const mocks = vi.hoisted(() => ({ db: null }))
 
-vi.mock('../src/supabase', () => ({ useSupabase: () => mocks.db }))
+vi.mock('../src/supabase', () => ({
+  useSupabase: () => mocks.db,
+  getCatalogSupabase: () => mocks.catalogDb ?? null,
+}))
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }))
 vi.mock('../src/lib/householdRealtime', () => ({
   useHouseholdRealtime: () => ({

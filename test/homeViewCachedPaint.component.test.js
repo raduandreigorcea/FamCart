@@ -18,7 +18,10 @@ import { __setOnlineForTest } from '../src/lib/connectivity'
 
 const mocks = vi.hoisted(() => ({ db: null, routerReplace: () => {}, userId: null, isLoaded: null }))
 
-vi.mock('../src/supabase', () => ({ useSupabase: () => mocks.db }))
+vi.mock('../src/supabase', () => ({
+  useSupabase: () => mocks.db,
+  getCatalogSupabase: () => mocks.catalogDb ?? null,
+}))
 vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: (...a) => mocks.routerReplace(...a) }),
 }))

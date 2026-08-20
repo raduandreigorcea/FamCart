@@ -57,7 +57,7 @@
 -- Tests run inside a transaction that is rolled back, so they leave no data behind.
 
 begin;
-select plan(98);
+select plan(113);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 -- Three households, because promoting a contributed product to the global catalog
@@ -161,9 +161,9 @@ update public.households
 set max_items_per_member = 1
 where id = '00000000-0000-0000-0000-0000000000a1';
 
--- One catalog row, seeded the way scripts/seed-products.mjs would -- including
--- the provenance stamp (006_product_catalog.sql), which is what protects it from being
--- rewritten by a bulk import.
+-- One curated row, of the kind the deleted seed script left in production --
+-- including the provenance stamp (006_product_catalog.sql), which is what
+-- protects it from being rewritten by a bulk import.
 insert into public.product_catalog (name, maker, search_text, source)
 values ('Apa Plata 2L', 'Dorna', 'apa plata 2l dorna', 'curated');
 
@@ -741,9 +741,10 @@ select is(
   'the import folds the contributors'' earned adds, capped per household, into the global row'
 );
 
--- 9u. The canary for the normalizer that exists in four places: this SQL
--- function, src/lib/productSearch.ts, scripts/seed-products.mjs, and the
--- importer's vendored copy. If this changes, all four have drifted.
+-- 9u. The canary for the normalizer that exists in three places: this SQL
+-- function, src/lib/productSearch.ts, and the importer's vendored copy of that
+-- file. If this changes, all three have drifted. (It was four until the seed
+-- script was deleted in 9a4366e.)
 select is(
   public.product_search_text('Apă Plată', 'Dorna'),
   'apa plata dorna',
@@ -776,6 +777,142 @@ select is(
   'openfoodfacts|4',
   'the service-role import actually landed its row'
 );
+
+-- 9w. The widened source allowlist. Open Products Facts and Open Beauty Facts
+-- carry the aisles Open Food Facts excludes, and both had to get past two
+-- separate gates: the CHECK constraint on the column, and the explicit
+-- allowlist inside import_catalog_products. The constraint is the one that
+-- matters here — it lives inside `create table if not exists`, so it reaches a
+-- fresh database from the table body and production only from the restated
+-- ALTER below it. A test on a freshly-reset database passes either way, which
+-- is exactly why this assertion is worth so little on its own and the ALTER is
+-- worth so much.
+select lives_ok(
+  $$ select public.import_catalog_products(
+       '[{"barcode":"5941000000077","name":"Pastă de dinți Menta","maker":"Colgate","base_weight":3,
+          "search_aliases":"toothpastes pasta de dinti zahnpasta dentifrice"}]'::jsonb,
+       'openbeautyfacts', 'obf-test-1') $$,
+  'an Open Beauty Facts import is accepted'
+);
+
+select is(
+  (select source from public.product_catalog where search_text = 'pasta de dinti menta colgate'),
+  'openbeautyfacts',
+  'the non-food source is stamped on the row'
+);
+
+select throws_ok(
+  $$ select public.import_catalog_products('[]'::jsonb, 'curated') $$,
+  'P0001',
+  null,
+  'curated is storable but still not importable'
+);
+
+-- 9x. search_aliases is folded by the server, not trusted from the caller.
+-- It feeds a LIKE, and a hand-assembled batch must be held to the same shape
+-- search_text is.
+select is(
+  (select search_aliases from public.product_catalog where search_text = 'pasta de dinti menta colgate'),
+  'toothpastes pasta de dinti zahnpasta dentifrice',
+  'aliases are stored folded'
+);
+
+select is(
+  (select search_blob from public.product_catalog where search_text = 'pasta de dinti menta colgate'),
+  'pasta de dinti menta colgate toothpastes pasta de dinti zahnpasta dentifrice',
+  'search_blob is name and aliases together'
+);
+
+-- 9y. The whole point of the exercise: a query in a language the product is not
+-- named in, and a query whose words arrive in the wrong order.
+select is(
+  (select count(*)::integer from public.search_catalog('toothpaste', null, 10)),
+  1,
+  'an English query reaches a Romanian product through its category aliases'
+);
+
+select is(
+  (select count(*)::integer from public.search_catalog('zahnpasta', null, 10)),
+  1,
+  'so does a German one'
+);
+
+select is(
+  (select count(*)::integer from public.search_catalog('menta pasta', null, 10)),
+  1,
+  'every token matches in any order, which the old contiguous ilike could not do'
+);
+
+select is(
+  (select count(*)::integer from public.search_catalog('pasta unicorn', null, 10)),
+  0,
+  'and every token must match — one miss rejects the row'
+);
+
+-- 9z. LIKE metacharacters are escaped. product_search_text folds accents and
+-- case but leaves % and _ alone, so without escaping a typed percent would
+-- match the entire catalog.
+select is(
+  (select count(*)::integer from public.search_catalog('%', null, 10)),
+  0,
+  'a bare percent matches nothing rather than everything'
+);
+
+select is(
+  (select count(*)::integer from public.search_catalog('p_sta', null, 10)),
+  0,
+  'a typed underscore is a literal, not a wildcard'
+);
+
+-- 9aa. search_catalog is SECURITY DEFINER, so RLS does not run and the
+-- household scoping inside it is the only thing standing between one household
+-- and another's contributed products. p_household_id arrives from client state.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"user_a"}';
+
+select lives_ok(
+  $$ select * from public.search_catalog('pasta', null, 10) $$,
+  'an authenticated user may search'
+);
+
+select throws_ok(
+  $$ insert into public.product_catalog (name, search_text, source)
+     values ('smuggled', 'smuggled', 'openfoodfacts') $$,
+  '42501',
+  null,
+  'but still cannot write to the catalog'
+);
+
+reset role;
+
+-- A scoped row belonging to a household user_a is not a member of.
+insert into public.product_catalog (name, search_text, household_id, contributed_by, source)
+values ('Secret Sauce', 'secret sauce',
+        '00000000-0000-0000-0000-0000000000d1', 'user_d', 'community');
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"user_a"}';
+
+select is(
+  (select count(*)::integer from public.search_catalog(
+     'secret', '00000000-0000-0000-0000-0000000000d1'::uuid, 10)),
+  0,
+  'naming a household you do not belong to does not open its contributed rows'
+);
+
+reset role;
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"user_d"}';
+
+select is(
+  (select count(*)::integer from public.search_catalog(
+     'secret', '00000000-0000-0000-0000-0000000000d1'::uuid, 10)),
+  1,
+  'a member of that household does see it'
+);
+
+reset role;
 
 -- ── 10. Security audit trail + invite throttle (002_security_audit.sql, 003_households_and_members.sql) ─────────
 

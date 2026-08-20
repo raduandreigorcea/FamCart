@@ -16,7 +16,10 @@ const DEBOUNCE_MS = 300
 
 const mocks = vi.hoisted(() => ({ db: null, routerReplace: () => {} }))
 
-vi.mock('../src/supabase', () => ({ useSupabase: () => mocks.db }))
+vi.mock('../src/supabase', () => ({
+  useSupabase: () => mocks.db,
+  getCatalogSupabase: () => mocks.catalogDb ?? null,
+}))
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: (...args) => mocks.routerReplace(...args) }),
@@ -49,8 +52,18 @@ const CATALOG = [
 
 const mountedWrappers = []
 
-async function mountHome({ history = [], items = [] } = {}) {
+// `catalog` opts a test into the second Supabase project. Left out,
+// getCatalogSupabase() returns null and the app runs on household products
+// alone -- which is a supported state, not a broken one, and is what every
+// other test in this file exercises.
+async function mountHome({ history = [], items = [], catalog } = {}) {
   mocks.db = createFakeDb()
+  mocks.catalogDb = null
+  if (catalog) {
+    mocks.catalogDb = createFakeDb()
+    mocks.catalogDb.handlers['rpc.search_catalog'] = () =>
+      typeof catalog === 'function' ? catalog() : { data: catalog, error: null }
+  }
   mocks.routerReplace = vi.fn()
   mocks.db.handlers['household_members.select'] = (q) =>
     q.filters.user_id
@@ -85,12 +98,16 @@ async function type(wrapper, text) {
 // settled out of order.
 function deferCatalogQueries() {
   const pending = []
-  mocks.db.handlers['product_catalog.select'] = () =>
+  mocks.db.handlers['rpc.search_catalog'] = () =>
     new Promise((resolve) => pending.push(resolve))
   return pending
 }
 
-const catalogQueries = () => mocks.db.calls.filter((c) => c.table === 'product_catalog')
+// The catalog is searched through the search_catalog RPC rather than a
+// product_catalog select: one query, every word matched separately, and the
+// household membership check done server-side. See 006_product_catalog.sql.
+const catalogQueries = () =>
+  mocks.db.calls.filter((c) => c.table === 'rpc' && c.op === 'search_catalog')
 
 beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -195,7 +212,7 @@ describe('suggestion loading state', () => {
 
   it('stops the skeleton when the search fails', async () => {
     const wrapper = await mountHome()
-    mocks.db.handlers['product_catalog.select'] = () => ({ data: null, error: { message: 'boom' } })
+    mocks.db.handlers['rpc.search_catalog'] = () => ({ data: null, error: { message: 'boom' } })
 
     await type(wrapper, 'apa')
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS)
@@ -248,7 +265,9 @@ describe('suggestion loading state', () => {
 
     // One request for the whole burst, for the final query only.
     expect(catalogQueries()).toHaveLength(1)
-    expect(catalogQueries()[0].filters['ilike:search_text']).toBe('%apa pl%')
+    // The raw query goes to the server now; tokenizing and folding are the
+    // RPC's job, so there is no pattern built here to assert on.
+    expect(catalogQueries()[0].params.p_query).toBe('apa pl')
   })
 
   it('searches again once typing resumes and pauses again', async () => {
@@ -265,7 +284,7 @@ describe('suggestion loading state', () => {
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS)
 
     expect(catalogQueries()).toHaveLength(2)
-    expect(catalogQueries()[1].filters['ilike:search_text']).toBe('%apa plata%')
+    expect(catalogQueries()[1].params.p_query).toBe('apa plata')
   })
 
   it('never searches for a query too short to be worth one', async () => {
@@ -277,7 +296,7 @@ describe('suggestion loading state', () => {
     await flushPromises()
 
     expect(loading(wrapper)).toBe(false)
-    expect(mocks.db.calls.some((c) => c.table === 'product_catalog')).toBe(false)
+    expect(catalogQueries()).toHaveLength(0)
   })
 })
 
@@ -421,5 +440,113 @@ describe('the regulars offered before anything is typed', () => {
 
     expect(recents(wrapper)).not.toContain('Lapte 1L')
     expect(recents(wrapper)).toContain('Paine Alba')
+  })
+})
+
+
+// ── The two-project split ────────────────────────────────────────────────────
+// The global catalog is its own Supabase project, shared live by production and
+// development; a household's contributed products and anything promoted out of
+// them stay in the app database. So a full answer is the union of two searches,
+// and the failure modes worth pinning are about what happens when only one of
+// them answers.
+describe('searching both catalogs', () => {
+  const GLOBAL_ROWS = [{ name: 'Apa Plata 2L', maker: 'Dorna', popularity: 500 }]
+  const LOCAL_ROWS = [{ name: 'Apa De La Bunica', maker: null, popularity: 2 }]
+
+  function answerLocal(rows) {
+    mocks.db.handlers['rpc.search_catalog'] = () => ({ data: rows, error: null })
+  }
+
+  it('offers products from both projects at once', async () => {
+    const wrapper = await mountHome({ catalog: GLOBAL_ROWS })
+    answerLocal(LOCAL_ROWS)
+
+    await type(wrapper, 'apa')
+    vi.advanceTimersByTime(DEBOUNCE_MS)
+    await flushPromises()
+
+    const names = form(wrapper).props('suggestions').map((p) => p.name)
+    expect(names).toContain('Apa Plata 2L')
+    expect(names).toContain('Apa De La Bunica')
+  })
+
+  it('shows a product present in both exactly once', async () => {
+    // The same product can exist as an imported row in the catalog project and
+    // as a promoted row in the app database -- the promotion rule runs entirely
+    // in the app database and knows nothing about the import.
+    const wrapper = await mountHome({ catalog: GLOBAL_ROWS })
+    answerLocal([{ name: 'Apa Plata 2L', maker: 'Dorna', popularity: 3 }])
+
+    await type(wrapper, 'apa')
+    vi.advanceTimersByTime(DEBOUNCE_MS)
+    await flushPromises()
+
+    const names = form(wrapper).props('suggestions').map((p) => p.name)
+    expect(names.filter((n) => n === 'Apa Plata 2L')).toHaveLength(1)
+  })
+
+  // The reason the merge uses allSettled rather than Promise.all. Production
+  // search now depends on a third project being reachable, and an unreachable
+  // one must cost only its own rows.
+  it('still offers household products when the catalog project fails', async () => {
+    const wrapper = await mountHome({
+      catalog: () => ({ data: null, error: { message: 'unreachable' } }),
+    })
+    answerLocal(LOCAL_ROWS)
+
+    await type(wrapper, 'apa')
+    vi.advanceTimersByTime(DEBOUNCE_MS)
+    await flushPromises()
+
+    expect(form(wrapper).props('suggestions').map((p) => p.name)).toEqual(['Apa De La Bunica'])
+    expect(loading(wrapper)).toBe(false)
+  })
+
+  it('still offers catalog products when the app database search fails', async () => {
+    const wrapper = await mountHome({ catalog: GLOBAL_ROWS })
+    mocks.db.handlers['rpc.search_catalog'] = () => ({ data: null, error: { message: 'boom' } })
+
+    await type(wrapper, 'apa')
+    vi.advanceTimersByTime(DEBOUNCE_MS)
+    await flushPromises()
+
+    expect(form(wrapper).props('suggestions').map((p) => p.name)).toEqual(['Apa Plata 2L'])
+  })
+
+  // A bump has to reach the database holding the row: the two projects carry
+  // copies of the RPC with different signatures, and neither can touch the
+  // other's rows.
+  it('bumps popularity in the project the picked product came from', async () => {
+    const wrapper = await mountHome({ catalog: GLOBAL_ROWS })
+    answerLocal(LOCAL_ROWS)
+    // The bump only fires once the add itself succeeded, so the insert needs an
+    // answer here -- unhandled, the fake returns an error and nothing downstream
+    // of the add runs at all.
+    mocks.db.handlers['shopping_list_items.insert'] = (q) => ({
+      data: { ...q.payload, checked: false },
+      error: null,
+    })
+
+    await type(wrapper, 'apa')
+    vi.advanceTimersByTime(DEBOUNCE_MS)
+    await flushPromises()
+
+    // Selecting a suggestion is the add: the form emits once and HomeView does
+    // the rest. Same shape as the catalog-vs-contribution test in
+    // homeViewCustomProduct.
+    form(wrapper).vm.$emit('select', { name: 'Apa Plata 2L', maker: 'Dorna' })
+    await flushPromises()
+
+    const catalogBumps = mocks.catalogDb.calls.filter(
+      (c) => c.table === 'rpc' && c.op === 'bump_product_popularity',
+    )
+    const localBumps = mocks.db.calls.filter(
+      (c) => c.table === 'rpc' && c.op === 'bump_product_popularity',
+    )
+    expect(catalogBumps).toHaveLength(1)
+    // The catalog's copy has no household to scope by, so it is not passed one.
+    expect(catalogBumps[0].params.p_household_id).toBeUndefined()
+    expect(localBumps).toHaveLength(0)
   })
 })

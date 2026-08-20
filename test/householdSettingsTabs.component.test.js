@@ -17,7 +17,10 @@ import HouseholdSettingsModal from '../src/components/HouseholdSettingsModal.vue
 const currentUserId = vi.hoisted(() => ({ value: 'u_owner' }))
 
 vi.mock('@clerk/vue', () => ({ useAuth: () => ({ userId: currentUserId }) }))
-vi.mock('../src/supabase', () => ({ useSupabase: () => ({}) }))
+vi.mock('../src/supabase', () => ({
+  useSupabase: () => ({}),
+  getCatalogSupabase: () => null,
+}))
 
 const wrappers = []
 

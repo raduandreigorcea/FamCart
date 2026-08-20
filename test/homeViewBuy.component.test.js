@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../src/supabase', () => ({
   useSupabase: () => mocks.db,
+  getCatalogSupabase: () => mocks.catalogDb ?? null,
 }))
 
 vi.mock('vue-router', () => ({

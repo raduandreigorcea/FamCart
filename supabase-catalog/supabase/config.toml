@@ -1,0 +1,52 @@
+# The product catalog project, which is a different Supabase project from the one
+# beside it in supabase/.
+#
+# WHY THERE ARE TWO
+#
+# supabase/ describes the databases people's data lives in: the production
+# project and the development one, same schema, different rows. This describes a
+# third project holding the imported product catalog, which both of those query
+# live. It is reference data -- no household, no user, identical everywhere --
+# and it is the only part that gets large, so keeping it out of the app databases
+# keeps a 25000-rows-per-market import away from the database real families are
+# shopping from.
+#
+# The CLI targets this one explicitly:
+#
+#   npx supabase db reset      --workdir supabase-catalog
+#   npx supabase test db       --workdir supabase-catalog
+#   npx supabase db push       --workdir supabase-catalog --include-all --linked
+#
+# Forget --workdir and you are pointing at the app schema, which is why every
+# command in CLAUDE.md's catalog section spells it out.
+#
+# WHY THE DOUBLED PATH (supabase-catalog/supabase/)
+#
+# --workdir names a PROJECT ROOT, not a config file: the CLI then looks for
+# `<workdir>/supabase/config.toml` underneath it, exactly as it finds this
+# repo's own. Flattening this to supabase-catalog/config.toml looks tidier and
+# silently does nothing -- the file is never read, project_id falls back to the
+# directory name, and the ports below stay at their defaults. The way that
+# surfaces is a port collision with the app stack, which reads as "the app stack
+# is broken" rather than "the config was ignored".
+project_id = "famcart-catalog"
+
+# Ports moved off the defaults so both local stacks can run at once. The app
+# stack in supabase/ takes 54321-54324; without this, starting the second one
+# fails on a port already bound, and the obvious reading of that error is that
+# the first stack is broken.
+[api]
+port = 54421
+
+[db]
+port = 54422
+
+[studio]
+port = 54423
+
+# [inbucket] is the old name for this and still parses, with a deprecation
+# warning on every command. Nothing here sends mail -- there is no auth in this
+# project -- but the port still gets bound, so it has to move off the app
+# stack's like the rest.
+[local_smtp]
+port = 54424

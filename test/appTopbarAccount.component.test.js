@@ -25,6 +25,7 @@ vi.mock('../src/supabase', () => ({
       select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
     }),
   }),
+  getCatalogSupabase: () => null,
 }))
 
 // Sign out detaches the account from error reporting; the module is mocked so
