@@ -1,4 +1,5 @@
 import { ref, type Ref } from 'vue'
+import { t } from './i18n'
 import { hasSeenTour, markTourSeen } from './onboarding'
 import {
   enablePushNotifications,
@@ -117,12 +118,10 @@ export function useFirstRunGreeting(options: {
     if (result === 'permission-denied') {
       // The browser said no — reflect reality instead of a preference that lies.
       setNotificationPreference(storage, uid, 'off')
-      notificationError.value =
-        'Notifications are blocked for FamCart in your device or browser settings.'
+      notificationError.value = t('error.notificationsBlocked')
     } else if (result === 'error') {
       setNotificationPreference(storage, uid, 'off')
-      notificationError.value =
-        'Could not enable notifications. You can try again from Account Settings.'
+      notificationError.value = t('error.notificationsFromSettings')
     }
     settle()
   }

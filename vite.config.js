@@ -99,6 +99,13 @@ export default defineConfig({
         name: 'FamCart: Family Shopping List',
         short_name: 'FamCart',
         description: 'A shared grocery list for your family, with live updates.',
+        // The manifest stays English, deliberately, even though the app speaks
+        // six languages. Localising it means shipping six manifests and
+        // swapping <link rel="manifest"> at runtime, which browsers honour
+        // inconsistently — and the installed app's name would only change on
+        // reinstall anyway. `lang` and `dir` simply declare what this one is.
+        lang: 'en',
+        dir: 'ltr',
         theme_color: '#4d8c65',
         background_color: '#f5f5f7',
         display: 'standalone',

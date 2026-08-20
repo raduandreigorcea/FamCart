@@ -2,6 +2,7 @@
 import { computed, type PropType } from 'vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { memberDisplayName } from '../lib/userIdentity'
+import { t } from '../lib/i18n'
 import type { HouseholdMemberProfile } from '../lib/householdRealtime'
 
 const props = defineProps({
@@ -42,7 +43,7 @@ const extraMembers = computed(() => Math.max(0, props.members.length - visibleMe
       <img
         v-if="member.image_url"
         :src="member.image_url"
-        :alt="memberDisplayName(member) + ' avatar'"
+        :alt="t('common.avatarAlt', { name: memberDisplayName(member) })"
         class="member-avatar"
       />
       <span

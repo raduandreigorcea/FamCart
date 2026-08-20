@@ -5,6 +5,7 @@ import AppModal from './AppModal.vue'
 import triangleAlertIcon from '../assets/triangle-alert.svg?raw'
 import infoIcon from '../assets/info.svg?raw'
 import checkIcon from '../assets/check.svg?raw'
+import { t } from '../lib/i18n'
 
 // One mark per tone, all three from the icon set rather than drawn inline.
 //
@@ -36,10 +37,15 @@ const props = defineProps({
     default: '',
     validator: (value: string) => ['danger', 'warning', 'success', ''].includes(value),
   },
-  confirmText: { type: String, default: 'Confirm' },
-  cancelText: { type: String, default: 'Cancel' },
+  // Empty rather than the English word, for the reason ErrorModal spells out:
+  // a t() call in a prop default runs once at import and never changes again.
+  confirmText: { type: String, default: '' },
+  cancelText: { type: String, default: '' },
   showCancel: { type: Boolean, default: true },
 })
+
+const resolvedConfirmText = computed(() => props.confirmText || t('common.confirm'))
+const resolvedCancelText = computed(() => props.cancelText || t('common.cancel'))
 
 const resolvedTone = computed(() => {
   if (props.tone) return props.tone
@@ -77,8 +83,8 @@ const emit = defineEmits(['confirm', 'cancel'])
         </div>
 
         <div class="confirm-dialog__actions" :class="{ 'confirm-dialog__actions--single': !showCancel }">
-          <AppButton v-if="showCancel" variant="secondary" block @click="emit('cancel')">{{ cancelText }}</AppButton>
-          <AppButton :variant="confirmVariant" :block="showCancel" @click="emit('confirm')">{{ confirmText }}</AppButton>
+          <AppButton v-if="showCancel" variant="secondary" block @click="emit('cancel')">{{ resolvedCancelText }}</AppButton>
+          <AppButton :variant="confirmVariant" :block="showCancel" @click="emit('confirm')">{{ resolvedConfirmText }}</AppButton>
         </div>
       </div>
   </AppModal>

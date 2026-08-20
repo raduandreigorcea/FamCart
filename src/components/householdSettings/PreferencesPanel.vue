@@ -14,6 +14,7 @@ import checkIcon from '../../assets/check.svg?raw'
 import squarePenIcon from '../../assets/square-pen.svg?raw'
 import stickerIcon from '../../assets/sticker.svg?raw'
 import shoppingCartIcon from '../../assets/shopping-cart.svg?raw'
+import { t } from '../../lib/i18n'
 
 // The three settings an owner can change: the household's name, its emoji, and how
 // many active items each member may hold. Each is edited locally and committed
@@ -87,14 +88,18 @@ async function renameHousehold() {
   const nextName = renameValue.value.trim()
   if (!nextName || !props.householdId || savingName.value) return
   if (renameOverLimit.value) {
-    emit('error', `Household name must be ${HOUSEHOLD_NAME_MAX_LENGTH} characters or fewer.`, 'Name too long')
+    emit(
+      'error',
+      t('error.householdNameTooLong', { max: HOUSEHOLD_NAME_MAX_LENGTH }),
+      t('error.nameTooLongTitle'),
+    )
     return
   }
   savingName.value = true
   try {
     const { error } = await db.from('households').update({ name: nextName }).eq('id', props.householdId)
     if (error) {
-      emit('error', userMessage(error, 'Could not rename the household.'))
+      emit('error', userMessage(error, t('error.renameHouseholdFailed')))
       return
     }
     emit('refresh-household')
@@ -113,7 +118,7 @@ async function saveEmoji() {
       .update({ emoji: emojiValue.value || null })
       .eq('id', props.householdId)
     if (error) {
-      emit('error', userMessage(error, 'Could not save the household emoji.'))
+      emit('error', userMessage(error, t('error.saveEmojiFailed')))
       return
     }
     emit('refresh-household')
@@ -143,7 +148,7 @@ async function saveItemLimit() {
       .update({ max_items_per_member: normalizedLimit })
       .eq('id', props.householdId)
     if (error) {
-      emit('error', userMessage(error, 'Could not save the item limit.'))
+      emit('error', userMessage(error, t('error.saveLimitFailed')))
       return
     }
     emit('refresh-household')
@@ -157,15 +162,15 @@ async function saveItemLimit() {
 <template>
   <div class="tab-panel tab-panel--overlay">
     <div class="panel-section">
-      <h4 class="panel-section-title">General Preferences</h4>
+      <h4 class="panel-section-title">{{ t('prefs.title') }}</h4>
 
       <div class="preferences-grid">
         <section v-if="isOwner" class="card-item pref-card">
           <div class="pref-card__head">
             <span class="pref-card__icon" aria-hidden="true" v-html="squarePenIcon"></span>
             <div class="pref-card__meta">
-              <h5>Household Name</h5>
-              <p>Choose a name everyone in your household can recognize quickly.</p>
+              <h5>{{ t('prefs.nameTitle') }}</h5>
+              <p>{{ t('prefs.nameDesc') }}</p>
             </div>
           </div>
 
@@ -174,11 +179,11 @@ async function saveItemLimit() {
               <div class="input-wrapper">
                 <input
                   id="householdNameInput"
-                  aria-label="Household name"
+                  :aria-label="t('prefs.nameTitle')"
                   v-model="renameValue"
                   class="panel-input"
                   type="text"
-                  placeholder="My Awesome Household"
+                  :placeholder="t('prefs.namePlaceholder')"
                 />
               </div>
               <div class="panel-save-stack">
@@ -191,9 +196,9 @@ async function saveItemLimit() {
                   <span v-if="savingName" class="btn-spinner"></span>
                   <span v-else-if="nameSaved" class="success-state animate-pop">
                     <span class="success-icon-wrap" aria-hidden="true" v-html="checkIcon"></span>
-                    Saved
+                    {{ t('common.saved') }}
                   </span>
-                  <span v-else>Save</span>
+                  <span v-else>{{ t('common.save') }}</span>
                 </button>
                 <p class="panel-counter panel-counter--under-save" :class="{ 'panel-counter--danger': renameOverLimit }">
                   {{ renameLength }}/{{ HOUSEHOLD_NAME_MAX_LENGTH }}
@@ -207,8 +212,8 @@ async function saveItemLimit() {
           <div class="pref-card__head">
             <span class="pref-card__icon" aria-hidden="true" v-html="stickerIcon"></span>
             <div class="pref-card__meta">
-              <h5>Household Emoji</h5>
-              <p>Pick an emoji for your household. It shows in the top bar.</p>
+              <h5>{{ t('prefs.emojiTitle') }}</h5>
+              <p>{{ t('prefs.emojiDesc') }}</p>
             </div>
             <span
               class="pref-card__value pref-card__value--emoji"
@@ -224,7 +229,7 @@ async function saveItemLimit() {
               class="emoji-option"
               :class="{ 'emoji-option--active': emojiValue === e }"
               :aria-pressed="emojiValue === e"
-              :aria-label="`Use ${e} for this household`"
+              :aria-label="t('preferences.useEmoji', { emoji: e })"
               @click="pickEmoji(e)"
             >{{ e }}</button>
           </div>
@@ -240,9 +245,9 @@ async function saveItemLimit() {
                 <span v-if="savingEmoji" class="btn-spinner"></span>
                 <span v-else-if="emojiSaved" class="success-state animate-pop">
                   <span class="success-icon-wrap" aria-hidden="true" v-html="checkIcon"></span>
-                  Saved
+                  {{ t('common.saved') }}
                 </span>
-                <span v-else>Save</span>
+                <span v-else>{{ t('common.save') }}</span>
               </button>
             </div>
           </div>
@@ -252,8 +257,8 @@ async function saveItemLimit() {
           <div class="pref-card__head">
             <span class="pref-card__icon" aria-hidden="true" v-html="shoppingCartIcon"></span>
             <div class="pref-card__meta">
-              <h5>Item Limit Per User</h5>
-              <p>Control how many active (unchecked) items each member can add.</p>
+              <h5>{{ t('prefs.limitTitle') }}</h5>
+              <p>{{ t('prefs.limitDesc') }}</p>
             </div>
             <span class="pref-card__value">{{ itemLimitValue }}</span>
           </div>
@@ -267,7 +272,7 @@ async function saveItemLimit() {
               :min="ITEM_LIMIT_MIN"
               :max="ITEM_LIMIT_MAX"
               step="1"
-              aria-label="Item limit slider"
+              :aria-label="t('prefs.limitSlider')"
             />
             <span class="pref-range-minmax">{{ ITEM_LIMIT_MAX }}</span>
           </div>
@@ -283,9 +288,9 @@ async function saveItemLimit() {
                 <span v-if="savingItemLimit" class="btn-spinner"></span>
                 <span v-else-if="itemLimitSaved" class="success-state animate-pop">
                   <span class="success-icon-wrap" aria-hidden="true" v-html="checkIcon"></span>
-                  Saved
+                  {{ t('common.saved') }}
                 </span>
-                <span v-else>Save</span>
+                <span v-else>{{ t('common.save') }}</span>
               </button>
             </div>
           </div>

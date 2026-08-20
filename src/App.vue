@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { captureException } from './lib/errorReporting'
 import AppSplash from './components/AppSplash.vue'
 import AppButton from './components/AppButton.vue'
+import { t } from './lib/i18n'
 
 // The first navigation is async (connectivity check, then Clerk). Show a branded
 // splash until it resolves so the app never opens on a blank screen — offline in
@@ -36,12 +37,9 @@ function reload() {
   <div v-if="crashed" class="crash">
     <div class="crash__box">
       <img src="/icons/pwa-192.png" alt="" class="crash__logo" />
-      <h1 class="crash__title">Something went wrong</h1>
-      <p class="crash__text">
-        FamCart hit an error and had to stop. Your list is safe. It lives on the
-        server, not in this page.
-      </p>
-      <AppButton variant="primary" @click="reload">Reload</AppButton>
+      <h1 class="crash__title">{{ t('error.genericTitle') }}</h1>
+      <p class="crash__text">{{ t('crash.text') }}</p>
+      <AppButton variant="primary" @click="reload">{{ t('common.reload') }}</AppButton>
     </div>
   </div>
   <RouterView v-else-if="ready" />

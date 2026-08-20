@@ -67,6 +67,31 @@ export default ts.config(
       'no-console': 'error',
       'no-debugger': 'error',
 
+      // Every user-facing string goes through t() in src/locales. This is what
+      // stops the next one from not doing so: a bare word in a template is now
+      // a build failure, not something a reviewer has to spot.
+      //
+      // It sees templates only, so a string literal in <script> still needs
+      // reading — and the trap there is the one lib/i18n's header documents at
+      // length: a t() call at module scope evaluates once at import and never
+      // follows a language change.
+      //
+      // allowlist covers the punctuation and symbols that are the same in every
+      // language, so they do not each need a catalog key. Brand names and proper
+      // nouns (FamCart, Open Food Facts, ODbL 1.0) carry a targeted disable
+      // comment at their few sites instead of being listed here, because
+      // listing them would also silence a genuine miss elsewhere.
+      'vue/no-bare-strings-in-template': [
+        'error',
+        {
+          allowlist: [
+            '(', ')', ',', '.', '&', '+', '-', '=', '*', '/', '#', '%', '!', '?', ':',
+            '[', ']', '{', '}', '<', '>', '·', '•', '|', '–', '—',
+            '‘', '’', '“', '”', '…', 'x',
+          ],
+        },
+      ],
+
       // vue-tsc reports unused locals and parameters already, with better
       // messages and across templates. Off here so one edit cannot produce two
       // different complaints.

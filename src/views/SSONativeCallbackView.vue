@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import AppCard from '../components/AppCard.vue'
+import { t } from '../lib/i18n'
 
 // Landing spot for the native app's OAuth round-trip. Clerk only accepts
 // http(s) redirect targets from web-mode clients, so the system browser is
@@ -20,9 +21,9 @@ onMounted(() => {
   <div class="sso-native-page">
     <AppCard variant="narrow">
       <div class="sso-native-content">
-        <h1 class="sso-native-title">Almost there</h1>
-        <p class="sso-native-text">Taking you back to the FamCart app…</p>
-        <a class="sso-native-open" :href="target">Open FamCart</a>
+        <h1 class="sso-native-title">{{ t('sso.title') }}</h1>
+        <p class="sso-native-text">{{ t('sso.text') }}</p>
+        <a class="sso-native-open" :href="target">{{ t('sso.open') }}</a>
       </div>
     </AppCard>
   </div>

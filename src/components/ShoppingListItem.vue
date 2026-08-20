@@ -7,6 +7,7 @@ import checkIcon from '../assets/check.svg?raw'
 import xIcon from '../assets/x.svg?raw'
 import minusIcon from '../assets/minus.svg?raw'
 import plusIcon from '../assets/plus.svg?raw'
+import { t } from '../lib/i18n'
 
 const props = defineProps({
   item: {
@@ -30,9 +31,12 @@ const props = defineProps({
     type: String,
     default: null,
   },
+  // Empty, not 'Member': the fallback is resolved in avatarLabel below so that
+  // it follows the language. A default in this object literal is evaluated once
+  // at import and freezes.
   avatarName: {
     type: String,
-    default: 'Member',
+    default: '',
   },
   // Whether this row's quantity stepper is the open one. Held by the parent so
   // that opening one closes the last.
@@ -45,6 +49,29 @@ const props = defineProps({
 const emit = defineEmits(['toggle', 'delete', 'set-quantity', 'open-quantity', 'close-quantity'])
 
 const qty = computed(() => Number(props.item.quantity) || 1)
+
+const avatarLabel = computed(() => props.avatarName || t('common.memberFallback'))
+
+// The row's entire label for a screen reader, and the app's longest-lived bare
+// string: it is built inside a binding, which is the one place
+// vue/no-bare-strings-in-template cannot look, so it stayed English through the
+// whole translation pass without failing anything.
+//
+// Four keys rather than a sentence with a verb slotted into it. "check" and
+// "uncheck" are one word apart in English and a clause apart in German, and a
+// label nobody can see on screen is exactly where a half-translated sentence
+// would survive unnoticed.
+const toggleLabel = computed(() => {
+  const params = { name: props.item.name, n: qty.value }
+  if (qty.value > 1) {
+    return props.item.checked
+      ? t('item.swipeLabelUncheckQty', params)
+      : t('item.swipeLabelCheckQty', params)
+  }
+  return props.item.checked
+    ? t('item.swipeLabelUncheck', params)
+    : t('item.swipeLabelCheck', params)
+})
 
 // ── The quantity stepper ────────────────────────────────────────────────────
 // Quantity used to be picked in the add form, before the product it counted had
@@ -329,7 +356,7 @@ function settle() {
       aria-hidden="true"
     >
       <span class="item-action__icon" aria-hidden="true" v-html="checkIcon"></span>
-      <span class="item-action__label">{{ item.checked ? 'Uncheck' : 'Got it' }}</span>
+      <span class="item-action__label">{{ item.checked ? t('item.uncheck') : t('item.gotIt') }}</span>
     </div>
     <!-- Action revealed under a leftward swipe -->
     <div
@@ -339,7 +366,7 @@ function settle() {
       :style="{ '--pull': pullProgress }"
       aria-hidden="true"
     >
-      <span class="item-action__label">Remove</span>
+      <span class="item-action__label">{{ t('item.remove') }}</span>
       <span class="item-action__icon" aria-hidden="true" v-html="xIcon"></span>
     </div>
 
@@ -366,7 +393,7 @@ function settle() {
         type="button"
         class="item-toggle"
         :aria-pressed="item.checked"
-        :aria-label="`${item.name}${qty > 1 ? `, quantity ${qty}` : ''}. Swipe right to ${item.checked ? 'uncheck' : 'check'}, left to remove`"
+        :aria-label="toggleLabel"
         @click="onToggleClick"
       >
         <span class="item-emoji" aria-hidden="true">{{ getProductEmoji(item.name, item.maker || '') }}</span>
@@ -401,7 +428,7 @@ function settle() {
           :disabled="qty <= 1"
           :tabindex="qtyOpen ? 0 : -1"
           :aria-hidden="qtyOpen ? undefined : 'true'"
-          aria-label="One fewer"
+          :aria-label="t('item.oneFewer')"
           @keydown.stop
           @click.stop="step(-1)"
         >
@@ -417,10 +444,10 @@ function settle() {
           :disabled="item.checked"
           :aria-label="
             item.checked
-              ? `Quantity ${qty}`
+              ? t('item.quantity', { n: qty })
               : qtyOpen
-                ? `Quantity ${qty}. Done`
-                : `Quantity ${qty}. Change`
+                ? t('item.quantityDone', { n: qty })
+                : t('item.quantityChange', { n: qty })
           "
           :aria-expanded="item.checked ? undefined : qtyOpen"
           @keydown.stop
@@ -439,7 +466,7 @@ function settle() {
           :disabled="qty >= ITEM_QUANTITY_MAX"
           :tabindex="qtyOpen ? 0 : -1"
           :aria-hidden="qtyOpen ? undefined : 'true'"
-          aria-label="One more"
+          :aria-label="t('item.oneMore')"
           @keydown.stop
           @click.stop="step(1)"
         >
@@ -449,11 +476,11 @@ function settle() {
       <img
         v-if="avatarUrl"
         :src="avatarUrl"
-        :alt="avatarName + ' avatar'"
+        :alt="t('common.avatarAlt', { name: avatarLabel })"
         class="item-avatar"
       />
-      <span v-else class="item-avatar item-avatar--fallback" :title="avatarName">
-        {{ (avatarName || '?').slice(0, 1).toUpperCase() }}
+      <span v-else class="item-avatar item-avatar--fallback" :title="avatarLabel">
+        {{ avatarLabel.slice(0, 1).toUpperCase() }}
       </span>
     </div>
   </li>

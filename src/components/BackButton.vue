@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import chevronLeftIcon from '../assets/chevron-left.svg?raw'
+import { t } from '../lib/i18n'
 
 defineEmits(['click'])
 </script>
@@ -7,7 +8,7 @@ defineEmits(['click'])
 <template>
   <button class="back-btn" type="button" @click="$emit('click')">
     <span class="back-btn__arrow" aria-hidden="true" v-html="chevronLeftIcon"></span>
-    <span>Back</span>
+    <span>{{ t('common.back') }}</span>
   </button>
 </template>
 

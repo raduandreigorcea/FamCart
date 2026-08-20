@@ -4,6 +4,7 @@ import { useAuth } from '@clerk/vue'
 import { ensureOnlineStatus } from '../lib/connectivity'
 import { HOUSEHOLD_MEMBERSHIP_CAP } from '../lib/limits'
 import { getSupabase, setSupabaseTokenResolver } from '../supabase'
+import { whenLocaleReady } from '../lib/i18n'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -115,7 +116,20 @@ async function fetchMembershipCount(
 }
 
 router.beforeEach(async (to) => {
+  // useAuth() STAYS THE FIRST STATEMENT. It resolves the Clerk plugin through
+  // Vue's inject(), which only works inside the synchronous window the router
+  // holds the app context open for — the first `await` in this function throws
+  // that context away. Putting anything awaited above this line does not delay
+  // it, it breaks it: "useAuth can only be used when the Vue plugin is
+  // installed", the guard rejects, and the app never leaves AppSplash.
   const { isLoaded, isSignedIn, getToken, userId } = useAuth()
+
+  // Now the awaits are safe. The language catalog goes first among them, so no
+  // view can render against the wrong one: main.ts starts that fetch pre-mount
+  // and deliberately does not wait, and this is where the waiting happens,
+  // behind the splash that is already on screen. Resolves immediately for
+  // English and on every navigation after the first.
+  await whenLocaleReady()
 
   // Decide connectivity first. Offline, Clerk can never verify the session, so
   // we must NOT wait on it (that 10s wait was the blank screen). A cold start

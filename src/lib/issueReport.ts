@@ -17,6 +17,7 @@ import { Capacitor } from '@capacitor/core'
 import { isCurrentlyOffline } from './connectivity'
 import { hasQueuedOfflineMutations } from './offlineQueue'
 import { captureReport } from './errorReporting'
+import { t } from './i18n'
 
 export type ReportKind = 'bug' | 'idea'
 
@@ -101,10 +102,15 @@ export function collectDiagnostics(
 // The plain-language version of the above, for the disclosure in the dialog.
 // Deliberately not a key/value dump: someone deciding whether to send this
 // should be able to read it as a sentence.
+// Translated, unlike surfaceLabel above: these lines are shown to the person
+// filling in the form, under "Sent with your report". What actually travels in
+// the payload is the ReportDiagnostics object itself, which stays as it is.
 export function describeDiagnostics(diagnostics: ReportDiagnostics): string[] {
-  const lines = [`FamCart ${diagnostics.version}, ${diagnostics.platform}`]
-  if (diagnostics.pendingOfflineEdits) lines.push('Has edits waiting to sync')
-  if (diagnostics.householdId) lines.push('Your household and account IDs')
+  const lines = [
+    t('report.diag.version', { version: diagnostics.version, platform: diagnostics.platform }),
+  ]
+  if (diagnostics.pendingOfflineEdits) lines.push(t('report.diag.pendingEdits'))
+  if (diagnostics.householdId) lines.push(t('report.diag.ids'))
   return lines
 }
 

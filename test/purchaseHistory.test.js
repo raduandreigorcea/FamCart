@@ -13,6 +13,24 @@ const row = (id, at, checkoutId, by = 'u1') => ({
 })
 
 describe('groupCheckouts', () => {
+  it('keeps days apart even when they would render as the same words', () => {
+    // The bug the DayLabel refactor removed. Grouping used to key on the
+    // FORMATTED label, and the format carries no year — so two checkouts
+    // exactly a year apart both rendered "Fri, Jul 10" and collapsed into one
+    // day. Grouping is by start-of-day now, which cannot collide.
+    const days = groupCheckouts(
+      [
+        row('a', '2026-07-10T10:00:00', 'co-1', 'u1'),
+        row('b', '2025-07-10T10:00:00', 'co-2', 'u1'),
+      ],
+      NOW,
+    )
+
+    expect(days).toHaveLength(2)
+    expect(days[0].day).not.toBe(days[1].day)
+    expect(days.every((d) => d.label.kind === 'date' || d.label.kind === 'today')).toBe(true)
+  })
+
   it('collapses rows sharing a checkout_id into one event, bucketed by day', () => {
     const days = groupCheckouts(
       [
@@ -24,7 +42,9 @@ describe('groupCheckouts', () => {
       NOW,
     )
 
-    expect(days.map((d) => d.label)).toEqual(['Today', 'Yesterday'])
+    // Labels are data, not text: groupCheckouts is pure and language-free, and
+    // PurchaseHistoryModal turns these into words in the current language.
+    expect(days.map((d) => d.label.kind)).toEqual(['today', 'yesterday'])
 
     // Today has two distinct checkouts, in input (newest-first) order.
     const today = days[0].checkouts

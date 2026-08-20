@@ -16,6 +16,7 @@ import {
   type ReportKind,
 } from '../lib/issueReport'
 import { isCurrentlyOffline } from '../lib/connectivity'
+import { t } from '../lib/i18n'
 
 // The form for "Report an issue".
 //
@@ -58,10 +59,6 @@ const failure = ref('')
 // perfectly good connection: the request to Sentry's ingest host is on every ad
 // blocker's list, so a browser drops it on sight, and telling that person to try
 // again once they are back online points them at the one thing that is fine.
-const OFFLINE_FAILURE =
-  "Nothing was sent because you're offline. Your text is still here, so try again once you're back."
-const UNREACHABLE_FAILURE =
-  "Nothing was sent. The report couldn't reach us. Your text is still here, so try again. If it keeps failing, a browser privacy extension may be blocking it."
 
 
 const diagnostics = computed(() =>
@@ -83,9 +80,9 @@ const canSend = computed(() =>
 // an idea, and only the optional badge needs to differ. The place is worth
 // having either way: "the scanner is confusing" is as easy to act on as "the
 // scanner is broken".
-const WHERE_LABEL = 'Where in the app?'
+const whereLabel = computed(() => t('report.whereLabel'))
 
-const prompt = computed(() => (isBug.value ? 'What happened?' : 'What could be better?'))
+const prompt = computed(() => (isBug.value ? t('report.promptBug') : t('report.promptIdea')))
 
 // A worked example rather than an instruction. It shows the level of detail
 // that makes a report usable, in the app's own vocabulary, which is something
@@ -96,10 +93,22 @@ const prompt = computed(() => (isBug.value ? 'What happened?' : 'What could be b
 // invites reports about things that were never promised — so both point at
 // something already in the app instead.
 const placeholder = computed(() =>
-  isBug.value
-    ? 'I ticked off milk and it came back on the list when I reopened the app.'
-    : "It's not obvious how to remove someone from the household.",
+  isBug.value ? t('report.placeholderBug') : t('report.placeholderIdea'),
 )
+
+// The chips carry translated labels, keyed by id. REPORT_SURFACES' own `label`
+// stays English on purpose — it is what surfaceLabel() writes into the Sentry
+// payload, which a developer reads, not a user.
+const SURFACE_LABELS = computed<Record<string, string>>(() => ({
+  list: t('report.surface.list'),
+  add: t('report.surface.add'),
+  scan: t('report.surface.scan'),
+  history: t('report.surface.history'),
+  household: t('report.surface.household'),
+  notifications: t('report.surface.notifications'),
+  signin: t('report.surface.signin'),
+  other: t('report.surface.other'),
+}))
 
 const remaining = computed(() => REPORT_MAX_LENGTH - message.value.length)
 
@@ -129,7 +138,7 @@ async function send() {
       diagnostics: diagnostics.value,
     })
     if (ok) sent.value = true
-    else failure.value = isCurrentlyOffline() ? OFFLINE_FAILURE : UNREACHABLE_FAILURE
+    else failure.value = isCurrentlyOffline() ? t('report.offlineFailure') : t('report.sendFailure')
   } finally {
     sending.value = false
   }
@@ -170,11 +179,11 @@ watch(
             <span class="report-header-icon" aria-hidden="true" v-html="flagIconRaw"></span>
           </div>
           <div>
-            <h3 id="report-modal-title">Report an issue</h3>
-            <p class="report-dialog__subtitle">Goes straight to the developer</p>
+            <h3 id="report-modal-title">{{ t('report.title') }}</h3>
+            <p class="report-dialog__subtitle">{{ t('report.subtitle') }}</p>
           </div>
         </div>
-        <ModalCloseButton aria-label="Close report" @click="emit('close')" />
+        <ModalCloseButton :aria-label="t('report.close')" @click="emit('close')" />
       </div>
 
       <!-- Sent: the form is replaced rather than dismissed. Closing on success
@@ -186,9 +195,9 @@ watch(
              whether they still have something to do, and whether to expect a
              reply. What was attached is not one of them — that question was
              asked and answered on the form before they sent it. -->
-        <h4>Report sent</h4>
-        <p>Nothing else to do. Reports don't get a reply, but they do get read.</p>
-        <AppButton variant="primary" block @click="emit('close')">Done</AppButton>
+        <h4>{{ t('report.sentTitle') }}</h4>
+        <p>{{ t('report.sentBody') }}</p>
+        <AppButton variant="primary" block @click="emit('close')">{{ t('common.done') }}</AppButton>
       </div>
 
       <div v-else class="report-dialog__body">
@@ -198,7 +207,7 @@ watch(
              group still carries the question for a screen reader, which cannot
              see that the buttons are self-describing. -->
         <div class="report-field">
-          <div class="report-segmented" role="group" aria-label="What kind of report is this?">
+          <div class="report-segmented" role="group" :aria-label="t('report.kindGroupLabel')">
             <button
               class="report-segmented__btn"
               :class="{ 'report-segmented__btn--on': kind === 'bug' }"
@@ -206,7 +215,7 @@ watch(
               :aria-pressed="kind === 'bug'"
               @click="selectKind('bug')"
             >
-              Something's broken
+              {{ t('report.kindBug') }}
             </button>
             <button
               class="report-segmented__btn"
@@ -215,7 +224,7 @@ watch(
               :aria-pressed="kind === 'idea'"
               @click="selectKind('idea')"
             >
-              Something could be better
+              {{ t('report.kindIdea') }}
             </button>
           </div>
         </div>
@@ -228,8 +237,8 @@ watch(
              below it; only the label changes, and it stays one line. -->
         <div class="report-field">
           <p class="report-label" id="report-where-label">
-            {{ WHERE_LABEL }}
-            <span v-if="!isBug" class="report-optional">optional</span>
+            {{ whereLabel }}
+            <span v-if="!isBug" class="report-optional">{{ t('custom.optional') }}</span>
           </p>
           <div class="report-places" role="group" aria-labelledby="report-where-label">
             <button
@@ -241,7 +250,7 @@ watch(
               :aria-pressed="surface === place.id"
               @click="selectSurface(place.id)"
             >
-              {{ place.label }}
+              {{ SURFACE_LABELS[place.id] ?? place.label }}
             </button>
           </div>
         </div>
@@ -258,20 +267,20 @@ watch(
           ></textarea>
           <!-- Silent until the limit is close enough to matter. A counter
                running from 1000 is just a number watching someone type. -->
-          <p v-if="remaining <= 100" class="report-count">{{ remaining }} characters left</p>
+          <p v-if="remaining <= 100" class="report-count">{{ t('report.charsLeft', { n: remaining }) }}</p>
         </div>
 
         <div class="report-attached">
-          <p class="report-attached__title">Sent with your report</p>
+          <p class="report-attached__title">{{ t('report.attachedTitle') }}</p>
           <ul>
             <li v-for="line in attachedLines" :key="line">{{ line }}</li>
           </ul>
         </div>
 
         <div class="report-actions">
-          <AppButton variant="secondary" block @click="emit('close')">Cancel</AppButton>
+          <AppButton variant="secondary" block @click="emit('close')">{{ t('common.cancel') }}</AppButton>
           <AppButton variant="primary" block :disabled="!canSend || sending" @click="send">
-            {{ sending ? 'Sending' : 'Send' }}
+            {{ sending ? t('report.sending') : t('report.send') }}
           </AppButton>
         </div>
       </div>
@@ -283,7 +292,7 @@ watch(
        leaves the text exactly where it was and Send can simply be pressed
        again. This was a paragraph under the button until it was the only
        failure in the app that was not a dialog. -->
-  <ErrorModal title="Report not sent" :message="failure" @dismiss="failure = ''" />
+  <ErrorModal :title="t('report.failureTitle')" :message="failure" @dismiss="failure = ''" />
 </template>
 
 <style scoped>

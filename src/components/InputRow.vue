@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import arrowRightIcon from '../assets/arrow-right.svg?raw'
+import { t } from '../lib/i18n'
 
 // Anything not declared below lands on the <input>, not on the wrapper <div>.
 //
@@ -48,7 +49,7 @@ defineEmits(['update:modelValue'])
       :class="{ 'input--uppercase': uppercase }"
       @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
     />
-    <button type="submit" class="submit-btn" :disabled="loading" aria-label="Continue">
+    <button type="submit" class="submit-btn" :disabled="loading" :aria-label="t('common.continue')">
       <span v-if="loading" class="spinner"></span>
       <span v-else class="submit-btn__icon" aria-hidden="true" v-html="arrowRightIcon"></span>
     </button>

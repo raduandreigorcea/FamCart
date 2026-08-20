@@ -10,6 +10,7 @@ import addIcon from '../assets/add.svg?raw'
 import checkIcon from '../assets/check.svg?raw'
 import xIcon from '../assets/x.svg?raw'
 import cartIcon from '../assets/shopping-cart.svg?raw'
+import { t } from '../lib/i18n'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -31,31 +32,18 @@ const { copied, copy } = useCopyFeedback(1800)
 // No emoji field any more. Each step already opens with an illustration of the
 // thing it teaches, and a 🛒 sitting above a picture of the add form was the one
 // element saying nothing the picture had not already said.
-const steps = [
-  {
-    key: 'add',
-    title: 'Add what you need',
-    body: 'Start typing and the matching products come up. Tap one and it goes straight onto the list.',
-  },
-  {
-    key: 'swipe',
-    title: 'Swipe to check or remove',
-    body: 'Swipe a row right once it is in your cart, or left to take it off the list. No small buttons to aim at.',
-  },
-  {
-    key: 'checkout',
-    title: 'Slide to check out',
-    body: 'Checked rows wait in the cart until you slide the bar at the bottom. That is what clears them and saves the trip to your history.',
-  },
-  {
-    key: 'invite',
-    title: 'Bring your household in',
-    body: 'Share your invite code so everyone shops from the same list. Every change shows up for all of you the moment it happens.',
-  },
-]
+// A computed, not a plain array. Built once at setup, plain t() calls here
+// would freeze all four steps in whatever language was current when this
+// component first mounted and never follow a change made from settings.
+const steps = computed(() => [
+  { key: 'add', title: t('tour.add.title'), body: t('tour.add.body') },
+  { key: 'swipe', title: t('tour.swipe.title'), body: t('tour.swipe.body') },
+  { key: 'checkout', title: t('tour.checkout.title'), body: t('tour.checkout.body') },
+  { key: 'invite', title: t('tour.invite.title'), body: t('tour.invite.body') },
+])
 
-const current = computed(() => steps[step.value])
-const isLast = computed(() => step.value === steps.length - 1)
+const current = computed(() => steps.value[step.value])
+const isLast = computed(() => step.value === steps.value.length - 1)
 
 // Restart at the first beat each time it opens.
 watch(() => props.open, (open) => {
@@ -98,22 +86,24 @@ function copyCode() {
   >
       <div class="tour-card" role="dialog" aria-modal="true" aria-labelledby="tour-title">
         <div class="tour-top">
-          <button class="tour-skip" type="button" @click="finish">Skip tour</button>
+          <button class="tour-skip" type="button" @click="finish">{{ t('tour.skip') }}</button>
         </div>
 
         <Transition :name="'tour-step'" mode="out-in">
           <div class="tour-step" :key="current.key">
             <!-- Illustrations: each beat gets a small purpose-built visual -->
+            <!-- eslint-disable vue/no-bare-strings-in-template -- decorative emoji;
+           the block is aria-hidden and the words beside them come from t() -->
             <div class="tour-art" aria-hidden="true">
               <!-- Add -->
               <div v-if="current.key === 'add'" class="art-add">
                 <div class="art-addbar">
-                  <span class="art-addbar__text">Avocados</span>
+                  <span class="art-addbar__text">{{ t('tour.art.query') }}</span>
                   <span class="art-addbar__btn" aria-hidden="true" v-html="addIcon"></span>
                 </div>
                 <div class="art-suggest">
-                  <span class="art-suggest__row"><span>🥑</span> Avocado</span>
-                  <span class="art-suggest__row"><span>🥛</span> Milk</span>
+                  <span class="art-suggest__row"><span>🥑</span> {{ t('tour.art.avocado') }}</span>
+                  <span class="art-suggest__row"><span>🥛</span> {{ t('tour.art.milk') }}</span>
                 </div>
               </div>
 
@@ -127,7 +117,7 @@ function copyCode() {
                 <span class="art-swipe__zone art-swipe__zone--del" aria-hidden="true" v-html="xIcon"></span>
                 <div class="art-swipe__row">
                   <span class="art-swipe__emoji">🍞</span>
-                  <span class="art-swipe__name">Bread</span>
+                  <span class="art-swipe__name">{{ t('tour.art.bread') }}</span>
                 </div>
               </div>
 
@@ -137,12 +127,12 @@ function copyCode() {
               <div v-else-if="current.key === 'checkout'" class="art-checkout">
                 <div class="art-bar">
                   <span class="art-bar__fill"></span>
-                  <span class="art-bar__label">Slide to check out</span>
+                  <span class="art-bar__label">{{ t('tour.art.slide') }}</span>
                   <!-- A white copy of the same words, clipped to the swept region,
                        so the letters turn white as the thumb covers them. This is
                        how the real bar does it, and without it the label just sat
                        there while the trail passed under it. -->
-                  <span class="art-bar__label art-bar__label--inverse">Slide to check out</span>
+                  <span class="art-bar__label art-bar__label--inverse">{{ t('tour.art.slide') }}</span>
                   <span class="art-bar__thumb" aria-hidden="true" v-html="cartIcon"></span>
                 </div>
               </div>
@@ -152,17 +142,22 @@ function copyCode() {
                 <button
                   class="art-code"
                   type="button"
-                  :aria-label="inviteCode ? `Copy invite code ${inviteCode}` : 'Invite code'"
+                  :aria-label="
+                    inviteCode
+                      ? t('tour.copyInviteCode', { code: inviteCode })
+                      : t('tour.inviteCodeLabel')
+                  "
                   @click="copyCode"
                 >
                   <span class="art-code__value">{{ inviteCode || '••••••••' }}</span>
-                  <span class="art-code__copy">{{ copied ? 'Copied!' : 'Copy' }}</span>
+                  <span class="art-code__copy">{{ copied ? t('overview.copied') : t('common.copy') }}</span>
                 </button>
                 <div class="art-people">
                   <span>🧑</span><span>👩</span><span>🧒</span>
                 </div>
               </div>
             </div>
+            <!-- eslint-enable vue/no-bare-strings-in-template -->
 
             <h3 id="tour-title" class="tour-title">{{ current.title }}</h3>
             <p class="tour-body">{{ current.body }}</p>
@@ -181,7 +176,7 @@ function copyCode() {
         <div class="tour-actions">
           <BackButton v-if="step > 0" @click="back" />
           <button class="tour-next" type="button" @click="next">
-            {{ isLast ? 'Start shopping' : 'Next' }}
+            {{ isLast ? t('tour.start') : t('tour.next') }}
           </button>
         </div>
       </div>

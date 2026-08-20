@@ -9,6 +9,7 @@ import { captureEarlyErrors, startErrorReporting } from './lib/errorReporting'
 import { startNativeBack } from './lib/nativeBack'
 import { startAppUpdates } from './lib/appUpdate'
 import { applyResolvedTheme, loadThemeMode } from './lib/theme'
+import { getClerkLocalization, initLocale, whenLocaleReady } from './lib/i18n'
 
 // First statement in the module on purpose: everything below can throw or reject,
 // and until the Sentry SDK loads (deferred to idle) nothing else is listening.
@@ -48,6 +49,17 @@ window.addEventListener('vite:preloadError', (event) => {
 // that lets the user change them.
 applyResolvedTheme(loadThemeMode(localStorage))
 
+// Same slot, same reason, one difference. The language has to be settled
+// before the first view renders, so it is chosen here — but its catalog is a
+// lazy chunk, and awaiting a fetch at this point would hold a blank frame
+// (nothing is mounted yet and index.html has no static splash markup). So this
+// is started and not awaited: the router guard awaits whenLocaleReady(), which
+// puts the wait behind AppSplash where there is something to look at.
+//
+// No user id yet — Clerk has not loaded. lib/locale explains what stands in
+// until HomeView reconciles the account's own choice.
+void initLocale(localStorage, navigator.languages)
+
 const app = createApp(App)
 
 // Error monitoring is opt-in on a DSN being present (CI has none, since .env is
@@ -64,14 +76,16 @@ const app = createApp(App)
 // would keep running alongside Sentry's own and report everything twice.
 void startErrorReporting(app, router).finally(stopEarlyCapture)
 
-app.use(clerkPlugin, {
-  publishableKey: import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
+// Registered after the locale settles so Clerk's own error copy — the one
+// string of Clerk's that the custom sign-in UI surfaces — arrives in the right
+// language. whenLocaleReady() is already resolved for English and for every
+// boot after the first, so this costs a microtask, not a wait.
+void whenLocaleReady().then(() => {
+  app.use(clerkPlugin, {
+    publishableKey: import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
+    localization: getClerkLocalization(),
+  })
+  app.use(router)
+  startNativeBack(router)
+  app.mount('#app')
 })
-
-app.use(router)
-
-// Android's Back button, once the router exists for it to navigate. A no-op in
-// a browser, where Back belongs to the browser.
-startNativeBack(router)
-
-app.mount('#app')

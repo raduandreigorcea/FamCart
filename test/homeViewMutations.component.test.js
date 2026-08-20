@@ -17,6 +17,7 @@ import { createFakeDb } from './support/fakeSupabase.js'
 import { saveHouseholdSnapshot } from '../src/lib/householdCache'
 import { loadOfflineQueue, enqueueOfflineMutation } from '../src/lib/offlineQueue'
 import { __setOnlineForTest } from '../src/lib/connectivity'
+import { setLocale } from '../src/lib/i18n'
 
 const mocks = vi.hoisted(() => ({
   db: null,
@@ -729,6 +730,37 @@ describe('toggleItem', () => {
 
     expect(listedItems(wrapper)[0].checked).toBe(false)
     expect(wrapper.findComponent(ErrorModal).props('message')).toBe('Could not update that item.')
+  })
+
+  // The one assertion in the suite that reads an error in another language.
+  //
+  // Everything else here runs in English, which is also what a bare string
+  // returns, so a failure message that was never translated looks identical to
+  // one that was. shoppingListActions writes eleven of them and lib/ is not
+  // somewhere vue/no-bare-strings-in-template ever looks, so this is the only
+  // thing standing between a t() call being removed and nobody noticing.
+  it('shows that failure in the language the app is set to', async () => {
+    const existing = makeItem({ id: 'item-1' })
+    const wrapper = await mountHome({ items: [existing] })
+    mocks.db.handlers['shopping_list_items.update'] = () => ({
+      data: null,
+      error: { message: 'nope' },
+    })
+
+    try {
+      await setLocale('ro')
+      wrapper.findComponent(ShoppingList).vm.$emit('toggle', listedItems(wrapper)[0])
+      await flushPromises()
+
+      expect(wrapper.findComponent(ErrorModal).props('message')).toBe(
+        'Produsul nu a putut fi actualizat.',
+      )
+    } finally {
+      // In a finally, not an afterEach: the catalog is module state shared by
+      // every test file in the process, and leaving it Romanian would fail the
+      // next file to assert on English rather than this one.
+      await setLocale('en')
+    }
   })
 
   it('merges an unchecked item into the existing active row with the same name', async () => {

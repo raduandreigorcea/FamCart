@@ -35,8 +35,16 @@ describe('useConfirm', () => {
     const { state, confirm } = useConfirm()
     void confirm({ title: 'T', message: 'M' })
 
-    expect(state.value.confirmText).toBe('Confirm')
-    expect(state.value.cancelText).toBe('Cancel')
+    // Empty, and it has to stay empty. ConfirmModal renders
+    // `confirmText || t('common.confirm')` in a computed so the copy follows a
+    // language change; a friendly-looking 'Confirm' here is the value that
+    // suppresses that fallback, and since no caller in the app passes its own
+    // button text, it left every confirm dialog English in all six languages.
+    // The words themselves are asserted in
+    // test/sharedPrimitivesLanguage.component.test.js, which is the layer that
+    // can see them.
+    expect(state.value.confirmText).toBe('')
+    expect(state.value.cancelText).toBe('')
     expect(state.value.showCancel).toBe(true)
     expect(state.value.danger).toBe(false)
   })

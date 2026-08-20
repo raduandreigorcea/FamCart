@@ -4,6 +4,7 @@ import type { HouseholdMemberProfile } from '../../lib/householdRealtime'
 import { useCopyFeedback } from '../../lib/clipboard'
 import copyIcon from '../../assets/copy.svg?raw'
 import checkIcon from '../../assets/check.svg?raw'
+import { t } from '../../lib/i18n'
 
 // Read-only: who is in the household, who made it, and the code for adding
 // someone. The only thing it writes is the clipboard.
@@ -42,41 +43,41 @@ const { copied, copy: copyInviteCode } = useCopyFeedback()
     :aria-hidden="ghost"
   >
     <div class="panel-section">
-      <h4 class="panel-section-title">Household Summary</h4>
+      <h4 class="panel-section-title">{{ t('overview.summary') }}</h4>
 
       <div class="summary-card">
         <div class="summary-details">
           <div class="summary-row">
-            <span class="summary-label">Household Name</span>
+            <span class="summary-label">{{ t('overview.name') }}</span>
             <span class="summary-value highlight">{{ householdName }}</span>
           </div>
           <div class="summary-row" v-if="ownerProfile">
-            <span class="summary-label">Created By</span>
+            <span class="summary-label">{{ t('overview.createdBy') }}</span>
             <div class="owner-chip">
               <img
                 v-if="ownerProfile.image_url"
                 :src="ownerProfile.image_url"
-                alt="Owner avatar"
+                :alt="t('common.avatarAlt', { name: ownerProfile.display_name || t('overview.owner') })"
                 class="owner-avatar-mini"
               />
-              <span class="owner-name">{{ ownerProfile.display_name || 'Owner' }}</span>
+              <span class="owner-name">{{ ownerProfile.display_name || t('overview.owner') }}</span>
             </div>
           </div>
           <div class="summary-row">
-            <span class="summary-label">Total Members</span>
-            <span class="summary-value">{{ memberCount }} active</span>
+            <span class="summary-label">{{ t('overview.totalMembers') }}</span>
+            <span class="summary-value">{{ t('overview.activeCount', { n: memberCount }) }}</span>
           </div>
         </div>
       </div>
     </div>
 
     <div class="panel-section" v-if="inviteCode">
-      <h4 class="panel-section-title">Invite New Members</h4>
-      <p class="panel-section-desc">Share this code with your household members so they can join your list.</p>
+      <h4 class="panel-section-title">{{ t('overview.inviteTitle') }}</h4>
+      <p class="panel-section-desc">{{ t('overview.inviteDesc') }}</p>
 
       <div class="invite-card">
         <div class="invite-code-container">
-          <span class="invite-code-label">INVITE CODE</span>
+          <span class="invite-code-label">{{ t('overview.inviteCode') }}</span>
           <span class="invite-code-value">{{ inviteCode }}</span>
         </div>
         <button
@@ -86,7 +87,7 @@ const { copied, copy: copyInviteCode } = useCopyFeedback()
           @click="copyInviteCode(inviteCode)"
         >
           <span class="btn-icon-wrap" aria-hidden="true" v-html="copied ? checkIcon : copyIcon"></span>
-          <span>{{ copied ? 'Copied!' : 'Copy Code' }}</span>
+          <span>{{ copied ? t('overview.copied') : t('overview.copyCode') }}</span>
         </button>
       </div>
     </div>

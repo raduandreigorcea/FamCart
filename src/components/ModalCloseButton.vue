@@ -1,15 +1,21 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import xIcon from '../assets/x.svg?raw'
+import { t } from '../lib/i18n'
 
-defineProps({
-  ariaLabel: { type: String, default: 'Close modal' },
+// Empty default, resolved below: see ErrorModal for why a t() call cannot live
+// in a prop declaration.
+const props = defineProps({
+  ariaLabel: { type: String, default: '' },
 })
+
+const resolvedAriaLabel = computed(() => props.ariaLabel || t('common.closeModal'))
 
 const emit = defineEmits(['click'])
 </script>
 
 <template>
-  <button class="modal-close" type="button" :aria-label="ariaLabel" @click="emit('click')">
+  <button class="modal-close" type="button" :aria-label="resolvedAriaLabel" @click="emit('click')">
     <span class="modal-close__icon" aria-hidden="true" v-html="xIcon"></span>
   </button>
 </template>

@@ -25,8 +25,25 @@ export interface Checkout {
   items: CheckoutEntry[]
 }
 
+/**
+ * Which day a group of checkouts belongs to, as data rather than as rendered
+ * text. The view turns this into words.
+ *
+ * This used to be a formatted `label: string`, which made a pure, unit-tested
+ * grouping function depend on the display language — and grouped BY that
+ * string, so two genuinely different days that happened to format identically
+ * would have merged into one. Grouping is by start-of-day now, and the label
+ * is the view's business.
+ */
+export type DayLabel =
+  | { kind: 'today' }
+  | { kind: 'yesterday' }
+  | { kind: 'date'; iso: string }
+
 export interface DayGroup {
-  label: string
+  /** Stable identity for :key, independent of language. */
+  day: number
+  label: DayLabel
   checkouts: Checkout[]
 }
 
@@ -89,25 +106,21 @@ export function groupCheckouts(
   const today = startOfDay(now)
   const dayMs = 86_400_000
   const days: DayGroup[] = []
-  const byLabel = new Map<string, DayGroup>()
+  const byDay = new Map<number, DayGroup>()
 
   for (const event of events) {
     const day = startOfDay(new Date(event.purchasedAt).getTime())
-    let label: string
-    if (day === today) label = 'Today'
-    else if (day === today - dayMs) label = 'Yesterday'
-    else {
-      label = new Date(event.purchasedAt).toLocaleDateString(undefined, {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-      })
-    }
+    const label: DayLabel =
+      day === today
+        ? { kind: 'today' }
+        : day === today - dayMs
+          ? { kind: 'yesterday' }
+          : { kind: 'date', iso: event.purchasedAt }
 
-    let group = byLabel.get(label)
+    let group = byDay.get(day)
     if (!group) {
-      group = { label, checkouts: [] }
-      byLabel.set(label, group)
+      group = { day, label, checkouts: [] }
+      byDay.set(day, group)
       days.push(group)
     }
     group.checkouts.push(event)
@@ -118,7 +131,14 @@ export function groupCheckouts(
   // fetches and devices, and easy to scan.
   for (const event of events) {
     event.items.sort((a, b) =>
-      String(a.name ?? '').localeCompare(String(b.name ?? ''), undefined, { sensitivity: 'base' }),
+      // Pinned to 'en' rather than left to the device. The comment above claims
+      // this order is stable across devices, and with `undefined` it quietly
+      // was not: collation differs per locale (ro sorts 'ș' after 's', de folds
+      // 'ö' with 'o'), so two members of one household could see the same
+      // checkout in different orders. The pin is what makes the claim true.
+      // It is a tie-breaker on catalog data, so no user-visible language is
+      // involved either way.
+      String(a.name ?? '').localeCompare(String(b.name ?? ''), 'en', { sensitivity: 'base' }),
     )
   }
 

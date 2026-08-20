@@ -50,6 +50,23 @@ export function forgetUser(storage: Storage): void {
 // `userId` scopes what can be scoped. Without one — a sign-out from a screen
 // that never learned who was signed in — the queue and the snapshot each clear
 // every account's, which is the safer end of that trade on a shared browser.
+//
+// Two keys are deliberately NOT on the list, and they have to be named here or
+// the next person reading "adding a fifth key has an obvious place to be added"
+// will add them. Both belong to the language choice (lib/locale):
+//
+//   famcart-locale:<userId>  A preference is a standing answer. Signing back in
+//                            should not re-ask, which is the same argument the
+//                            notification preference makes for itself and the
+//                            reason neither is cleared here.
+//   famcart-locale           The device hint. Clearing it would flip the app to
+//                            English at the one moment the user has no way to
+//                            change it back — the login screen, where there is
+//                            no account to read a preference from.
+//
+// The cost is that signing in as somebody who has never chosen leaves the app
+// in the previous account's language until they change it. That is cosmetic,
+// two taps to fix, and the same trade famcart-last-user already makes.
 export function forgetLocalUserState(storage: Storage, userId?: string): void {
   forgetUser(storage)
   clearHouseholdSnapshot(storage, userId)

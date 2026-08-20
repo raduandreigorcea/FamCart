@@ -5,6 +5,7 @@ import AppButton from './AppButton.vue'
 import AppModal from './AppModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
 import ErrorModal from './ErrorModal.vue'
+import LanguagePicker from './LanguagePicker.vue'
 import slidersIconRaw from '../assets/settings.svg?raw'
 import { canSelfUpdate } from '../lib/nativeUpdate'
 import { updateCheckKey } from '../lib/updatePrompt'
@@ -15,6 +16,7 @@ import {
   setNotificationPreference,
   type NotificationPreference,
 } from '../lib/pushNotifications'
+import { getLocale, setLocale, t, type Locale } from '../lib/i18n'
 import {
   applyResolvedTheme,
   loadThemeMode,
@@ -47,6 +49,26 @@ const { userId } = useAuth()
 const appVersion = __APP_VERSION__
 
 const aboutOpen = ref(false)
+
+// Language is a third section of the same kind as Appearance and
+// Notifications: a title, a segmented control, applied on tap. It went through
+// two wrong shapes first — a row that opened its own sheet, then an inline
+// section holding a full card grid and a Confirm button. Both were the odd one
+// out in a dialog whose other two controls are compact and instant.
+//
+// Six options fit by wrapping to two rows of three, which is why this needs no
+// different kind of control than the three-column one above it.
+//
+// No Confirm step here, unlike the first-run step where the same component
+// does have one. There, choosing dismisses the screen, so a misclick strands
+// you. Here the control stays put and each option carries a flag, so a wrong
+// tap is visible immediately and undone by tapping the right one — the same
+// bargain Appearance and Notifications already make.
+const currentLocale = computed(() => getLocale())
+
+async function chooseLanguage(next: Locale) {
+  await setLocale(next, localStorage, userId.value ?? '')
+}
 
 // Asking for an update by hand.
 //
@@ -129,11 +151,11 @@ async function applyNotifications(mode: NotificationPreference) {
     // The browser said no — reflect reality instead of a toggle that lies.
     notificationMode.value = 'off'
     setNotificationPreference(localStorage, uid, 'off')
-    notificationHint.value = 'Notifications are blocked for FamCart in your device or browser settings.'
+    notificationHint.value = t('error.notificationsBlocked')
   } else if (result === 'error') {
     notificationMode.value = 'off'
     setNotificationPreference(localStorage, uid, 'off')
-    notificationHint.value = 'Could not enable notifications. Please try again.'
+    notificationHint.value = t('error.notificationsFailed')
   }
   // 'unsupported' / 'not-configured': push is unavailable in this environment;
   // the preference is still saved and the toggle stays on.
@@ -172,16 +194,16 @@ watch(
             <span class="header-icon" aria-hidden="true" v-html="slidersIconRaw"></span>
           </div>
           <div>
-            <h3 id="app-settings-title">App Settings</h3>
-            <p class="app-settings__subtitle">How FamCart looks and behaves on this device</p>
+            <h3 id="app-settings-title">{{ t('settings.title') }}</h3>
+            <p class="app-settings__subtitle">{{ t('settings.subtitle') }}</p>
           </div>
         </div>
-        <ModalCloseButton aria-label="Close app settings" @click="emit('close')" />
+        <ModalCloseButton :aria-label="t('settings.close')" @click="emit('close')" />
       </div>
 
       <div class="app-settings__body">
         <section class="app-settings__section">
-          <h4 id="app-appearance-label" class="app-settings__section-title">Appearance</h4>
+          <h4 id="app-appearance-label" class="app-settings__section-title">{{ t('settings.appearance') }}</h4>
           <div class="segmented" role="group" aria-labelledby="app-appearance-label">
             <button
               class="segmented__btn"
@@ -190,7 +212,7 @@ watch(
               @click="applyTheme('light')"
             >
               <span class="control-icon control-icon--theme-light" aria-hidden="true"></span>
-              <span>Light</span>
+              <span>{{ t('settings.theme.light') }}</span>
             </button>
             <button
               class="segmented__btn"
@@ -199,7 +221,7 @@ watch(
               @click="applyTheme('dark')"
             >
               <span class="control-icon control-icon--theme-dark" aria-hidden="true"></span>
-              <span>Dark</span>
+              <span>{{ t('settings.theme.dark') }}</span>
             </button>
             <button
               class="segmented__btn"
@@ -208,13 +230,13 @@ watch(
               @click="applyTheme('system')"
             >
               <span class="control-icon control-icon--theme-system" aria-hidden="true"></span>
-              <span>System</span>
+              <span>{{ t('settings.theme.system') }}</span>
             </button>
           </div>
         </section>
 
         <section class="app-settings__section">
-          <h4 id="app-notifications-label" class="app-settings__section-title">Notifications</h4>
+          <h4 id="app-notifications-label" class="app-settings__section-title">{{ t('settings.notifications') }}</h4>
           <div class="segmented segmented--two" role="group" aria-labelledby="app-notifications-label">
             <button
               class="segmented__btn"
@@ -223,7 +245,7 @@ watch(
               @click="applyNotifications('on')"
             >
               <span class="control-icon control-icon--notify-all" aria-hidden="true"></span>
-              <span>On</span>
+              <span>{{ t('settings.notifications.on') }}</span>
             </button>
             <button
               class="segmented__btn"
@@ -232,14 +254,25 @@ watch(
               @click="applyNotifications('off')"
             >
               <span class="control-icon control-icon--notify-off" aria-hidden="true"></span>
-              <span>Off</span>
+              <span>{{ t('settings.notifications.off') }}</span>
             </button>
           </div>
         </section>
 
+        <!-- The third of a kind: same section shell, same segmented control,
+             same apply-on-tap as the two above. LanguagePicker draws it, and
+             classes it .lang-seg rather than .segmented — deliberately, so
+             that the two helpers in test/appSettingsModal.component.test.js
+             which index .segmented positionally (.at(0) Appearance, .at(1)
+             Notifications) cannot be retargeted by this section existing. -->
+        <section class="app-settings__section">
+          <h4 class="app-settings__section-title">{{ t('settings.language') }}</h4>
+          <LanguagePicker variant="compact" :current="currentLocale" @confirm="chooseLanguage" />
+        </section>
+
         <button class="app-settings__row" type="button" @click="aboutOpen = true">
-          <span class="app-settings__row-label">About</span>
-          <span class="app-settings__row-hint">FamCart v{{ appVersion }}</span>
+          <span class="app-settings__row-label">{{ t('settings.about') }}</span>
+          <span class="app-settings__row-hint">{{ t('settings.aboutHint', { version: appVersion }) }}</span>
         </button>
       </div>
     </div>
@@ -252,10 +285,11 @@ watch(
        if it stops being reachable. -->
   <AppModal :open="aboutOpen" overlay-class="about-overlay" transition="modal-fade" @close="aboutOpen = false">
     <div class="about-dialog" role="dialog" aria-modal="true" aria-labelledby="about-dialog-title">
-      <ModalCloseButton class="about-dialog__close" aria-label="Close about" @click="aboutOpen = false" />
+      <ModalCloseButton class="about-dialog__close" :aria-label="t('about.close')" @click="aboutOpen = false" />
       <img src="/icons/pwa-192.png" alt="" class="about-logo" />
+      <!-- eslint-disable-next-line vue/no-bare-strings-in-template -- brand name, the same in every language -->
       <h3 id="about-dialog-title" class="about-name">FamCart</h3>
-      <p class="about-version">v{{ appVersion }}</p>
+      <p class="about-version">{{ t('about.versionLine', { version: appVersion }) }}</p>
 
       <div v-if="canCheckForUpdates" class="about-update">
         <AppButton
@@ -264,26 +298,33 @@ watch(
           :disabled="updateCheckState === 'checking'"
           @click="checkForUpdates"
         >
-          {{ updateCheckState === 'checking' ? 'Checking…' : 'Check for updates' }}
+          {{ updateCheckState === 'checking' ? t('about.checking') : t('about.checkUpdates') }}
         </AppButton>
         <p v-if="updateCheckState === 'up-to-date'" class="about-update__result">
-          FamCart is up to date.
+          {{ t('about.upToDate') }}
         </p>
         <p v-else-if="updateCheckState === 'failed'" class="about-update__result">
-          Couldn't reach GitHub to check. Try again when you're back online.
+          {{ t('about.checkFailed') }}
         </p>
       </div>
 
+      <!-- Fragments because the names are links, and a link cannot be a
+           {placeholder}. Every name here is a proper noun and stays as it is;
+           only the connective text is translated.
+           test/dataAttribution.component.test.js fails if either link stops
+           being reachable: ODbL attribution is a licence term, not a
+           courtesy. -->
       <p class="about-credit">
-        Product data from
-        <a class="settings-note-link" href="https://openfoodfacts.org" target="_blank" rel="noopener noreferrer">Open Food Facts</a>,
-        under
-        <a class="settings-note-link" href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL 1.0</a>.
+        {{ t('about.creditLead') }}
+        <!-- eslint-disable vue/no-bare-strings-in-template -- proper nouns; the sources and the licence are named, not described -->
+        <a class="settings-note-link" href="https://openfoodfacts.org" target="_blank" rel="noopener noreferrer">Open Food Facts</a>{{ t('about.creditJoin') }}
+        <a class="settings-note-link" href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL 1.0</a>{{ t('about.creditEnd') }}
+        <!-- eslint-enable vue/no-bare-strings-in-template -->
       </p>
     </div>
   </AppModal>
 
-  <ErrorModal title="Notifications" :message="notificationHint" @dismiss="notificationHint = ''" />
+  <ErrorModal :title="t('settings.notifications')" :message="notificationHint" @dismiss="notificationHint = ''" />
 </template>
 
 <style scoped>
