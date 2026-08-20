@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({ db: null }))
 
 vi.mock('../src/supabase', () => ({
   useSupabase: () => mocks.db,
+  getCatalogSupabase: () => mocks.catalogDb ?? null,
 }))
 
 function mountModal(props = {}) {

@@ -1,9 +1,16 @@
 // Product suggestion search and ranking.
 //
-// normalizeSearchText must mirror scripts/seed-products.mjs, which computes
-// product_catalog.search_text the same way — both sides lowercase, strip
-// diacritics, and collapse whitespace, so "apă" typed with or without accents
-// matches the stored "apa plata 2l dorna".
+// normalizeSearchText must mirror product_search_text() in
+// 006_product_catalog.sql, which is the one authority on what a product's
+// matching key is — both sides lowercase, strip diacritics, and collapse
+// whitespace, so "apă" typed with or without accents matches the stored
+// "apa plata 2l dorna". The catalog importer vendors a byte-identical copy of
+// this file for the same reason, and a test in each repo fails if they drift.
+//
+// (This used to name scripts/seed-products.mjs as the other side of the mirror.
+// That script was deleted in 9a4366e along with its products.json; the ~256
+// curated rows it wrote are still in production with nothing in the repo left
+// to regenerate them.)
 //
 // Ranking (see rankSuggestions) puts what THIS household actually buys first and
 // only falls back to the global catalog ordering for products they have never
@@ -168,7 +175,10 @@ export function matchHouseholdStats(
     .sort((a, b) => {
       if (a.count !== b.count) return b.count - a.count
       if (a.lastPurchasedAt !== b.lastPurchasedAt) return b.lastPurchasedAt - a.lastPurchasedAt
-      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+      // Pinned to 'en', not the device or the app language: this is a
+      // tie-breaker over catalog data, and a locale-dependent collation
+      // would order the same list differently on two phones for no gain.
+      return a.name.localeCompare(b.name, 'en', { sensitivity: 'base' })
     })
     .slice(0, limit)
     // popularity 0 rather than undefined so these take exactly the same path
@@ -213,7 +223,10 @@ export function rankSuggestions(
       const pb = Number(b.popularity) || 0
       if (pa !== pb) return pb - pa
 
-      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+      // Pinned to 'en', not the device or the app language: this is a
+      // tie-breaker over catalog data, and a locale-dependent collation
+      // would order the same list differently on two phones for no gain.
+      return a.name.localeCompare(b.name, 'en', { sensitivity: 'base' })
     })
     .slice(0, limit)
 }

@@ -2,15 +2,14 @@ import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   buildHouseholdProductStats,
-  escapeIlikePattern,
   matchHouseholdStats,
-  normalizeSearchText,
   productKey,
   rankSuggestions,
   type HouseholdProductStat,
   type ProductSuggestion,
 } from './productSearch'
 import { barcodeCandidates } from './barcodeScanner'
+import { getCatalogSupabase } from '../supabase'
 import type { AddedProduct } from './shoppingListActions'
 import { topHouseholdProducts } from './productRecents'
 import type { ShoppingItemRow } from './householdRealtime'
@@ -108,6 +107,13 @@ export function useProductSuggestions(options: {
 
   let suggestTimer: ReturnType<typeof setTimeout> | null = null
   let suggestRequestId = 0
+
+  // Which project each suggestion currently on screen came from, keyed the way
+  // productSearch identifies a product. recordProductAdd reads it to send the
+  // popularity bump to the database holding the row; an unknown key means the
+  // product came from purchase history rather than from a search, and both get
+  // asked. See the note there.
+  const suggestionOrigins = new Map<string, 'catalog' | 'local'>()
 
   const suggestLimit = computed(() =>
     searchExpanded.value ? SUGGEST_LIMIT_EXPANDED : SUGGEST_LIMIT,
@@ -211,50 +217,69 @@ export function useProductSuggestions(options: {
     }
     const requestId = ++suggestRequestId
     try {
-      const pattern = `%${escapeIlikePattern(normalizeSearchText(text))}%`
-      let pool = db
-        .from('product_catalog')
-        .select('name, maker, popularity')
-        .ilike('search_text', pattern)
-      // Scope to the global catalog plus THIS household's own contributions. RLS
-      // already blocks other households' rows, but a user in more than one household
-      // would otherwise see (and, via recordProductAdd, bump) the products they
-      // contributed elsewhere while shopping here.
+      // Two catalogs, asked at once.
       //
-      // The id is interpolated into a PostgREST `or` filter, whose syntax is
-      // comma- and dot-separated, so what makes that safe is worth naming
-      // precisely. It is NOT that the id is server-issued: it is on the live
-      // path, but a household id can also arrive from a restored snapshot, and
-      // localStorage is not a trust boundary this app controls. What makes it
-      // safe is isHouseholdId in lib/householdCache, which rejects anything
-      // outside an identifier allowlist before a cached id is ever handed back.
-      // If that guard is ever removed, this line is one of the two reasons it
-      // exists.
-      pool = householdId.value
-        ? pool.or(`household_id.is.null,household_id.eq.${householdId.value}`)
-        : pool.is('household_id', null)
-      const { data, error } = await pool
-        // Popularity decides which matches make the pool, then rankSuggestions
-        // reorders it around this household. Ordering here (rather than only
-        // locally) is what keeps the pool cap from cutting off globally-popular
-        // products.
-        .order('popularity', { ascending: false })
-        .order('name')
-        .limit(SUGGEST_POOL)
+      // The global reference catalog is its own Supabase project, shared live by
+      // production and development; this household's contributed products and
+      // anything promoted out of them stay in the app database. So a full answer
+      // is the union of two searches, and they go out concurrently rather than
+      // in sequence: the slower of the two is the wait, not their sum.
+      //
+      // Both are the same RPC by name, and neither is a filter chain, which is
+      // what buys word-order independence ("borsec apa" and "apa borsec" find
+      // the same thing) and matching against search_blob, so a category alias
+      // reaches a product in a language it is not named in.
+      //
+      // allSettled, not all: a rejecting Promise.all would throw away the
+      // household's own products because a third project was slow. One source
+      // failing must cost only that source.
+      const catalogDb = getCatalogSupabase()
+      const [globalRes, localRes] = await Promise.allSettled([
+        catalogDb
+          ? catalogDb.rpc('search_catalog', { p_query: text, p_limit: SUGGEST_POOL })
+          : Promise.resolve({ data: [], error: null }),
+        db.rpc('search_catalog', {
+          p_query: text,
+          p_household_id: householdId.value || null,
+          p_limit: SUGGEST_POOL,
+        }),
+      ])
       // Stale response: a newer keystroke queried already, and that request owns
       // the dropdown now — including when its skeleton stops.
       if (requestId !== suggestRequestId) return
       // Late response: the input was cleared or a product picked meanwhile, so
       // these matches must not reopen the list.
-      if (error || selectedProduct.value || query.value.trim().length < SUGGEST_MIN_CHARS) return
+      if (selectedProduct.value || query.value.trim().length < SUGGEST_MIN_CHARS) return
+
+      const rowsOf = (
+        settled: PromiseSettledResult<{ data: unknown; error: unknown }>,
+      ): ProductSuggestion[] =>
+        settled.status === 'fulfilled' && !settled.value.error
+          ? ((settled.value.data ?? []) as ProductSuggestion[])
+          : []
+
+      const globalRows = rowsOf(globalRes)
+      const localRows = rowsOf(localRes)
+
+      // Which project each product came from, so the popularity bump goes to the
+      // row the user actually saw. Rebuilt per search: it only ever describes
+      // what is on screen now, which also keeps it from growing all session.
+      suggestionOrigins.clear()
+      for (const row of globalRows) suggestionOrigins.set(productKey(row.name, row.maker), 'catalog')
+      // Local second, so a product in both is remembered as local: its row is
+      // the one carrying this household's own add_count, and the app database is
+      // where a promoted row keeps earning.
+      for (const row of localRows) suggestionOrigins.set(productKey(row.name, row.maker), 'local')
+
       // The pool is capped and ordered globally, so a product this household buys
       // every week can be crowded out of it entirely by a catalog this large.
       // householdProductStats is already loaded, so recovering those matches costs
       // no network. Catalog rows go first: rankSuggestions dedupes first-wins,
       // so the catalog's spelling and popularity win wherever it did return the
-      // product.
+      // product — including over a duplicate of it promoted in the app database.
       const candidates = [
-        ...((data ?? []) as ProductSuggestion[]),
+        ...globalRows,
+        ...localRows,
         ...matchHouseholdStats(text, householdProductStats.value, { limit: suggestLimit.value }),
       ]
       suggestions.value = rankSuggestions(candidates, householdProductStats.value, suggestLimit.value)
@@ -282,19 +307,55 @@ export function useProductSuggestions(options: {
     const candidates = barcodeCandidates(code)
     if (!candidates.length || isOffline()) return null
     try {
-      let query = db
-        .from('product_catalog')
-        .select('name, maker, popularity')
-        .in('barcode', candidates)
-      query = householdId.value
-        ? query.or(`household_id.is.null,household_id.eq.${householdId.value}`)
-        : query.is('household_id', null)
-      const { data, error } = await query
-        .order('household_id', { ascending: true, nullsFirst: true })
-        .order('popularity', { ascending: false })
-        .limit(1)
-      if (error) return null
-      return ((data ?? [])[0] as ProductSuggestion) ?? null
+      const catalogDb = getCatalogSupabase()
+      // Both projects, at once, for the same reason the search asks both: the
+      // code may name an imported product or one this household named after a
+      // scan that missed. allSettled so an unreachable catalog project still
+      // lets the household's own row answer.
+      const [globalRes, localRes] = await Promise.allSettled([
+        catalogDb
+          ? catalogDb
+              .from('product_catalog')
+              .select('name, maker, popularity')
+              .in('barcode', candidates)
+              .order('popularity', { ascending: false })
+              .limit(1)
+          : Promise.resolve({ data: [], error: null }),
+        (householdId.value
+          ? db
+              .from('product_catalog')
+              .select('name, maker, popularity')
+              .in('barcode', candidates)
+              .or(`household_id.is.null,household_id.eq.${householdId.value}`)
+          : db
+              .from('product_catalog')
+              .select('name, maker, popularity')
+              .in('barcode', candidates)
+              .is('household_id', null)
+        )
+          .order('household_id', { ascending: true, nullsFirst: true })
+          .order('popularity', { ascending: false })
+          .limit(1),
+      ])
+
+      const firstOf = (
+        settled: PromiseSettledResult<{ data: unknown; error: unknown }>,
+      ): ProductSuggestion | null =>
+        settled.status === 'fulfilled' && !settled.value.error
+          ? (((settled.value.data ?? []) as ProductSuggestion[])[0] ?? null)
+          : null
+
+      // The imported row wins over a household's own, which is the same rule the
+      // single-database version applied when it ordered globals first: the
+      // catalog holds the canonical spelling, the scoped row holds what this
+      // household called it before the catalog caught up.
+      const global = firstOf(globalRes)
+      const local = firstOf(localRes)
+      const found = global ?? local
+      if (found) {
+        suggestionOrigins.set(productKey(found.name, found.maker), global ? 'catalog' : 'local')
+      }
+      return found
     } catch {
       // Treated as "the catalog does not have it", which puts the user on the
       // naming path rather than on an error they can do nothing about.
@@ -381,22 +442,60 @@ export function useProductSuggestions(options: {
   // throttled server-side as well (002_security_audit.sql).
   function recordProductAdd(product: AddedProduct): void {
     if (!product || isOffline()) return
-    const call = product.custom
-      ? db.rpc('add_custom_product', {
+
+    const ignore = (promise: PromiseLike<unknown>): void => {
+      void promise.then(
+        () => {},
+        () => {},
+      )
+    }
+
+    // A contribution is user data and always belongs to the app database. The
+    // catalog project has no household column to scope it by, and the promotion
+    // rule that eventually turns three households' contributions into one global
+    // row runs there too.
+    if (product.custom) {
+      ignore(
+        db.rpc('add_custom_product', {
           p_household_id: householdId.value,
           p_name: product.name,
           p_maker: product.maker ?? null,
           p_barcode: product.barcode ?? null,
-        })
-      : db.rpc('bump_product_popularity', {
+        }),
+      )
+      return
+    }
+
+    // A bump has to reach the database holding the row, and the two projects
+    // each carry a copy of this RPC with a different signature — the app's takes
+    // a household to scope by, the catalog's has nothing to scope.
+    //
+    // An unknown origin means the product came from purchase history rather than
+    // from either search, and history does not record where a product was found.
+    // Both are asked in that case: each is a no-op where the row is not, they
+    // are fire-and-forget already, and the rate limits are counted per project
+    // so one add can never spend two of anything. Guessing instead would quietly
+    // stop counting exactly the products this household buys most.
+    const origin = suggestionOrigins.get(productKey(product.name, product.maker))
+    const catalogDb = getCatalogSupabase()
+
+    if (origin !== 'local' && catalogDb) {
+      ignore(
+        catalogDb.rpc('bump_product_popularity', {
+          p_name: product.name,
+          p_maker: product.maker ?? null,
+        }),
+      )
+    }
+    if (origin !== 'catalog') {
+      ignore(
+        db.rpc('bump_product_popularity', {
           p_name: product.name,
           p_maker: product.maker ?? null,
           p_household_id: householdId.value,
-        })
-    void call.then(
-      () => {},
-      () => {},
-    )
+        }),
+      )
+    }
   }
 
   onBeforeUnmount(() => {

@@ -23,7 +23,10 @@ vi.mock('@clerk/vue', async () => {
   }
 })
 
-vi.mock('../src/supabase', () => ({ useSupabase: () => ({}) }))
+vi.mock('../src/supabase', () => ({
+  useSupabase: () => ({}),
+  getCatalogSupabase: () => null,
+}))
 vi.mock('../src/lib/pushNotifications', async (importOriginal) => ({
   ...(await importOriginal()),
   enablePushNotifications: vi.fn(),
@@ -51,18 +54,31 @@ async function openAbout() {
 }
 
 const attributionLinks = (wrapper) =>
-  wrapper.findAll('a').filter((a) => /openfoodfacts|opendatacommons/.test(a.attributes('href') ?? ''))
+  wrapper
+    .findAll('a')
+    .filter((a) =>
+      /openfoodfacts|openproductsfacts|openbeautyfacts|opendatacommons/.test(
+        a.attributes('href') ?? '',
+      ),
+    )
 
 describe('Open Food Facts attribution', () => {
   it('is rendered where a user can see it', async () => {
     const text = (await openAbout()).text()
+    // All three sources, not just the first. ODbL attribution names the data
+    // you actually used, and the importer now pulls non-food from the two
+    // sibling catalogs.
     expect(text).toContain('Open Food Facts')
+    expect(text).toContain('Open Products Facts')
+    expect(text).toContain('Open Beauty Facts')
     expect(text).toContain('ODbL')
   })
 
   it('links to the project and to the licence', async () => {
     const hrefs = attributionLinks(await openAbout()).map((a) => a.attributes('href'))
     expect(hrefs).toContain('https://openfoodfacts.org')
+    expect(hrefs).toContain('https://openproductsfacts.org')
+    expect(hrefs).toContain('https://openbeautyfacts.org')
     expect(hrefs).toContain('https://opendatacommons.org/licenses/odbl/1-0/')
   })
 

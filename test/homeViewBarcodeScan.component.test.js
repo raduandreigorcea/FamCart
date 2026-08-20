@@ -19,7 +19,10 @@ import { __setOnlineForTest } from '../src/lib/connectivity'
 
 const mocks = vi.hoisted(() => ({ db: null, nativeAvailable: false, nativeScan: null }))
 
-vi.mock('../src/supabase', () => ({ useSupabase: () => mocks.db }))
+vi.mock('../src/supabase', () => ({
+  useSupabase: () => mocks.db,
+  getCatalogSupabase: () => mocks.catalogDb ?? null,
+}))
 
 // In the app, Google's scanner reads the code and there is no camera screen of
 // ours at all. Only those two functions are swapped — barcodeCandidates is the

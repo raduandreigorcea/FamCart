@@ -3,9 +3,12 @@
 -- the catalog grows.
 --
 -- Scope lives in one column:
---   household_id is null  - global. Seeded by scripts/seed-products.mjs with the
---                        service role key, imported by catalog-importer, and
---                        suggested to everyone.
+--   household_id is null  - global. Written by catalog-importer with the service
+--                        role key, and suggested to everyone. A few hundred
+--                        'curated' rows predate it, from a seed script deleted
+--                        in 9a4366e -- they are still in production and nothing
+--                        in the repo regenerates them, which is why the import
+--                        is careful never to overwrite one (guarantee 2 below).
 --   household_id = <uuid> - contributed via add_custom_product(), suggested only
 --                        back to that household until enough OTHER households add the
 --                        same product, at which point it is promoted to global.
@@ -27,8 +30,8 @@
 --
 -- Ranking is the sum of two columns, kept apart so re-seeding never wipes earned
 -- usage:
---   base_weight - editorial cold-start baseline from products.json. The seed
---                 script overwrites it freely on every run.
+--   base_weight - editorial cold-start baseline. The importer overwrites it
+--                 freely on every run for rows it owns.
 --   add_count   - times the product was actually added. Only the RPCs touch it.
 -- popularity is their stored sum, and suggestions order by it descending.
 
@@ -53,10 +56,11 @@ create table if not exists public.product_catalog (
   -- what puts a code on a community row. Null for seeded rows, and for anything
   -- typed in without a scan.
   barcode     text,
-  -- curated = scripts/seed-products.mjs, community = add_custom_product(),
-  -- openfoodfacts = catalog-importer. Provenance is a licensing fact here, not a
-  -- nicety, which is why every writer names it explicitly rather than leaning on
-  -- this default.
+  -- curated = the editorial seed, community = add_custom_product(), and the
+  -- three open* values = catalog-importer. Provenance is a licensing fact here,
+  -- not a nicety, which is why every writer names it explicitly rather than
+  -- leaning on this default. The allowlist is restated as an ALTER below; see
+  -- the note there before changing it here.
   source      text        not null default 'community',
   -- Identity of this row in the upstream catalog. What makes a re-import update
   -- rather than duplicate.
@@ -78,17 +82,60 @@ create table if not exists public.product_catalog (
   constraint product_catalog_barcode_format
     check (barcode is null or barcode ~ '^[0-9]{8,14}$'),
   constraint product_catalog_source_check
-    check (source in ('curated', 'community', 'openfoodfacts')),
+    check (source in (
+      'curated', 'community',
+      'openfoodfacts', 'openproductsfacts', 'openbeautyfacts'
+    )),
   constraint product_catalog_source_ref_length
     check (source_ref is null or char_length(source_ref) between 1 and 100),
   constraint product_catalog_source_version_length
     check (source_version is null or char_length(source_version) between 1 and 40),
   -- NULLS NOT DISTINCT so a maker-less product cannot be inserted twice within a
   -- scope. household_id is part of the key so two households can each contribute their
-  -- own "Olive Oil". Also the conflict target the seed script upserts against.
+  -- own "Olive Oil". Also the only TOTAL unique constraint here, and therefore
+  -- the only conflict target PostgREST's .upsert() can infer.
   constraint product_catalog_name_maker_household_unique
     unique nulls not distinct (name, maker, household_id)
 );
+
+-- ─── bounds and columns that have to be restated ─────────────────────────────
+-- Everything inside `create table if not exists` above applies only when the
+-- table is created, so on every database this file has already run against it is
+-- skipped entirely. Changing the source allowlist up there alone would widen it
+-- on a fresh clone and leave production rejecting the two new import sources —
+-- the same trap 003 documents at length for households_name_length_check.
+alter table public.product_catalog drop constraint if exists product_catalog_source_check;
+alter table public.product_catalog add constraint product_catalog_source_check
+  check (source in (
+    'curated',            -- the editorial seed
+    'community',          -- add_custom_product()
+    'openfoodfacts',      -- catalog-importer
+    'openproductsfacts',  -- catalog-importer, non-food
+    'openbeautyfacts'     -- catalog-importer, toiletries
+  ));
+
+-- Extra words a product can be found by, beyond its own name: the Open Food
+-- Facts category taxonomy resolved into the languages the app speaks. A
+-- Romanian bottled water tagged en:natural-mineral-waters carries "natural
+-- mineral waters apa minerala mineralwasser agua mineral eau minerale acqua
+-- minerale", which is what lets somebody type "water" and reach "Apă minerală
+-- Borsec".
+--
+-- Deliberately NOT folded into search_text. That column is the merge key behind
+-- product_catalog_global_search, add_custom_product() and every collapse rule in
+-- import_catalog_products; widening it would stop two products with the same
+-- name but different categories from colliding, which is the opposite of what
+-- the key is for.
+alter table public.product_catalog add column if not exists search_aliases text;
+
+alter table public.product_catalog drop constraint if exists product_catalog_search_aliases_length;
+alter table public.product_catalog add constraint product_catalog_search_aliases_length
+  check (search_aliases is null or char_length(search_aliases) between 1 and 400);
+
+-- One column to match against, so a multi-word query needs one index rather than
+-- an OR across two. Stored because the trigram index has to be built on it.
+alter table public.product_catalog add column if not exists search_blob text
+  generated always as (search_text || coalesce(' ' || search_aliases, '')) stored;
 
 alter table public.product_catalog enable row level security;
 
@@ -98,17 +145,28 @@ alter table public.product_catalog enable row level security;
 comment on column public.product_catalog.barcode is
   'EAN/GTIN. From the upstream catalog on imported rows; from the scan that missed on a contributed one. Null for seeded rows and for products typed in without a scan.';
 comment on column public.product_catalog.source is
-  'curated = scripts/seed-products.mjs, community = add_custom_product(), openfoodfacts = catalog-importer.';
+  'curated = the editorial seed, community = add_custom_product(), openfoodfacts/openproductsfacts/openbeautyfacts = catalog-importer. All three import sources are ODbL and require attribution in the app.';
+comment on column public.product_catalog.search_aliases is
+  'Normalized extra search terms (Open Food Facts category names across the app languages). Never displayed; matched against alongside search_text via search_blob.';
 comment on column public.product_catalog.source_ref is
-  'Identity of this row in the upstream catalog (the OFF code). What makes a re-import update rather than duplicate.';
+  'Identity of this row in the upstream catalog (the upstream code). What makes a re-import update rather than duplicate.';
 comment on column public.product_catalog.source_version is
   'Which import run produced this row, e.g. off-2026-07-01. Lets one run be reverted on its own.';
 
 -- Match anywhere in the text ("dorna" finds "apa plata 2l dorna"), not just at
--- the start.
-create index if not exists product_catalog_search_text_trgm
+-- the start. On search_blob rather than search_text so a query can also reach a
+-- product through its category aliases, in a language the product is not named
+-- in. search_catalog() below is the only reader.
+create index if not exists product_catalog_search_blob_trgm
   on public.product_catalog
-  using gin (search_text extensions.gin_trgm_ops);
+  using gin (search_blob extensions.gin_trgm_ops);
+
+-- Superseded by the index above. search_text is still the merge key, but every
+-- lookup against it is an equality served by the unique btree indexes below; the
+-- only substring search over it was the client-built ilike that search_catalog()
+-- replaced. Two trigram GIN indexes over a catalog heading for six figures is
+-- real disk for nothing.
+drop index if exists public.product_catalog_search_text_trgm;
 
 -- Orders the (small) trigram-filtered match set, with name as the tiebreak.
 create index if not exists product_catalog_popularity
@@ -177,9 +235,9 @@ revoke all on public.product_catalog from anon, authenticated, service_role;
 grant select on public.product_catalog to authenticated;
 
 -- ─── the matching key ────────────────────────────────────────────────────────
--- The one authority on what a product's matching key is. normalizeForSearch() in
--- scripts/seed-products.mjs and normalizeSearchText() in src/lib/productSearch.ts
--- mirror it for the seed and the query side respectively: lowercase, strip
+-- The one authority on what a product's matching key is. normalizeSearchText()
+-- in src/lib/productSearch.ts mirrors it on the query side, and the importer
+-- vendors a byte-identical copy of that file: lowercase, strip
 -- diacritics, collapse whitespace. Those two use NFD + \p{Diacritic}; unaccent is
 -- dictionary-based and agrees with them across Latin text, which is all any of
 -- the three ever sees. search_path includes extensions because unaccent/1
@@ -541,6 +599,118 @@ $$;
 revoke all on function public.bump_product_popularity(text, text, uuid) from public;
 grant execute on function public.bump_product_popularity(text, text, uuid) to authenticated;
 
+-- ─── searching the catalog ───────────────────────────────────────────────────
+-- What the client used to do: one `ilike '%' || query || '%'` over search_text.
+-- Two things were wrong with it, and neither is about how many rows there are.
+--
+-- Word order was load-bearing. The pattern is one contiguous substring, so
+-- "borsec apa" found nothing that "apa borsec" found. Every token is matched
+-- separately here, in any order.
+--
+-- And it could only ever match the language a product was named in. The app
+-- speaks six; the catalog is largely Romanian. Matching search_blob brings the
+-- category aliases in, so "water" and "wasser" both reach "Apă minerală Borsec".
+--
+-- SECURITY DEFINER, like add_custom_product() and bump_product_popularity().
+-- Not for the writes — this only reads — but because tokenizing means calling
+-- product_search_text(), and EXECUTE on that is revoked from authenticated.
+-- Granting it instead would put the merge-key function in reach of every
+-- client. That choice has a cost: RLS does not run for a definer function, so
+-- the household scoping below is doing real work rather than restating the
+-- policy, and p_household_id is verified rather than believed.
+create or replace function public.search_catalog(
+  p_query        text,
+  p_household_id uuid default null,
+  p_limit        integer default 100
+)
+returns table (name text, maker text, popularity integer)
+language plpgsql
+security definer
+stable
+set search_path = public, extensions
+as $$
+declare
+  -- Bounded so a pasted paragraph cannot become a hundred-way AND. Six is
+  -- already far more words than anyone types into an add-item box.
+  max_tokens constant integer := 6;
+
+  v_patterns  text[];
+  v_primary   text;
+  v_rest      text[];
+  v_household uuid := null;
+  v_limit     integer := least(greatest(coalesce(p_limit, 100), 1), 200);
+begin
+  -- Fold the query exactly the way search_text was folded, so "Apă" and "apa"
+  -- are the same search. There is one authority for that and this is a caller
+  -- of it, not a second copy.
+  --
+  -- Escaping matters even after folding: product_search_text lowercases and
+  -- strips accents but leaves % and _ alone, so without this a typed underscore
+  -- matches any character and a typed % matches the entire catalog.
+  select array_agg(
+           '%' || replace(replace(replace(tok, '\', '\\'), '%', '\%'), '_', '\_') || '%'
+           order by char_length(tok) desc
+         )
+    into v_patterns
+  from (
+    select tok
+    from regexp_split_to_table(
+      public.product_search_text(coalesce(p_query, ''), null), '\s+'
+    ) as tok
+    where tok <> ''
+    limit max_tokens
+  ) t;
+
+  if v_patterns is null then
+    return;
+  end if;
+
+  -- Longest token first: it is the most selective, and it is the one predicate
+  -- the trigram index drives from. The rest filter what it returns. Written as
+  -- one indexable LIKE plus a quantified ALL rather than an AND chain built by
+  -- string concatenation, so no SQL is assembled from user input at all.
+  v_primary := v_patterns[1];
+  v_rest    := v_patterns[2:];
+
+  -- Membership checked, not assumed. A household id arriving here came from
+  -- client state, and the RLS policy that would otherwise reject a forged one
+  -- does not run for a definer function. Resolving it to null on a miss means a
+  -- bad id degrades to the global catalog rather than erroring.
+  if p_household_id is not null then
+    select hm.household_id
+      into v_household
+    from public.household_members hm
+    where hm.household_id = p_household_id
+      and hm.user_id = public.requesting_user_id()
+    limit 1;
+  end if;
+
+  return query
+  select pc.name, pc.maker, pc.popularity
+  from public.product_catalog pc
+  where (pc.household_id is null or pc.household_id = v_household)
+    and pc.search_blob like v_primary
+    and pc.search_blob like all (v_rest)
+  -- This household's own contributions first, then popularity.
+  --
+  -- Without the first term they compete on popularity against the whole global
+  -- catalog and lose every time: a contributed row starts at base_weight 0 and
+  -- earns add_count one tap at a time, so at this catalog's size a household's
+  -- own "Olive Oil" never reaches a pool filled by globally-popular strangers.
+  -- The client's matchHouseholdStats already recovers products they have BOUGHT
+  -- recently; this covers the ones they typed in and have not bought yet.
+  --
+  -- A household is capped at 500 contributed products, so this can crowd out
+  -- globals only for somebody who contributed hundreds of matches for one
+  -- query — at which point those are the rows they meant.
+  order by (pc.household_id is not null) desc, pc.popularity desc, pc.name
+  limit v_limit;
+end;
+$$;
+
+revoke all on function public.search_catalog(text, uuid, integer) from public;
+grant execute on function public.search_catalog(text, uuid, integer) to authenticated;
+
 -- ─── bulk import ─────────────────────────────────────────────────────────────
 -- Load a batch of externally-sourced products into the global catalog.
 --
@@ -602,10 +772,12 @@ declare
   v_updated_provenance integer := 0;
   v_collapsed_scoped   integer := 0;
 begin
-  -- 'curated' belongs to the seed script and 'community' to add_custom_product().
+  -- 'curated' belongs to the seed and 'community' to add_custom_product().
   -- Refusing them here keeps this from being the back door that lets an import
-  -- launder itself into a provenance it did not earn.
-  if coalesce(p_source, '') <> 'openfoodfacts' then
+  -- launder itself into a provenance it did not earn. The list is the import
+  -- subset of product_catalog_source_check, and has to be widened alongside it.
+  if coalesce(p_source, '') not in
+     ('openfoodfacts', 'openproductsfacts', 'openbeautyfacts') then
     raise exception 'import_catalog_products: p_source must be an import source, got %',
       coalesce(p_source, '<null>');
   end if;
@@ -625,12 +797,19 @@ begin
     nullif(btrim(coalesce(r.maker, '')), '')              as maker,
     greatest(0, coalesce(r.base_weight, 0))               as base_weight,
     nullif(btrim(coalesce(r.source_ref, r.barcode, '')), '') as source_ref,
+    -- Folded here rather than trusted: the importer normalizes these already,
+    -- but search_aliases feeds a LIKE and a hand-assembled batch must be held to
+    -- the same shape as search_text.
+    nullif(left(public.product_search_text(
+      coalesce(r.search_aliases, ''), null
+    ), 400), '')                                          as search_aliases,
     public.product_search_text(
       btrim(coalesce(r.name, '')),
       nullif(btrim(coalesce(r.maker, '')), '')
     )                                                     as search_text
   from jsonb_to_recordset(coalesce(p_rows, '[]'::jsonb))
-    as r(barcode text, name text, maker text, base_weight integer, source_ref text);
+    as r(barcode text, name text, maker text, base_weight integer,
+         source_ref text, search_aliases text);
 
   -- Mirror the table's own checks instead of letting them raise mid-chunk. A
   -- logged drop of one bad row beats losing the other 499.
@@ -723,6 +902,7 @@ begin
         base_weight    = s.base_weight,
         barcode        = coalesce(s.barcode, pc.barcode),
         source_ref     = coalesce(s.source_ref, pc.source_ref),
+        search_aliases = s.search_aliases,
         source_version = coalesce(p_source_version, pc.source_version)
     from catalog_import_staging s
     where pc.household_id is null
@@ -735,23 +915,29 @@ begin
     -- gains the upstream barcode — useful later for scanning — and keeps its
     -- editorial name, weight, and source.
     update public.product_catalog pc
-    set barcode    = coalesce(pc.barcode, s.barcode),
-        source_ref = coalesce(pc.source_ref, s.source_ref)
+    set barcode        = coalesce(pc.barcode, s.barcode),
+        source_ref     = coalesce(pc.source_ref, s.source_ref),
+        -- Additive, like the barcode beside it: a curated row gains search
+        -- terms it had none of, and never loses the ones it has. Its name,
+        -- weight and source stay untouched, which is guarantee 2.
+        search_aliases = coalesce(pc.search_aliases, s.search_aliases)
     from catalog_import_staging s
     where pc.household_id is null
       and pc.source <> p_source
       and pc.search_text = s.search_text
-      and (pc.barcode is null or pc.source_ref is null)
-      and (s.barcode is not null or s.source_ref is not null);
+      and (pc.barcode is null or pc.source_ref is null or pc.search_aliases is null)
+      and (s.barcode is not null or s.source_ref is not null
+           or s.search_aliases is not null);
     get diagnostics v_updated_provenance = row_count;
 
     create temp table catalog_import_inserted (search_text text primary key) on commit drop;
 
     with ins as (
       insert into public.product_catalog
-        (name, maker, search_text, household_id, base_weight, barcode, source, source_ref, source_version)
-      select s.name, s.maker, s.search_text, null::uuid, s.base_weight, s.barcode,
-             p_source, s.source_ref, p_source_version
+        (name, maker, search_text, search_aliases, household_id, base_weight,
+         barcode, source, source_ref, source_version)
+      select s.name, s.maker, s.search_text, s.search_aliases, null::uuid,
+             s.base_weight, s.barcode, p_source, s.source_ref, p_source_version
       from catalog_import_staging s
       where not exists (
         select 1 from public.product_catalog pc

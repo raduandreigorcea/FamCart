@@ -45,6 +45,7 @@ vi.mock('../src/supabase', () => ({
       return q
     },
   }),
+  getCatalogSupabase: () => null,
 }))
 
 // The confirm-gated paths await a promise that a later click resolves, then

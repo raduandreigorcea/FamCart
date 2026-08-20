@@ -311,13 +311,20 @@ watch(
       <!-- Fragments because the names are links, and a link cannot be a
            {placeholder}. Every name here is a proper noun and stays as it is;
            only the connective text is translated.
-           test/dataAttribution.component.test.js fails if either link stops
-           being reachable: ODbL attribution is a licence term, not a
-           courtesy. -->
+
+           Three catalogs now, not one: the importer pulls food from Open Food
+           Facts and the non-food aisles from its two sibling projects. All
+           three are ODbL, and ODbL attribution names the source you actually
+           used — so listing only the first would under-credit the other two.
+           test/dataAttribution.component.test.js fails if any of them stops
+           being reachable. -->
       <p class="about-credit">
         {{ t('about.creditLead') }}
         <!-- eslint-disable vue/no-bare-strings-in-template -- proper nouns; the sources and the licence are named, not described -->
-        <a class="settings-note-link" href="https://openfoodfacts.org" target="_blank" rel="noopener noreferrer">Open Food Facts</a>{{ t('about.creditJoin') }}
+        <a class="settings-note-link" href="https://openfoodfacts.org" target="_blank" rel="noopener noreferrer">Open Food Facts</a>,
+        <a class="settings-note-link" href="https://openproductsfacts.org" target="_blank" rel="noopener noreferrer">Open Products Facts</a>
+        {{ t('about.creditAnd') }}
+        <a class="settings-note-link" href="https://openbeautyfacts.org" target="_blank" rel="noopener noreferrer">Open Beauty Facts</a>{{ t('about.creditJoin') }}
         <a class="settings-note-link" href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL 1.0</a>{{ t('about.creditEnd') }}
         <!-- eslint-enable vue/no-bare-strings-in-template -->
       </p>

@@ -3,7 +3,22 @@ import { useAuth } from '@clerk/vue'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+// The product catalog is a THIRD Supabase project, separate from the production
+// and development app databases and shared live by both. It holds the imported
+// and curated reference rows and nothing that belongs to anybody; households,
+// lists, history and household-contributed products stay in the app database.
+// See supabase-catalog/supabase/migrations/003_product_catalog.sql for where
+// exactly the line runs.
+//
+// One Clerk session authenticates both, because the catalog project's
+// Third-Party Auth integration names the same issuer. That is why the resolver
+// below is shared rather than duplicated.
+const catalogUrl = import.meta.env.VITE_CATALOG_SUPABASE_URL
+const catalogAnonKey = import.meta.env.VITE_CATALOG_SUPABASE_ANON_KEY
+
 let authClient: SupabaseClient | null = null
+let catalogClient: SupabaseClient | null = null
 let getTokenFn: (() => Promise<string | null>) | null = null
 
 // Reads that die at the network layer are retried with a short backoff: after
@@ -57,6 +72,33 @@ export function getSupabase(): SupabaseClient {
     })
   }
   return authClient
+}
+
+// The catalog project's client, or null where it is not configured.
+//
+// Null is a supported state, not a broken one. It is what a checkout with no
+// VITE_CATALOG_* variables gets, and every caller treats a missing catalog the
+// same way it treats a failed catalog request: the household's own products
+// still appear and the add-item box still works. Suggestions are a convenience,
+// and a third project being unreachable must not be able to empty the dropdown.
+export function getCatalogSupabase(): SupabaseClient | null {
+  if (!catalogUrl || !catalogAnonKey) return null
+  if (!catalogClient) {
+    catalogClient = createClient(catalogUrl, catalogAnonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+      // The same resolver the app client uses, deliberately. Two clients, one
+      // session: the token Clerk issued verifies against both projects because
+      // both name the same issuer in their Third-Party Auth settings.
+      accessToken: async () => (getTokenFn ? await getTokenFn() : null),
+      global: {
+        fetch: fetchWithRetry,
+      },
+    })
+  }
+  return catalogClient
 }
 
 // How the client learns to mint tokens. Kept separate from getSupabase because

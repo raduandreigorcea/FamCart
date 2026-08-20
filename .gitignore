@@ -34,9 +34,21 @@ graphify-out
 .graphifyignore
 .vercel
 
-# Local state from `supabase db start` / `supabase test db`.
+# Local state from `supabase db start` / `supabase test db`, for both projects.
+#
+# These patterns contain a slash, so they are anchored to this file's directory
+# and do NOT cover the catalog project underneath it -- hence the second pair
+# rather than one rule that looks like it should already match.
+#
+# The nine files under supabase/.temp were tracked for a long time despite this
+# rule, because .gitignore does not untrack what is already committed. They hold
+# which project the CLI is linked to, so with three projects to switch between,
+# every `supabase link` was rewriting files in the working tree. Untracked in the
+# commit that added supabase-catalog/.
 supabase/.branches
 supabase/.temp
+supabase-catalog/supabase/.branches
+supabase-catalog/supabase/.temp
 
 # The Android signing key. Whoever holds this can publish an APK that installs
 # over everyone's FamCart as an update, so it lives in the repo secrets and on
