@@ -57,7 +57,7 @@
 -- Tests run inside a transaction that is rolled back, so they leave no data behind.
 
 begin;
-select plan(128);
+select plan(129);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 -- Three households, because promoting a contributed product to the global catalog
@@ -1566,6 +1566,17 @@ select is(
    where household_id = '00000000-0000-0000-0000-0000000000a1'),
   0,
   'a member cannot see household-scoped products inside a deleted household'
+);
+
+-- The roster too. This one reaches the database through is_member_of_household()
+-- rather than the inlined subquery, so an audit that greps for the subquery
+-- misses it -- and a household with everything else hidden would still tell its
+-- members who else was in it.
+select is(
+  (select count(*)::int from public.household_members
+   where household_id = '00000000-0000-0000-0000-0000000000a1'),
+  0,
+  'a member cannot see the roster of a deleted household'
 );
 
 -- Soft, not hard: the rows are still there for an admin to restore.
