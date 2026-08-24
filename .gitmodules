@@ -1,3 +1,6 @@
 [submodule "catalog-importer"]
 	path = catalog-importer
 	url = https://github.com/raduandreigorcea/FamCart-pipeline.git
+[submodule "admin"]
+	path = admin
+	url = https://github.com/raduandreigorcea/FamCart-admin.git

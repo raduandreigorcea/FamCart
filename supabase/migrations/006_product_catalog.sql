@@ -214,11 +214,9 @@ create policy "authenticated users can read the product catalog"
   on public.product_catalog for select
   to authenticated
   using (
+    -- Global rows belong to nobody, so no household's deletion hides them.
     household_id is null
-    or household_id in (
-      select fm.household_id from public.household_members fm
-      where fm.user_id = requesting_user_id()
-    )
+    or household_id in (select public.active_household_ids())
   );
 
 -- Revoke first, then grant. The header of this file says "Clients never write

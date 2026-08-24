@@ -79,10 +79,7 @@ drop policy if exists "household members can read items" on public.shopping_list
 create policy "household members can read items"
   on public.shopping_list_items for select
   using (
-    household_id in (
-      select household_id from public.household_members
-      where user_id = requesting_user_id()
-    )
+    household_id in (select public.active_household_ids())
   );
 
 drop policy if exists "household members can insert items" on public.shopping_list_items;
@@ -90,10 +87,7 @@ create policy "household members can insert items"
   on public.shopping_list_items for insert
   with check (
     added_by = requesting_user_id()
-    and household_id in (
-      select household_id from public.household_members
-      where user_id = requesting_user_id()
-    )
+    and household_id in (select public.active_household_ids())
   );
 
 -- WITH CHECK keeps the row inside the caller's households; the trigger below pins
@@ -103,26 +97,17 @@ drop policy if exists "household members can update items" on public.shopping_li
 create policy "household members can update items"
   on public.shopping_list_items for update
   using (
-    household_id in (
-      select household_id from public.household_members
-      where user_id = requesting_user_id()
-    )
+    household_id in (select public.active_household_ids())
   )
   with check (
-    household_id in (
-      select household_id from public.household_members
-      where user_id = requesting_user_id()
-    )
+    household_id in (select public.active_household_ids())
   );
 
 drop policy if exists "household members can delete items" on public.shopping_list_items;
 create policy "household members can delete items"
   on public.shopping_list_items for delete
   using (
-    household_id in (
-      select household_id from public.household_members
-      where user_id = requesting_user_id()
-    )
+    household_id in (select public.active_household_ids())
   );
 
 -- ─── row rules the policies cannot express ───────────────────────────────────

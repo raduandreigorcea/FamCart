@@ -58,6 +58,23 @@ alter table public.profiles add constraint profiles_image_url_scheme
     or (image_url ~ '^https://img\.clerk\.com/' and char_length(image_url) <= 2048)
   );
 
+-- ─── a ban, which is not a delete ────────────────────────────────────────────
+--
+-- Deleting a profile row does not stick. The app upserts display_name and
+-- image_url on every boot to keep them fresh (see the note above
+-- join_household_with_code), so the row returns the moment that person opens
+-- FamCart -- and their Clerk account, which this database cannot touch, is
+-- what let them in. A delete here removes a row, not a person.
+--
+-- So the row stays and the upsert refuses to revive it. The person can still
+-- sign into Clerk; FamCart turns them away. See the banned_at guard in the two
+-- profile upserts below.
+alter table public.profiles
+  add column if not exists banned_at timestamptz;
+
+comment on column public.profiles.banned_at is
+  'When an admin barred this account from the app. Null means allowed. The profile upserts raise when it is set, so the person can still sign into Clerk but FamCart refuses them.';
+
 alter table public.profiles enable row level security;
 
 -- ─── households ────────────────────────────────────────────────────────────────
@@ -107,12 +124,39 @@ alter table public.households drop constraint if exists households_name_length_c
 alter table public.households add constraint households_name_length_check
   check (char_length(btrim(name)) between 1 and 25);
 
+-- ─── soft delete ─────────────────────────────────────────────────────────────
+--
+-- Null means live. An admin sets it; everything inside the household then
+-- disappears through active_household_ids() below, and admin_restore_household()
+-- puts it back. Nothing is destroyed, which is the whole point: the cascade
+-- from this table reaches members, list items, purchase history and contributed
+-- products, so a hard delete is a family's entire history gone on one click.
+--
+-- Declared out here rather than in the create-table block above for the reason
+-- that block's own comment gives at length.
+alter table public.households
+  add column if not exists deleted_at timestamptz;
+
+comment on column public.households.deleted_at is
+  'When an admin soft-deleted this household. Null means live. Its contents are hidden through active_household_ids(); nothing is destroyed and admin_restore_household() reverses it.';
+
+-- Partial: the only query that wants the non-null side is the dashboard Trash
+-- view, and every live row has null here.
+create index if not exists households_deleted_at
+  on public.households (deleted_at) where deleted_at is not null;
+
 alter table public.households enable row level security;
 
 -- One household owned per account. A unique index rather than a policy check, so
--- two concurrent inserts cannot both slip past it. Deleting a household frees the
--- slot, and joining another household is unaffected: this caps ownership, not
--- membership.
+-- two concurrent inserts cannot both slip past it. Joining another household is
+-- unaffected: this caps ownership, not membership.
+--
+-- A SOFT delete does not free the slot, and that is deliberate. Making the index
+-- partial on `deleted_at is null` would let the owner create a replacement while
+-- the original sits in the trash -- and then restoring it would violate this
+-- index and fail. A restore that can be blocked by something the user did in the
+-- meantime is not a restore. Holding the slot costs the owner one household
+-- until an admin restores or the row is purged; it keeps undo unconditional.
 create unique index if not exists households_one_per_owner
   on public.households (created_by);
 
@@ -214,6 +258,39 @@ $$;
 
 grant execute on function public.shares_household_with(text) to authenticated;
 
+-- ─── which households the caller is actually in ──────────────────────────────
+--
+-- Eight policy sites across 003-006 each inlined the same subquery: the
+-- household_ids this user is a member of. One of them wrote it with an alias, so
+-- a grep for the exact text found seven. Eight copies of one rule is how the
+-- rule drifts.
+--
+-- It matters more than tidiness now. Soft delete needs every one of those sites
+-- to also exclude deleted households, and missing one fails SILENTLY: the app
+-- keeps serving rows from a household an admin believes they removed, with no
+-- error anywhere to notice. One definition called from eight places cannot be
+-- half-applied.
+--
+-- security definer because it reads households and household_members from inside
+-- a policy on those same tables, where the caller's own RLS would otherwise
+-- recurse. search_path pinned for the usual reason.
+create or replace function public.active_household_ids()
+returns setof uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select hm.household_id
+  from public.household_members hm
+  join public.households h on h.id = hm.household_id
+  where hm.user_id = requesting_user_id()
+    and h.deleted_at is null
+$$;
+
+revoke all on function public.active_household_ids() from public, anon;
+grant execute on function public.active_household_ids() to authenticated;
+
 -- ─── policies: profiles ──────────────────────────────────────────────────────
 -- You can read your own profile and that of anyone who shares a household with you,
 -- so their avatar renders in the roster and on their list items. You can create
@@ -241,12 +318,7 @@ create policy "update own profile"
 drop policy if exists "household members can read their household" on public.households;
 create policy "household members can read their household"
   on public.households for select
-  using (
-    id in (
-      select household_id from public.household_members
-      where user_id = requesting_user_id()
-    )
-  );
+  using (id in (select public.active_household_ids()));
 
 -- Covers the create-household INSERT ... RETURNING, before the creator's
 -- household_members row exists. Scoped so it never exposes other tenants' rows.
@@ -256,7 +328,11 @@ create policy "household members can read their household"
 drop policy if exists "household owners can read own households" on public.households;
 create policy "household owners can read own households"
   on public.households for select
-  using (created_by = requesting_user_id());
+  -- The deleted_at check is NOT redundant with the members policy above. SELECT
+  -- policies are OR'd, so without it the creator of a deleted household still
+  -- reads it through this branch -- and the deletion appears to have done
+  -- nothing for exactly one person, the one most likely to notice.
+  using (created_by = requesting_user_id() and deleted_at is null);
 
 drop policy if exists "authenticated users can create a household" on public.households;
 create policy "authenticated users can create a household"

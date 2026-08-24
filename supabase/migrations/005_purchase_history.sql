@@ -50,10 +50,7 @@ drop policy if exists "household members can read purchase history" on public.pu
 create policy "household members can read purchase history"
   on public.purchase_history for select
   using (
-    household_id in (
-      select household_id from public.household_members
-      where user_id = requesting_user_id()
-    )
+    household_id in (select public.active_household_ids())
   );
 
 -- Select only. buy_items() writes as the table owner.

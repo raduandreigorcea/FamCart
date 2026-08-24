@@ -57,7 +57,7 @@
 -- Tests run inside a transaction that is rolled back, so they leave no data behind.
 
 begin;
-select plan(113);
+select plan(124);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 -- Three households, because promoting a contributed product to the global catalog
@@ -1490,6 +1490,105 @@ select is(
   'moderator',
   'the creator is seeded as a moderator of the household in the same transaction'
 );
+
+-- 13. Soft delete and bans: the columns exist and start empty.
+--
+-- Thin on purpose. What these guard is that the columns reached the database at
+-- all -- both are declared outside the create-table block, where a mistake is
+-- silent and shows up only as "column does not exist" against production weeks
+-- later. The behaviour they carry is tested in 14 and 15 below.
+select has_column('public', 'households', 'deleted_at',
+  'households.deleted_at exists');
+select has_column('public', 'profiles', 'banned_at',
+  'profiles.banned_at exists');
+select is(
+  (select count(*)::int from public.households where deleted_at is not null),
+  0,
+  'no household starts out deleted'
+);
+
+-- 14. active_household_ids() is the one definition, and it excludes the deleted.
+--
+-- Note the claims are never RESET between these: households has an update
+-- trigger that parses request.jwt.claims as json, and a reset leaves it as the
+-- empty string rather than absent, so the trigger fails on input it cannot
+-- parse. Every update below therefore keeps a valid claims object set, and only
+-- the role changes to bypass RLS for the admin-side writes.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"user_a"}';
+
+select isnt(
+  (select count(*)::int from public.active_household_ids()),
+  0,
+  'user_a is in at least one live household'
+);
+
+reset role;
+update public.households set deleted_at = now()
+  where id = '00000000-0000-0000-0000-0000000000a1';
+set local role authenticated;
+
+select is(
+  (select count(*)::int from public.active_household_ids() as h
+   where h = '00000000-0000-0000-0000-0000000000a1'),
+  0,
+  'a deleted household drops out of active_household_ids()'
+);
+
+-- 15. A deleted household hides everything inside it, and destroys nothing.
+--
+-- The failure this guards is silent: get one policy wrong and the app keeps
+-- serving rows from a household an admin believes they removed, with nothing
+-- anywhere reporting it. Hence the contents, not just the household row.
+select is(
+  (select count(*)::int from public.households
+   where id = '00000000-0000-0000-0000-0000000000a1'),
+  0,
+  'a member cannot see their deleted household'
+);
+
+select is(
+  (select count(*)::int from public.shopping_list_items
+   where household_id = '00000000-0000-0000-0000-0000000000a1'),
+  0,
+  'a member cannot see items inside a deleted household'
+);
+
+select is(
+  (select count(*)::int from public.purchase_history
+   where household_id = '00000000-0000-0000-0000-0000000000a1'),
+  0,
+  'a member cannot see purchase history inside a deleted household'
+);
+
+select is(
+  (select count(*)::int from public.product_catalog
+   where household_id = '00000000-0000-0000-0000-0000000000a1'),
+  0,
+  'a member cannot see household-scoped products inside a deleted household'
+);
+
+-- Soft, not hard: the rows are still there for an admin to restore.
+reset role;
+select isnt(
+  (select count(*)::int from public.shopping_list_items
+   where household_id = '00000000-0000-0000-0000-0000000000a1'),
+  0,
+  'the items are physically present: this is a soft delete'
+);
+
+update public.households set deleted_at = null
+  where id = '00000000-0000-0000-0000-0000000000a1';
+set local role authenticated;
+
+select is(
+  (select count(*)::int from public.households
+   where id = '00000000-0000-0000-0000-0000000000a1'),
+  1,
+  'restoring makes the household visible again'
+);
+
+reset role;
 
 select * from finish();
 rollback;
