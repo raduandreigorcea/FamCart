@@ -57,7 +57,7 @@
 -- Tests run inside a transaction that is rolled back, so they leave no data behind.
 
 begin;
-select plan(124);
+select plan(128);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 -- Three households, because promoting a contributed product to the global catalog
@@ -1586,6 +1586,61 @@ select is(
    where id = '00000000-0000-0000-0000-0000000000a1'),
   1,
   'restoring makes the household visible again'
+);
+
+reset role;
+
+-- 16. A ban sticks, because the profile upsert refuses to revive the row.
+--
+-- The reason banned_at exists rather than a deleted_at on profiles: the app
+-- upserts display_name and image_url on every boot, so a deleted profile row
+-- returns the moment that person opens FamCart. Their Clerk account is a
+-- separate system this database cannot reach. Flagging the row is only half of
+-- it; refusing the upsert is the half that works.
+--
+-- A fresh account that owns nothing, deliberately. Reusing a seeded user made
+-- the unban assertion fail against households_one_per_owner rather than against
+-- anything to do with bans -- a green-looking test measuring the wrong rule.
+reset role;
+insert into public.profiles (user_id, display_name) values ('user_banned', 'Banned Person');
+update public.profiles set banned_at = now() where user_id = 'user_banned';
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"user_banned"}';
+
+select throws_ok(
+  $$ select * from public.create_household('Banned Attempt', 'ZZZZZZZ2', 'Nope', null) $$,
+  'P0001',
+  'This account has been suspended.',
+  'a banned account cannot create a household: the profile upsert refuses'
+);
+
+reset role;
+select is(
+  (select count(*)::int from public.households where name = 'Banned Attempt'),
+  0,
+  'and nothing was created on the way to being refused'
+);
+
+update public.profiles set banned_at = null where user_id = 'user_banned';
+set local role authenticated;
+
+select lives_ok(
+  $$ select * from public.create_household('Unbanned Attempt', 'ZZZZZZZ3', 'Fine', null) $$,
+  'lifting the ban lets the same account through again'
+);
+
+-- The OTHER upsert. Both doors need the guard, and a guard with no test on it is
+-- the one that gets refactored away.
+reset role;
+update public.profiles set banned_at = now() where user_id = 'user_banned';
+set local role authenticated;
+
+select throws_ok(
+  $$ select * from public.join_household_with_code('BBBBBBB2', 'Nope', null) $$,
+  'P0001',
+  'This account has been suspended.',
+  'a banned account cannot join a household either'
 );
 
 reset role;

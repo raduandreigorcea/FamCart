@@ -784,6 +784,20 @@ begin
 
   -- Same clamping as the join path: an overlong name or a non-https avatar is
   -- trimmed rather than allowed to fail the whole creation.
+  -- A banned account is refused HERE because here is the door. The app upserts
+  -- a profile on every boot, so refusing the upsert is the whole mechanism that
+  -- makes a ban stick -- flagging the row alone would be undone by the next
+  -- launch. Raising rather than silently skipping, for the reason admin_guard()
+  -- raises: a refusal and a no-op look identical from the client, and only one
+  -- of them is worth telling someone about.
+  if exists (
+    select 1 from public.profiles
+    where user_id = v_user and banned_at is not null
+  ) then
+    raise exception 'This account has been suspended.'
+      using errcode = 'P0001';
+  end if;
+
   insert into public.profiles (user_id, display_name, image_url, updated_at)
   values (
     v_user,
@@ -904,6 +918,20 @@ begin
 
   -- Clamp to what the profiles constraints allow rather than failing the join on
   -- an overlong name or a non-https avatar URL.
+  -- A banned account is refused HERE because here is the door. The app upserts
+  -- a profile on every boot, so refusing the upsert is the whole mechanism that
+  -- makes a ban stick -- flagging the row alone would be undone by the next
+  -- launch. Raising rather than silently skipping, for the reason admin_guard()
+  -- raises: a refusal and a no-op look identical from the client, and only one
+  -- of them is worth telling someone about.
+  if exists (
+    select 1 from public.profiles
+    where user_id = v_user and banned_at is not null
+  ) then
+    raise exception 'This account has been suspended.'
+      using errcode = 'P0001';
+  end if;
+
   insert into public.profiles (user_id, display_name, image_url, updated_at)
   values (
     v_user,
