@@ -29,7 +29,7 @@
 -- Runs inside a transaction that is rolled back, so it leaves no data behind.
 
 begin;
-select plan(46);
+select plan(49);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 -- Two households owned by two different people, plus a third account that is in
@@ -384,6 +384,36 @@ select is(
   1,
   'the deleted household is what Trash lists'
 );
+
+-- And it leaves the ordinary admin views, which is a SEPARATE mechanism from
+-- the RLS work: every admin_* function is security definer and bypasses
+-- policies entirely, so hiding a household from the app says nothing about
+-- whether the dashboard still lists it. The first end-to-end run found exactly
+-- that -- deleted in the app, still sitting in the admin table.
+select is(
+  (select count(*)::int from public.admin_list_households(null, 'name', 'asc', 50, 0)
+   where id = '00000000-0000-0000-0000-0000000000e1'),
+  0,
+  'a deleted household leaves the admin household list'
+);
+
+select is(
+  (select public.admin_household_detail('00000000-0000-0000-0000-0000000000e1') is null),
+  true,
+  'and its detail page has nothing to show'
+);
+
+-- Role dropped: admin_household_facts is revoked from authenticated on purpose,
+-- being an internal helper the three public RPCs read through rather than
+-- something a client may call.
+reset role;
+select is(
+  (select count(*)::int from public.admin_household_facts()
+   where id = '00000000-0000-0000-0000-0000000000e1'),
+  0,
+  'because the one function all three read through excludes it'
+);
+set local role authenticated;
 
 -- The audit row is the reason soft delete beats hard delete here: it still
 -- points at a household that exists.
