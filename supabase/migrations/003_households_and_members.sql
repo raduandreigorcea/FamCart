@@ -206,8 +206,15 @@ as $$
   select exists (
     select 1
     from public.household_members fm
+    join public.households h on h.id = fm.household_id
     where fm.household_id = target_household_id
       and fm.user_id = requesting_user_id()
+      -- The tenth site, and the one an audit for the inlined subquery misses:
+      -- this helper does the same job through a different shape, so the policy
+      -- that calls it never mentions household_members at all. Without the join
+      -- a deleted household still hands its members the roster -- everything
+      -- else about it hidden, and "who else is in here" still readable.
+      and h.deleted_at is null
   );
 $$;
 
