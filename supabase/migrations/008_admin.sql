@@ -381,7 +381,21 @@ as $$
     from public.product_catalog pc
     where pc.household_id is not null
     group by pc.household_id
-  ) c on c.household_id = hh.id;
+  ) c on c.household_id = hh.id
+  -- Soft-deleted households are not "households the dashboard knows about" --
+  -- they are Trash, and admin_deleted_households() is what lists them.
+  --
+  -- This filter has to live HERE and not in a policy. Every admin_* function is
+  -- security definer and bypasses RLS by design, so active_household_ids() and
+  -- the ten policies it feeds govern what the APP's users see and have no
+  -- bearing whatsoever on what this dashboard reads. Two separate doors, and
+  -- closing one taught me nothing about the other: the first end-to-end test
+  -- deleted a household, watched it vanish from the app, and found it still
+  -- sitting in the admin list.
+  --
+  -- One place rather than three, because admin_overview, admin_list_households
+  -- and admin_household_detail all read through this function.
+  where hh.deleted_at is null;
 $$;
 
 revoke all on function public.admin_household_facts() from public, anon, authenticated;
