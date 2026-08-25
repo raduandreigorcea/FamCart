@@ -71,13 +71,26 @@ jobs:
     name: Catalog database tests (pgTAP)
     runs-on: ubuntu-latest
     steps:
+      # submodules: true is REQUIRED here, not a convenience. The catalog
+      # project's schema lives in the catalog-importer repo, because that repo is
+      # the only thing that writes that database; this app is a client of it,
+      # calling search_catalog() over PostgREST and owning neither the table nor
+      # the RPCs. Without the checkout there is no supabase-catalog/ to point at
+      # and every step below fails on a missing config.
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - uses: supabase/setup-cli@v1
         with:
           version: latest
-      # The product catalog is a separate Supabase project with its own schema,
-      # shared live by the production and development apps. Its migrations are in
-      # supabase-catalog/, and --workdir is what points the CLI at them.
+      # WHY THIS JOB STAYS IN THE APP'S CI EVEN THOUGH THE SCHEMA IS ELSEWHERE
+      #
+      # The dependency runs the other way from the ownership. src/lib/
+      # productSuggestions.ts calls search_catalog(p_query, p_limit, p_markets)
+      # and reads (name, maker, popularity) back, so a change to that RPC in the
+      # other repo breaks this app with nothing in this repo to warn anyone.
+      # Running the catalog's own pgTAP suite here is what turns that into a red
+      # build instead of an empty suggestions dropdown in production.
       #
       # --workdir names a project ROOT, not a config file: the CLI looks for
       # `<workdir>/supabase/config.toml` beneath it, which is why the path is
@@ -88,8 +101,8 @@ jobs:
       # would otherwise be up at once on the same runner, competing for the same
       # ports. The catalog's config.toml moves its ports for exactly that reason
       # locally; here they simply never meet.
-      - run: supabase db start --workdir supabase-catalog
+      - run: supabase db start --workdir catalog-importer/supabase-catalog
       # Same reason as above: db start may restore a backup instead of applying
       # the migrations, and then the suite tests a schema nobody wrote.
-      - run: supabase db reset --workdir supabase-catalog
-      - run: supabase test db --workdir supabase-catalog
+      - run: supabase db reset --workdir catalog-importer/supabase-catalog
+      - run: supabase test db --workdir catalog-importer/supabase-catalog
