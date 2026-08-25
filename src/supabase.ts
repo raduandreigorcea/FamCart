@@ -122,6 +122,18 @@ export function setSupabaseTokenResolver(resolve: () => Promise<string | null>):
 // Use this inside Vue components/composables where useAuth() is available.
 export function useSupabase(): SupabaseClient {
   const { getToken } = useAuth()
-  setSupabaseTokenResolver(async () => getToken.value({ template: 'supabase' }))
+  // The plain session token, NOT getToken({ template: 'supabase' }).
+  //
+  // All three projects authenticate through Supabase's native Third-Party Auth,
+  // which verifies a Clerk session token against Clerk's JWKS directly. The
+  // `supabase` JWT template is the older integration and cost two things for no
+  // benefit: a template token carries nbf = iat - 5 against the session token's
+  // nbf = iat - 10, halving the clock tolerance before a request is refused as
+  // `JWT not yet valid`; and it is minted by a separate call to Clerk's API on
+  // every resolve, where the session token is already in memory.
+  //
+  // Verified against all three projects before the change: each one accepts the
+  // session token and answers is_admin()/catalog_is_admin() with it.
+  setSupabaseTokenResolver(async () => getToken.value())
   return getSupabase()
 }
