@@ -8,15 +8,20 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 // and development app databases and shared live by both. It holds the imported
 // and curated reference rows and nothing that belongs to anybody; households,
 // lists, history and household-contributed products stay in the app database.
-// Its schema is NOT in this repo. It lives in the catalog-importer submodule, at
-// catalog-importer/supabase-catalog/, because that repo is the only thing that
-// writes that database; this app only reads it. See its
-// supabase/migrations/003_product_catalog.sql for where exactly the line runs.
+// Its schema is NOT in this repo and never was: it belonged to the importer
+// repo, the only thing that ever wrote that database, where this app only reads
+// it. That repo has been deleted and the catalog project reset to bare
+// catalog_admins, so RIGHT NOW there is no product_catalog and no
+// search_catalog() on the other end of this client.
 //
-// So what this file depends on is an API, not a schema: search_catalog() and
-// bump_product_popularity(), whose shapes are fixed over there. FamCart's CI
-// runs that project's pgTAP suite through the submodule so a change to either
-// one fails this app's build rather than its suggestions dropdown.
+// This file needs no special case for that, because what it depends on is an
+// API rather than a schema: search_catalog() and bump_product_popularity(),
+// whose shapes are fixed elsewhere. Calls to a missing RPC reject, and
+// productSuggestions.ts already treats a failed catalog leg as zero rows via
+// Promise.allSettled. When a replacement pipeline recreates the RPCs this comes
+// back on its own. Wire that project's pgTAP suite into this repo's CI again
+// when it does: it is what turns a change to either RPC into a failed build
+// rather than an empty suggestions dropdown.
 //
 // One Clerk session authenticates both, because the catalog project's
 // Third-Party Auth integration names the same issuer. That is why the resolver
