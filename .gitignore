@@ -41,9 +41,9 @@ graphify-out
 # which project the CLI is linked to, so with three projects to switch between,
 # every `supabase link` was rewriting files in the working tree.
 #
-# There used to be a second pair here covering supabase-catalog/. The catalog
-# project's schema now lives in the catalog-importer repo, which is a submodule
-# and so keeps its own .gitignore; the equivalent rules moved there with it.
+# Only the app's own. The catalog is a submodule again (catalog/, published as
+# raduandreigorcea/FamCart-catalog) and keeps its own .gitignore for the
+# equivalent files, which is where a rule about that repo's local state belongs.
 supabase/.branches
 supabase/.temp
 
@@ -58,3 +58,5 @@ supabase/.temp
 # that wrote them was deleted in 9a4366e along with its products.json. Not
 # committed -- it is data, not code -- but worth keeping off the machine too.
 *.backup.json
+
+PRODUCT_CATALOG_SPEC.md

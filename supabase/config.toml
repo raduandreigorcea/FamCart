@@ -3,6 +3,26 @@
 # `supabase init` to expand this if the full local stack is ever needed.
 project_id = "famcart"
 
+[db]
+# 54502, not the CLI's default 54322.
+#
+# Windows reserves blocks of high ports for Hyper-V, and on this machine
+# 54289-54388 is one of them -- which contains 54322. Docker then refuses to
+# start the database with "an attempt was made to access a socket in a way
+# forbidden by its access permissions", which reads like a Docker permissions
+# problem and is a port-range one. The blocks are listed by:
+#
+#   netsh int ipv4 show excludedportrange protocol=tcp
+#
+# They are allocated at boot and move around, so a stack that started yesterday
+# can fail to start today with nothing changed. 54502 sits in the gap above the
+# reserved blocks, as does the catalog stack's 54522 (catalog/supabase/config.toml
+# carries the same note, for the same reason).
+#
+# Nothing outside the local stack reads this. The app points at hosted projects
+# through .env, and CI's runners have no such reservations.
+port = 54502
+
 # Database webhooks carry no user JWT; the function authenticates its caller
 # with the PUSH_WEBHOOK_SECRET header instead.
 [functions.push-on-item-insert]

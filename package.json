@@ -1,7 +1,7 @@
 {
   "name": "famcart",
   "private": true,
-  "version": "0.4.14",
+  "version": "0.4.16",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "vue-tsc --noEmit",
+    "catalog:test": "supabase --workdir catalog db reset && supabase --workdir catalog test db",
     "lint": "eslint ."
   },
   "dependencies": {

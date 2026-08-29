@@ -27,7 +27,6 @@ export default ts.config(
       'dist/**',
       'dev-dist/**',
       'android/**',
-      'catalog-importer/**',
       'graphify-out/**',
       'node_modules/**',
       // OneSignal's own service worker, shipped as-is from their CDN build. Not
@@ -36,6 +35,11 @@ export default ts.config(
       // Local state written by `supabase db start` — gitignored, and it contains
       // a bundled edge-runtime entrypoint that is nothing to do with this app.
       'supabase/.temp/**',
+      // The two submodules. Each carries its own lint config and its own CI;
+      // linting them from here would apply this app's rules to code that is not
+      // this app's, and would fail outright on a checkout with no submodules.
+      'admin/**',
+      'catalog/**',
     ],
   },
 
@@ -148,7 +152,9 @@ export default ts.config(
   },
 
   {
-    // Node scripts, not browser code.
+    // Node scripts, not browser code. catalog/scripts holds the seed importer,
+    // which is the same kind of thing as scripts/ at the root: a CLI tool run by
+    // hand against a database, whose stdout is its whole interface.
     files: ['scripts/**/*.mjs', '*.config.js', 'vite.config.js', 'vitest.config.js'],
     languageOptions: { globals: { ...globals.node } },
     rules: {
