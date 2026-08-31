@@ -61,7 +61,26 @@ const mountedWrappers = []
 const SCANNED = '5941234567890'
 const UNKNOWN = '4001234567890'
 
-async function mountHome() {
+// The code a product's package prints, and the code a DIFFERENT package prints
+// for what the catalog decided is the same product. buildLoadPlan collapses
+// those two onto one row and parks the second in alt_barcodes; lookup_barcode()
+// is what makes it findable again. Before that it scanned to nothing.
+const ALT = '5941234567906'
+
+// `catalog` opts a test into the second Supabase project. Left out,
+// getCatalogSupabase() returns null and only the household's own contributed
+// rows answer a scan — which is the shape every test above this was written in.
+async function mountHome({ catalog = false } = {}) {
+  mocks.catalogDb = null
+  if (catalog) {
+    mocks.catalogDb = createFakeDb()
+    mocks.catalogDb.handlers['rpc.lookup_barcode'] = (q) => {
+      const codes = q.params?.p_codes ?? []
+      return codes.includes(SCANNED) || codes.includes(ALT)
+        ? { data: [{ name: 'Apa Plata 2L', maker: 'Dorna', popularity: 100 }], error: null }
+        : { data: [], error: null }
+    }
+  }
   mocks.db = createFakeDb()
   mocks.db.handlers['household_members.select'] = (q) =>
     q.filters.user_id
@@ -108,6 +127,8 @@ const insertedRows = () =>
     .map((c) => c.payload)
 const barcodeQueries = () =>
   mocks.db.calls.filter((c) => c.table === 'product_catalog' && c.filters?.['in:barcode'])
+const catalogLookups = () =>
+  (mocks.catalogDb?.calls ?? []).filter((c) => c.table === 'rpc' && c.op === 'lookup_barcode')
 
 async function openScanner(wrapper) {
   wrapper.findComponent(AddItemForm).vm.$emit('scan')
@@ -219,6 +240,48 @@ describe('scanning a barcode onto the list', () => {
 
     expect(scanner(wrapper).props('unknownCode')).toBe(UNKNOWN)
     expect(insertedRows()).toHaveLength(0)
+  })
+
+  // The reference catalog answers through an RPC where the app database is a
+  // plain select, because only the catalog has alt_barcodes and only it needs
+  // an ordering across two columns to resolve a code.
+  it('asks the reference catalog through lookup_barcode, with every candidate form', async () => {
+    const wrapper = await mountHome({ catalog: true })
+    await openScanner(wrapper)
+
+    await scan(wrapper, SCANNED)
+
+    expect(catalogLookups()).toHaveLength(1)
+    // The scanned code plus its leading-zero variant: a UPC-A symbol prints 12
+    // digits for a product Open Food Facts files under 13.
+    expect(catalogLookups()[0].params.p_codes).toContain(SCANNED)
+  })
+
+  // The 4,468-product bug. A code that lost a collapse used to reach nothing at
+  // all; it now reaches the row that absorbed it, under that row's name.
+  it('finds a product by a code that collapsed onto it', async () => {
+    const wrapper = await mountHome({ catalog: true })
+    await openScanner(wrapper)
+
+    await scan(wrapper, ALT)
+
+    expect(insertedRows()).toHaveLength(1)
+    expect(insertedRows()[0].name).toBe('Apa Plata 2L')
+    // A hit is an add, and an add closes the camera. Asserting the modal is
+    // gone is the same statement as "this was not reported as a miss", and it
+    // is the one that survives the scanner being reworked.
+    expect(scanner(wrapper).exists()).toBe(false)
+  })
+
+  it('still reports a miss when neither database holds the code', async () => {
+    const wrapper = await mountHome({ catalog: true })
+    await openScanner(wrapper)
+
+    await scan(wrapper, UNKNOWN)
+
+    expect(catalogLookups()).toHaveLength(1)
+    expect(insertedRows()).toHaveLength(0)
+    expect(scanner(wrapper).props('unknownCode')).toBe(UNKNOWN)
   })
 
   it('does not ask the catalog twice about the same missed code', async () => {

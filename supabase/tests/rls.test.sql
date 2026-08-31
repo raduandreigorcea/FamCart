@@ -57,7 +57,7 @@
 -- Tests run inside a transaction that is rolled back, so they leave no data behind.
 
 begin;
-select plan(113);
+select plan(129);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 -- Three households, because promoting a contributed product to the global catalog
@@ -1490,6 +1490,171 @@ select is(
   'moderator',
   'the creator is seeded as a moderator of the household in the same transaction'
 );
+
+-- 13. Soft delete and bans: the columns exist and start empty.
+--
+-- Thin on purpose. What these guard is that the columns reached the database at
+-- all -- both are declared outside the create-table block, where a mistake is
+-- silent and shows up only as "column does not exist" against production weeks
+-- later. The behaviour they carry is tested in 14 and 15 below.
+select has_column('public', 'households', 'deleted_at',
+  'households.deleted_at exists');
+select has_column('public', 'profiles', 'banned_at',
+  'profiles.banned_at exists');
+select is(
+  (select count(*)::int from public.households where deleted_at is not null),
+  0,
+  'no household starts out deleted'
+);
+
+-- 14. active_household_ids() is the one definition, and it excludes the deleted.
+--
+-- Note the claims are never RESET between these: households has an update
+-- trigger that parses request.jwt.claims as json, and a reset leaves it as the
+-- empty string rather than absent, so the trigger fails on input it cannot
+-- parse. Every update below therefore keeps a valid claims object set, and only
+-- the role changes to bypass RLS for the admin-side writes.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"user_a"}';
+
+select isnt(
+  (select count(*)::int from public.active_household_ids()),
+  0,
+  'user_a is in at least one live household'
+);
+
+reset role;
+update public.households set deleted_at = now()
+  where id = '00000000-0000-0000-0000-0000000000a1';
+set local role authenticated;
+
+select is(
+  (select count(*)::int from public.active_household_ids() as h
+   where h = '00000000-0000-0000-0000-0000000000a1'),
+  0,
+  'a deleted household drops out of active_household_ids()'
+);
+
+-- 15. A deleted household hides everything inside it, and destroys nothing.
+--
+-- The failure this guards is silent: get one policy wrong and the app keeps
+-- serving rows from a household an admin believes they removed, with nothing
+-- anywhere reporting it. Hence the contents, not just the household row.
+select is(
+  (select count(*)::int from public.households
+   where id = '00000000-0000-0000-0000-0000000000a1'),
+  0,
+  'a member cannot see their deleted household'
+);
+
+select is(
+  (select count(*)::int from public.shopping_list_items
+   where household_id = '00000000-0000-0000-0000-0000000000a1'),
+  0,
+  'a member cannot see items inside a deleted household'
+);
+
+select is(
+  (select count(*)::int from public.purchase_history
+   where household_id = '00000000-0000-0000-0000-0000000000a1'),
+  0,
+  'a member cannot see purchase history inside a deleted household'
+);
+
+select is(
+  (select count(*)::int from public.product_catalog
+   where household_id = '00000000-0000-0000-0000-0000000000a1'),
+  0,
+  'a member cannot see household-scoped products inside a deleted household'
+);
+
+-- The roster too. This one reaches the database through is_member_of_household()
+-- rather than the inlined subquery, so an audit that greps for the subquery
+-- misses it -- and a household with everything else hidden would still tell its
+-- members who else was in it.
+select is(
+  (select count(*)::int from public.household_members
+   where household_id = '00000000-0000-0000-0000-0000000000a1'),
+  0,
+  'a member cannot see the roster of a deleted household'
+);
+
+-- Soft, not hard: the rows are still there for an admin to restore.
+reset role;
+select isnt(
+  (select count(*)::int from public.shopping_list_items
+   where household_id = '00000000-0000-0000-0000-0000000000a1'),
+  0,
+  'the items are physically present: this is a soft delete'
+);
+
+update public.households set deleted_at = null
+  where id = '00000000-0000-0000-0000-0000000000a1';
+set local role authenticated;
+
+select is(
+  (select count(*)::int from public.households
+   where id = '00000000-0000-0000-0000-0000000000a1'),
+  1,
+  'restoring makes the household visible again'
+);
+
+reset role;
+
+-- 16. A ban sticks, because the profile upsert refuses to revive the row.
+--
+-- The reason banned_at exists rather than a deleted_at on profiles: the app
+-- upserts display_name and image_url on every boot, so a deleted profile row
+-- returns the moment that person opens FamCart. Their Clerk account is a
+-- separate system this database cannot reach. Flagging the row is only half of
+-- it; refusing the upsert is the half that works.
+--
+-- A fresh account that owns nothing, deliberately. Reusing a seeded user made
+-- the unban assertion fail against households_one_per_owner rather than against
+-- anything to do with bans -- a green-looking test measuring the wrong rule.
+reset role;
+insert into public.profiles (user_id, display_name) values ('user_banned', 'Banned Person');
+update public.profiles set banned_at = now() where user_id = 'user_banned';
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"user_banned"}';
+
+select throws_ok(
+  $$ select * from public.create_household('Banned Attempt', 'ZZZZZZZ2', 'Nope', null) $$,
+  'P0001',
+  'This account has been suspended.',
+  'a banned account cannot create a household: the profile upsert refuses'
+);
+
+reset role;
+select is(
+  (select count(*)::int from public.households where name = 'Banned Attempt'),
+  0,
+  'and nothing was created on the way to being refused'
+);
+
+update public.profiles set banned_at = null where user_id = 'user_banned';
+set local role authenticated;
+
+select lives_ok(
+  $$ select * from public.create_household('Unbanned Attempt', 'ZZZZZZZ3', 'Fine', null) $$,
+  'lifting the ban lets the same account through again'
+);
+
+-- The OTHER upsert. Both doors need the guard, and a guard with no test on it is
+-- the one that gets refactored away.
+reset role;
+update public.profiles set banned_at = now() where user_id = 'user_banned';
+set local role authenticated;
+
+select throws_ok(
+  $$ select * from public.join_household_with_code('BBBBBBB2', 'Nope', null) $$,
+  'P0001',
+  'This account has been suspended.',
+  'a banned account cannot join a household either'
+);
+
+reset role;
 
 select * from finish();
 rollback;

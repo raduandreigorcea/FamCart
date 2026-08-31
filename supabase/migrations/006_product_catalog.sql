@@ -214,11 +214,9 @@ create policy "authenticated users can read the product catalog"
   on public.product_catalog for select
   to authenticated
   using (
+    -- Global rows belong to nobody, so no household's deletion hides them.
     household_id is null
-    or household_id in (
-      select fm.household_id from public.household_members fm
-      where fm.user_id = requesting_user_id()
-    )
+    or household_id in (select public.active_household_ids())
   );
 
 -- Revoke first, then grant. The header of this file says "Clients never write
@@ -633,9 +631,17 @@ declare
   -- already far more words than anyone types into an add-item box.
   max_tokens constant integer := 6;
 
+  -- At or below this length a token must match at the START OF A WORD; above
+  -- it, anywhere in search_text still counts. A three-letter query lands in
+  -- the middle of unrelated words far too easily — "apa" (water) matched
+  -- p-APA-s, ce-APA and APA-rate in production. The same rule and the same
+  -- number as the catalog project's search_catalog; the two have to agree.
+  short_token constant integer := 4;
+
   v_patterns  text[];
   v_primary   text;
   v_rest      text[];
+  v_word_pats text[];
   v_household uuid := null;
   v_limit     integer := least(greatest(coalesce(p_limit, 100), 1), 200);
 begin
@@ -671,6 +677,25 @@ begin
   v_primary := v_patterns[1];
   v_rest    := v_patterns[2:];
 
+  -- One pattern per SHORT token, anchored to the start of a word.
+  --
+  -- No regex: search_blob is space-separated folded text, so "starts a word"
+  -- is exactly "preceded by a space" once a leading space is prepended to the
+  -- blob below. That reuses the LIKE escaping above rather than introducing a
+  -- second escaping language whose metacharacters differ.
+  select array_agg(
+           '% ' || replace(replace(replace(tok, '\', '\\'), '%', '\%'), '_', '\_') || '%'
+         )
+    into v_word_pats
+  from (
+    select tok
+    from regexp_split_to_table(
+      public.product_search_text(coalesce(p_query, ''), null), '\s+'
+    ) as tok
+    where tok <> '' and char_length(tok) <= short_token
+    limit max_tokens
+  ) t;
+
   -- Membership checked, not assumed. A household id arriving here came from
   -- client state, and the RLS policy that would otherwise reject a forged one
   -- does not run for a definer function. Resolving it to null on a miss means a
@@ -690,6 +715,8 @@ begin
   where (pc.household_id is null or pc.household_id = v_household)
     and pc.search_blob like v_primary
     and pc.search_blob like all (v_rest)
+    -- Null when every token was long enough to be trusted anywhere.
+    and (v_word_pats is null or (' ' || pc.search_blob) like all (v_word_pats))
   -- This household's own contributions first, then popularity.
   --
   -- Without the first term they compete on popularity against the whole global
