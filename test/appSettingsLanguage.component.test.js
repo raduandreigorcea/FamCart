@@ -44,8 +44,22 @@ function mountModal(open = true) {
   return w
 }
 
-// Three sections share this class; Language is added after the other two.
-const languageTitle = (w) => w.findAll('.app-settings__section-title').at(-1)
+// The title of whichever section holds the language control.
+//
+// This used to be `.findAll('.app-settings__section-title').at(-1)`, back when
+// Language was the last section in the dialog. Shopping region was added after
+// it and both assertions here started reading that section's title instead —
+// the same positional-indexing trap the .segmented helpers in
+// appSettingsModal.component.test.js are warned about in AppSettingsModal.vue.
+//
+// Shopping region has since been removed, which would make `.at(-1)` correct
+// again and is exactly why this stays as it is: it was correct before too, and
+// a section appearing or disappearing below Language must not be able to reach
+// this file. Anchoring on .lang-seg, which only LanguagePicker draws, is what
+// buys that in both directions.
+const languageTitle = (w) =>
+  w.findAll('.app-settings__section').find((s) => s.find('.lang-seg').exists())
+    .find('.app-settings__section-title')
 const optionFor = (w, locale) => w.findAll('.lang-seg__btn')[LOCALES.indexOf(locale)]
 const activeOption = (w) => w.find('.lang-seg__btn--active')
 
