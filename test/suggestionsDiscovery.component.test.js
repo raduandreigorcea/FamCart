@@ -24,6 +24,7 @@ import { createFakeDb } from './support/fakeSupabase.js'
 const mocks = vi.hoisted(() => ({
   catalogDb: null,
   discover: null,
+  discoverBarcode: null,
 }))
 
 // The catalog project's client. Null is a supported state everywhere else in
@@ -38,6 +39,7 @@ vi.mock('../src/lib/catalogDiscovery', async (importOriginal) => ({
   // under test, not setTimeout.
   DISCOVER_DELAY_MS: 0,
   discoverProducts: (...args) => mocks.discover(...args),
+  discoverBarcode: (...args) => mocks.discoverBarcode(...args),
 }))
 
 const { useProductSuggestions } = await import('../src/lib/productSuggestions')
@@ -80,11 +82,20 @@ async function type(query, text) {
 
 const SUGGEST_DEBOUNCE_MS = 300
 
+// "Answered" now means enough BRANDED rows to fill the dropdown, not one match.
+// One thin row used to be enough, which is how a seed row named "Apă" came to
+// answer every water search forever and stop the catalog ever growing.
+const enoughBranded = (name, maker) =>
+  Array.from({ length: 6 }, (_, i) => ({
+    name: `${name} ${i}`, maker: `${maker}${i}`, popularity: 40,
+  }))
+
 beforeEach(() => {
   vi.useFakeTimers()
   db = createFakeDb()
   catalogRows = []
   mocks.discover = vi.fn(async () => [])
+  mocks.discoverBarcode = vi.fn(async () => null)
   // The catalog project answers through the same RPC name as the app database.
   mocks.catalogDb = {
     rpc: async () => ({ data: catalogRows, error: null }),
@@ -99,15 +110,15 @@ afterEach(() => {
 
 describe('when the local catalog already answered', () => {
   it('does not ask anyone', async () => {
-    // A row that contains every word typed IS the answer.
-    catalogRows = [{ name: 'Lapte 1.5% 1L', maker: 'Zuzu', popularity: 40 }]
+    // Rows that contain every word typed AND enough of them to choose from.
+    catalogRows = enoughBranded('Lapte 1.5% 1L', 'Zuzu')
 
     const query = ref('')
     const { api, wrapper } = mountSuggestions(query)
     await type(query, 'lapte')
 
     expect(mocks.discover).not.toHaveBeenCalled()
-    expect(api.suggestions.value.map((s) => s.name)).toContain('Lapte 1.5% 1L')
+    expect(api.suggestions.value.map((s) => s.name)).toContain('Lapte 1.5% 1L 0')
     wrapper.unmount()
   })
 })
@@ -187,7 +198,7 @@ describe('a late answer', () => {
 
     // The person carries on typing; that keystroke owns the dropdown now and
     // will do its own asking.
-    catalogRows = [{ name: 'Pepsi Max', maker: 'Pepsi', popularity: 5 }]
+    catalogRows = enoughBranded('Pepsi Max', 'Pepsi')
     await type(query, 'pepsi max')
 
     // ...and only now does the first discovery come back.
@@ -223,6 +234,7 @@ describe('a late answer', () => {
   it('changes nothing when it finds nothing', async () => {
     catalogRows = [{ name: 'Apa Plata 2L', maker: 'Dorna', popularity: 90 }]
     mocks.discover = vi.fn(async () => [])
+  mocks.discoverBarcode = vi.fn(async () => null)
 
     const query = ref('')
     const { api, wrapper } = mountSuggestions(query)
@@ -232,6 +244,52 @@ describe('a late answer', () => {
     await vi.advanceTimersByTimeAsync(1)
     await flushPromises()
     expect(api.suggestions.value.map((s) => s.name)).toEqual(before)
+    wrapper.unmount()
+  })
+})
+
+
+// ─── a scan nobody knew ──────────────────────────────────────────────────────
+//
+// The barcode half of the same cold path. It differs from the search half in
+// one way that matters: an exact key matching nothing is a stronger signal than
+// typed words matching nothing well, so there is no delay and no sufficiency
+// check to pass first.
+describe('a scanned code neither database knew', () => {
+  it('asks the sources, and adopts what comes back', async () => {
+    mocks.discoverBarcode = vi.fn(async () => ({
+      name: 'Coconut Milk', maker: 'Herbal Essences', popularity: 0,
+    }))
+
+    const query = ref('')
+    const { api, wrapper } = mountSuggestions(query)
+    const found = await api.lookupBarcode('8001090662231')
+
+    expect(mocks.discoverBarcode).toHaveBeenCalledTimes(1)
+    expect(found).toMatchObject({ name: 'Coconut Milk', maker: 'Herbal Essences' })
+    wrapper.unmount()
+  })
+
+  it('does not ask when a database already had the code', async () => {
+    catalogRows = [{ name: 'Lapte 1.5% 1L', maker: 'Zuzu', popularity: 40 }]
+
+    const query = ref('')
+    const { api, wrapper } = mountSuggestions(query)
+    const found = await api.lookupBarcode('5941234567890')
+
+    expect(found).toMatchObject({ name: 'Lapte 1.5% 1L' })
+    expect(mocks.discoverBarcode).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('still resolves null when no source has it either', async () => {
+    mocks.discoverBarcode = vi.fn(async () => null)
+
+    const query = ref('')
+    const { api, wrapper } = mountSuggestions(query)
+    // Exactly what it returned before there was a cold path: the scan ends in
+    // the add-it-yourself flow rather than in an error.
+    await expect(api.lookupBarcode('8001090662231')).resolves.toBeNull()
     wrapper.unmount()
   })
 })

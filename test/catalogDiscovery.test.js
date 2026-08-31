@@ -18,12 +18,31 @@ const fakeFunctions = (impl) => ({
 })
 
 describe('deciding whether the local catalog answered', () => {
-  it('says yes when a row contains every word that was typed', () => {
-    const rows = [{ name: 'Lapte 1.5% 1L', maker: 'Zuzu', popularity: 40 }]
-    expect(localAnswersQuery(rows, 'lapte')).toBe(true)
-    expect(localAnswersQuery(rows, 'lapte zuzu')).toBe(true)
+  // Enough branded rows to fill the dropdown, which is what "answered" means.
+  const sixMilks = Array.from({ length: 6 }, (_, i) => ({
+    name: `Lapte 1.5% 1L ${i}`, maker: `Zuzu${i}`, popularity: 40,
+  }))
+
+  it('says yes when enough branded rows contain every word typed', () => {
+    expect(localAnswersQuery(sixMilks, 'lapte')).toBe(true)
     // Word order is not load-bearing, same as the database's own search.
-    expect(localAnswersQuery(rows, 'zuzu lapte')).toBe(true)
+    expect(localAnswersQuery(sixMilks, 'zuzu lapte')).toBe(true)
+  })
+
+  it('says no when one thin row is all there is', () => {
+    // THE BUG THIS RULE EXISTS FOR. One matching row used to be enough, so a
+    // seed row named "Apă" answered every water search forever and the catalog
+    // could never grow past what it shipped with.
+    const rows = [{ name: 'Lapte 1.5% 1L', maker: 'Zuzu', popularity: 40 }]
+    expect(localAnswersQuery(rows, 'lapte')).toBe(false)
+  })
+
+  it('does not count brandless concepts toward the total', () => {
+    // "Apă", "Apă plată", "Apă minerală" are concepts, not things to buy.
+    const generics = Array.from({ length: 9 }, (_, i) => ({
+      name: `Apa ${i}`, maker: null, popularity: 50,
+    }))
+    expect(localAnswersQuery(generics, 'apa')).toBe(false)
   })
 
   it('says no when the rows are about something else', () => {
@@ -42,9 +61,13 @@ describe('deciding whether the local catalog answered', () => {
   })
 
   it('folds both sides, so accents and case do not decide it', () => {
-    const rows = [{ name: 'Șampon pentru Copii', maker: "Johnson's", popularity: 1 }]
+    const rows = Array.from({ length: 6 }, (_, i) => ({
+      name: `Șampon pentru Copii ${i}`, maker: `Johnson's ${i}`, popularity: 1,
+    }))
     expect(localAnswersQuery(rows, 'sampon')).toBe(true)
     expect(localAnswersQuery(rows, 'SAMPON')).toBe(true)
+    // And the fold is not what decides it: the same rows, one short.
+    expect(localAnswersQuery(rows.slice(0, 5), 'sampon')).toBe(false)
   })
 
   it('treats an empty query as answered rather than asking about nothing', () => {
@@ -184,5 +207,42 @@ describe('never breaking the search box', () => {
         JSON.stringify(data),
       ).toEqual([])
     }
+  })
+})
+
+describe('the intent the catalog reported', () => {
+  // MIRRORED in the catalog's own isLocalSufficient, the same way the fold has
+  // three copies: this one saves a round trip, the server's cannot be lied to.
+  // Change one and change both.
+
+  it('a generic concept needs nothing external, however thin the local answer', () => {
+    const rows = [{ name: 'Cartofi', maker: null, popularity: 100 }]
+    expect(localAnswersQuery(rows, 'cartofi')).toBe(false)
+    expect(localAnswersQuery(rows, 'cartofi', 'generic')).toBe(true)
+  })
+
+  it('a branded concept is never answered by a brandless row', () => {
+    const rows = [{ name: 'Apă', maker: null, popularity: 10000 }]
+    expect(localAnswersQuery(rows, 'apa', 'branded')).toBe(false)
+  })
+
+  it('a mixed concept still wants real products', () => {
+    const rows = [{ name: 'Lapte', maker: null, popularity: 500 }]
+    expect(localAnswersQuery(rows, 'lapte', 'mixed')).toBe(false)
+  })
+
+  it('falls back to counting branded rows when no concept claimed the word', () => {
+    const branded = Array.from({ length: 6 }, (_, i) => ({
+      name: `Chorizo ${i}`, maker: `Maker${i}`, popularity: 1,
+    }))
+    expect(localAnswersQuery(branded, 'chorizo', null)).toBe(true)
+    expect(localAnswersQuery(branded.slice(0, 5), 'chorizo', null)).toBe(false)
+  })
+
+  it('a generic intent does not rescue a query nothing actually matched', () => {
+    // The match-quality half still runs first. Ten drinks reached through a
+    // category name are not an answer to "pepsi zero", whatever the intent.
+    const rows = [{ name: 'Suc de portocale', maker: null, popularity: 10 }]
+    expect(localAnswersQuery(rows, 'pepsi zero', 'generic')).toBe(false)
   })
 })
