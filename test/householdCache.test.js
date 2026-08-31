@@ -3,6 +3,9 @@ import {
   loadHouseholdSnapshot,
   saveHouseholdSnapshot,
   clearHouseholdSnapshot,
+  loadActiveHouseholdId,
+  saveActiveHouseholdId,
+  clearActiveHouseholdId,
   SNAPSHOT_MAX_AGE_MS,
 } from '../src/lib/householdCache'
 import { makeStorage } from './support/fakeStorage'
@@ -276,5 +279,92 @@ describe('per-user snapshot keys', () => {
 
     expect(loadHouseholdSnapshot(storage, 'user-a')).toBeNull()
     expect(loadHouseholdSnapshot(storage, 'user-b')).toBeNull()
+  })
+})
+
+// The fourth and last record on this device to move off a single device-wide
+// key with the account stamped inside it, after the offline queue, the snapshot
+// above and the notification preference.
+//
+// Mildest of the four by a distance -- losing it means landing on your first
+// household rather than the one you last picked, where the queue loses unsent
+// writes -- which is exactly why it was the one left behind. It is the same
+// shape one severity down, and the shape is what comes back somewhere it
+// matters.
+describe('per-user active household', () => {
+  const SHARED_LEGACY_KEY = 'famcart-active-household'
+  const FAMILY_LEGACY_KEY = 'famcart-active-family'
+
+  it('keeps two accounts on one device from overwriting each other', () => {
+    const storage = makeStorage()
+    saveActiveHouseholdId(storage, 'user-a', 'fam-a')
+    saveActiveHouseholdId(storage, 'user-b', 'fam-b')
+
+    // Before this, B's save took the one key and A's choice was simply gone.
+    expect(loadActiveHouseholdId(storage, 'user-a')).toBe('fam-a')
+    expect(loadActiveHouseholdId(storage, 'user-b')).toBe('fam-b')
+  })
+
+  it('adopts a choice left under the old device-wide key', () => {
+    const storage = makeStorage()
+    storage.setItem(SHARED_LEGACY_KEY, JSON.stringify({ userId: 'user-1', householdId: 'fam-1' }))
+
+    expect(loadActiveHouseholdId(storage, 'user-1')).toBe('fam-1')
+
+    // And retires it on the next save, so it cannot come back as a stale
+    // fallback once the per-user key is cleared.
+    saveActiveHouseholdId(storage, 'user-1', 'fam-2')
+    expect(storage.getItem(SHARED_LEGACY_KEY)).toBeNull()
+    expect(loadActiveHouseholdId(storage, 'user-1')).toBe('fam-2')
+  })
+
+  it('adopts the pre-rename key, which spelled it familyId', () => {
+    const storage = makeStorage()
+    storage.setItem(FAMILY_LEGACY_KEY, JSON.stringify({ userId: 'user-1', familyId: 'fam-1' }))
+
+    expect(loadActiveHouseholdId(storage, 'user-1')).toBe('fam-1')
+
+    saveActiveHouseholdId(storage, 'user-1', 'fam-2')
+    expect(storage.getItem(FAMILY_LEGACY_KEY)).toBeNull()
+  })
+
+  it('still refuses a device-wide choice belonging to another account', () => {
+    const storage = makeStorage()
+    storage.setItem(SHARED_LEGACY_KEY, JSON.stringify({ userId: 'someone-else', householdId: 'fam-x' }))
+
+    expect(loadActiveHouseholdId(storage, 'user-1')).toBeNull()
+  })
+
+  it('clears only the named account when told which one', () => {
+    const storage = makeStorage()
+    saveActiveHouseholdId(storage, 'user-a', 'fam-a')
+    saveActiveHouseholdId(storage, 'user-b', 'fam-b')
+
+    clearActiveHouseholdId(storage, 'user-a')
+
+    expect(loadActiveHouseholdId(storage, 'user-a')).toBeNull()
+    expect(loadActiveHouseholdId(storage, 'user-b')).toBe('fam-b')
+  })
+
+  it('clears every account when it cannot say whose it is', () => {
+    const storage = makeStorage()
+    saveActiveHouseholdId(storage, 'user-a', 'fam-a')
+    saveActiveHouseholdId(storage, 'user-b', 'fam-b')
+
+    clearActiveHouseholdId(storage)
+
+    expect(loadActiveHouseholdId(storage, 'user-a')).toBeNull()
+    expect(loadActiveHouseholdId(storage, 'user-b')).toBeNull()
+  })
+
+  // The stored id is read back out as a query parameter, so the tamper check
+  // that guards the snapshot's household id guards this one too.
+  it('refuses an id that is not an opaque identifier', () => {
+    const storage = makeStorage()
+    storage.setItem(
+      SHARED_LEGACY_KEY,
+      JSON.stringify({ userId: 'user-1', householdId: 'fam-1,name.eq.x' }),
+    )
+    expect(loadActiveHouseholdId(storage, 'user-1')).toBeNull()
   })
 })

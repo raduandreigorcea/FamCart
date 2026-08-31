@@ -603,7 +603,7 @@ async function runInitializeHome() {
 
   if (!households.value.length) {
     clearHouseholdSnapshot(localStorage, effectiveUserId.value)
-    clearActiveHouseholdId(localStorage)
+    clearActiveHouseholdId(localStorage, effectiveUserId.value)
     router.replace('/household-setup')
     return
   }
@@ -795,7 +795,7 @@ async function reconcileActiveHousehold() {
   }
   cleanupRealtimeSubscriptions()
   clearHouseholdSnapshot(localStorage, effectiveUserId.value)
-  clearActiveHouseholdId(localStorage)
+  clearActiveHouseholdId(localStorage, effectiveUserId.value)
   router.replace('/household-setup')
 }
 
