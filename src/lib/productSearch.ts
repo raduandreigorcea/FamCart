@@ -220,18 +220,40 @@ export function rankSuggestions(
   householdStats: Map<string, HouseholdProductStat>,
   limit: number,
 ): ProductSuggestion[] {
-  const unique = new Map<string, ProductSuggestion>()
+  // Decorate before sorting, rather than resolving each row inside the
+  // comparator.
+  //
+  // This is the search box's keystroke path, and the pool it is handed is large:
+  // SUGGEST_POOL is 100 from each of two projects, plus whatever the household's
+  // own history matched. The comparator ran productKey TWICE per comparison, and
+  // productKey is an NFD normalize, two regex passes, a lowercase and a trim,
+  // for the name and again for the maker — so a sort of a few hundred rows spent
+  // thousands of Unicode normalizations, on a phone, between one keypress and
+  // the next. The dedupe loop directly above had already computed the identical
+  // key and thrown it away.
+  //
+  // Resolving the stat here rather than the key alone, because the stat is all
+  // the comparator ever wanted the key for. Same output, O(n) normalizations
+  // instead of O(n log n).
+  interface Ranked {
+    candidate: ProductSuggestion
+    stat: HouseholdProductStat | undefined
+  }
+
+  const unique = new Map<string, Ranked>()
   for (const candidate of candidates || []) {
     const name = String(candidate?.name ?? '').trim()
     if (!name) continue
     const key = productKey(name, candidate.maker)
-    if (!unique.has(key)) unique.set(key, candidate)
+    // The key normalizes its inputs, so the trimmed name above and the raw one
+    // the comparator used to pass produce the same key. Nothing shifts.
+    if (!unique.has(key)) unique.set(key, { candidate, stat: householdStats.get(key) })
   }
 
   return [...unique.values()]
     .sort((a, b) => {
-      const sa = householdStats.get(productKey(a.name, a.maker))
-      const sb = householdStats.get(productKey(b.name, b.maker))
+      const sa = a.stat
+      const sb = b.stat
 
       // Bought before beats never bought, whatever the world thinks of it.
       if (Boolean(sa) !== Boolean(sb)) return sa ? -1 : 1
@@ -240,14 +262,16 @@ export function rankSuggestions(
         if (sa.lastPurchasedAt !== sb.lastPurchasedAt) return sb.lastPurchasedAt - sa.lastPurchasedAt
       }
 
-      const pa = Number(a.popularity) || 0
-      const pb = Number(b.popularity) || 0
+      const pa = Number(a.candidate.popularity) || 0
+      const pb = Number(b.candidate.popularity) || 0
       if (pa !== pb) return pb - pa
 
       // Pinned to 'en', not the device or the app language: this is a
       // tie-breaker over catalog data, and a locale-dependent collation
       // would order the same list differently on two phones for no gain.
-      return a.name.localeCompare(b.name, 'en', { sensitivity: 'base' })
+      // The raw name, as before — not the trimmed one used for the key.
+      return a.candidate.name.localeCompare(b.candidate.name, 'en', { sensitivity: 'base' })
     })
     .slice(0, limit)
+    .map((entry) => entry.candidate)
 }

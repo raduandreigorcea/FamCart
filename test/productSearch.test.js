@@ -175,6 +175,32 @@ describe('rankSuggestions', () => {
   it('ignores candidates with no usable name', () => {
     expect(rankSuggestions([{ name: '  ', maker: 'x' }, ...catalog], noStats, 6)).toHaveLength(3)
   })
+
+  // The stat lookup is keyed off the TRIMMED name, while the row that comes back
+  // and the name tiebreak still use the raw one. That is only safe because
+  // productKey normalizes its inputs, and this is the case that proves it: a
+  // padded name has to still find the household's history, or a product they buy
+  // every week silently drops to catalog order.
+  //
+  // Worth pinning because it used to be true for a different reason. The
+  // comparator resolved the key from the raw name on every comparison; it
+  // resolves it once, from the trimmed one, alongside the dedupe that had
+  // already computed it.
+  it('still finds the household history for a name that arrives padded', () => {
+    const stats = buildHouseholdProductStats([
+      { name: 'Apa de Gura 500ml', maker: 'Listerine', purchased_at: '2026-07-01T10:00:00Z' },
+    ])
+    const padded = [
+      { name: '  Apa de Gura 500ml  ', maker: 'Listerine', popularity: 0 },
+      ...catalog.slice(0, 2),
+    ]
+    const ranked = rankSuggestions(padded, stats, 6)
+
+    // Bought here, so it outranks two rows with popularity 100 despite its own 0.
+    expect(ranked[0].name).toBe('  Apa de Gura 500ml  ')
+    // And the row handed back is the candidate as given, not a trimmed copy.
+    expect(ranked).toHaveLength(3)
+  })
 })
 
 // The other half of the suggestion pool. The catalog query is capped and ordered
