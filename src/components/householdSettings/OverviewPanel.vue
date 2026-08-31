@@ -2,8 +2,7 @@
 import { type PropType } from 'vue'
 import type { HouseholdMemberProfile } from '../../lib/householdRealtime'
 import { useCopyFeedback } from '../../lib/clipboard'
-import copyIcon from '../../assets/copy.svg?raw'
-import checkIcon from '../../assets/check.svg?raw'
+import AppIcon from '../AppIcon.vue'
 import { t } from '../../lib/i18n'
 
 // Read-only: who is in the household, who made it, and the code for adding
@@ -86,7 +85,7 @@ const { copied, copy: copyInviteCode } = useCopyFeedback()
           type="button"
           @click="copyInviteCode(inviteCode)"
         >
-          <span class="btn-icon-wrap" aria-hidden="true" v-html="copied ? checkIcon : copyIcon"></span>
+          <AppIcon class="btn-icon-wrap" :name="copied ? 'check' : 'copy'" />
           <span>{{ copied ? t('overview.copied') : t('overview.copyCode') }}</span>
         </button>
       </div>

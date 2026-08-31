@@ -7,11 +7,10 @@ import { useAddedConfirmation } from '../lib/useAddedConfirmation'
 import { getProductEmoji } from '../lib/productEmoji'
 import BackButton from './BackButton.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
-import checkIcon from '../assets/check.svg?raw'
-import scanBarcodeIcon from '../assets/scan-barcode.svg?raw'
 import { productKey, type ProductSuggestion } from '../lib/productSearch'
 import { ITEM_NAME_MAX_LENGTH } from '../lib/limits'
 import { t } from '../lib/i18n'
+import AppIcon from './AppIcon.vue'
 
 // Presentational: the typed name lives in the parent (via v-model) so the add
 // flow can restore it when an optimistic insert fails. The suggestions list is
@@ -412,13 +411,7 @@ onBeforeUnmount(() => {
             :aria-label="showScan ? t('add.scanLabel') : t('add.submitLabel')"
           >
             <Transition name="btn-swap" mode="out-in">
-              <span
-                v-if="showScan"
-                key="scan"
-                class="scan-icon"
-                aria-hidden="true"
-                v-html="scanBarcodeIcon"
-              ></span>
+              <AppIcon v-if="showScan" key="scan" class="scan-icon" name="scan-barcode" />
               <span v-else key="add" class="add-icon"></span>
             </Transition>
           </button>
@@ -513,7 +506,7 @@ onBeforeUnmount(() => {
                     <!-- On the tile, the way the row on the list wears its own
                          mark. Rendering it only when added would pop the layout;
                          it scales in from nothing instead. -->
-                    <span class="suggestion-tick" v-html="checkIcon"></span>
+                    <AppIcon class="suggestion-tick" name="check" />
                   </span>
                   <span class="suggestion-text">
                     <span class="suggestion-name">{{ product.name }}</span>

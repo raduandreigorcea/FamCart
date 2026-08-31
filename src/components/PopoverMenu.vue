@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch, type PropType } from 'vue'
 import { closeModal, openModal } from '../lib/modalStack'
+import AppIcon from './AppIcon.vue'
 
 // The menu shell: a panel that hangs off a button on a wide screen and comes up
 // as a bottom sheet on a phone. Owns the teleport, the overlay, the transition,
@@ -30,7 +31,12 @@ const props = defineProps({
   // header at all.
   heading: { type: String, default: '' },
   // Raw SVG markup (an `import ... from '../assets/x.svg?raw'`), not a path.
-  icon: { type: String, default: '' },
+  // The icon's NAME, resolved by AppIcon, rather than its markup. It used to
+  // be the markup itself, which made every caller import a `?raw` asset in
+  // order to pass a string this component then v-html'd -- v-html on a prop,
+  // which is the one shape that is genuinely unsafe if a caller ever passes
+  // something it did not author.
+  iconName: { type: String, default: '' },
   hint: { type: String, default: '' },
   // Which edge of the trigger the panel lines up with on a wide screen.
   align: {
@@ -123,8 +129,8 @@ onBeforeUnmount(() => {
       <div v-if="open" class="popover-overlay" @click.self="close">
         <div class="popover-panel" :style="anchor">
           <header v-if="heading" class="popover-header">
-            <span v-if="icon" class="popover-header__icon-bg" aria-hidden="true">
-              <span class="popover-header__icon" aria-hidden="true" v-html="icon"></span>
+            <span v-if="iconName" class="popover-header__icon-bg" aria-hidden="true">
+              <AppIcon class="popover-header__icon" :name="iconName" />
             </span>
             <span class="popover-header__text">
               <span class="popover-header__title">{{ heading }}</span>
