@@ -675,6 +675,18 @@ export function useProductSuggestions(options: {
 
   onBeforeUnmount(() => {
     if (suggestTimer) clearTimeout(suggestTimer)
+    // And retire the request id, which is what stops a discovery that is
+    // already past the debounce.
+    //
+    // discoverMore waits out its own DISCOVER_DELAY_MS on a bare setTimeout
+    // and then makes an external call. Clearing suggestTimer does not reach
+    // it: a view torn down inside that window still woke up, still asked Open
+    // Food Facts, and still wrote the answer into a ref nobody was rendering.
+    // Every guard in this file is `requestId !== suggestRequestId`, so moving
+    // the id past every request in flight closes all of them at once — the
+    // same mechanism resetForHousehold already uses for a household switch,
+    // which was the only teardown that had it.
+    suggestRequestId++
   })
 
   return {
