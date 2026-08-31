@@ -201,22 +201,53 @@ export function clearHouseholdSnapshot(storage: Storage, userId?: string): void 
   clearUserScopedKeys(storage, STORAGE_PREFIX, userId)
 }
 
-// Which of a user's households is currently active, so the choice survives reloads.
-// Keyed to the user so switching accounts on one browser never carries over. The
-// stored id is only a hint: HomeView uses it only if it still matches a live
-// membership, otherwise it falls back to the first household.
-const ACTIVE_HOUSEHOLD_KEY = 'famcart-active-household'
-// Same story as the snapshot above: pre-rename builds wrote { userId, familyId }
-// here. Losing it is milder — the user lands on their first household instead of
-// the one they last picked — but it is still a visible wrong answer on the first
-// load after the deploy, and reading one extra key avoids it.
-const LEGACY_ACTIVE_KEY = 'famcart-active-family'
+// Which of a user's households is currently active, so the choice survives
+// reloads. The stored id is only a hint: HomeView uses it only if it still
+// matches a live membership, otherwise it falls back to the first household.
+//
+// ONE RECORD PER ACCOUNT, which this was the last of the four to become.
+//
+// The offline queue, the snapshot above and the notification preference were
+// each moved off a single device-wide key holding a stamped userId, one at a
+// time, and lib/perUserStorage was written so the argument would not have to be
+// made a fourth time. This was the fourth. Reading was always safe — every one
+// of them ignores a record belonging to somebody else — but the single key held
+// whichever account saved last, so B signing in destroyed A's outright.
+//
+// What that costs here is the mildest of the four by a distance: A lands on
+// their first household instead of the one they last picked. It is fixed anyway
+// because it is the same shape one severity down, and leaving the shape in place
+// is how it comes back somewhere it matters.
+const ACTIVE_HOUSEHOLD_PREFIX = 'famcart-active-household'
+// What every build before this one wrote: one device-wide key, the account
+// stamped inside it. Read as a fallback and retired on the next save, so nobody
+// loses their choice across the deploy.
+//
+// Note it is the SAME string as the prefix, exactly as the snapshot's legacy key
+// is, and as LOCALE_DEVICE_KEY is to LOCALE_PREFIX. Safe, and only just: an
+// unscoped clearUserScopedKeys sweeps keys starting with
+// `famcart-active-household:` — the colon is in the pattern — so it never
+// touches this one, which is why the clear below removes it by name.
+const LEGACY_ACTIVE_KEY = ACTIVE_HOUSEHOLD_PREFIX
+// And before that, the pre-rename spelling, with { userId, familyId }.
+const LEGACY_ACTIVE_FAMILY_KEY = 'famcart-active-family'
+
+function activeHouseholdKey(userId: string): string {
+  return userScopedKey(ACTIVE_HOUSEHOLD_PREFIX, userId)
+}
 
 export function loadActiveHouseholdId(storage: Storage, userId: string): string | null {
   try {
-    const raw = storage.getItem(ACTIVE_HOUSEHOLD_KEY) ?? storage.getItem(LEGACY_ACTIVE_KEY)
+    // This account's own key first; the two device-wide predecessors only as
+    // fallbacks, each still subject to the userId check below.
+    const raw =
+      storage.getItem(activeHouseholdKey(userId))
+      ?? storage.getItem(LEGACY_ACTIVE_KEY)
+      ?? storage.getItem(LEGACY_ACTIVE_FAMILY_KEY)
     if (!raw) return null
     const stored = JSON.parse(raw) as { userId?: string; householdId?: string; familyId?: string }
+    // Still checked despite the key now carrying the user id, because the two
+    // legacy keys read above carry no such guarantee.
     if (stored.userId !== userId) return null
     // Same reasoning as the snapshot above. This one is checked against live
     // memberships before it is used, so it is the better-guarded of the two —
@@ -231,18 +262,29 @@ export function loadActiveHouseholdId(storage: Storage, userId: string): string 
 
 export function saveActiveHouseholdId(storage: Storage, userId: string, householdId: string): void {
   try {
-    storage.setItem(ACTIVE_HOUSEHOLD_KEY, JSON.stringify({ userId, householdId }))
+    storage.setItem(activeHouseholdKey(userId), JSON.stringify({ userId, householdId }))
+    // Both device-wide copies have been superseded by this write; leaving one
+    // would let the read above fall back to a stale choice once this account's
+    // own key is cleared.
     storage.removeItem(LEGACY_ACTIVE_KEY)
+    storage.removeItem(LEGACY_ACTIVE_FAMILY_KEY)
   } catch {
     // Storage disabled — the active household just won't persist across reloads.
   }
 }
 
-export function clearActiveHouseholdId(storage: Storage): void {
+// `userId` scopes it to one account. Without one — a sign-out from a screen that
+// does not know who is signed in — every account's choice on the device is
+// cleared, which is the safer end of the trade on a shared browser. Same
+// signature and same reasoning as clearHouseholdSnapshot and clearOfflineQueue.
+export function clearActiveHouseholdId(storage: Storage, userId?: string): void {
   try {
-    storage.removeItem(ACTIVE_HOUSEHOLD_KEY)
+    // The two device-wide predecessors, which belong to no account, so there is
+    // nothing to scope them by.
     storage.removeItem(LEGACY_ACTIVE_KEY)
+    storage.removeItem(LEGACY_ACTIVE_FAMILY_KEY)
   } catch {
     // Storage disabled — nothing to clear.
   }
+  clearUserScopedKeys(storage, ACTIVE_HOUSEHOLD_PREFIX, userId)
 }
