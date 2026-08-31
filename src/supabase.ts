@@ -8,20 +8,32 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 // and development app databases and shared live by both. It holds the imported
 // and curated reference rows and nothing that belongs to anybody; households,
 // lists, history and household-contributed products stay in the app database.
-// Its schema is NOT in this repo and never was: it belonged to the importer
-// repo, the only thing that ever wrote that database, where this app only reads
-// it. That repo has been deleted and the catalog project reset to bare
-// catalog_admins, so RIGHT NOW there is no product_catalog and no
-// search_catalog() on the other end of this client.
+// Its table is `catalog_products`, named so that nothing reads ambiguously
+// against the app database's own `product_catalog`.
 //
-// This file needs no special case for that, because what it depends on is an
-// API rather than a schema: search_catalog() and bump_product_popularity(),
-// whose shapes are fixed elsewhere. Calls to a missing RPC reject, and
-// productSuggestions.ts already treats a failed catalog leg as zero rows via
-// Promise.allSettled. When a replacement pipeline recreates the RPCs this comes
-// back on its own. Wire that project's pgTAP suite into this repo's CI again
-// when it does: it is what turns a change to either RPC into a failed build
-// rather than an empty suggestions dropdown.
+// Its schema lives in a repository of its own, checked out here as a submodule
+// at `catalog/` (raduandreigorcea/FamCart-catalog). The separation is real
+// rather than a naming convention: its own Supabase project in its own
+// organisation, its own migrations, its own pgTAP suite, its own edge function
+// and its own release cadence.
+//
+// So what this file depends on is an API rather than a schema. Three RPCs, all
+// defined in catalog/supabase/migrations/004_search.sql:
+//
+//   search_catalog(p_query, p_limit, p_markets, p_langs, p_fuzzy)
+//   lookup_barcode(p_codes, p_langs)
+//   bump_product_popularity(p_name, p_maker)
+//
+// PostgREST resolves an RPC by the argument NAMES in the body, so renaming one
+// breaks this app with nothing on this side to warn you. That is why the
+// catalog's own pgTAP suite runs in THIS repo's CI as well as its own (the
+// catalog-tests job): it turns a change to either RPC into a failed build
+// rather than into an empty suggestions dropdown in production.
+//
+// This app reads; it does not write rows here. A popularity bump is the single
+// exception, and it increments a counter rather than contributing content. New
+// products arrive through the catalog's own `discover` edge function, which
+// src/lib/catalogDiscovery.ts asks and which does its own saving.
 //
 // One Clerk session authenticates both, because the catalog project's
 // Third-Party Auth integration names the same issuer. That is why the resolver
