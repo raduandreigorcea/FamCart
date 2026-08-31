@@ -1,16 +1,18 @@
 import { describe, it, expect } from 'vitest'
 import {
   normalizeSearchText,
-  escapeIlikePattern,
   productKey,
   buildHouseholdProductStats,
   matchHouseholdStats,
   rankSuggestions,
 } from '../src/lib/productSearch'
 
-// The client-side normalization must mirror how scripts/seed-products.mjs
-// computes product_catalog.search_text — same lowercase / diacritic-stripping /
-// whitespace-collapsing — or typed input stops matching seeded rows.
+// The client-side normalization must agree with the two database copies of the
+// same rule — catalog_normalize() in the catalog project and
+// product_search_text() in the app's — or typed input stops matching stored
+// rows. See the header of src/lib/productSearch.ts for where all of them are.
+//
+// (This used to name scripts/seed-products.mjs, which was deleted in 9a4366e.)
 describe('normalizeSearchText', () => {
   it('lowercases, strips diacritics, and collapses whitespace', () => {
     expect(normalizeSearchText('  Apă  Plată   2L ')).toBe('apa plata 2l')
@@ -19,24 +21,6 @@ describe('normalizeSearchText', () => {
 
   it('leaves already-normalized text unchanged', () => {
     expect(normalizeSearchText('apa plata 2l dorna')).toBe('apa plata 2l dorna')
-  })
-})
-
-describe('escapeIlikePattern', () => {
-  it('escapes the ilike wildcards and the escape character itself', () => {
-    expect(escapeIlikePattern('50%_a\\b')).toBe('50\\%\\_a\\\\b')
-  })
-
-  it('leaves plain text alone', () => {
-    expect(escapeIlikePattern('apa plata')).toBe('apa plata')
-  })
-
-  // PostgREST rewrites * to % on its way to SQL, so an unescaped asterisk was a
-  // wildcard that never went through Postgres's pattern syntax at all: typing
-  // one matched the whole catalog.
-  it('escapes the asterisk PostgREST would rewrite into a wildcard', () => {
-    expect(escapeIlikePattern('*')).toBe('\\*')
-    expect(escapeIlikePattern('a*b')).toBe('a\\*b')
   })
 })
 

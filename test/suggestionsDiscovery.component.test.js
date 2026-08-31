@@ -231,6 +231,31 @@ describe('a late answer', () => {
     wrapper.unmount()
   })
 
+  // The view can go away between the keystroke and the call. The debounce is
+  // cleared on unmount, but the DISCOVERY DELAY sits on top of it and was not:
+  // a component torn down inside that window still woke up, still asked a
+  // third-party database, and still wrote the answer into a ref nobody was
+  // rendering. Closing the household switcher mid-search is enough to hit it.
+  it('is abandoned when the view goes away before the call is made', async () => {
+    const query = ref('')
+    const { wrapper } = mountSuggestions(query)
+
+    // Past the debounce, so fetchSuggestions has run and reached discoverMore,
+    // but NOT past the discovery delay it is now waiting out.
+    query.value = 'pepsi zero'
+    await vi.advanceTimersByTimeAsync(SUGGEST_DEBOUNCE_MS)
+    await flushPromises()
+    expect(mocks.discover).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+
+    // The delay elapses against a component that no longer exists.
+    await vi.advanceTimersByTimeAsync(1)
+    await flushPromises()
+
+    expect(mocks.discover).not.toHaveBeenCalled()
+  })
+
   it('changes nothing when it finds nothing', async () => {
     catalogRows = [{ name: 'Apa Plata 2L', maker: 'Dorna', popularity: 90 }]
     mocks.discover = vi.fn(async () => [])

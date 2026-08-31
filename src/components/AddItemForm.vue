@@ -54,10 +54,6 @@ const props = defineProps({
   // Whether to offer the "add your own" escape hatch. Owned by the parent,
   // which knows when the query is long enough to have been searched for.
   canAddCustom: { type: Boolean, default: false },
-  // Discovery has asked every source and come back with nothing. Changes only
-  // what this row SAYS, never whether it is there or what it does: it is still
-  // the same choice, and the point is to stop implying that waiting or typing
-  // more would turn something up.
   // Whether this device can scan at all — a camera it can reach, and something
   // that can decode. Asked once by the parent; a browser that cannot scan is
   // never offered the button rather than being offered one that fails.
