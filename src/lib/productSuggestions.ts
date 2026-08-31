@@ -15,8 +15,10 @@ import { topHouseholdProducts } from './productRecents'
 import {
   DISCOVER_DELAY_MS,
   DISCOVER_MIN_CHARS,
+  discoverBarcode,
   discoverProducts,
   localAnswersQuery,
+  type ConceptIntent,
 } from './catalogDiscovery'
 import type { Market } from './region'
 import type { ShoppingItemRow } from './householdRealtime'
@@ -359,7 +361,19 @@ export function useProductSuggestions(options: {
       // delay a row or take one away. Deliberately not awaited — the local
       // answer is the answer, and this is an addition to it that arrives later
       // or not at all.
-      if (!localAnswersQuery(candidates, text)) {
+      //
+      // WHAT THE WORD MEANS comes back on the catalog rows themselves, so
+      // knowing it costs nothing: `search_catalog` resolved the concept in
+      // order to rank, and reports the intent it used. Read off the first
+      // catalog row because every row of one search carries the same value —
+      // it is a fact about the QUERY, not about any product.
+      //
+      // Absent (no catalog project, no rows, no concept for this word) it stays
+      // null and localAnswersQuery falls back to counting branded rows, which
+      // is what it did before concepts existed.
+      const intent = (globalRows[0]?.concept_intent ?? null) as ConceptIntent | null
+
+      if (!localAnswersQuery(candidates, text, intent)) {
         void discoverMore(text, requestId, [...globalRows, ...localRows])
       }
     } catch {
@@ -496,8 +510,27 @@ export function useProductSuggestions(options: {
       const found = global ?? local
       if (found) {
         suggestionOrigins.set(productKey(found.name, found.maker), global ? 'catalog' : 'local')
+        return found
       }
-      return found
+
+      // ─── the cold path for a scan ────────────────────────────────────────
+      // Neither database has ever seen this code. A search reaches discovery
+      // because what was typed matched nothing GOOD ENOUGH; a scan reaches it
+      // because an exact key matched nothing AT ALL, which is a stronger signal
+      // and worth acting on straight away rather than behind a delay.
+      //
+      // Nothing below can fail the scan: discoverBarcode resolves null for a
+      // dead function, a rejected token, a timeout or a product no source
+      // knows, and null is exactly what this returned a moment ago anyway. The
+      // worst case is the scan taking a second longer to say the same thing.
+      if (!catalogDb) return null
+      const discovered = await discoverBarcode(catalogDb, candidates)
+      if (discovered) {
+        // It lives in the catalog project now — the function saved it before
+        // returning it — so a later popularity bump has to go there.
+        suggestionOrigins.set(productKey(discovered.name, discovered.maker), 'catalog')
+      }
+      return discovered
     } catch {
       // Treated as "the catalog does not have it", which puts the user on the
       // naming path rather than on an error they can do nothing about.
