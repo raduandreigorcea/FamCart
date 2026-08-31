@@ -12,6 +12,15 @@ import { barcodeCandidates } from './barcodeScanner'
 import { getCatalogSupabase } from '../supabase'
 import type { AddedProduct } from './shoppingListActions'
 import { topHouseholdProducts } from './productRecents'
+import {
+  DISCOVER_DELAY_MS,
+  DISCOVER_MIN_CHARS,
+  discoverBarcode,
+  discoverProducts,
+  localAnswersQuery,
+  type ConceptIntent,
+} from './catalogDiscovery'
+import type { Market } from './region'
 import type { ShoppingItemRow } from './householdRealtime'
 
 // Everything behind the add form's search box: what the catalog is asked, what
@@ -94,8 +103,26 @@ export function useProductSuggestions(options: {
   /** What is currently typed into the add form. */
   query: Ref<string>
   isOffline: () => boolean
+  /**
+   * Where this person shops, detected from the device timezone, or null when
+   * the timezone is one the catalog does not cover.
+   *
+   * A getter rather than a ref, and read fresh on every search, for the same
+   * reason isOffline is a function: it is a question with a current answer
+   * rather than a value to keep in step. A phone that crosses a border is
+   * answering differently by the next keystroke, with no plumbing between.
+   */
+  region: () => Market | null
+  /**
+   * The language this person reads, which is the one the app is in.
+   *
+   * A getter for the same reason as region, and it matters more here: setLocale
+   * takes effect immediately, so switching the app to Romanian must reorder the
+   * next search rather than the next session.
+   */
+  locale: () => string
 }): ProductSuggestions {
-  const { db, householdId, items, query, isOffline } = options
+  const { db, householdId, items, query, isOffline, region, locale } = options
 
   const suggestions = ref<ProductSuggestion[]>([])
   const suggestionsLoading = ref(false)
@@ -234,9 +261,54 @@ export function useProductSuggestions(options: {
       // household's own products because a third project was slow. One source
       // failing must cost only that source.
       const catalogDb = getCatalogSupabase()
+
+      // Two signals about this person, sent to the reference catalog only.
+      //
+      // The catalog holds 191,394 products and 190,394 of them name a market,
+      // so without either of these a Romanian household ranks 37,008 French
+      // products above its own 9,011 Romanian ones — popularity is measured
+      // across all of Europe, and every French product wins it.
+      //
+      // LANGUAGE FIRST, MARKET SECOND, and search_catalog encodes that order
+      // rather than this file: p_langs decides whether a name can be read,
+      // p_markets whether the product is on a nearby shelf, and the first
+      // question is the one somebody typing into a search box is really asking.
+      // "Sour Cream & Onion" is no use to a household that wanted "cu smantana
+      // si ceapa", however close the shop is.
+      //
+      // Both DEMOTE rather than filter: a non-matching row sorts last, it does
+      // not disappear. That is deliberate and worth preserving — a hard filter
+      // would give a household in a thin market, or searching a term the
+      // catalog only holds under a foreign name, an empty dropdown
+      // indistinguishable from "we have never heard of that product", which is
+      // the worst failure a search box has.
+      //
+      // Spread rather than `p_markets: null`, because PostgREST resolves an RPC
+      // by the argument names in the body. Omitting the key entirely keeps the
+      // no-region call byte-identical to the one that shipped before this
+      // existed, which is what makes "no preference" mean "exactly as before".
+      const markets = region()
+      // Sent as a one-element array because search_catalog takes text[]. It
+      // does the English fallback itself — a Romanian caller gets Romanian
+      // names, then English ones, then everything else — so there is no second
+      // language to add here, and adding one would silently promote it above
+      // that fallback.
+      const langs = locale()
+
+      // Neither is sent to the app database, which has no markets or name_lang
+      // column and wants none. Its rows are this household's own contributions
+      // plus the curated seed, and its search_catalog already sorts them above
+      // popularity. There is nothing there that should ever be demoted for
+      // being foreign — the household typed it in themselves, in whatever
+      // language they typed it in.
       const [globalRes, localRes] = await Promise.allSettled([
         catalogDb
-          ? catalogDb.rpc('search_catalog', { p_query: text, p_limit: SUGGEST_POOL })
+          ? catalogDb.rpc('search_catalog', {
+              p_query: text,
+              p_limit: SUGGEST_POOL,
+              ...(markets ? { p_markets: [markets] } : {}),
+              ...(langs ? { p_langs: [langs] } : {}),
+            })
           : Promise.resolve({ data: [], error: null }),
         db.rpc('search_catalog', {
           p_query: text,
@@ -283,6 +355,27 @@ export function useProductSuggestions(options: {
         ...matchHouseholdStats(text, householdProductStats.value, { limit: suggestLimit.value }),
       ]
       suggestions.value = rankSuggestions(candidates, householdProductStats.value, suggestLimit.value)
+
+      // THE COLD PATH, and it starts only once the warm one has already
+      // answered. Everything above this line is on screen; nothing below it can
+      // delay a row or take one away. Deliberately not awaited — the local
+      // answer is the answer, and this is an addition to it that arrives later
+      // or not at all.
+      //
+      // WHAT THE WORD MEANS comes back on the catalog rows themselves, so
+      // knowing it costs nothing: `search_catalog` resolved the concept in
+      // order to rank, and reports the intent it used. Read off the first
+      // catalog row because every row of one search carries the same value —
+      // it is a fact about the QUERY, not about any product.
+      //
+      // Absent (no catalog project, no rows, no concept for this word) it stays
+      // null and localAnswersQuery falls back to counting branded rows, which
+      // is what it did before concepts existed.
+      const intent = (globalRows[0]?.concept_intent ?? null) as ConceptIntent | null
+
+      if (!localAnswersQuery(candidates, text, intent)) {
+        void discoverMore(text, requestId, [...globalRows, ...localRows])
+      }
     } catch {
       // Suggestions are a convenience; a failed lookup changes nothing.
     } finally {
@@ -291,6 +384,61 @@ export function useProductSuggestions(options: {
       // or the dropdown would flash "Can't find it?" mid-search.
       if (requestId === suggestRequestId) suggestionsLoading.value = false
     }
+  }
+
+  // Ask the catalog to go and find what it did not have.
+  //
+  // Runs behind its own delay ON TOP of the debounce that already gated the
+  // search above, so somebody typing "detergent" at speed produces one external
+  // call rather than six. Every early return below is a reason not to spend one.
+  //
+  // Guarded by requestId the same way fetchSuggestions is, and for a stricter
+  // reason: this resolves seconds after the keystroke that started it, so the
+  // chance of the dropdown having moved on is much higher than for a local
+  // query. A stale discovery landing in the list would show products for a word
+  // the person has finished deleting.
+  async function discoverMore(
+    text: string,
+    requestId: number,
+    local: ProductSuggestion[],
+  ): Promise<void> {
+    if (text.length < DISCOVER_MIN_CHARS) return
+    const catalogDb = getCatalogSupabase()
+    if (!catalogDb) return
+
+    await new Promise((resolve) => setTimeout(resolve, DISCOVER_DELAY_MS))
+    // Typed again during the delay: that keystroke owns the dropdown and will
+    // do its own asking.
+    if (requestId !== suggestRequestId || selectedProduct.value || isOffline()) return
+
+    const found = await discoverProducts(catalogDb, {
+      query: text,
+      market: region(),
+      language: locale(),
+      local,
+    })
+
+    if (!found.length) return
+    // Checked AGAIN after the call, not only before it. The request above is
+    // the slow part, and everything that could have happened during the delay
+    // could equally have happened during it.
+    if (requestId !== suggestRequestId || selectedProduct.value) return
+
+    // These rows live in the catalog project now — the function saved them
+    // before returning them — so a bump for one has to go there. Without this
+    // they would be treated as unknown-origin and the app database would be
+    // asked about a product it has never held.
+    for (const row of found) suggestionOrigins.set(productKey(row.name, row.maker), 'catalog')
+
+    // Appended, never substituted. rankSuggestions dedupes first-wins, so what
+    // was already on screen keeps its place and its order, and discoveries fill
+    // whatever room is left. A person watching the dropdown sees rows arrive
+    // rather than the list they were reading rearrange itself.
+    suggestions.value = rankSuggestions(
+      [...suggestions.value, ...found],
+      householdProductStats.value,
+      suggestLimit.value,
+    )
   }
 
   // ─── scanning ──────────────────────────────────────────────────────────────
@@ -303,6 +451,12 @@ export function useProductSuggestions(options: {
   // Ordered so a global row wins over a scoped one carrying the same code. The
   // global is the canonical spelling; the scoped row is what this household
   // called it before the catalog caught up.
+  //
+  // "Exact key" is doing less work than it looks. buildLoadPlan merges products
+  // whose names normalize alike, so one row can answer to several codes, and
+  // before alt_barcodes existed the merged-away codes answered to nothing at
+  // all — 4,468 products that scanned to an empty result. lookup_barcode() is
+  // what makes the key exact again.
   async function lookupBarcode(code: string): Promise<ProductSuggestion | null> {
     const candidates = barcodeCandidates(code)
     if (!candidates.length || isOffline()) return null
@@ -313,13 +467,15 @@ export function useProductSuggestions(options: {
       // scan that missed. allSettled so an unreachable catalog project still
       // lets the household's own row answer.
       const [globalRes, localRes] = await Promise.allSettled([
+        // An RPC on the reference catalog, where the app database below is
+        // still a plain select, and the asymmetry is real rather than untidy.
+        // Only the catalog has alt_barcodes — the codes of products that
+        // collapsed onto one row because their names normalize alike. A scan
+        // has to match either column, and a printed barcode has to beat an
+        // absorbed one, which is an ordering across two columns that belongs
+        // beside them rather than in a PostgREST filter chain here.
         catalogDb
-          ? catalogDb
-              .from('product_catalog')
-              .select('name, maker, popularity')
-              .in('barcode', candidates)
-              .order('popularity', { ascending: false })
-              .limit(1)
+          ? catalogDb.rpc('lookup_barcode', { p_codes: candidates })
           : Promise.resolve({ data: [], error: null }),
         (householdId.value
           ? db
@@ -354,8 +510,27 @@ export function useProductSuggestions(options: {
       const found = global ?? local
       if (found) {
         suggestionOrigins.set(productKey(found.name, found.maker), global ? 'catalog' : 'local')
+        return found
       }
-      return found
+
+      // ─── the cold path for a scan ────────────────────────────────────────
+      // Neither database has ever seen this code. A search reaches discovery
+      // because what was typed matched nothing GOOD ENOUGH; a scan reaches it
+      // because an exact key matched nothing AT ALL, which is a stronger signal
+      // and worth acting on straight away rather than behind a delay.
+      //
+      // Nothing below can fail the scan: discoverBarcode resolves null for a
+      // dead function, a rejected token, a timeout or a product no source
+      // knows, and null is exactly what this returned a moment ago anyway. The
+      // worst case is the scan taking a second longer to say the same thing.
+      if (!catalogDb) return null
+      const discovered = await discoverBarcode(catalogDb, candidates)
+      if (discovered) {
+        // It lives in the catalog project now — the function saved it before
+        // returning it — so a later popularity bump has to go there.
+        suggestionOrigins.set(productKey(discovered.name, discovered.maker), 'catalog')
+      }
+      return discovered
     } catch {
       // Treated as "the catalog does not have it", which puts the user on the
       // naming path rather than on an error they can do nothing about.

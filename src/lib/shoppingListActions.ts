@@ -30,10 +30,10 @@ const QUANTITY_WRITE_DEBOUNCE_MS = 300
 // that the catalog write needs and the item row does not. Both are dropped
 // before the insert, which builds its row from named fields only.
 //
-// Declared here rather than beside ProductSuggestion because productSearch.ts is
-// vendored byte-for-byte into the catalog importer (see test/vendorDrift), and
-// the importer has no use for either field. A type the app alone needs does not
-// belong in the file the two repos have to keep identical.
+// Declared here rather than beside ProductSuggestion because productSearch.ts
+// was vendored byte-for-byte into the catalog importer, which has no use for
+// either field. That repo is gone, but a type the app alone needs still does
+// not belong in the file a rebuilt importer would have to keep identical.
 export interface AddedProduct extends ProductSuggestion {
   /** Contribute this product to the catalog rather than bump it: the "Add your
    *  own" path, for something the catalog does not have yet. */

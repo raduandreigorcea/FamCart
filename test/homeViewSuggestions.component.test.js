@@ -10,11 +10,23 @@ import HomeView from '../src/views/HomeView.vue'
 import AddItemForm from '../src/components/AddItemForm.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
 import { __setOnlineForTest } from '../src/lib/connectivity'
+import { setLocale } from '../src/lib/i18n'
 
 // Mirrors SUGGEST_DEBOUNCE_MS in HomeView.
 const DEBOUNCE_MS = 300
 
-const mocks = vi.hoisted(() => ({ db: null, routerReplace: () => {} }))
+const mocks = vi.hoisted(() => ({ db: null, routerReplace: () => {}, timeZone: undefined }))
+
+// Only deviceTimeZone is faked; resolveRegion and the timezone table stay real,
+// so these tests exercise the actual lookup rather than a restatement of it.
+// Faking just this one function is what keeps the suite from depending on the
+// clock settings of whatever machine runs it — this developer's box says
+// Europe/Bucharest and CI says UTC, and a test that asserts "no market is sent"
+// must not pass or fail on that difference.
+vi.mock('../src/lib/region', async (importOriginal) => ({
+  ...(await importOriginal()),
+  deviceTimeZone: () => mocks.timeZone,
+}))
 
 vi.mock('../src/supabase', () => ({
   useSupabase: () => mocks.db,
@@ -112,6 +124,8 @@ const catalogQueries = () =>
 beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {})
   localStorage.clear()
+  // No detectable market unless a test asks for one.
+  mocks.timeZone = undefined
   vi.useFakeTimers()
 })
 
@@ -548,5 +562,90 @@ describe('searching both catalogs', () => {
     // The catalog's copy has no household to scope by, so it is not passed one.
     expect(catalogBumps[0].params.p_household_id).toBeUndefined()
     expect(localBumps).toHaveLength(0)
+  })
+})
+
+// ── Scoping suggestions to where somebody shops ──────────────────────────────
+// The catalog holds 191,394 products and 190,394 of them name a market. Until
+// the app started sending one, a household in Romania ranked 37,008 French
+// products against its own 9,011 Romanian ones on a popularity measured across
+// all of Europe, and lost every time.
+//
+// What is pinned here is which project hears about it and in what form. The
+// ORDERING itself belongs to search_catalog and is tested in the catalog
+// project's pgTAP suite; these tests only prove the app asks the question.
+describe('what the reference catalog is told about this person', () => {
+  const catalogParams = () =>
+    mocks.catalogDb.calls.find((c) => c.table === 'rpc' && c.op === 'search_catalog').params
+
+  async function search(wrapper) {
+    await type(wrapper, 'apa')
+    vi.advanceTimersByTime(DEBOUNCE_MS)
+    await flushPromises()
+  }
+
+  // The signal that replaced the Shopping Region picker, and the one that
+  // matters more. p_markets says whether a product is on a nearby shelf;
+  // p_langs says whether its name can be read at all, which is the question
+  // somebody typing into a search box is really asking.
+  it('sends the language the app is in', async () => {
+    const wrapper = await mountHome({ catalog: CATALOG })
+
+    await search(wrapper)
+
+    expect(catalogParams().p_langs).toEqual(['en'])
+  })
+
+  it('follows a language switch on the very next search', async () => {
+    const wrapper = await mountHome({ catalog: CATALOG })
+    await setLocale('ro')
+
+    await search(wrapper)
+
+    expect(catalogParams().p_langs).toEqual(['ro'])
+    await setLocale('en')
+  })
+
+  // Detected, never chosen. The picker that used to override this is gone, so
+  // the timezone is the whole of the market signal now.
+  it('sends the market the timezone implies', async () => {
+    mocks.timeZone = 'Europe/Bucharest'
+    const wrapper = await mountHome({ catalog: CATALOG })
+
+    await search(wrapper)
+
+    expect(catalogParams().p_markets).toEqual(['RO'])
+  })
+
+  // Omitted, not sent as null. PostgREST resolves an RPC by the argument names
+  // in the request body, so leaving the key out is what keeps a no-market
+  // search byte-identical to the one that shipped before this existed.
+  it('omits the market entirely for a timezone the catalog does not cover', async () => {
+    mocks.timeZone = 'Europe/Warsaw'
+    const wrapper = await mountHome({ catalog: CATALOG })
+
+    await search(wrapper)
+
+    expect('p_markets' in catalogParams()).toBe(false)
+    // The language still goes: not covering Poland says nothing about what the
+    // person reads, and demoting nothing is the wrong answer to a missing zone.
+    expect(catalogParams().p_langs).toEqual(['en'])
+  })
+
+  // The app database has no markets or name_lang column and wants none: its
+  // rows are this household's own contributions plus the curated seed, and
+  // nothing there should ever be demoted for being foreign. Sending either
+  // argument would fail the call outright, since that function has neither
+  // parameter.
+  it('tells the app database neither', async () => {
+    mocks.timeZone = 'Europe/Bucharest'
+    const wrapper = await mountHome({ catalog: CATALOG })
+
+    await search(wrapper)
+
+    for (const call of catalogQueries()) {
+      expect('p_markets' in call.params).toBe(false)
+      expect('p_langs' in call.params).toBe(false)
+    }
   })
 })

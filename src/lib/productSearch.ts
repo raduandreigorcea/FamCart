@@ -29,6 +29,27 @@ export interface ProductSuggestion {
   maker: string | null
   // Global cross-household score from product_catalog (006_product_catalog.sql).
   popularity?: number
+
+  // ─── what the catalog project's search_catalog explains about the match ────
+  //
+  // Present only on rows from the CATALOG project; the app database's own
+  // search_catalog returns three columns and knows nothing about concepts, and
+  // rows recovered from household history have none of this either. So every
+  // one of these is optional and nothing may depend on it being there.
+  //
+  // `concept_intent` is the one with behaviour attached: it is what lets the
+  // client skip discovery for a generic concept. The rest are for explaining a
+  // ranking that is otherwise very hard to argue with — a wrong result here
+  // looks like a catalog that does not stock something, which is why `apa`
+  // returning onions read as bad data for weeks.
+  concept_intent?: string | null
+  matched_concept?: string | null
+  match_type?: string | null
+  matched_alias?: string | null
+  category_match?: boolean | null
+  language_match?: boolean | null
+  market_match?: boolean | null
+  relevance_score?: number | null
 }
 
 // One product a household has bought, folded across all its purchase_history rows.

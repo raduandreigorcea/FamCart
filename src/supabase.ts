@@ -8,8 +8,20 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 // and development app databases and shared live by both. It holds the imported
 // and curated reference rows and nothing that belongs to anybody; households,
 // lists, history and household-contributed products stay in the app database.
-// See supabase-catalog/supabase/migrations/003_product_catalog.sql for where
-// exactly the line runs.
+// Its schema is NOT in this repo and never was: it belonged to the importer
+// repo, the only thing that ever wrote that database, where this app only reads
+// it. That repo has been deleted and the catalog project reset to bare
+// catalog_admins, so RIGHT NOW there is no product_catalog and no
+// search_catalog() on the other end of this client.
+//
+// This file needs no special case for that, because what it depends on is an
+// API rather than a schema: search_catalog() and bump_product_popularity(),
+// whose shapes are fixed elsewhere. Calls to a missing RPC reject, and
+// productSuggestions.ts already treats a failed catalog leg as zero rows via
+// Promise.allSettled. When a replacement pipeline recreates the RPCs this comes
+// back on its own. Wire that project's pgTAP suite into this repo's CI again
+// when it does: it is what turns a change to either RPC into a failed build
+// rather than an empty suggestions dropdown.
 //
 // One Clerk session authenticates both, because the catalog project's
 // Third-Party Auth integration names the same issuer. That is why the resolver
@@ -115,6 +127,18 @@ export function setSupabaseTokenResolver(resolve: () => Promise<string | null>):
 // Use this inside Vue components/composables where useAuth() is available.
 export function useSupabase(): SupabaseClient {
   const { getToken } = useAuth()
-  setSupabaseTokenResolver(async () => getToken.value({ template: 'supabase' }))
+  // The plain session token, NOT getToken({ template: 'supabase' }).
+  //
+  // All three projects authenticate through Supabase's native Third-Party Auth,
+  // which verifies a Clerk session token against Clerk's JWKS directly. The
+  // `supabase` JWT template is the older integration and cost two things for no
+  // benefit: a template token carries nbf = iat - 5 against the session token's
+  // nbf = iat - 10, halving the clock tolerance before a request is refused as
+  // `JWT not yet valid`; and it is minted by a separate call to Clerk's API on
+  // every resolve, where the session token is already in memory.
+  //
+  // Verified against all three projects before the change: each one accepts the
+  // session token and answers is_admin()/catalog_is_admin() with it.
+  setSupabaseTokenResolver(async () => getToken.value())
   return getSupabase()
 }

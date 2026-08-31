@@ -15,6 +15,7 @@ import OnboardingTour from '../components/OnboardingTour.vue'
 import UpdateAvailableModal from '../components/UpdateAvailableModal.vue'
 import { useHouseholdRealtime } from '../lib/householdRealtime'
 import { useProductSuggestions } from '../lib/productSuggestions'
+import { deviceTimeZone, resolveRegion } from '../lib/region'
 import {
   canScanBarcodes,
   nativeScanAvailable,
@@ -50,7 +51,7 @@ import {
   ITEM_LIMIT_DEFAULT,
   ITEM_NAME_MAX_LENGTH,
 } from '../lib/limits'
-import { t } from '../lib/i18n'
+import { getLocale, t } from '../lib/i18n'
 
 const { userId, isLoaded } = useAuth()
 const { user } = useUser()
@@ -131,7 +132,19 @@ const {
   clearLastAdded,
   recordProductAdd,
   clearSuggestions,
-} = useProductSuggestions({ db, householdId, items, query: newItem, isOffline: isCurrentlyOffline })
+} = useProductSuggestions({
+  db,
+  householdId,
+  items,
+  query: newItem,
+  isOffline: isCurrentlyOffline,
+  // Both resolved per search rather than held in a ref, so a phone that has
+  // crossed a border and an app language just switched in Settings each take
+  // effect on the next keystroke. Null region is a real answer and means "rank
+  // on language and popularity alone".
+  region: () => resolveRegion(deviceTimeZone()),
+  locale: () => getLocale(),
+})
 // A checkout that just succeeded is proof this household has shopped, available
 // immediately rather than after the stats refetch lands.
 const boughtThisSession = ref(false)

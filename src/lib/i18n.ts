@@ -34,7 +34,8 @@
 // treat each of these as an oversight:
 //
 //   • Product names and makers. Catalog data, largely Romanian, and not ours
-//     to restate — see catalog-importer/src/normalize/name.ts.
+//     to restate: they arrive already normalised by whatever fills the
+//     catalog.
 //   • Household names, member display names, invite codes. User data.
 //   • nativeOAuth.ts's thrown Error text. It is a plain Error, so userMessage
 //     replaces it before it can reach a screen; its whole value is being a
