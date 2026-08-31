@@ -17,48 +17,35 @@
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are injected by the platform.
 // verify_jwt is off for this function (config.toml): database webhooks carry no
 // user JWT, so the shared secret is the authentication.
+//
+// WHAT IS AND IS NOT IN THIS FILE
+//
+// Everything here needs Deno, the platform's environment, or the network: the
+// service-role client, the OneSignal call, the request handler. None of it can
+// be exercised from this repo's test runner, and importing this module would
+// run Deno.serve.
+//
+// So the decisions live next door in ../_shared/push.ts — which recipients,
+// what the message says, whether the secret matched, which fan-out a payload is
+// asking for — and are covered by test/push.test.js. What is left below is
+// wiring, and it is deliberately shaped so that a mistake in it is a mistake in
+// one plainly visible line rather than in a branch nobody can reach.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import {
+  checkoutBody,
+  itemAddedBody,
+  recipientsFor,
+  routePayload,
+  secretMatches,
+  type ItemRecord,
+  type PurchaseRecord,
+} from '../_shared/push.ts'
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
 )
-
-interface ItemRecord {
-  id: string
-  household_id: string
-  name: string
-  quantity: number | null
-  added_by: string
-}
-
-interface PurchaseRecord {
-  checkout_id: string
-  household_id: string
-  purchased_by: string
-}
-
-// Compare SHA-256 digests instead of the raw strings so the check cannot leak
-// matching-prefix timing (a plain === short-circuits on the first wrong byte).
-async function secretMatches(given: string | null, expected: string): Promise<boolean> {
-  if (given === null) return false
-  const enc = new TextEncoder()
-  const [a, b] = await Promise.all([
-    crypto.subtle.digest('SHA-256', enc.encode(given)),
-    crypto.subtle.digest('SHA-256', enc.encode(expected)),
-  ])
-  const av = new Uint8Array(a)
-  const bv = new Uint8Array(b)
-  let diff = 0
-  for (let i = 0; i < av.length; i++) diff |= av[i] ^ bv[i]
-  return diff === 0
-}
-
-function itemLabel(name: string, quantity: number | null): string {
-  const qty = Number(quantity) || 1
-  return qty > 1 ? `${name} ×${qty}` : name
-}
 
 // Household member ids for a household. Names live in profiles now, resolved
 // separately by fetchDisplayName when a message needs to name the actor.
@@ -123,15 +110,13 @@ async function sendPush(options: {
 async function handleItemAdded(item: ItemRecord): Promise<Response> {
   const { data: members, error } = await fetchMembers(item.household_id)
   if (error) return Response.json({ error: error.message }, { status: 500 })
-  const recipientIds = (members ?? [])
-    .map((m) => m.user_id)
-    .filter((id) => id !== item.added_by)
+  const recipientIds = recipientsFor(members, item.added_by)
   if (!recipientIds.length) return Response.json({ sent: 0 })
 
   const who = await fetchDisplayName(item.added_by)
   return sendPush({
     recipientIds,
-    body: `${who} added ${itemLabel(item.name, item.quantity)}`,
+    body: itemAddedBody(who, item),
     householdId: item.household_id,
     idempotencyKey: item.id,
   })
@@ -151,21 +136,13 @@ async function handleCheckout(purchase: PurchaseRecord): Promise<Response> {
   if (membersErr) return Response.json({ error: membersErr.message }, { status: 500 })
   if (itemsErr) return Response.json({ error: itemsErr.message }, { status: 500 })
 
-  const recipientIds = (members ?? [])
-    .map((m) => m.user_id)
-    .filter((id) => id !== purchase.purchased_by)
+  const recipientIds = recipientsFor(members, purchase.purchased_by)
   if (!recipientIds.length || !items?.length) return Response.json({ sent: 0 })
 
   const who = await fetchDisplayName(purchase.purchased_by)
-  const labels = items.map((i) => itemLabel(i.name, i.quantity))
-  let bought: string
-  if (labels.length === 1) bought = labels[0]
-  else if (labels.length === 2) bought = `${labels[0]} and ${labels[1]}`
-  else bought = `${labels[0]}, ${labels[1]} and ${labels.length - 2} more`
-
   return sendPush({
     recipientIds,
-    body: `${who} bought ${bought}`,
+    body: checkoutBody(who, items),
     householdId: purchase.household_id,
     idempotencyKey: purchase.checkout_id,
   })
@@ -181,14 +158,7 @@ Deno.serve(async (req) => {
     return Response.json({ error: 'OneSignal secrets not configured' }, { status: 500 })
   }
 
-  const payload = await req.json().catch(() => null)
-  if (payload?.type !== 'INSERT') return Response.json({ skipped: true })
-
-  if (payload.table === 'shopping_list_items') {
-    return handleItemAdded(payload.record as ItemRecord)
-  }
-  if (payload.table === 'purchase_history') {
-    return handleCheckout(payload.record as PurchaseRecord)
-  }
-  return Response.json({ skipped: true })
+  const job = routePayload(await req.json().catch(() => null))
+  if (!job) return Response.json({ skipped: true })
+  return job.kind === 'item' ? handleItemAdded(job.record) : handleCheckout(job.record)
 })
