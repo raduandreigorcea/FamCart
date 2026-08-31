@@ -51,7 +51,7 @@ import {
   ITEM_LIMIT_DEFAULT,
   ITEM_NAME_MAX_LENGTH,
 } from '../lib/limits'
-import { getLocale, t } from '../lib/i18n'
+import { applyUserLocale, getLocale, t } from '../lib/i18n'
 
 const { userId, isLoaded } = useAuth()
 const { user } = useUser()
@@ -628,6 +628,20 @@ async function runInitializeHome() {
 
   // Confirmed signed in: remember this user so a later offline open can boot.
   rememberUser(localStorage, userId.value)
+  // Reconcile the language the device guessed with the one this account chose.
+  //
+  // Same reason identifyUser is here rather than in main.ts: this is the first
+  // point there is an account to ask about. initLocale runs pre-mount, before
+  // Clerk has resolved, so it can only read the device-wide key — which holds
+  // whatever the last person to choose on this browser picked. On a device with
+  // one account those agree and this is a no-op; on a shared one it is the only
+  // thing that stops everybody booting into the same language.
+  //
+  // Not awaited, for the reason the three calls below are not: boot must not
+  // wait on it. The language chunk lands a tick later and every t() re-renders
+  // when it does, so the cost of not waiting is a brief frame in the device's
+  // language — which is what the screen would otherwise have shown for good.
+  void applyUserLocale(localStorage, userId.value)
   // And tell error reporting who this is, so a crash can say how many people it
   // reached. Here rather than in main.ts because this is the first point the
   // answer is actually known: Clerk has resolved, and the id is the real one
