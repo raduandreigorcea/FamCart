@@ -4,8 +4,6 @@ import AppModal from './AppModal.vue'
 import AppButton from './AppButton.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
 import ErrorModal from './ErrorModal.vue'
-import flagIconRaw from '../assets/flag.svg?raw'
-import checkIconRaw from '../assets/check.svg?raw'
 import {
   REPORT_MAX_LENGTH,
   REPORT_SURFACES,
@@ -17,6 +15,7 @@ import {
 } from '../lib/issueReport'
 import { isCurrentlyOffline } from '../lib/connectivity'
 import { t } from '../lib/i18n'
+import AppIcon from './AppIcon.vue'
 
 // The form for "Report an issue".
 //
@@ -176,7 +175,7 @@ watch(
       <div class="report-dialog__header">
         <div class="report-dialog__title-wrap">
           <div class="report-dialog__icon-bg">
-            <span class="report-header-icon" aria-hidden="true" v-html="flagIconRaw"></span>
+            <AppIcon class="report-header-icon" name="flag" />
           </div>
           <div>
             <h3 id="report-modal-title">{{ t('report.title') }}</h3>
@@ -190,7 +189,7 @@ watch(
            leaves someone staring at the screen they were on, with no evidence
            the press did anything. -->
       <div v-if="sent" class="report-done">
-        <span class="report-done__mark" aria-hidden="true" v-html="checkIconRaw"></span>
+        <AppIcon class="report-done__mark" name="check" />
         <!-- Answers the two things someone wonders once the press has landed:
              whether they still have something to do, and whether to expect a
              reply. What was attached is not one of them — that question was

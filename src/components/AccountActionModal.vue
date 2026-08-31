@@ -2,25 +2,18 @@
 import { computed, type PropType } from 'vue'
 import AppModal from './AppModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
-import userRoundIconRaw from '../assets/user-round.svg?raw'
-import flagIconRaw from '../assets/flag.svg?raw'
 // One icon per row, and each one distinct: their job here is to tell three
 // near-identically shaped rows apart at a glance, so a repeat would cost more
 // than it buys. They name the destination rather than the dialog it opens --
 // a house for the household, a gear for the app -- which is also what keeps
 // them apart, since both of those dialogs wear the same gear in their headers.
-import houseIconRaw from '../assets/house.svg?raw'
-import userRoundPlusIconRaw from '../assets/user-round-plus.svg?raw'
-import gearIconRaw from '../assets/settings.svg?raw'
-import plusIconRaw from '../assets/plus.svg?raw'
-import logOutIconRaw from '../assets/log-out.svg?raw'
 // The identity card's affordance. It is the only control here that leads
 // somewhere without a hint on the right saying what it holds, because what it
 // holds is the face and name already printed on it.
-import chevronRightIconRaw from '../assets/chevron-right.svg?raw'
 import { DEFAULT_HOUSEHOLD_EMOJI } from '../lib/householdEmoji'
 import { HOUSEHOLD_MEMBERSHIP_CAP } from '../lib/limits'
 import { t, tn } from '../lib/i18n'
+import AppIcon from './AppIcon.vue'
 
 // Who is signed in, and the ways out of here. Appearance and notifications used
 // to live in this dialog; they are settings for the app on this device rather
@@ -101,7 +94,7 @@ function switchHousehold(id: string) {
         <div class="account-dialog__header">
           <div class="account-dialog__title-wrap">
             <div class="account-dialog__icon-bg">
-              <span class="account-header-icon" aria-hidden="true" v-html="userRoundIconRaw"></span>
+              <AppIcon class="account-header-icon" name="user-round" />
             </div>
             <div>
               <h3 id="account-modal-title">{{ t('account.title') }}</h3>
@@ -133,20 +126,20 @@ function switchHousehold(id: string) {
               <h4>{{ resolvedDisplayName }}</h4>
               <p>{{ email || t('account.noEmail') }}</p>
             </div>
-            <span class="account-user-card__chevron" aria-hidden="true" v-html="chevronRightIconRaw"></span>
+            <AppIcon class="account-user-card__chevron" name="chevron-right" />
           </button>
 
           <div class="account-section">
             <button class="account-menu-item" type="button" @click="emit('manage-household')">
               <span class="account-menu-item__label">
-                <span class="account-item-icon" aria-hidden="true" v-html="houseIconRaw"></span>
+                <AppIcon class="account-item-icon" name="house" />
                 <span>{{ t('account.manageHousehold') }}</span>
               </span>
               <span class="account-menu-item__hint">{{ householdName || t('account.householdFallback') }}</span>
             </button>
             <button class="account-menu-item" type="button" @click="emit('invite-members')">
               <span class="account-menu-item__label">
-                <span class="account-item-icon" aria-hidden="true" v-html="userRoundPlusIconRaw"></span>
+                <AppIcon class="account-item-icon" name="user-round-plus" />
                 <span>{{ t('account.invitePeople') }}</span>
               </span>
               <span class="account-menu-item__hint">
@@ -156,7 +149,7 @@ function switchHousehold(id: string) {
 
             <button class="account-menu-item" type="button" @click="emit('app-settings')">
               <span class="account-menu-item__label">
-                <span class="account-item-icon" aria-hidden="true" v-html="gearIconRaw"></span>
+                <AppIcon class="account-item-icon" name="settings" />
                 <span>{{ t('account.appSettings') }}</span>
               </span>
               <span class="account-menu-item__hint">{{ t('account.appSettingsHint') }}</span>
@@ -193,7 +186,7 @@ function switchHousehold(id: string) {
                 @click="emit('add-household')"
               >
                 <span class="account-menu-item__label">
-                  <span class="account-item-icon" aria-hidden="true" v-html="plusIconRaw"></span>
+                  <AppIcon class="account-item-icon" name="plus" />
                   <span>{{ t('account.joinOrCreate') }}</span>
                 </span>
               </button>
@@ -210,7 +203,7 @@ function switchHousehold(id: string) {
               @click="emit('report-issue')"
             >
               <span class="account-menu-item__label">
-                <span class="account-item-icon" aria-hidden="true" v-html="flagIconRaw"></span>
+                <AppIcon class="account-item-icon" name="flag" />
                 <span>{{ t('account.reportIssue') }}</span>
               </span>
               <span class="account-menu-item__hint">{{ t('account.reportHint') }}</span>
@@ -229,7 +222,7 @@ function switchHousehold(id: string) {
                    through instead. -->
               <span class="account-menu-item__label account-menu-item__label--danger">
                 <span v-if="loadingSignOut" class="account-spinner" aria-hidden="true"></span>
-                <span v-else class="account-item-icon" aria-hidden="true" v-html="logOutIconRaw"></span>
+                <AppIcon v-else class="account-item-icon" name="log-out" />
                 <span>{{ loadingSignOut ? t('account.signingOut') : t('account.signOut') }}</span>
               </span>
             </button>

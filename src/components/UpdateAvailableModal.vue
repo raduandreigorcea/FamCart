@@ -11,9 +11,9 @@
 import { computed, type PropType } from 'vue'
 import AppButton from './AppButton.vue'
 import AppModal from './AppModal.vue'
-import downloadIcon from '../assets/download.svg?raw'
 import type { UpdatePhase } from '../lib/updatePrompt'
 import { t, tAccent } from '../lib/i18n'
+import AppIcon from './AppIcon.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -64,7 +64,7 @@ const permissionMessage = computed(() => tAccent('update.permissionMessage'))
       aria-labelledby="update-prompt-title"
     >
       <div class="update-dialog__icon-wrap">
-        <span class="update-dialog__icon" aria-hidden="true" v-html="downloadIcon"></span>
+        <AppIcon class="update-dialog__icon" name="download" />
       </div>
 
       <div class="update-dialog__body">

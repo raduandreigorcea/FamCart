@@ -22,11 +22,8 @@ import { useConfirm } from '../lib/useConfirm'
 // members list was a change to the same file as the emoji picker.
 
 // Raw SVG imports for the sidebar and header.
-import layoutGridIcon from '../assets/layout-grid.svg?raw'
-import settingsIconRaw from '../assets/settings.svg?raw'
-import usersIcon from '../assets/users-round.svg?raw'
-import trashIcon from '../assets/trash-2.svg?raw'
 import { t } from '../lib/i18n'
+import AppIcon from './AppIcon.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -128,18 +125,18 @@ interface SettingsTab {
 // their own v-ifs — which is how the Danger tab came to be written out twice.
 const tabs = computed<SettingsTab[]>(() => {
   const list: SettingsTab[] = [
-    { id: 'overview', label: t('household.tab.overview'), icon: layoutGridIcon },
+    { id: 'overview', label: t('household.tab.overview'), icon: 'layout-grid' },
   ]
   if (isOwnerOrModerator.value) {
-    list.push({ id: 'household', label: t('household.tab.preferences'), icon: settingsIconRaw })
+    list.push({ id: 'household', label: t('household.tab.preferences'), icon: 'settings' })
   }
   list.push({
     id: 'members',
     label: t('household.tab.members'),
-    icon: usersIcon,
+    icon: 'users-round',
     badge: memberCount.value,
   })
-  list.push({ id: 'danger', label: t('household.tab.danger'), icon: trashIcon, danger: true })
+  list.push({ id: 'danger', label: t('household.tab.danger'), icon: 'trash-2', danger: true })
   // No About tab: an app's version and its data-licence credit are not a
   // property of any one household. They live in AppSettingsModal, reached from
   // the account dialog. Every tab here now changes something about THIS
@@ -180,7 +177,7 @@ function onHouseholdDeleted() {
         <div class="settings-modal__header">
           <div class="settings-modal__title-wrap">
             <div class="settings-modal__icon-bg">
-              <span class="header-icon" aria-hidden="true" v-html="settingsIconRaw"></span>
+              <AppIcon class="header-icon" name="settings" />
             </div>
             <div>
               <h3>{{ t('household.title') }}</h3>
@@ -225,7 +222,7 @@ function onHouseholdDeleted() {
               :tabindex="activeTab === tab.id ? 0 : -1"
               @click="activeTab = tab.id"
             >
-              <span class="tab-icon" aria-hidden="true" v-html="tab.icon"></span>
+              <AppIcon class="tab-icon" :name="tab.icon" />
               <span>{{ tab.label }}</span>
               <span v-if="tab.badge !== undefined" class="tab-badge">{{ tab.badge }}</span>
             </button>

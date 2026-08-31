@@ -12,8 +12,8 @@ import {
   type DayLabel,
 } from '../lib/purchaseHistory'
 import type { HouseholdMemberProfile } from '../lib/householdRealtime'
-import historyIconRaw from '../assets/history.svg?raw'
 import { formatDate, formatTime, t } from '../lib/i18n'
+import AppIcon from './AppIcon.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -115,7 +115,7 @@ function dayLabel(label: DayLabel) {
         <div class="history-modal__header">
           <div class="history-modal__title-wrap">
             <div class="history-modal__icon-bg">
-              <span class="header-icon" aria-hidden="true" v-html="historyIconRaw"></span>
+              <AppIcon class="header-icon" name="history" />
             </div>
             <div>
               <h3>{{ t('history.title') }}</h3>

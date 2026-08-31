@@ -10,11 +10,8 @@ import {
   ITEM_LIMIT_MAX,
   ITEM_LIMIT_MIN,
 } from '../../lib/limits'
-import checkIcon from '../../assets/check.svg?raw'
-import squarePenIcon from '../../assets/square-pen.svg?raw'
-import stickerIcon from '../../assets/sticker.svg?raw'
-import shoppingCartIcon from '../../assets/shopping-cart.svg?raw'
 import { t } from '../../lib/i18n'
+import AppIcon from '../AppIcon.vue'
 
 // The three settings an owner can change: the household's name, its emoji, and how
 // many active items each member may hold. Each is edited locally and committed
@@ -167,7 +164,7 @@ async function saveItemLimit() {
       <div class="preferences-grid">
         <section v-if="isOwner" class="card-item pref-card">
           <div class="pref-card__head">
-            <span class="pref-card__icon" aria-hidden="true" v-html="squarePenIcon"></span>
+            <AppIcon class="pref-card__icon" name="square-pen" />
             <div class="pref-card__meta">
               <h5>{{ t('prefs.nameTitle') }}</h5>
               <p>{{ t('prefs.nameDesc') }}</p>
@@ -195,7 +192,7 @@ async function saveItemLimit() {
                 >
                   <span v-if="savingName" class="btn-spinner"></span>
                   <span v-else-if="nameSaved" class="success-state animate-pop">
-                    <span class="success-icon-wrap" aria-hidden="true" v-html="checkIcon"></span>
+                    <AppIcon class="success-icon-wrap" name="check" />
                     {{ t('common.saved') }}
                   </span>
                   <span v-else>{{ t('common.save') }}</span>
@@ -210,7 +207,7 @@ async function saveItemLimit() {
 
         <section v-if="isOwner" class="card-item pref-card">
           <div class="pref-card__head">
-            <span class="pref-card__icon" aria-hidden="true" v-html="stickerIcon"></span>
+            <AppIcon class="pref-card__icon" name="sticker" />
             <div class="pref-card__meta">
               <h5>{{ t('prefs.emojiTitle') }}</h5>
               <p>{{ t('prefs.emojiDesc') }}</p>
@@ -244,7 +241,7 @@ async function saveItemLimit() {
               >
                 <span v-if="savingEmoji" class="btn-spinner"></span>
                 <span v-else-if="emojiSaved" class="success-state animate-pop">
-                  <span class="success-icon-wrap" aria-hidden="true" v-html="checkIcon"></span>
+                  <AppIcon class="success-icon-wrap" name="check" />
                   {{ t('common.saved') }}
                 </span>
                 <span v-else>{{ t('common.save') }}</span>
@@ -255,7 +252,7 @@ async function saveItemLimit() {
 
         <section class="card-item pref-card">
           <div class="pref-card__head">
-            <span class="pref-card__icon" aria-hidden="true" v-html="shoppingCartIcon"></span>
+            <AppIcon class="pref-card__icon" name="shopping-cart" />
             <div class="pref-card__meta">
               <h5>{{ t('prefs.limitTitle') }}</h5>
               <p>{{ t('prefs.limitDesc') }}</p>
@@ -287,7 +284,7 @@ async function saveItemLimit() {
               >
                 <span v-if="savingItemLimit" class="btn-spinner"></span>
                 <span v-else-if="itemLimitSaved" class="success-state animate-pop">
-                  <span class="success-icon-wrap" aria-hidden="true" v-html="checkIcon"></span>
+                  <AppIcon class="success-icon-wrap" name="check" />
                   {{ t('common.saved') }}
                 </span>
                 <span v-else>{{ t('common.save') }}</span>

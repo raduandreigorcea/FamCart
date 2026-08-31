@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref } from 'vue'
 import AppCard from '../components/AppCard.vue'
-import wifiOffIcon from '../assets/wifi-off.svg?raw'
 import { refreshConnectivity, onReconnect } from '../lib/connectivity'
 import { t } from '../lib/i18n'
+import AppIcon from '../components/AppIcon.vue'
 
 // Shown when the app opens with no connection. It recovers on its own the moment
 // connectivity returns, and offers a manual retry for flaky links.
@@ -62,7 +62,7 @@ onBeforeUnmount(() => {
   <div class="offline-page">
     <AppCard variant="narrow">
       <div class="offline-content">
-        <span class="offline-icon" aria-hidden="true" v-html="wifiOffIcon"></span>
+        <AppIcon class="offline-icon" name="wifi-off" />
         <h1 class="offline-title">{{ t('offline.title') }}</h1>
         <p class="offline-text">{{ t('offline.text') }}</p>
         <button class="offline-retry" type="button" :disabled="checking" @click="retry">
