@@ -17,5 +17,18 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["src/**/*.ts", "src/**/*.vue"]
+  // The edge function's shared half is checked here; the function itself is not,
+  // and the line between them is what makes that possible.
+  //
+  // supabase/functions/_shared holds no Deno API, no Node built-in and no npm
+  // import, so it type-checks against the same lib as the app. push-on-item-insert
+  // /index.ts is the opposite: `Deno.serve`, `Deno.env` and a `npm:` specifier
+  // are meaningless to vue-tsc and would each be an error. Including the whole
+  // directory would therefore mean either failing the build or loosening the
+  // config until it checked nothing, which is how this ended up unchecked in the
+  // first place.
+  //
+  // So the decisions are checked and the wiring is not, and the wiring is kept
+  // small enough to read for that reason.
+  "include": ["src/**/*.ts", "src/**/*.vue", "supabase/functions/_shared/**/*.ts"]
 }
