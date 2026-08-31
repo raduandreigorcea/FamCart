@@ -23,13 +23,12 @@ import { useBarcodeScanning } from '../lib/useBarcodeScanning'
 import { upsertOwnProfile } from '../lib/profile'
 import { cleanAuthCallbackUrl } from '../lib/authCallbackUrl'
 import {
-  loadHouseholdSnapshot,
-  saveHouseholdSnapshot,
   clearHouseholdSnapshot,
   loadActiveHouseholdId,
   saveActiveHouseholdId,
   clearActiveHouseholdId,
 } from '../lib/householdCache'
+import { useHouseholdSnapshot } from '../lib/useHouseholdSnapshot'
 import { flushOfflineQueue, isOfflineError } from '../lib/offlineQueue'
 import { captureException, identifyUser } from '../lib/errorReporting'
 // isCurrentlyOffline is the app's one answer to "are we offline", handed to
@@ -153,7 +152,6 @@ const boughtThisSession = ref(false)
 // the old household's answer straight onto the new household's empty list, which then
 // opened on "All bought" having bought nothing. Storing what the answer is ABOUT
 // makes it self-invalidating — no path can forget to clear it.
-const cachedShoppedHouseholdId = ref('')
 const loadError = ref('')
 const customProductOpen = ref(false)
 // The code the custom-product modal is naming, carried from the scan that missed
@@ -257,9 +255,34 @@ const { setupRealtimeSubscriptions, cleanupRealtimeSubscriptions } = useHousehol
   hasPendingWrite: (id) => pendingItemWrites.has(id),
 })
 
-// Set once a cached snapshot has been painted. The list on screen is then real
-// (an empty cached list is still an answer), so skeletons over it would be a lie.
-const paintedFromCache = ref(false)
+// The painted cache: what was on screen last time, read back so a returning user
+// sees their list rather than skeletons. Owns the paint, the discard and the
+// write-back, which have to name the same fields and had drifted apart while
+// they lived here — see lib/useHouseholdSnapshot.
+const {
+  paintedFromCache,
+  cachedShoppedHouseholdId,
+  hasSnapshot,
+  hydrate: hydrateFromCachedSnapshot,
+  discard: discardCachedPaint,
+  paintedFor,
+  flush: flushSnapshot,
+  persist: persistSnapshot,
+} = useHouseholdSnapshot({
+  userId: effectiveUserId,
+  hasInitialized,
+  refs: {
+    householdId,
+    householdName,
+    householdInviteCode,
+    householdOwnerId,
+    householdItemLimit,
+    householdEmoji,
+    householdMembers,
+    items,
+  },
+  hasShopped: () => hasShopped.value,
+})
 // Initial load: nothing painted or fetched yet, and no error to show instead.
 // Items arriving (realtime or fetch) end the skeleton early even before
 // hasInitialized flips.
@@ -374,9 +397,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('pagehide', flushPendingWork)
   document.removeEventListener('visibilitychange', flushPendingWorkIfHidden)
   if (stopReconnect) stopReconnect()
-  // Only the snapshot here: the quantity writes are flushed by the actions
-  // composable's own unmount hook, which runs alongside this one.
-  flushSnapshot()
+  // No flushing here. Both kinds of deferred work are flushed by the composable
+  // that owns them -- the snapshot by useHouseholdSnapshot, the quantity writes
+  // by useShoppingListActions -- from their own unmount hooks, which run
+  // alongside this one.
 })
 
 // Picking a suggestion adds it outright rather than filling the input: the pick
@@ -512,7 +536,7 @@ async function runInitializeHome() {
   // resolves.
   if (!isLoaded.value || !userId.value) {
     const uid = effectiveUserId.value
-    if (uid && loadHouseholdSnapshot(localStorage, uid)) {
+    if (uid && hasSnapshot()) {
       sanitizeAuthCallbackUrl()
       hydrateFromCachedSnapshot()
       if (isCurrentlyOffline()) hasInitialized.value = true
@@ -522,7 +546,7 @@ async function runInitializeHome() {
 
   // Clerk resolved to someone other than the remembered user we painted for:
   // that list belongs to the previous account, so drop it before going on.
-  if (hydratedUserId && hydratedUserId !== userId.value) discardCachedPaint()
+  if (!paintedFor(userId.value)) discardCachedPaint()
 
   // Confirmed signed in: remember this user so a later offline open can boot.
   rememberUser(localStorage, userId.value)
@@ -613,81 +637,6 @@ async function runInitializeHome() {
 // First run: teach the gestures with the tour, then (once it's dismissed) fall
 // through to the notifications ask. A returning user who's already seen the tour
 // skips straight to the notifications check.
-// Which user the painted cache belongs to. We paint before Clerk can confirm the
-// session, so if it then resolves to somebody else that paint is the wrong
-// person's list and has to be dropped.
-let hydratedUserId = ''
-
-// Throw away a cache painted for a different user than the one Clerk confirmed.
-// Clears exactly what hydrateFromCachedSnapshot below sets — the two have to
-// stay a matched pair, or a field the paint wrote survives into the next
-// account. householdItemLimit and the cached shopping answer were the two that did:
-// the previous user's item cap governed the add form until loadHouseholdHeader
-// returned, and their shopping history decided whether a new user's empty list
-// read "All bought" or "Nothing here yet".
-function discardCachedPaint() {
-  hydratedUserId = ''
-  paintedFromCache.value = false
-  items.value = []
-  householdMembers.value = []
-  // null, not '': it is the ref's declared "no household", and the rest of this
-  // file tests it with truthiness that would let a second sentinel hide.
-  householdId.value = null
-  householdName.value = ''
-  householdInviteCode.value = ''
-  householdOwnerId.value = ''
-  householdItemLimit.value = ITEM_LIMIT_DEFAULT
-  householdEmoji.value = ''
-  cachedShoppedHouseholdId.value = ''
-}
-
-// Paint the last known state immediately (stale-while-revalidate): a returning
-// user sees their list instead of skeletons while the fresh fetches above run.
-function hydrateFromCachedSnapshot() {
-  if (items.value.length) return
-  const snapshot = loadHouseholdSnapshot(localStorage, effectiveUserId.value)
-  if (!snapshot) return
-  hydratedUserId = effectiveUserId.value
-  paintedFromCache.value = true
-  householdId.value = snapshot.householdId
-  householdName.value = snapshot.householdName
-  householdInviteCode.value = snapshot.householdInviteCode
-  householdOwnerId.value = snapshot.householdOwnerId
-  householdItemLimit.value = snapshot.householdItemLimit
-  householdEmoji.value = snapshot.householdEmoji || ''
-  householdMembers.value = snapshot.householdMembers
-  items.value = snapshot.items
-  // Offline there is no purchase history to read, so the cached answer is the
-  // only one available. Without it an empty list tells a household that shops every
-  // week they have never started.
-  cachedShoppedHouseholdId.value = snapshot.hasShopped ? snapshot.householdId : ''
-}
-
-// Writing the snapshot means JSON-stringifying the whole list and handing it to
-// localStorage, which is synchronous and blocks the main thread. The watcher
-// below is deep, so a quantity bump fires it per change — during a checkout,
-// once per row. Coalesce into one write on the next tick: nothing reads the
-// snapshot until a future page load, so it only has to be right when the dust
-// settles, not on every intermediate state.
-let snapshotTimer: ReturnType<typeof setTimeout> | null = null
-
-function schedulePersistSnapshot() {
-  if (snapshotTimer) return
-  snapshotTimer = setTimeout(() => {
-    snapshotTimer = null
-    persistSnapshot()
-  }, 0)
-}
-
-// Write now if a write is owed. Called on the way out, where "next tick" may
-// never come.
-function flushSnapshot() {
-  if (!snapshotTimer) return
-  clearTimeout(snapshotTimer)
-  snapshotTimer = null
-  persistSnapshot()
-}
-
 // Everything owed to somewhere durable when the app goes away. On a phone that
 // is most of the time, and is exactly when the next cold boot depends on it.
 //
@@ -705,30 +654,6 @@ function flushPendingWork() {
 function flushPendingWorkIfHidden() {
   if (document.visibilityState === 'hidden') flushPendingWork()
 }
-
-function persistSnapshot() {
-  if (!hasInitialized.value || !effectiveUserId.value || !householdId.value) return
-  saveHouseholdSnapshot(localStorage, effectiveUserId.value, {
-    householdId: householdId.value,
-    householdName: householdName.value,
-    householdInviteCode: householdInviteCode.value,
-    householdOwnerId: householdOwnerId.value,
-    householdItemLimit: householdItemLimit.value,
-    householdEmoji: householdEmoji.value,
-    householdMembers: householdMembers.value,
-    items: items.value,
-    hasShopped: hasShopped.value,
-  })
-}
-
-// Keep the snapshot current as state changes (mutations, realtime events).
-// Guarded by hasInitialized inside persistSnapshot, so hydration itself and
-// partial init states are never written back.
-watch(
-  [items, householdMembers, householdName, householdInviteCode, householdItemLimit, householdEmoji],
-  schedulePersistSnapshot,
-  { deep: true },
-)
 
 function sanitizeAuthCallbackUrl() {
   const cleanedUrl = cleanAuthCallbackUrl(window.location.href)
