@@ -344,30 +344,80 @@ async function applyMutation(
   return { ok: false, transient: isOfflineError(error) }
 }
 
+// Whether two queued mutations are the same intent, for the purpose of striking
+// one off after it has been sent.
+//
+// Kind and id, not deep equality. A coalesce landing during the request can
+// rewrite the row of a queued insert in place (see enqueueOfflineMutation), and
+// a mutation that no longer deep-equals the one we sent is still the one we
+// sent — refusing to recognise it would leave it at the head forever.
+function isSameMutation(a: OfflineMutation, b: OfflineMutation): boolean {
+  return a.kind === b.kind && a.id === b.id
+}
+
 // Replay the queue in order. The queue is persisted after every mutation so an
 // interruption (tab closed, network dropped again) never replays an
 // acknowledged write. Callers should re-fetch the list afterwards so local
 // state converges on the server's.
+//
+// STORAGE IS RE-READ AROUND EVERY REQUEST, and that is the whole shape of this
+// loop rather than a detail of it.
+//
+// This used to load the queue once and write that array back after each
+// mutation. Every one of those writes therefore restored a snapshot taken
+// before the loop started — so anything enqueueOfflineMutation had written
+// during the preceding `await` was overwritten and gone, with the optimistic
+// row still on screen and nothing said. The window is not theoretical: a flush
+// runs on reconnect, on focus and on every watchdog tick, and costs a round
+// trip per mutation. If the connection drops inside one, the user's next tap
+// takes the offline path, lands in storage, and was erased by the next
+// iteration. Silent loss of a user's writes, in the module written to prevent
+// exactly that.
+//
+// So the queue in storage is the authority throughout, and this only ever
+// strikes off the one mutation it has just settled.
 export async function flushOfflineQueue(
   storage: Storage,
   userId: string,
   db: Db,
 ): Promise<FlushResult> {
-  const remaining = loadOfflineQueue(storage, userId)
   const result: FlushResult = { flushed: 0, failed: 0, interrupted: false }
 
-  while (remaining.length) {
-    const { ok, transient } = await applyMutation(db, remaining[0])
+  for (;;) {
+    // Re-read rather than carry an array across the await below: a mutation
+    // enqueued during the previous request has to be picked up, not replaced.
+    const queued = loadOfflineQueue(storage, userId)
+    if (!queued.length) return result
+
+    const sent = queued[0]
+    const { ok, transient } = await applyMutation(db, sent)
+
+    // The window closed. Whatever is in storage now is what the next decision
+    // has to be made against.
+    const current = loadOfflineQueue(storage, userId)
+
     if (!ok && transient) {
       result.interrupted = true
-      saveOfflineQueue(storage, userId, remaining)
+      // Nothing was acknowledged, so nothing comes off. Written back anyway —
+      // unchanged in content — because loadOfflineQueue is also what migrates a
+      // queue found under the legacy device-wide key, and a flush that stops on
+      // its first mutation would otherwise never persist that migration.
+      saveOfflineQueue(storage, userId, current)
       return result
     }
+
     if (ok) result.flushed++
     else result.failed++
-    remaining.shift()
-    saveOfflineQueue(storage, userId, remaining)
-  }
 
-  return result
+    // Strike off what was just settled, and only that. Anything enqueued while
+    // it was on the wire sits behind it and survives untouched.
+    //
+    // The head can fail to match: a delete arriving for a row whose insert was
+    // in flight cancels that insert out of the queue entirely, so there is
+    // nothing left to remove. Leaving the queue alone is right there, and the
+    // loop still makes progress because the next pass reads a different head.
+    if (current.length && isSameMutation(current[0], sent)) {
+      saveOfflineQueue(storage, userId, current.slice(1))
+    }
+  }
 }

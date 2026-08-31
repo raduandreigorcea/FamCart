@@ -240,6 +240,65 @@ describe('flushOfflineQueue', () => {
     expect(db.calls.map((q) => q.op)).toEqual(['update', 'delete'])
     expect(hasQueuedOfflineMutations(storage, USER)).toBe(false)
   })
+
+  // A flush is a sequence of round trips, and the user is still using the app
+  // during them. On a flaky connection their next tap fails at the network
+  // layer, takes the offline path, and lands in storage — while the flush is
+  // between two of its own writes. The flush must not carry a queue it read
+  // before that happened back over the top of it.
+  //
+  // The handler below enqueues from inside the request, which is exactly the
+  // window: after the flush loaded the queue, before it saves it again.
+  it('sends a write enqueued while a mutation was on the wire', async () => {
+    const storage = makeStorage()
+    enqueueOfflineMutation(storage, USER, insertMutation('a'))
+    enqueueOfflineMutation(storage, USER, { kind: 'delete', id: 'srv-1' })
+
+    const db = createFakeDb()
+    // One tap, during the first request only — otherwise replaying the write it
+    // adds would add another, forever.
+    let tapped = false
+    db.handlers['shopping_list_items.insert'] = () => {
+      if (!tapped) {
+        tapped = true
+        // The tap that happened while this insert was in flight.
+        enqueueOfflineMutation(storage, USER, insertMutation('late'))
+      }
+      return { data: null, error: null }
+    }
+    db.handlers['shopping_list_items.delete'] = () => ({ data: null, error: null })
+
+    const result = await flushOfflineQueue(storage, USER, db)
+
+    // Three, not two: the write made mid-flush is picked up by this same flush
+    // rather than being overwritten by the queue it read before that tap.
+    expect(result).toEqual({ flushed: 3, failed: 0, interrupted: false })
+    expect(db.calls.filter((q) => q.op === 'insert').map((q) => q.payload.id)).toEqual([
+      'a',
+      'late',
+    ])
+    expect(hasQueuedOfflineMutations(storage, USER)).toBe(false)
+  })
+
+  // Same window, on the path that stops early. The transient branch used to
+  // persist its own snapshot too, so it dropped a concurrent write just as the
+  // acknowledged path did.
+  it('keeps a write enqueued while an interrupted mutation was on the wire', async () => {
+    const storage = makeStorage()
+    enqueueOfflineMutation(storage, USER, { kind: 'update', id: 'srv-1', patch: { checked: true } })
+
+    const db = createFakeDb()
+    db.handlers['shopping_list_items.update'] = () => {
+      enqueueOfflineMutation(storage, USER, insertMutation('late'))
+      return { data: null, error: { message: 'TypeError: Failed to fetch' } }
+    }
+
+    const result = await flushOfflineQueue(storage, USER, db)
+
+    expect(result).toEqual({ flushed: 0, failed: 0, interrupted: true })
+    // The unsent update, and the write made while it was failing.
+    expect(loadOfflineQueue(storage, USER).map((m) => m.id)).toEqual(['srv-1', 'late'])
+  })
 })
 
 // The item-insert ceiling in 004_shopping_list.sql. A throttled write
