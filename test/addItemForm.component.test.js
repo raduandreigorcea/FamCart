@@ -223,11 +223,32 @@ describe('AddItemForm suggestions', () => {
   // the state it is in every time the form comes back after an add.
   describe('the button at the end of the row', () => {
     const scanIcon = (wrapper) => wrapper.find('.scan-icon')
+    const addIcon = (wrapper) => wrapper.find('.add-icon')
+    // Both icons stay mounted and the current job is the one that is not faded
+    // out, so "which icon is showing" is a class rather than an existence check.
+    const showing = (icon) => icon.exists() && !icon.classes('add-btn__icon--off')
+
+    // The button is the primary action of the app, and the swap it does on the
+    // first keystroke used to be a <Transition mode="out-in"> -- which renders
+    // nothing at all between unmounting one icon and mounting the other, and
+    // leaves it that way for good if the leave never resolves. Whatever else is
+    // true of this button, it always draws exactly one icon.
+    it('always draws an icon, in either job', async () => {
+      const wrapper = await mountForm({ name: '', canScan: true })
+      expect(wrapper.findAll('.add-btn__icon').filter(showing)).toHaveLength(1)
+
+      await wrapper.setProps({ name: 'apa' })
+      expect(wrapper.findAll('.add-btn__icon').filter(showing)).toHaveLength(1)
+
+      await wrapper.setProps({ name: '' })
+      expect(wrapper.findAll('.add-btn__icon').filter(showing)).toHaveLength(1)
+    })
 
     it('offers the scan when the field is empty', async () => {
       const wrapper = await mountForm({ name: '', canScan: true })
 
-      expect(scanIcon(wrapper).exists()).toBe(true)
+      expect(showing(scanIcon(wrapper))).toBe(true)
+      expect(showing(addIcon(wrapper))).toBe(false)
       expect(wrapper.find('.add-btn').attributes('aria-label')).toBe('Scan a barcode')
       // Live, unlike the add button it replaces. That is the whole point.
       expect(wrapper.find('.add-btn').attributes('disabled')).toBeUndefined()
@@ -240,7 +261,8 @@ describe('AddItemForm suggestions', () => {
 
       await wrapper.setProps({ name: 'apa' })
 
-      expect(scanIcon(wrapper).exists()).toBe(false)
+      expect(showing(scanIcon(wrapper))).toBe(false)
+      expect(showing(addIcon(wrapper))).toBe(true)
       expect(wrapper.find('.add-btn').attributes('type')).toBe('submit')
       expect(wrapper.find('.add-btn').attributes('aria-label')).toBe('Add')
     })
@@ -248,7 +270,7 @@ describe('AddItemForm suggestions', () => {
     it('treats a field holding only spaces as empty', async () => {
       const wrapper = await mountForm({ name: '   ', canScan: true })
 
-      expect(scanIcon(wrapper).exists()).toBe(true)
+      expect(showing(scanIcon(wrapper))).toBe(true)
     })
 
     it('stays the plain add button on a device that cannot scan', async () => {
@@ -256,7 +278,10 @@ describe('AddItemForm suggestions', () => {
       // offered a camera it does not have.
       const wrapper = await mountForm({ name: '', canScan: false })
 
+      // Absent outright, not merely faded: canScan cannot change under the
+      // user's fingers, so there is nothing to animate between.
       expect(scanIcon(wrapper).exists()).toBe(false)
+      expect(showing(addIcon(wrapper))).toBe(true)
       expect(wrapper.find('.add-btn').attributes('type')).toBe('submit')
       expect(wrapper.find('.add-btn').attributes('disabled')).toBeDefined()
     })

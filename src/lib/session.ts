@@ -70,6 +70,6 @@ export function forgetUser(storage: Storage): void {
 export function forgetLocalUserState(storage: Storage, userId?: string): void {
   forgetUser(storage)
   clearHouseholdSnapshot(storage, userId)
-  clearActiveHouseholdId(storage)
+  clearActiveHouseholdId(storage, userId)
   clearOfflineQueue(storage, userId)
 }

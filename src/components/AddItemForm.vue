@@ -7,11 +7,10 @@ import { useAddedConfirmation } from '../lib/useAddedConfirmation'
 import { getProductEmoji } from '../lib/productEmoji'
 import BackButton from './BackButton.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
-import checkIcon from '../assets/check.svg?raw'
-import scanBarcodeIcon from '../assets/scan-barcode.svg?raw'
 import { productKey, type ProductSuggestion } from '../lib/productSearch'
 import { ITEM_NAME_MAX_LENGTH } from '../lib/limits'
 import { t } from '../lib/i18n'
+import AppIcon from './AppIcon.vue'
 
 // Presentational: the typed name lives in the parent (via v-model) so the add
 // flow can restore it when an optimistic insert fails. The suggestions list is
@@ -55,10 +54,6 @@ const props = defineProps({
   // Whether to offer the "add your own" escape hatch. Owned by the parent,
   // which knows when the query is long enough to have been searched for.
   canAddCustom: { type: Boolean, default: false },
-  // Discovery has asked every source and come back with nothing. Changes only
-  // what this row SAYS, never whether it is there or what it does: it is still
-  // the same choice, and the point is to stop implying that waiting or typing
-  // more would turn something up.
   // Whether this device can scan at all — a camera it can reach, and something
   // that can decode. Asked once by the parent; a browser that cannot scan is
   // never offered the button rather than being offered one that fails.
@@ -411,16 +406,33 @@ onBeforeUnmount(() => {
             :disabled="!showScan && !name.trim()"
             :aria-label="showScan ? t('add.scanLabel') : t('add.submitLabel')"
           >
-            <Transition name="btn-swap" mode="out-in">
-              <span
-                v-if="showScan"
-                key="scan"
-                class="scan-icon"
-                aria-hidden="true"
-                v-html="scanBarcodeIcon"
-              ></span>
-              <span v-else key="add" class="add-icon"></span>
-            </Transition>
+            <!-- Both icons stay mounted, stacked in one grid cell, and the swap
+                 is opacity and scale on whichever is not the current job.
+
+                 This was a <Transition mode="out-in">, which is the one shape
+                 that can leave the button holding NOTHING: out-in unmounts the
+                 outgoing icon, renders a placeholder comment, and mounts the
+                 incoming one only once the leave resolves. Vue schedules the
+                 second half of a leave inside a double requestAnimationFrame, so
+                 anything that starves rAF -- a backgrounded tab is the easy one
+                 -- strands the placeholder and the primary action of the app is
+                 a blank green square. An empty button is a far worse outcome
+                 than a missing 110ms flourish, and CSS gives the same flourish
+                 with nothing left to stall.
+
+                 The scan icon is still absent entirely where it would never be
+                 used: canScan cannot change while the field is being typed in,
+                 so that one is a real v-if and not a hidden element. -->
+            <AppIcon
+              v-if="canScan"
+              class="add-btn__icon scan-icon"
+              :class="{ 'add-btn__icon--off': !showScan }"
+              name="scan-barcode"
+            />
+            <span
+              class="add-btn__icon add-icon"
+              :class="{ 'add-btn__icon--off': showScan }"
+            ></span>
           </button>
         </div>
       </div>
@@ -513,7 +525,7 @@ onBeforeUnmount(() => {
                     <!-- On the tile, the way the row on the list wears its own
                          mark. Rendering it only when added would pop the layout;
                          it scales in from nothing instead. -->
-                    <span class="suggestion-tick" v-html="checkIcon"></span>
+                    <AppIcon class="suggestion-tick" name="check" />
                   </span>
                   <span class="suggestion-text">
                     <span class="suggestion-name">{{ product.name }}</span>
@@ -1107,6 +1119,24 @@ onBeforeUnmount(() => {
   padding: 0;
 }
 
+/* One cell, both icons in it. */
+.add-btn {
+  display: grid;
+  place-items: center;
+}
+
+.add-btn__icon {
+  grid-area: 1 / 1;
+  transition: opacity 0.11s ease, transform 0.11s ease;
+}
+
+/* The job the button is not doing. Faded rather than unmounted -- see the
+   template. */
+.add-btn__icon--off {
+  opacity: 0;
+  transform: scale(0.7);
+}
+
 .add-icon {
   width: var(--size-icon-lg);
   height: var(--size-icon-lg);
@@ -1141,20 +1171,6 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
 }
 
-/* The swap between the two jobs. Short enough that mode="out-in" never reads as
-   a gap — this is the only place in the row that still animates, now that the
-   quantity stepper it used to keep time with has gone. */
-.btn-swap-enter-active,
-.btn-swap-leave-active {
-  transition: opacity 0.11s ease, transform 0.11s ease;
-}
-
-.btn-swap-enter-from,
-.btn-swap-leave-to {
-  opacity: 0;
-  transform: scale(0.7);
-}
-
 
 /* The screen still opens — it is where the room comes from — it just opens at
    once. The JS checks the same query and skips its half of the slide. */
@@ -1167,8 +1183,7 @@ onBeforeUnmount(() => {
   .suggest-leave-active,
   .suggestion,
   .suggestion-tick,
-  .btn-swap-enter-active,
-  .btn-swap-leave-active {
+  .add-btn__icon {
     transition: none;
   }
 
@@ -1199,8 +1214,8 @@ onBeforeUnmount(() => {
     }
   }
 
-  .btn-swap-enter-from,
-  .btn-swap-leave-to {
+  /* Still swapped, just not scaled into place. */
+  .add-btn__icon--off {
     transform: none;
   }
 }

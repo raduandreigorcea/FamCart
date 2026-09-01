@@ -6,7 +6,6 @@ import AppModal from './AppModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
 import ErrorModal from './ErrorModal.vue'
 import LanguagePicker from './LanguagePicker.vue'
-import slidersIconRaw from '../assets/settings.svg?raw'
 import { canSelfUpdate } from '../lib/nativeUpdate'
 import { updateCheckKey } from '../lib/updatePrompt'
 import {
@@ -23,6 +22,7 @@ import {
   saveThemeMode,
   type ThemeMode,
 } from '../lib/theme'
+import AppIcon from './AppIcon.vue'
 
 // Settings that belong to the app on this device rather than to a household or
 // to the account: how it looks, whether it may notify, and what it is.
@@ -191,7 +191,7 @@ watch(
       <div class="app-settings__header">
         <div class="app-settings__title-wrap">
           <div class="app-settings__icon-bg">
-            <span class="header-icon" aria-hidden="true" v-html="slidersIconRaw"></span>
+            <AppIcon class="header-icon" name="settings" />
           </div>
           <div>
             <h3 id="app-settings-title">{{ t('settings.title') }}</h3>

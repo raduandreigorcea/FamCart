@@ -9,9 +9,8 @@ import { productKey } from '../lib/productSearch'
 import { sumActiveQuantities, sumCheckedQuantities } from '../lib/shoppingList'
 import type { ShoppingItemRow, HouseholdMemberProfile } from '../lib/householdRealtime'
 import type { ProductSuggestion } from '../lib/productSearch'
-import cartIcon from '../assets/shopping-cart.svg?raw'
-import checkIcon from '../assets/check.svg?raw'
 import { t, tn } from '../lib/i18n'
+import AppIcon from './AppIcon.vue'
 
 // Presentational: renders the list with its move animations, the initial-load
 // skeleton, and the empty state. All mutations stay with the parent, which owns
@@ -451,8 +450,8 @@ const labelText = computed(() =>
           @click="onThumbClick"
         >
           <span class="buy-bar__icon" aria-hidden="true">
-            <span class="buy-bar__cart" aria-hidden="true" v-html="cartIcon"></span>
-            <span class="buy-bar__check" aria-hidden="true" v-html="checkIcon"></span>
+            <AppIcon class="buy-bar__cart" name="shopping-cart" />
+            <AppIcon class="buy-bar__check" name="check" />
           </span>
         </button>
       </div>

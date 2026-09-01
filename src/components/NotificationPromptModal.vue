@@ -4,8 +4,8 @@
 // prompt that follows an accept doesn't arrive cold.
 import AppButton from './AppButton.vue'
 import AppModal from './AppModal.vue'
-import bellIcon from '../assets/bell.svg?raw'
 import { t } from '../lib/i18n'
+import AppIcon from './AppIcon.vue'
 
 defineProps({
   open: { type: Boolean, default: false },
@@ -23,7 +23,7 @@ const emit = defineEmits(['accept', 'decline'])
   >
       <div class="notify-dialog" role="alertdialog" aria-modal="true" aria-labelledby="notify-prompt-title">
         <div class="notify-dialog__icon-wrap">
-          <span class="notify-dialog__icon" aria-hidden="true" v-html="bellIcon"></span>
+          <AppIcon class="notify-dialog__icon" name="bell" />
         </div>
 
         <div class="notify-dialog__body">

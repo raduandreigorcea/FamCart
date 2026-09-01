@@ -28,7 +28,9 @@ const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
 // transitionend was swallowed rather than racing a real one.
 const SLIDE_TIMEOUT_MS = 400
 
-export function mediaMatches(query: string): boolean {
+// Not exported: isPhoneWidth below is the question callers actually ask, and
+// the two REDUCED_MOTION checks are this file's own.
+function mediaMatches(query: string): boolean {
   return (
     typeof window !== 'undefined' &&
     typeof window.matchMedia === 'function' &&

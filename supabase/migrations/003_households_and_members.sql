@@ -151,12 +151,22 @@ alter table public.households enable row level security;
 -- two concurrent inserts cannot both slip past it. Joining another household is
 -- unaffected: this caps ownership, not membership.
 --
--- A SOFT delete does not free the slot, and that is deliberate. Making the index
--- partial on `deleted_at is null` would let the owner create a replacement while
--- the original sits in the trash -- and then restoring it would violate this
--- index and fail. A restore that can be blocked by something the user did in the
--- meantime is not a restore. Holding the slot costs the owner one household
--- until an admin restores or the row is purged; it keeps undo unconditional.
+-- SUPERSEDED BY 009, which makes this index partial on `deleted_at is null`.
+-- The version below is what a fresh database builds first; 009 replaces it a
+-- moment later, and an existing database gets the replacement on its own.
+--
+-- The original reasoning was that a soft delete should NOT free the slot: a
+-- partial index would let the owner create a replacement while the original sat
+-- in the trash, and restoring it would then violate the index and fail, so
+-- holding the slot kept undo unconditional.
+--
+-- What that missed is what it cost the owner. Nothing purges households, so the
+-- slot was held forever -- and the SELECT policy below hides deleted rows, so
+-- the owner was permanently unable to create a household, blocked by a row they
+-- could not see, and told to delete the thing that had already been deleted.
+-- That is a silent ban on someone whose household was moderated rather than on
+-- someone who was; profiles.banned_at is what bans an account. 009 has the
+-- full argument.
 create unique index if not exists households_one_per_owner
   on public.households (created_by);
 

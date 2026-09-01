@@ -6,6 +6,7 @@
 // goes back to `few`. Anyone changing tn() should have to break these.
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
+  applyUserLocale,
   formatDate,
   formatTime,
   getClerkLocalization,
@@ -18,8 +19,11 @@ import {
   tn,
   whenLocaleReady,
 } from '../src/lib/i18n'
-import { LOCALE_DEVICE_KEY } from '../src/lib/locale'
+import { LOCALE_DEVICE_KEY, LOCALE_PREFIX } from '../src/lib/locale'
+import { userScopedKey } from '../src/lib/perUserStorage'
 import { makeStorage } from './support/fakeStorage.js'
+
+const scoped = (userId) => userScopedKey(LOCALE_PREFIX, userId)
 
 beforeEach(async () => {
   await setLocale('en')
@@ -125,6 +129,63 @@ describe('initLocale', () => {
     await initLocale(makeStorage(), ['fr-CA'])
     expect(getLocale()).toBe('fr')
     expect(t('common.cancel')).toBe('Annuler')
+  })
+})
+
+// The half of the two-key design that runs once Clerk has said who this is.
+//
+// initLocale can only read the DEVICE key, because it runs before there is an
+// account to scope by. That key is device-wide: it holds whatever the last
+// person to choose on this browser picked. So without this step the scoped key
+// is written and never read, and on a shared device everyone boots into one
+// language.
+describe('applyUserLocale', () => {
+  it("applies the account's own choice over the device the app booted into", async () => {
+    // Two accounts, two languages, one browser. B chose last, so B's language
+    // is what the device key holds and what initLocale settled on.
+    const storage = makeStorage()
+    await setLocale('ro', storage, 'user-a')
+    await setLocale('de', storage, 'user-b')
+    await initLocale(storage, ['en-GB'])
+    await whenLocaleReady()
+    expect(getLocale()).toBe('de')
+
+    // A signs back in.
+    await applyUserLocale(storage, 'user-a')
+
+    expect(getLocale()).toBe('ro')
+    expect(t('common.cancel')).toBe('Anulează')
+    // And the device hint now describes what is actually on screen, so the next
+    // cold boot starts there rather than swapping again.
+    expect(storage.map.get(LOCALE_DEVICE_KEY)).toBe('ro')
+    // B's choice is untouched, waiting for B.
+    expect(storage.map.get(scoped('user-b'))).toBe('de')
+  })
+
+  // Anyone who used the app before the language step existed. Adopting what
+  // they are already reading is the point: the alternative is ambushing a
+  // returning user with a question they never asked to be asked.
+  it('adopts the current language for an account that has never chosen', async () => {
+    const storage = makeStorage({ [LOCALE_DEVICE_KEY]: 'it' })
+    await initLocale(storage, ['en-GB'])
+    await whenLocaleReady()
+
+    await applyUserLocale(storage, 'user-new')
+
+    expect(getLocale()).toBe('it')
+    expect(storage.map.get(scoped('user-new'))).toBe('it')
+  })
+
+  it('does nothing without a user id, since there is no account to be about', async () => {
+    const storage = makeStorage({ [LOCALE_DEVICE_KEY]: 'fr' })
+    await initLocale(storage, ['en-GB'])
+    await whenLocaleReady()
+
+    await applyUserLocale(storage, '')
+
+    expect(getLocale()).toBe('fr')
+    // No stray scoped key written for the empty id.
+    expect([...storage.map.keys()]).toEqual([LOCALE_DEVICE_KEY])
   })
 })
 

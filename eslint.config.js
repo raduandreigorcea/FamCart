@@ -123,23 +123,31 @@ export default ts.config(
       'vue/html-indent': 'off',
       'vue/html-closing-bracket-newline': 'off',
 
-      // Off, and this one is worth explaining rather than just silencing.
+      // ON, with exactly one disabled site: the span inside AppIcon.vue.
       //
-      // Every v-html in this project — 57 of them at the time of writing — binds
-      // an SVG imported with Vite's `?raw` suffix, or a string literal declared
-      // in the same file (LoginView's provider marks). All of it is build-time
-      // content from this repository. None of it is user data, none of it comes
-      // from the network, and none of it passes through the database.
+      // This was off, and the reasoning for that was sound as far as it went.
+      // There were 57 v-html bindings across 15 files, every one of them an SVG
+      // imported with Vite's `?raw` suffix or a brand mark declared as a literal
+      // in the same file. All build-time content from this repository, no user
+      // data, no network, no database. The rule cannot see that distinction, so
+      // leaving it on produced 57 warnings that were all false — and 57 false
+      // warnings are worse than none, because they train the eye to skip the
+      // output.
       //
-      // The rule cannot see that distinction, so left on it produces 57 warnings
-      // that are all false and that nobody will read — which is worse than off,
-      // because it trains the eye to skip the output.
+      // The flaw was in what the old note went on to say: that binding v-html to
+      // a product name, a display name or a household name is what would make it
+      // wrong, and that the answer would be "not to do it". Those three values
+      // are what this app renders on every screen, and "do not do it" is not a
+      // mechanism — it is a hope, held by whoever happens to review the diff.
       //
-      // What would make this wrong: binding v-html to anything reaching the
-      // component from outside the bundle — a product name, a display name, a
-      // household name, an API response. If that is ever needed, the answer is
-      // not to re-enable this rule but to not do it.
-      'vue/no-v-html': 'off',
+      // Routing every icon through one audited component is what turns it back
+      // into a mechanism. AppIcon resolves a NAME through an eager
+      // import.meta.glob over src/assets, so the only thing that can reach its
+      // v-html is a .svg file in this repository; an unknown name renders
+      // nothing. The disable lives around that one element rather than here, so
+      // a v-html anywhere else — including one added to AppIcon tomorrow — fails
+      // the build.
+      'vue/no-v-html': 'error',
 
       // Off because following it would change what renders. The props it fires
       // on are InputRow's pass-throughs to a native <input> — placeholder,

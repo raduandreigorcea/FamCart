@@ -5,8 +5,8 @@ import { useSupabase } from '../../supabase'
 import { userMessage } from '../../lib/errorMessages'
 import { randomInviteCode } from '../../lib/inviteCode'
 import type { ConfirmOptions } from '../../lib/useConfirm'
-import checkIcon from '../../assets/check.svg?raw'
 import { t, tAccent } from '../../lib/i18n'
+import AppIcon from '../AppIcon.vue'
 
 // The actions that cannot be undone: rotating the invite code, leaving, and
 // deleting the household. An owner sees delete, everyone else sees leave — the
@@ -146,7 +146,7 @@ async function deleteHousehold() {
         >
           <span v-if="regenerating" class="btn-spinner"></span>
           <span v-else-if="codeRegenerated" class="success-state animate-pop">
-            <span class="success-icon-wrap" aria-hidden="true" v-html="checkIcon"></span>
+            <AppIcon class="success-icon-wrap" name="check" />
             {{ t('danger.regenerated') }}
           </span>
           <span v-else>{{ t('danger.regenerate') }}</span>

@@ -12,13 +12,9 @@ import {
   canPromoteToModerator as canPromoteRule,
   canDemoteFromModerator as canDemoteRule,
 } from '../../lib/memberRoles'
-import crownIcon from '../../assets/crown.svg?raw'
-import ellipsisIcon from '../../assets/ellipsis.svg?raw'
-import shieldIcon from '../../assets/shield.svg?raw'
-import trashIcon from '../../assets/trash-2.svg?raw'
-import userRoundIcon from '../../assets/user-round.svg?raw'
 import { memberDisplayName } from '../../lib/userIdentity'
 import { t } from '../../lib/i18n'
+import AppIcon from '../AppIcon.vue'
 
 // The roster, and what can be done to a row on it. The rules themselves live in
 // lib/memberRoles — this decides only what to render and what to write.
@@ -197,7 +193,7 @@ async function removeMember(memberUserId: string) {
             </div>
             <div class="member-custom-right">
               <span v-if="member.user_id === ownerUserId" class="member-role-badge role-owner">
-                <span class="badge-icon-wrap" aria-hidden="true" v-html="crownIcon"></span>
+                <AppIcon class="badge-icon-wrap" name="crown" />
                 {{ t('overview.owner') }}
               </span>
 
@@ -215,7 +211,7 @@ async function removeMember(memberUserId: string) {
                   @click.stop="toggleMemberMenu(member.user_id)"
                 >
                   <span v-if="memberActionPendingId === member.user_id" class="btn-spinner btn-spinner--accent"></span>
-                  <span v-else class="member-actions-icon" aria-hidden="true" v-html="ellipsisIcon"></span>
+                  <AppIcon v-else class="member-actions-icon" name="ellipsis" />
                 </button>
 
                 <div v-if="openMenuId === member.user_id" class="member-actions-menu">
@@ -225,7 +221,7 @@ async function removeMember(memberUserId: string) {
                     type="button"
                     @click="setMemberRole(member.user_id, 'moderator')"
                   >
-                    <span class="member-action-icon" aria-hidden="true" v-html="shieldIcon"></span>
+                    <AppIcon class="member-action-icon" name="shield" />
                     <span class="member-action-text">
                       <span class="member-action-label">{{ t('members.promote') }}</span>
                       <span class="member-action-hint">{{ t('members.promoteHint') }}</span>
@@ -237,7 +233,7 @@ async function removeMember(memberUserId: string) {
                     type="button"
                     @click="setMemberRole(member.user_id, 'member')"
                   >
-                    <span class="member-action-icon" aria-hidden="true" v-html="userRoundIcon"></span>
+                    <AppIcon class="member-action-icon" name="user-round" />
                     <span class="member-action-text">
                       <span class="member-action-label">{{ t('members.demote') }}</span>
                       <span class="member-action-hint">{{ t('members.demoteHint') }}</span>
@@ -248,7 +244,7 @@ async function removeMember(memberUserId: string) {
                     type="button"
                     @click="removeMember(member.user_id)"
                   >
-                    <span class="member-action-icon" aria-hidden="true" v-html="trashIcon"></span>
+                    <AppIcon class="member-action-icon" name="trash-2" />
                     <span class="member-action-text">
                       <span class="member-action-label">{{ t('members.remove') }}</span>
                       <span class="member-action-hint">{{ t('members.removeHint') }}</span>
@@ -307,7 +303,7 @@ async function removeMember(memberUserId: string) {
                 type="button"
                 @click="setMemberRole(activeMenuMember.user_id, 'moderator')"
               >
-                <span class="member-sheet__action-icon" aria-hidden="true" v-html="shieldIcon"></span>
+                <AppIcon class="member-sheet__action-icon" name="shield" />
                 <span class="member-sheet__action-text">
                   <span class="member-sheet__action-label">{{ t('members.promote') }}</span>
                   <span class="member-sheet__action-hint">{{ t('members.promoteHint') }}</span>
@@ -320,7 +316,7 @@ async function removeMember(memberUserId: string) {
                 type="button"
                 @click="setMemberRole(activeMenuMember.user_id, 'member')"
               >
-                <span class="member-sheet__action-icon" aria-hidden="true" v-html="userRoundIcon"></span>
+                <AppIcon class="member-sheet__action-icon" name="user-round" />
                 <span class="member-sheet__action-text">
                   <span class="member-sheet__action-label">{{ t('members.demote') }}</span>
                   <span class="member-sheet__action-hint">{{ t('members.demoteHint') }}</span>
@@ -332,7 +328,7 @@ async function removeMember(memberUserId: string) {
                 type="button"
                 @click="removeMember(activeMenuMember.user_id)"
               >
-                <span class="member-sheet__action-icon" aria-hidden="true" v-html="trashIcon"></span>
+                <AppIcon class="member-sheet__action-icon" name="trash-2" />
                 <span class="member-sheet__action-text">
                   <span class="member-sheet__action-label">{{ t('members.remove') }}</span>
                   <span class="member-sheet__action-hint">{{ t('members.removeHint') }}</span>

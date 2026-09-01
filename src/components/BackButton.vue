@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import chevronLeftIcon from '../assets/chevron-left.svg?raw'
 import { t } from '../lib/i18n'
+import AppIcon from './AppIcon.vue'
 
 defineEmits(['click'])
 </script>
 
 <template>
   <button class="back-btn" type="button" @click="$emit('click')">
-    <span class="back-btn__arrow" aria-hidden="true" v-html="chevronLeftIcon"></span>
+    <AppIcon class="back-btn__arrow" name="chevron-left" />
     <span>{{ t('common.back') }}</span>
   </button>
 </template>

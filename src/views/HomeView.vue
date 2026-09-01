@@ -16,24 +16,19 @@ import UpdateAvailableModal from '../components/UpdateAvailableModal.vue'
 import { useHouseholdRealtime } from '../lib/householdRealtime'
 import { useProductSuggestions } from '../lib/productSuggestions'
 import { deviceTimeZone, resolveRegion } from '../lib/region'
-import {
-  canScanBarcodes,
-  nativeScanAvailable,
-  scanWithNativeScanner,
-} from '../lib/barcodeScanner'
 import type { ProductSuggestion } from '../lib/productSearch'
 import type { HouseholdMemberProfile, ShoppingItemRow } from '../lib/householdRealtime'
 import { useShoppingListActions, type AddedProduct } from '../lib/shoppingListActions'
+import { useBarcodeScanning } from '../lib/useBarcodeScanning'
 import { upsertOwnProfile } from '../lib/profile'
 import { cleanAuthCallbackUrl } from '../lib/authCallbackUrl'
 import {
-  loadHouseholdSnapshot,
-  saveHouseholdSnapshot,
   clearHouseholdSnapshot,
   loadActiveHouseholdId,
   saveActiveHouseholdId,
   clearActiveHouseholdId,
 } from '../lib/householdCache'
+import { useHouseholdSnapshot } from '../lib/useHouseholdSnapshot'
 import { flushOfflineQueue, isOfflineError } from '../lib/offlineQueue'
 import { captureException, identifyUser } from '../lib/errorReporting'
 // isCurrentlyOffline is the app's one answer to "are we offline", handed to
@@ -51,7 +46,7 @@ import {
   ITEM_LIMIT_DEFAULT,
   ITEM_NAME_MAX_LENGTH,
 } from '../lib/limits'
-import { getLocale, t } from '../lib/i18n'
+import { applyUserLocale, getLocale, t } from '../lib/i18n'
 
 const { userId, isLoaded } = useAuth()
 const { user } = useUser()
@@ -157,24 +152,8 @@ const boughtThisSession = ref(false)
 // the old household's answer straight onto the new household's empty list, which then
 // opened on "All bought" having bought nothing. Storing what the answer is ABOUT
 // makes it self-invalidating — no path can forget to clear it.
-const cachedShoppedHouseholdId = ref('')
 const loadError = ref('')
 const customProductOpen = ref(false)
-// Whether this device has a camera the app can reach and something to decode
-// with. Asked once at setup rather than per render: it cannot change while the
-// view is mounted, and the answer decides whether the add form offers the button
-// at all. A browser that cannot scan is never shown a control that would fail.
-const canScan = canScanBarcodes()
-const scannerOpen = ref(false)
-// A barcode is being looked up. Holds the scanner still so one code cannot start
-// a second lookup over its own.
-const scanBusy = ref(false)
-// The last code the catalog had no product for, and every code that has missed
-// while this scanner has been open. The set is what keeps a barcode lying in
-// frame from re-querying every couple of seconds for an answer that has not
-// changed.
-const scannedUnknown = ref('')
-const unknownCodes = new Set<string>()
 // The code the custom-product modal is naming, carried from the scan that missed
 // so the contributed catalog row can keep it.
 const pendingBarcode = ref('')
@@ -276,9 +255,34 @@ const { setupRealtimeSubscriptions, cleanupRealtimeSubscriptions } = useHousehol
   hasPendingWrite: (id) => pendingItemWrites.has(id),
 })
 
-// Set once a cached snapshot has been painted. The list on screen is then real
-// (an empty cached list is still an answer), so skeletons over it would be a lie.
-const paintedFromCache = ref(false)
+// The painted cache: what was on screen last time, read back so a returning user
+// sees their list rather than skeletons. Owns the paint, the discard and the
+// write-back, which have to name the same fields and had drifted apart while
+// they lived here — see lib/useHouseholdSnapshot.
+const {
+  paintedFromCache,
+  cachedShoppedHouseholdId,
+  hasSnapshot,
+  hydrate: hydrateFromCachedSnapshot,
+  discard: discardCachedPaint,
+  paintedFor,
+  flush: flushSnapshot,
+  persist: persistSnapshot,
+} = useHouseholdSnapshot({
+  userId: effectiveUserId,
+  hasInitialized,
+  refs: {
+    householdId,
+    householdName,
+    householdInviteCode,
+    householdOwnerId,
+    householdItemLimit,
+    householdEmoji,
+    householdMembers,
+    items,
+  },
+  hasShopped: () => hasShopped.value,
+})
 // Initial load: nothing painted or fetched yet, and no error to show instead.
 // Items arriving (realtime or fetch) end the skeleton early even before
 // hasInitialized flips.
@@ -393,9 +397,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('pagehide', flushPendingWork)
   document.removeEventListener('visibilitychange', flushPendingWorkIfHidden)
   if (stopReconnect) stopReconnect()
-  // Only the snapshot here: the quantity writes are flushed by the actions
-  // composable's own unmount hook, which runs alongside this one.
-  flushSnapshot()
+  // No flushing here. Both kinds of deferred work are flushed by the composable
+  // that owns them -- the snapshot by useHouseholdSnapshot, the quantity writes
+  // by useShoppingListActions -- from their own unmount hooks, which run
+  // alongside this one.
 })
 
 // Picking a suggestion adds it outright rather than filling the input: the pick
@@ -442,115 +447,32 @@ function cancelCustomProduct() {
 }
 
 // ─── Scanning ────────────────────────────────────────────────────────────────
-// A scan is a suggestion arrived at with the camera instead of the keyboard, so
-// a hit takes selectSuggestion's path exactly and lands the same confirmation.
-// Only the miss is new, and it is handed to the "add your own" modal that
-// already exists for the typed version of the same problem.
-//
-// Two ways to obtain the code, one way to act on it. In the app that is Google's
-// scanner: auto-zoom, and no camera permission of our own (see
-// lib/barcodeScanner). In a browser, where that does not exist, it is our own
-// camera screen. Everything from the code onwards — resolveScannedCode below —
-// is shared, so the two differ only in how the barcode is read.
+// The camera, the two scanners and what a code means all live in
+// lib/useBarcodeScanning. What stays here is the one thing the composable
+// deliberately does not own: where a miss goes. The naming dialog below serves
+// the typed "Can't find it?" path as well, so it belongs to the view rather than
+// to scanning.
+const {
+  canScan,
+  scannerOpen,
+  scanBusy,
+  scannedUnknown,
+  openScanner,
+  closeScanner,
+  onBarcodeDetected,
+  reportUnknown,
+} = useBarcodeScanning({
+  lookupBarcode,
+  addProduct: (product) => void addItem(product as AddedProduct),
+  clearSuggestions,
+  onUnknownCode: nameUnknownBarcode,
+})
 
-async function openScanner() {
-  clearSuggestions()
-  // Codes that missed are only remembered for the length of one scanning
-  // session. Naming one makes it findable, so the next session must ask the
-  // catalog again rather than trusting an answer from before it was told.
-  unknownCodes.clear()
-  scannedUnknown.value = ''
-
-  if (nativeScanAvailable()) {
-    const result = await scanWithNativeScanner()
-    // Its UI is already gone by now: one scan, then it closes itself. Which is
-    // why a miss goes straight to the naming dialog rather than to the row our
-    // own screen shows — there is no screen left to show it on.
-    if (result.ok) {
-      if (result.code) await resolveScannedCode(result.code, 'native')
-      return
-    }
-    // No Play Services, or the module would not install. Our own camera screen
-    // is the fallback, and it reports its own failures if it cannot start
-    // either.
-  }
-
-  scannerOpen.value = true
-}
-
-function closeScanner() {
-  scannerOpen.value = false
-  scanBusy.value = false
-  scannedUnknown.value = ''
-}
-
-// What a barcode means, whichever scanner read it.
-//
-// `source` is not cosmetic: it decides where a miss goes, and whether the user
-// can still walk away mid-lookup. Our own screen stays open and reads
-// continuously, so it can be closed while a lookup is in flight and a miss has
-// somewhere to be shown. The native scanner has already closed itself by the
-// time we have a code, so neither is true of it.
-async function resolveScannedCode(code: string, source: 'screen' | 'native') {
-  const reportMiss = () => {
-    unknownCodes.add(code)
-    if (source === 'screen') scannedUnknown.value = code
-    else nameUnknownBarcode(code)
-  }
-
-  // Already asked about, and the answer does not change within a session.
-  // Re-asserting it rather than querying again is what stops a barcode lying in
-  // front of our own camera from firing a lookup every couple of seconds.
-  if (unknownCodes.has(code)) {
-    reportMiss()
-    return
-  }
-
-  scanBusy.value = true
-  scannedUnknown.value = ''
-  const product = await lookupBarcode(code)
-  scanBusy.value = false
-  // Left our camera screen while the lookup ran. Adding behind a screen they
-  // have closed is not what they asked for.
-  if (source === 'screen' && !scannerOpen.value) return
-
-  if (product) {
-    // The scan IS the add. It used to fill the form and hand the screen back so
-    // the name and the quantity picker could be corrected before committing --
-    // but the picker has moved onto the list row, and a barcode is an exact key,
-    // so this was the one action in the app asking for a confirming tap while
-    // tapping a fuzzy search result committed outright.
-    //
-    // Same call a tapped suggestion makes, so the maker rides onto the row by
-    // the same route. The add form is not touched at all: writing the name into
-    // it left the query sitting there afterwards, suppressing suggestions until
-    // it was edited by hand.
-    //
-    // Then the screen goes, and the list behind it is the confirmation -- the row
-    // is there with its own stepper on it. One code per scan, on both scanners:
-    // ours could have kept reading and Google's could have been reopened, but a
-    // camera that comes back on its own after every item is a thing to dismiss
-    // rather than a thing to use.
-    void addItem(product as AddedProduct)
-    closeScanner()
-    return
-  }
-
-  reportMiss()
-}
-
-
-// From our own camera screen, which reads continuously.
-async function onBarcodeDetected(code: string) {
-  if (!scannerOpen.value) return
-  await resolveScannedCode(code, 'screen')
-}
-
-// Naming it is a detour off the camera, so the camera goes away: the item lands
-// on the list, which is where the answer belongs and where the user ends up.
+// Naming it is a detour off the camera, so the camera has already gone by the
+// time this runs: the item lands on the list, which is where the answer belongs
+// and where the user ends up.
 function nameUnknownBarcode(code: string) {
   pendingBarcode.value = code
-  closeScanner()
   customProductOpen.value = true
 }
 
@@ -614,7 +536,7 @@ async function runInitializeHome() {
   // resolves.
   if (!isLoaded.value || !userId.value) {
     const uid = effectiveUserId.value
-    if (uid && loadHouseholdSnapshot(localStorage, uid)) {
+    if (uid && hasSnapshot()) {
       sanitizeAuthCallbackUrl()
       hydrateFromCachedSnapshot()
       if (isCurrentlyOffline()) hasInitialized.value = true
@@ -624,10 +546,24 @@ async function runInitializeHome() {
 
   // Clerk resolved to someone other than the remembered user we painted for:
   // that list belongs to the previous account, so drop it before going on.
-  if (hydratedUserId && hydratedUserId !== userId.value) discardCachedPaint()
+  if (!paintedFor(userId.value)) discardCachedPaint()
 
   // Confirmed signed in: remember this user so a later offline open can boot.
   rememberUser(localStorage, userId.value)
+  // Reconcile the language the device guessed with the one this account chose.
+  //
+  // Same reason identifyUser is here rather than in main.ts: this is the first
+  // point there is an account to ask about. initLocale runs pre-mount, before
+  // Clerk has resolved, so it can only read the device-wide key — which holds
+  // whatever the last person to choose on this browser picked. On a device with
+  // one account those agree and this is a no-op; on a shared one it is the only
+  // thing that stops everybody booting into the same language.
+  //
+  // Not awaited, for the reason the three calls below are not: boot must not
+  // wait on it. The language chunk lands a tick later and every t() re-renders
+  // when it does, so the cost of not waiting is a brief frame in the device's
+  // language — which is what the screen would otherwise have shown for good.
+  void applyUserLocale(localStorage, userId.value)
   // And tell error reporting who this is, so a crash can say how many people it
   // reached. Here rather than in main.ts because this is the first point the
   // answer is actually known: Clerk has resolved, and the id is the real one
@@ -667,7 +603,7 @@ async function runInitializeHome() {
 
   if (!households.value.length) {
     clearHouseholdSnapshot(localStorage, effectiveUserId.value)
-    clearActiveHouseholdId(localStorage)
+    clearActiveHouseholdId(localStorage, effectiveUserId.value)
     router.replace('/household-setup')
     return
   }
@@ -701,81 +637,6 @@ async function runInitializeHome() {
 // First run: teach the gestures with the tour, then (once it's dismissed) fall
 // through to the notifications ask. A returning user who's already seen the tour
 // skips straight to the notifications check.
-// Which user the painted cache belongs to. We paint before Clerk can confirm the
-// session, so if it then resolves to somebody else that paint is the wrong
-// person's list and has to be dropped.
-let hydratedUserId = ''
-
-// Throw away a cache painted for a different user than the one Clerk confirmed.
-// Clears exactly what hydrateFromCachedSnapshot below sets — the two have to
-// stay a matched pair, or a field the paint wrote survives into the next
-// account. householdItemLimit and the cached shopping answer were the two that did:
-// the previous user's item cap governed the add form until loadHouseholdHeader
-// returned, and their shopping history decided whether a new user's empty list
-// read "All bought" or "Nothing here yet".
-function discardCachedPaint() {
-  hydratedUserId = ''
-  paintedFromCache.value = false
-  items.value = []
-  householdMembers.value = []
-  // null, not '': it is the ref's declared "no household", and the rest of this
-  // file tests it with truthiness that would let a second sentinel hide.
-  householdId.value = null
-  householdName.value = ''
-  householdInviteCode.value = ''
-  householdOwnerId.value = ''
-  householdItemLimit.value = ITEM_LIMIT_DEFAULT
-  householdEmoji.value = ''
-  cachedShoppedHouseholdId.value = ''
-}
-
-// Paint the last known state immediately (stale-while-revalidate): a returning
-// user sees their list instead of skeletons while the fresh fetches above run.
-function hydrateFromCachedSnapshot() {
-  if (items.value.length) return
-  const snapshot = loadHouseholdSnapshot(localStorage, effectiveUserId.value)
-  if (!snapshot) return
-  hydratedUserId = effectiveUserId.value
-  paintedFromCache.value = true
-  householdId.value = snapshot.householdId
-  householdName.value = snapshot.householdName
-  householdInviteCode.value = snapshot.householdInviteCode
-  householdOwnerId.value = snapshot.householdOwnerId
-  householdItemLimit.value = snapshot.householdItemLimit
-  householdEmoji.value = snapshot.householdEmoji || ''
-  householdMembers.value = snapshot.householdMembers
-  items.value = snapshot.items
-  // Offline there is no purchase history to read, so the cached answer is the
-  // only one available. Without it an empty list tells a household that shops every
-  // week they have never started.
-  cachedShoppedHouseholdId.value = snapshot.hasShopped ? snapshot.householdId : ''
-}
-
-// Writing the snapshot means JSON-stringifying the whole list and handing it to
-// localStorage, which is synchronous and blocks the main thread. The watcher
-// below is deep, so a quantity bump fires it per change — during a checkout,
-// once per row. Coalesce into one write on the next tick: nothing reads the
-// snapshot until a future page load, so it only has to be right when the dust
-// settles, not on every intermediate state.
-let snapshotTimer: ReturnType<typeof setTimeout> | null = null
-
-function schedulePersistSnapshot() {
-  if (snapshotTimer) return
-  snapshotTimer = setTimeout(() => {
-    snapshotTimer = null
-    persistSnapshot()
-  }, 0)
-}
-
-// Write now if a write is owed. Called on the way out, where "next tick" may
-// never come.
-function flushSnapshot() {
-  if (!snapshotTimer) return
-  clearTimeout(snapshotTimer)
-  snapshotTimer = null
-  persistSnapshot()
-}
-
 // Everything owed to somewhere durable when the app goes away. On a phone that
 // is most of the time, and is exactly when the next cold boot depends on it.
 //
@@ -793,30 +654,6 @@ function flushPendingWork() {
 function flushPendingWorkIfHidden() {
   if (document.visibilityState === 'hidden') flushPendingWork()
 }
-
-function persistSnapshot() {
-  if (!hasInitialized.value || !effectiveUserId.value || !householdId.value) return
-  saveHouseholdSnapshot(localStorage, effectiveUserId.value, {
-    householdId: householdId.value,
-    householdName: householdName.value,
-    householdInviteCode: householdInviteCode.value,
-    householdOwnerId: householdOwnerId.value,
-    householdItemLimit: householdItemLimit.value,
-    householdEmoji: householdEmoji.value,
-    householdMembers: householdMembers.value,
-    items: items.value,
-    hasShopped: hasShopped.value,
-  })
-}
-
-// Keep the snapshot current as state changes (mutations, realtime events).
-// Guarded by hasInitialized inside persistSnapshot, so hydration itself and
-// partial init states are never written back.
-watch(
-  [items, householdMembers, householdName, householdInviteCode, householdItemLimit, householdEmoji],
-  schedulePersistSnapshot,
-  { deep: true },
-)
 
 function sanitizeAuthCallbackUrl() {
   const cleanedUrl = cleanAuthCallbackUrl(window.location.href)
@@ -958,7 +795,7 @@ async function reconcileActiveHousehold() {
   }
   cleanupRealtimeSubscriptions()
   clearHouseholdSnapshot(localStorage, effectiveUserId.value)
-  clearActiveHouseholdId(localStorage)
+  clearActiveHouseholdId(localStorage, effectiveUserId.value)
   router.replace('/household-setup')
 }
 
@@ -1043,7 +880,7 @@ async function reconcileActiveHousehold() {
       :busy="scanBusy"
       :unknown-code="scannedUnknown"
       @detected="onBarcodeDetected"
-      @name-unknown="nameUnknownBarcode"
+      @name-unknown="reportUnknown"
       @close="closeScanner"
     />
 
