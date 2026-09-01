@@ -29,7 +29,7 @@
 -- Runs inside a transaction that is rolled back, so it leaves no data behind.
 
 begin;
-select plan(74);
+select plan(102);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 -- Two households owned by two different people, plus a third account that is in
@@ -663,6 +663,240 @@ select is(
   'and the household is live again'
 );
 set local role authenticated;
+
+-- ── 10. Product writes (010_admin_product_writes.sql) ────────────────────────
+-- The three that let an admin curate the app catalog. What is worth pinning is
+-- not that they work but WHAT THEY REFUSE: the guard, the two uniqueness rules,
+-- and the columns an admin must not be able to move.
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"plain_one"}';
+
+select throws_ok(
+  $t$ select public.admin_create_product('Smuggled', null, null, 0) $t$,
+  42501,
+  null,
+  'a signed-in non-admin cannot create a product'
+);
+
+select throws_ok(
+  $t$ select public.admin_delete_product('00000000-0000-0000-0000-0000000000a1') $t$,
+  42501,
+  null,
+  'nor delete one'
+);
+
+set local request.jwt.claims = '{"sub":"admin_one"}';
+
+select lives_ok(
+  $t$ select public.admin_create_product('Apa Plata 2L', 'Dorna', '5941234567890', 5) $t$,
+  'an admin creates a product'
+);
+
+reset role;
+select is(
+  (select count(*)::int from public.product_catalog
+   where name = 'Apa Plata 2L' and maker = 'Dorna'),
+  1,
+  'and exactly one row lands'
+);
+
+-- Global and curated, never a contribution somebody did not make.
+select is(
+  (select household_id from public.product_catalog where name = 'Apa Plata 2L'),
+  null,
+  'the row is global rather than scoped to a household'
+);
+
+select is(
+  (select source from public.product_catalog where name = 'Apa Plata 2L'),
+  'curated',
+  'and is recorded as curated, which is what an editorial row is'
+);
+
+select is(
+  (select contributed_by from public.product_catalog where name = 'Apa Plata 2L'),
+  null,
+  'with no contributor, because nobody contributed it'
+);
+
+-- The invariant the whole design turns on: earned usage starts at zero and an
+-- admin has no way to set it. base_weight is the editorial thumb on the scale.
+select is(
+  (select add_count from public.product_catalog where name = 'Apa Plata 2L'),
+  0,
+  'add_count starts at zero: it is earned, not granted'
+);
+
+select is(
+  (select base_weight from public.product_catalog where name = 'Apa Plata 2L'),
+  5,
+  'base_weight is the knob an admin does get'
+);
+
+select is(
+  (select popularity from public.product_catalog where name = 'Apa Plata 2L'),
+  5,
+  'and popularity follows from it, being generated'
+);
+
+-- search_text is derived, and derived the same way the app derives it, or the
+-- product is invisible to the search that is supposed to find it.
+select is(
+  (select search_text from public.product_catalog where name = 'Apa Plata 2L'),
+  public.product_search_text('Apa Plata 2L', 'Dorna'),
+  'search_text is computed by product_search_text() rather than left to a client'
+);
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"admin_one"}';
+
+-- Uniqueness, in the two forms the table actually enforces. The point is the
+-- NAMED error: a raw 23505 names an index and a dashboard cannot act on it.
+select throws_ok(
+  $t$ select public.admin_create_product('apa plata 2l', 'dorna', null, 0) $t$,
+  'P0001',
+  'A product with that name and brand already exists.',
+  'a differently-cased duplicate is refused by name, not by a raw constraint'
+);
+
+select throws_ok(
+  $t$ select public.admin_create_product('Something Else', null, '5941234567890', 0) $t$,
+  'P0001',
+  'Another product already claims that barcode.',
+  'and a reused barcode is refused by barcode'
+);
+
+select throws_ok(
+  $t$ select public.admin_create_product('   ', null, null, 0) $t$,
+  'P0001',
+  'A product name is required and must be at most 120 characters.',
+  'a blank name is refused rather than silently ignored'
+);
+
+select throws_ok(
+  $t$ select public.admin_create_product('Negative', null, null, -1) $t$,
+  'P0001',
+  'Base weight cannot be negative.',
+  'and a negative base weight is refused'
+);
+
+-- Updating. The case that would look like a bug: renaming a row to a different
+-- capitalisation of its own name must not report the row as its own duplicate.
+select lives_ok(
+  $t$ select public.admin_update_product(
+       (select id from public.product_catalog where name = 'Apa Plata 2L'),
+       'APA PLATA 2L', 'Dorna', null, null) $t$,
+  'a product can be renamed to a case variant of itself'
+);
+
+reset role;
+select is(
+  (select name from public.product_catalog
+   where search_text = public.product_search_text('Apa Plata 2L', 'Dorna')),
+  'APA PLATA 2L',
+  'and the new spelling is stored'
+);
+
+select is(
+  (select base_weight from public.product_catalog where name = 'APA PLATA 2L'),
+  5,
+  'a null base_weight on update leaves the existing one alone'
+);
+
+-- An admin correcting a household's typo must not turn a scoped row into a
+-- contribution from nobody, or hand it to a different household.
+insert into public.product_catalog
+  (id, name, maker, search_text, household_id, contributed_by, source, add_count)
+-- An explicit id, because the lookup below runs as the CALLER and the caller is
+-- an admin who belongs to no household. product_catalog's SELECT policy scopes a
+-- household row to that household's members, so `where name = 'Bred'` returns
+-- nothing for Ada and the RPC is handed a null id. security definer applies
+-- inside the function, never to the arguments being assembled for it.
+values ('00000000-0000-0000-0000-0000000000b1',
+        'Bred', null, public.product_search_text('Bred', null),
+        '00000000-0000-0000-0000-0000000000e1', 'plain_one', 'community', 3);
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"admin_one"}';
+
+select lives_ok(
+  $t$ select public.admin_update_product(
+       '00000000-0000-0000-0000-0000000000b1'::uuid,
+       'Bread', null, null, null) $t$,
+  'an admin fixes a household typo in place'
+);
+
+reset role;
+select is(
+  (select household_id from public.product_catalog
+   where name = 'Bread' and source = 'community'),
+  '00000000-0000-0000-0000-0000000000e1'::uuid,
+  'the row still belongs to the household that contributed it'
+);
+
+select is(
+  (select contributed_by from public.product_catalog
+   where name = 'Bread' and source = 'community'),
+  'plain_one',
+  'and still records who contributed it'
+);
+
+select is(
+  (select add_count from public.product_catalog
+   where name = 'Bread' and source = 'community'),
+  3,
+  'and keeps the adds it earned, which is why this is not delete-and-recreate'
+);
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"admin_one"}';
+
+select throws_ok(
+  $t$ select public.admin_update_product(
+       '00000000-0000-0000-0000-00000000dead'::uuid, 'Anything', null, null, null) $t$,
+  'P0001',
+  'That product no longer exists.',
+  'updating a product that is gone says so'
+);
+
+-- Deleting, and the audit entry that has to carry the row because the id will
+-- not resolve to anything afterwards.
+select lives_ok(
+  $t$ select public.admin_delete_product(
+       (select id from public.product_catalog where name = 'APA PLATA 2L')) $t$,
+  'an admin deletes a product'
+);
+
+reset role;
+select is(
+  (select count(*)::int from public.product_catalog where name = 'APA PLATA 2L'),
+  0,
+  'and it is gone'
+);
+
+select is(
+  (select detail ->> 'name' from public.security_events
+   where kind = 'admin_product_deleted' order by created_at desc limit 1),
+  'APA PLATA 2L',
+  'the audit entry carries the row, not just an id that now resolves to nothing'
+);
+
+-- The shopping list is text, so a deleted product takes nobody's item with it.
+select is(
+  (select count(*)::int from public.shopping_list_items
+   where household_id = '00000000-0000-0000-0000-0000000000e1'),
+  2,
+  'and no list item went with it, because list items carry their own text'
+);
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"admin_one"}';
+
+select lives_ok(
+  $t$ select public.admin_delete_product('00000000-0000-0000-0000-00000000dead'::uuid) $t$,
+  'deleting a product that is already gone is a no-op, not an error'
+);
 
 select * from finish();
 rollback;
