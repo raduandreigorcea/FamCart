@@ -2,9 +2,7 @@
 import { computed, useId } from 'vue'
 import AppButton from './AppButton.vue'
 import AppModal from './AppModal.vue'
-import triangleAlertIcon from '../assets/triangle-alert.svg?raw'
-import infoIcon from '../assets/info.svg?raw'
-import checkIcon from '../assets/check.svg?raw'
+import AppIcon from './AppIcon.vue'
 import { t } from '../lib/i18n'
 
 // One mark per tone, all three from the icon set rather than drawn inline.
@@ -15,9 +13,9 @@ import { t } from '../lib/i18n'
 // which the danger triangle never had: the wrap behind it is already a 52px
 // disc, so every tone was carrying one circle except the one that drew two.
 const TONE_ICONS: Record<string, string> = {
-  danger: triangleAlertIcon,
-  success: checkIcon,
-  warning: infoIcon,
+  danger: 'triangle-alert',
+  success: 'check',
+  warning: 'info',
 }
 
 // Per-instance, because this component is mounted several times over on one
@@ -74,7 +72,7 @@ const emit = defineEmits(['confirm', 'cancel'])
   >
       <div class="confirm-dialog" :class="`confirm-dialog--${resolvedTone}`" role="alertdialog" aria-modal="true" :aria-labelledby="titleId">
         <div class="confirm-dialog__icon-wrap" :class="`confirm-dialog__icon-wrap--${resolvedTone}`">
-          <span class="confirm-dialog__icon" aria-hidden="true" v-html="toneIcon"></span>
+          <AppIcon class="confirm-dialog__icon" :name="toneIcon" />
         </div>
 
         <div class="confirm-dialog__body">

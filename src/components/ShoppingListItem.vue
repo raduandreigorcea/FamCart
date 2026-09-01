@@ -3,11 +3,8 @@ import { computed, onBeforeUnmount, ref, watch, type PropType } from 'vue'
 import { getProductEmoji } from '../lib/productEmoji'
 import { ITEM_QUANTITY_MAX } from '../lib/limits'
 import type { ShoppingItemRow } from '../lib/householdRealtime'
-import checkIcon from '../assets/check.svg?raw'
-import xIcon from '../assets/x.svg?raw'
-import minusIcon from '../assets/minus.svg?raw'
-import plusIcon from '../assets/plus.svg?raw'
 import { t } from '../lib/i18n'
+import AppIcon from './AppIcon.vue'
 
 const props = defineProps({
   item: {
@@ -355,7 +352,7 @@ function settle() {
       :style="{ '--pull': pullProgress }"
       aria-hidden="true"
     >
-      <span class="item-action__icon" aria-hidden="true" v-html="checkIcon"></span>
+      <AppIcon class="item-action__icon" name="check" />
       <span class="item-action__label">{{ item.checked ? t('item.uncheck') : t('item.gotIt') }}</span>
     </div>
     <!-- Action revealed under a leftward swipe -->
@@ -367,7 +364,7 @@ function settle() {
       aria-hidden="true"
     >
       <span class="item-action__label">{{ t('item.remove') }}</span>
-      <span class="item-action__icon" aria-hidden="true" v-html="xIcon"></span>
+      <AppIcon class="item-action__icon" name="x" />
     </div>
 
     <!-- The gesture surface, and nothing more. It used to be role="button" with
@@ -432,7 +429,7 @@ function settle() {
           @keydown.stop
           @click.stop="step(-1)"
         >
-          <span class="item-qty__glyph" aria-hidden="true" v-html="minusIcon"></span>
+          <AppIcon class="item-qty__glyph" name="minus" />
         </button>
 
         <!-- Press to open, press again to close. Paired with the idle timeout
@@ -470,7 +467,7 @@ function settle() {
           @keydown.stop
           @click.stop="step(1)"
         >
-          <span class="item-qty__glyph" aria-hidden="true" v-html="plusIcon"></span>
+          <AppIcon class="item-qty__glyph" name="plus" />
         </button>
       </span>
       <img

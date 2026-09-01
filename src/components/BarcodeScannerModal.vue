@@ -19,8 +19,8 @@ import AppButton from './AppButton.vue'
 import AppModal from './AppModal.vue'
 import BackButton from './BackButton.vue'
 import { useBarcodeScanner } from '../lib/barcodeScanner'
-import scanBarcodeIcon from '../assets/scan-barcode.svg?raw'
 import { t } from '../lib/i18n'
+import AppIcon from './AppIcon.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -195,7 +195,7 @@ function retry() {
         </div>
 
         <div v-if="failure" class="scanner__failure">
-          <span class="scanner__failure-icon" aria-hidden="true" v-html="scanBarcodeIcon"></span>
+          <AppIcon class="scanner__failure-icon" name="scan-barcode" />
           <h4 id="scanner-title" class="scanner__title">{{ failure.title }}</h4>
           <p class="scanner__detail">{{ failure.detail }}</p>
           <AppButton v-if="failure.retry" variant="primary" type="button" @click="retry">
@@ -214,7 +214,7 @@ function retry() {
         <Transition name="result">
           <div v-if="unknownCode" key="unknown" class="result-row result-row--unknown">
             <span class="result-row__mark result-row__mark--quiet" aria-hidden="true">
-              <span class="result-row__code-glyph" v-html="scanBarcodeIcon"></span>
+              <AppIcon class="result-row__code-glyph" name="scan-barcode" />
             </span>
             <span class="result-row__text">
               <span class="result-row__name">{{ t('scanner.notInCatalog') }}</span>

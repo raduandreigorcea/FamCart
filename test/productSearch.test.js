@@ -1,16 +1,18 @@
 import { describe, it, expect } from 'vitest'
 import {
   normalizeSearchText,
-  escapeIlikePattern,
   productKey,
   buildHouseholdProductStats,
   matchHouseholdStats,
   rankSuggestions,
 } from '../src/lib/productSearch'
 
-// The client-side normalization must mirror how scripts/seed-products.mjs
-// computes product_catalog.search_text — same lowercase / diacritic-stripping /
-// whitespace-collapsing — or typed input stops matching seeded rows.
+// The client-side normalization must agree with the two database copies of the
+// same rule — catalog_normalize() in the catalog project and
+// product_search_text() in the app's — or typed input stops matching stored
+// rows. See the header of src/lib/productSearch.ts for where all of them are.
+//
+// (This used to name scripts/seed-products.mjs, which was deleted in 9a4366e.)
 describe('normalizeSearchText', () => {
   it('lowercases, strips diacritics, and collapses whitespace', () => {
     expect(normalizeSearchText('  Apă  Plată   2L ')).toBe('apa plata 2l')
@@ -19,24 +21,6 @@ describe('normalizeSearchText', () => {
 
   it('leaves already-normalized text unchanged', () => {
     expect(normalizeSearchText('apa plata 2l dorna')).toBe('apa plata 2l dorna')
-  })
-})
-
-describe('escapeIlikePattern', () => {
-  it('escapes the ilike wildcards and the escape character itself', () => {
-    expect(escapeIlikePattern('50%_a\\b')).toBe('50\\%\\_a\\\\b')
-  })
-
-  it('leaves plain text alone', () => {
-    expect(escapeIlikePattern('apa plata')).toBe('apa plata')
-  })
-
-  // PostgREST rewrites * to % on its way to SQL, so an unescaped asterisk was a
-  // wildcard that never went through Postgres's pattern syntax at all: typing
-  // one matched the whole catalog.
-  it('escapes the asterisk PostgREST would rewrite into a wildcard', () => {
-    expect(escapeIlikePattern('*')).toBe('\\*')
-    expect(escapeIlikePattern('a*b')).toBe('a\\*b')
   })
 })
 
@@ -174,6 +158,32 @@ describe('rankSuggestions', () => {
 
   it('ignores candidates with no usable name', () => {
     expect(rankSuggestions([{ name: '  ', maker: 'x' }, ...catalog], noStats, 6)).toHaveLength(3)
+  })
+
+  // The stat lookup is keyed off the TRIMMED name, while the row that comes back
+  // and the name tiebreak still use the raw one. That is only safe because
+  // productKey normalizes its inputs, and this is the case that proves it: a
+  // padded name has to still find the household's history, or a product they buy
+  // every week silently drops to catalog order.
+  //
+  // Worth pinning because it used to be true for a different reason. The
+  // comparator resolved the key from the raw name on every comparison; it
+  // resolves it once, from the trimmed one, alongside the dedupe that had
+  // already computed it.
+  it('still finds the household history for a name that arrives padded', () => {
+    const stats = buildHouseholdProductStats([
+      { name: 'Apa de Gura 500ml', maker: 'Listerine', purchased_at: '2026-07-01T10:00:00Z' },
+    ])
+    const padded = [
+      { name: '  Apa de Gura 500ml  ', maker: 'Listerine', popularity: 0 },
+      ...catalog.slice(0, 2),
+    ]
+    const ranked = rankSuggestions(padded, stats, 6)
+
+    // Bought here, so it outranks two rows with popularity 100 despite its own 0.
+    expect(ranked[0].name).toBe('  Apa de Gura 500ml  ')
+    // And the row handed back is the candidate as given, not a trimmed copy.
+    expect(ranked).toHaveLength(3)
   })
 })
 

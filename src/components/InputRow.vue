@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import arrowRightIcon from '../assets/arrow-right.svg?raw'
 import { t } from '../lib/i18n'
+import AppIcon from './AppIcon.vue'
 
 // Anything not declared below lands on the <input>, not on the wrapper <div>.
 //
@@ -51,7 +51,7 @@ defineEmits(['update:modelValue'])
     />
     <button type="submit" class="submit-btn" :disabled="loading" :aria-label="t('common.continue')">
       <span v-if="loading" class="spinner"></span>
-      <span v-else class="submit-btn__icon" aria-hidden="true" v-html="arrowRightIcon"></span>
+      <AppIcon v-else class="submit-btn__icon" name="arrow-right" />
     </button>
   </div>
 </template>

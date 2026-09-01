@@ -16,6 +16,7 @@ import AppCard from '../components/AppCard.vue'
 import BackButton from '../components/BackButton.vue'
 import { isOfflineError } from '../lib/offlineQueue'
 import { t, tAccent } from '../lib/i18n'
+import AppIcon from '../components/AppIcon.vue'
 
 const clerk = useClerk()
 const { signIn, isLoaded: signInLoaded } = useSignIn()
@@ -80,17 +81,17 @@ const oauthProviders = [
     {
         id: 'oauth_google',
         label: 'Google',
-        icon: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.2-2.27H12v4.3h6.45c-.28 1.48-1.12 2.74-2.38 3.59v2.98h3.86c2.26-2.08 3.56-5.15 3.56-8.6z"/><path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.94-2.9l-3.86-2.98c-1.07.72-2.44 1.15-4.08 1.15-3.13 0-5.79-2.12-6.74-4.97H1.28v3.12A12 12 0 0 0 12 24z"/><path fill="#FBBC05" d="M5.26 14.3A7.2 7.2 0 0 1 4.88 12c0-.8.14-1.58.38-2.3V6.58H1.28A12 12 0 0 0 0 12c0 1.94.46 3.78 1.28 5.42l3.98-3.12z"/><path fill="#EA4335" d="M12 4.73c1.76 0 3.34.61 4.58 1.8l3.43-3.43C17.95 1.2 15.24 0 12 0A12 12 0 0 0 1.28 6.58l3.98 3.12c.95-2.85 3.61-4.97 6.74-4.97z"/></svg>`,
+        icon: 'brands/google',
     },
     {
         id: 'oauth_apple',
         label: 'Apple',
-        icon: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.7 9.05 7.4c1.39.07 2.36.74 3.18.77 1.22-.24 2.39-.93 3.7-.84 1.58.13 2.77.76 3.54 1.94-3.24 1.94-2.47 5.88.48 7.03-.55 1.42-1.28 2.83-2.9 3.98zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>`,
+        icon: 'brands/apple',
     },
     {
         id: 'oauth_microsoft',
         label: 'Microsoft',
-        icon: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="#F25022" d="M1 1h10v10H1z"/><path fill="#7FBA00" d="M13 1h10v10H13z"/><path fill="#00A4EF" d="M1 13h10v10H1z"/><path fill="#FFB900" d="M13 13h10v10H13z"/></svg>`,
+        icon: 'brands/microsoft',
     },
 ]
 
@@ -311,7 +312,7 @@ function goBack() {
                     :disabled="!!loadingProvider"
                     :aria-label="provider.label" :title="provider.label" @click="signInWithOAuth(provider.id)">
                     <span v-if="loadingProvider === provider.id" class="oauth-spinner"></span>
-                    <span v-else class="oauth-icon" aria-hidden="true" v-html="provider.icon"></span>
+                    <AppIcon v-else class="oauth-icon" :name="provider.icon" />
                 </button>
             </div>
         </AppCard>

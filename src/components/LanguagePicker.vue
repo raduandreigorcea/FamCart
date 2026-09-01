@@ -2,12 +2,7 @@
 import { ref, watch } from 'vue'
 import { LOCALES, LOCALE_ENDONYMS, t, type Locale } from '../lib/i18n'
 import AppButton from './AppButton.vue'
-import flagGB from '../assets/flags/gb.svg?raw'
-import flagRO from '../assets/flags/ro.svg?raw'
-import flagDE from '../assets/flags/de.svg?raw'
-import flagES from '../assets/flags/es.svg?raw'
-import flagFR from '../assets/flags/fr.svg?raw'
-import flagIT from '../assets/flags/it.svg?raw'
+import AppIcon from './AppIcon.vue'
 
 // The six languages, in one component because two screens offer them — and in
 // two shapes, because those two screens are asking different questions.
@@ -31,13 +26,15 @@ import flagIT from '../assets/flags/it.svg?raw'
 // src/assets, which a network-fetched flag image would not. Simplified
 // artwork, not an official reproduction — decorative beside the endonym that
 // does the actual identifying, which is why each flag is aria-hidden.
+// The file each language's flag lives under, which is not simply the locale:
+// English is drawn as the Union Flag, so `en` maps to `gb`.
 const FLAGS: Record<Locale, string> = {
-  en: flagGB,
-  ro: flagRO,
-  de: flagDE,
-  es: flagES,
-  fr: flagFR,
-  it: flagIT,
+  en: 'flags/gb',
+  ro: 'flags/ro',
+  de: 'flags/de',
+  es: 'flags/es',
+  fr: 'flags/fr',
+  it: 'flags/it',
 }
 
 const props = withDefaults(
@@ -116,7 +113,7 @@ watch(
       :aria-pressed="locale === current"
       @click="emit('confirm', locale)"
     >
-      <span class="lang-seg__flag" aria-hidden="true" v-html="FLAGS[locale]"></span>
+      <AppIcon class="lang-seg__flag" :name="FLAGS[locale]" />
       <!-- lang= so a screen reader pronounces each name in its own language
            rather than reading "Français" with the voice of the current one. -->
       <span :lang="locale">{{ LOCALE_ENDONYMS[locale] }}</span>
@@ -140,7 +137,7 @@ watch(
             <path d="M4 10.5 8 14.5 16 6" />
           </svg>
         </span>
-        <span class="lang-tile__flag" aria-hidden="true" v-html="FLAGS[locale]"></span>
+        <AppIcon class="lang-tile__flag" :name="FLAGS[locale]" />
         <span class="lang-tile__name" :lang="locale">{{ LOCALE_ENDONYMS[locale] }}</span>
       </button>
     </div>

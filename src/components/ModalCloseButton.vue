@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import xIcon from '../assets/x.svg?raw'
 import { t } from '../lib/i18n'
+import AppIcon from './AppIcon.vue'
 
 // Empty default, resolved below: see ErrorModal for why a t() call cannot live
 // in a prop declaration.
@@ -16,7 +16,7 @@ const emit = defineEmits(['click'])
 
 <template>
   <button class="modal-close" type="button" :aria-label="resolvedAriaLabel" @click="emit('click')">
-    <span class="modal-close__icon" aria-hidden="true" v-html="xIcon"></span>
+    <AppIcon class="modal-close__icon" name="x" />
   </button>
 </template>
 

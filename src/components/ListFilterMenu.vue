@@ -2,9 +2,8 @@
 import { computed, ref, type PropType } from 'vue'
 import type { ShoppingItem } from '../lib/shoppingList'
 import PopoverMenu from './PopoverMenu.vue'
-import slidersIcon from '../assets/sliders-horizontal.svg?raw'
-import checkIcon from '../assets/check-2.svg?raw'
 import { t } from '../lib/i18n'
+import AppIcon from './AppIcon.vue'
 
 // The button that filters the list, and the rows it offers. PopoverMenu owns
 // the panel itself — where it lands, how it dismisses, what a row looks like.
@@ -63,7 +62,7 @@ const isFiltered = computed(() => model.value !== 'all')
     :aria-label="isFiltered ? t('filter.buttonLabelFiltered') : t('filter.buttonLabel')"
     @click="open = !open"
   >
-    <span class="filter-btn__icon" aria-hidden="true" v-html="slidersIcon"></span>
+    <AppIcon class="filter-btn__icon" name="sliders-horizontal" />
     <span v-if="isFiltered" class="filter-btn__dot" aria-hidden="true"></span>
   </button>
 
@@ -74,7 +73,7 @@ const isFiltered = computed(() => model.value !== 'all')
     :label="t('filter.buttonLabel')"
     :heading="t('filter.heading')"
     :hint="t('filter.hint')"
-    :icon="slidersIcon"
+    icon-name="sliders-horizontal"
   >
     <template #default="{ close }">
       <button
@@ -89,11 +88,10 @@ const isFiltered = computed(() => model.value !== 'all')
       >
         <!-- Always rendered, empty on the rows that are not chosen: it holds
              the space so every label starts on the same line. -->
-        <span
+        <AppIcon
           class="menu-check"
-          aria-hidden="true"
-          v-html="model === option.value ? checkIcon : ''"
-        ></span>
+          :name="model === option.value ? 'check-2' : ''"
+        />
         <span class="filter-option__text">
           <span class="filter-option__label">{{ option.label }}</span>
           <span class="filter-option__hint">{{ option.hint }}</span>

@@ -6,11 +6,8 @@ import { ref, computed, watch } from 'vue'
 import AppModal from './AppModal.vue'
 import { useCopyFeedback } from '../lib/clipboard'
 import BackButton from './BackButton.vue'
-import addIcon from '../assets/add.svg?raw'
-import checkIcon from '../assets/check.svg?raw'
-import xIcon from '../assets/x.svg?raw'
-import cartIcon from '../assets/shopping-cart.svg?raw'
 import { t } from '../lib/i18n'
+import AppIcon from './AppIcon.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -99,7 +96,7 @@ function copyCode() {
               <div v-if="current.key === 'add'" class="art-add">
                 <div class="art-addbar">
                   <span class="art-addbar__text">{{ t('tour.art.query') }}</span>
-                  <span class="art-addbar__btn" aria-hidden="true" v-html="addIcon"></span>
+                  <AppIcon class="art-addbar__btn" name="add" />
                 </div>
                 <div class="art-suggest">
                   <span class="art-suggest__row"><span>🥑</span> {{ t('tour.art.avocado') }}</span>
@@ -113,8 +110,8 @@ function copyCode() {
                    the same two icons ShoppingListItem reveals. A still picture is
                    the weakest way to teach a gesture. -->
               <div v-else-if="current.key === 'swipe'" class="art-swipe">
-                <span class="art-swipe__zone art-swipe__zone--check" aria-hidden="true" v-html="checkIcon"></span>
-                <span class="art-swipe__zone art-swipe__zone--del" aria-hidden="true" v-html="xIcon"></span>
+                <AppIcon class="art-swipe__zone art-swipe__zone--check" name="check" />
+                <AppIcon class="art-swipe__zone art-swipe__zone--del" name="x" />
                 <div class="art-swipe__row">
                   <span class="art-swipe__emoji">🍞</span>
                   <span class="art-swipe__name">{{ t('tour.art.bread') }}</span>
@@ -133,7 +130,7 @@ function copyCode() {
                        how the real bar does it, and without it the label just sat
                        there while the trail passed under it. -->
                   <span class="art-bar__label art-bar__label--inverse">{{ t('tour.art.slide') }}</span>
-                  <span class="art-bar__thumb" aria-hidden="true" v-html="cartIcon"></span>
+                  <AppIcon class="art-bar__thumb" name="shopping-cart" />
                 </div>
               </div>
 
