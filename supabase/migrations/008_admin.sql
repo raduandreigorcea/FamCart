@@ -116,6 +116,7 @@ drop function if exists public.admin_restore_household(uuid);
 drop function if exists public.admin_ban_user(text, text);
 drop function if exists public.admin_unban_user(text);
 drop function if exists public.admin_deleted_households();
+drop function if exists public.admin_banned_users();
 
 -- ─── the gate ────────────────────────────────────────────────────────────────
 -- The one question a client may ask about this table, and it may only ask it
@@ -257,16 +258,35 @@ as $$
   left join (
     select
       hm.user_id,
-      count(*)                                            as households,
-      count(*) filter (where hm.role in ('moderator', 'admin')) as moderator_of,
+      -- The COUNTS are of live households only. A withdrawn household is not a
+      -- household this dashboard knows about, so reporting an account as "in 2"
+      -- when one of the two cannot be opened is a number that sends whoever
+      -- reads it to a not-found page. The membership row itself survives the
+      -- withdrawal untouched, which is what makes a restore whole; it just
+      -- stops being counted while the household is gone.
+      count(*) filter (where hh.deleted_at is null) as households,
+      count(*) filter (
+        where hh.deleted_at is null and hm.role in ('moderator', 'admin')
+      ) as moderator_of,
+      -- The DATES are not filtered. When this account first joined something,
+      -- and when it last did, are facts about the account, and withdrawing a
+      -- household afterwards does not unmake them. Filtering here would move
+      -- first_seen forward onto the profile write and make an old account look
+      -- new -- see the first_seen caveat this function's header spells out.
       min(hm.joined_at)                                   as first_join,
       max(hm.joined_at)                                   as last_join
     from public.household_members hm
+    join public.households hh on hh.id = hm.household_id
     group by hm.user_id
   ) m on m.user_id = p.user_id
   left join (
+    -- Live households, for the same reason and one more: 009 made the ownership
+    -- slot itself count only live rows, so an owner whose household was
+    -- withdrawn may create another immediately. "Owns 1" beside a household
+    -- they can no longer open would be describing a slot nobody holds.
     select hh.created_by as user_id, count(*) as owned
     from public.households hh
+    where hh.deleted_at is null
     group by hh.created_by
   ) o on o.user_id = p.user_id
   left join (
@@ -309,6 +329,7 @@ returns table (
   invite_code     text,
   created_by      text,
   owner_name      text,
+  owner_image_url text,
   max_items_per_member integer,
   created_at      timestamptz,
   members         bigint,
@@ -318,7 +339,10 @@ returns table (
   purchases       bigint,
   checkouts       bigint,
   products_added  bigint,
-  last_active     timestamptz
+  last_active     timestamptz,
+  -- Set means an admin withdrew this household. Every caller has to say what it
+  -- does about that; the note at the foot of this function explains why.
+  deleted_at      timestamptz
 )
 language sql
 stable
@@ -332,6 +356,7 @@ as $$
     hh.invite_code,
     hh.created_by,
     owner.display_name as owner_name,
+    owner.image_url    as owner_image_url,
     hh.max_items_per_member,
     hh.created_at,
     coalesce(m.members, 0)       as members,
@@ -346,7 +371,8 @@ as $$
       coalesce(m.last_join, '-infinity'::timestamptz),
       coalesce(i.last_item, '-infinity'::timestamptz),
       coalesce(h.last_purchase, '-infinity'::timestamptz)
-    ) as last_active
+    ) as last_active,
+    hh.deleted_at
   from public.households hh
   left join public.profiles owner on owner.user_id = hh.created_by
   left join (
@@ -382,20 +408,28 @@ as $$
     where pc.household_id is not null
     group by pc.household_id
   ) c on c.household_id = hh.id
-  -- Soft-deleted households are not "households the dashboard knows about" --
-  -- they are Trash, and admin_deleted_households() is what lists them.
+  -- No filter here, and that is a reversal from how this read before.
   --
-  -- This filter has to live HERE and not in a policy. Every admin_* function is
-  -- security definer and bypasses RLS by design, so active_household_ids() and
-  -- the ten policies it feeds govern what the APP's users see and have no
-  -- bearing whatsoever on what this dashboard reads. Two separate doors, and
-  -- closing one taught me nothing about the other: the first end-to-end test
-  -- deleted a household, watched it vanish from the app, and found it still
-  -- sitting in the admin list.
+  -- Withdrawn households were dropped in this one place, so that admin_overview,
+  -- admin_list_households and admin_household_detail all inherited it. That is
+  -- right for the first two and wrong for the third: a withdrawn household is
+  -- precisely the thing an operator needs to OPEN -- from a member's profile, or
+  -- from the Bans page that lists it -- in order to decide whether to restore
+  -- it. Inheriting the filter turned every one of those links into "No such
+  -- household. It may have been deleted", which is the dashboard refusing to
+  -- show a row it is offering to restore on the next page along.
   --
-  -- One place rather than three, because admin_overview, admin_list_households
-  -- and admin_household_detail all read through this function.
-  where hh.deleted_at is null;
+  -- So the fact rides along as deleted_at and each caller decides for itself:
+  -- the list and the overview exclude it, the detail RPC serves it and says so.
+  --
+  -- What has NOT changed is where that decision cannot live. Every admin_*
+  -- function is security definer and bypasses RLS by design, so
+  -- active_household_ids() and the ten policies it feeds govern what the APP's
+  -- users see and have no bearing whatsoever on what this dashboard reads. Two
+  -- separate doors, and closing one taught me nothing about the other: the
+  -- first end-to-end test deleted a household, watched it vanish from the app,
+  -- and found it still sitting in the admin list.
+  ;
 $$;
 
 revoke all on function public.admin_household_facts() from public, anon, authenticated;
@@ -472,6 +506,7 @@ begin
         from (
           select f.members, count(*) as households
           from public.admin_household_facts() f
+          where f.deleted_at is null
           group by f.members
         ) t
       ), '[]'::jsonb),
@@ -611,6 +646,7 @@ returns table (
   occurred_at    timestamptz,
   actor          text,
   actor_name     text,
+  actor_image_url text,
   household_id   uuid,
   household_name text,
   subject        text,
@@ -674,6 +710,7 @@ begin
     e.occurred_at,
     e.actor,
     p.display_name as actor_name,
+    p.image_url    as actor_image_url,
     e.household_id,
     hh.name        as household_name,
     e.subject,
@@ -791,6 +828,37 @@ begin
   select jsonb_build_object(
     'profile', to_jsonb(f),
     'is_admin', exists (select 1 from public.admin_users a where a.user_id = p_user_id),
+    -- Why this account is refused, for the page that says it is.
+    --
+    -- profiles.banned_at is the flag and carries nothing else; the reason and
+    -- the admin who gave it live in the audit trail and nowhere else, because
+    -- admin_ban_user() records them there. So a profile page could say
+    -- "Suspended" and could not say why -- the one question that state raises.
+    -- admin_banned_users() already reaches for this; the Users list and this
+    -- page now give the same answer rather than only the list having it.
+    --
+    -- Null when the flag is set but no event explains it: a ban applied
+    -- straight against the table, or one whose audit row aged out. The view
+    -- says that in words rather than rendering an empty reason, because a blank
+    -- where a reason should be reads as a failed lookup.
+    --
+    -- Newest event wins. A ban lifted and given again is described by the
+    -- second one, which is the one banned_at is talking about.
+    'ban', case when f.banned_at is null then null else (
+      select jsonb_build_object(
+        'reason',       e.detail->>'reason',
+        'by',           e.detail->>'actor',
+        'by_name',      b.display_name,
+        'by_image_url', b.image_url,
+        'at',           e.created_at
+      )
+      from public.security_events e
+      left join public.profiles b on b.user_id = e.detail->>'actor'
+      where e.kind = 'admin_user_banned'
+        and e.detail->>'target' = p_user_id
+      order by e.created_at desc
+      limit 1
+    ) end,
     'households', coalesce((
       select jsonb_agg(jsonb_build_object(
         'id',          hh.id,
@@ -801,8 +869,13 @@ begin
         'joined_at',   hm.joined_at,
         'members',     (select count(*) from public.household_members x where x.household_id = hh.id),
         'items_open',  (select count(*) from public.shopping_list_items x
-                          where x.household_id = hh.id and not x.checked)
-      ) order by hm.joined_at)
+                          where x.household_id = hh.id and not x.checked),
+        -- Withdrawn households stay in this list rather than being filtered out
+        -- of it. The membership is real, the profile's household COUNT above
+        -- already leaves it out, and hiding the row would take away the only
+        -- route to the household from the person it belonged to.
+        'deleted_at',  hh.deleted_at
+      ) order by hh.deleted_at is not null, hm.joined_at)
       from public.household_members hm
       join public.households hh on hh.id = hm.household_id
       where hm.user_id = p_user_id
@@ -858,6 +931,7 @@ returns table (
   invite_code    text,
   created_by     text,
   owner_name     text,
+  owner_image_url text,
   created_at     timestamptz,
   members        bigint,
   moderators     bigint,
@@ -884,14 +958,16 @@ begin
   return query
   with matched as (
     select f.* from public.admin_household_facts() f
-    where p_query is null
-       or btrim(p_query) = ''
-       or f.name        ilike '%' || btrim(p_query) || '%'
-       or f.invite_code ilike '%' || btrim(p_query) || '%'
-       or f.owner_name  ilike '%' || btrim(p_query) || '%'
+    where f.deleted_at is null
+      and (p_query is null
+        or btrim(p_query) = ''
+        or f.name        ilike '%' || btrim(p_query) || '%'
+        or f.invite_code ilike '%' || btrim(p_query) || '%'
+        or f.owner_name  ilike '%' || btrim(p_query) || '%')
   )
   select
-    m.id, m.name, m.emoji, m.invite_code, m.created_by, m.owner_name, m.created_at,
+    m.id, m.name, m.emoji, m.invite_code, m.created_by, m.owner_name, m.owner_image_url,
+    m.created_at,
     m.members, m.moderators, m.items_total, m.items_open,
     m.purchases, m.checkouts, m.products_added, m.last_active,
     count(*) over () as total_count
@@ -962,6 +1038,7 @@ begin
         'checked_at', si.checked_at,
         'added_by',   si.added_by,
         'added_by_name', p.display_name,
+        'added_by_image_url', p.image_url,
         'created_at', si.created_at
       ) order by si.checked, si.created_at desc)
       from public.shopping_list_items si
@@ -984,16 +1061,21 @@ begin
       select jsonb_agg(jsonb_build_object(
         'id', pc.id, 'name', pc.name, 'maker', pc.maker, 'barcode', pc.barcode,
         'add_count', pc.add_count, 'created_at', pc.created_at,
-        'contributed_by', pc.contributed_by
+        'contributed_by', pc.contributed_by,
+        'contributed_by_name', p.display_name,
+        'contributed_by_image_url', p.image_url
       ) order by pc.created_at desc)
       from public.product_catalog pc
+      left join public.profiles p on p.user_id = pc.contributed_by
       where pc.household_id = f.id
     ), '[]'::jsonb),
     'recent_checkouts', coalesce((
       select jsonb_agg(t order by t.purchased_at desc)
       from (
         select ph.checkout_id, max(ph.purchased_at) as purchased_at,
-               ph.purchased_by, max(p.display_name) as purchased_by_name,
+               ph.purchased_by,
+               max(p.display_name) as purchased_by_name,
+               max(p.image_url)    as purchased_by_image_url,
                count(*) as items, sum(ph.quantity) as quantity
         from public.purchase_history ph
         left join public.profiles p on p.user_id = ph.purchased_by
@@ -1038,6 +1120,7 @@ returns table (
   household_name  text,
   contributed_by  text,
   contributor_name text,
+  contributor_image_url text,
   base_weight     integer,
   add_count       integer,
   popularity      integer,
@@ -1074,7 +1157,7 @@ begin
   select
     m.id, m.name, m.maker, m.barcode, m.source, m.source_version,
     m.household_id, hh.name as household_name,
-    m.contributed_by, p.display_name as contributor_name,
+    m.contributed_by, p.display_name as contributor_name, p.image_url as contributor_image_url,
     m.base_weight, m.add_count, m.popularity, m.created_at,
     count(*) over () as total_count
   from matched m
@@ -1107,6 +1190,7 @@ returns table (
   kind         text,
   actor        text,
   actor_name   text,
+  actor_image_url text,
   household_id uuid,
   household_name text,
   detail       jsonb,
@@ -1131,7 +1215,7 @@ begin
       and (p_since is null or se.created_at >= p_since)
   )
   select
-    m.id, m.created_at, m.kind, m.actor, p.display_name,
+    m.id, m.created_at, m.kind, m.actor, p.display_name, p.image_url,
     m.household_id, hh.name, m.detail,
     count(*) over () as total_count
   from matched m
@@ -1188,7 +1272,8 @@ returns table (
   kind         text,
   window_start timestamptz,
   hits         integer,
-  actor_name   text
+  actor_name   text,
+  actor_image_url text
 )
 language plpgsql
 stable
@@ -1206,9 +1291,10 @@ begin
     rl.hits,
     -- Resolved where the actor happens to be a Clerk user id with a profile.
     -- rate_limit_hit() is also called on paths with no session, where the actor
-    -- is not an account at all, so a null name here is normal rather than a
-    -- missing join.
-    p.display_name
+    -- is not an account at all, so a null name and a null photo here are normal
+    -- rather than a missing join.
+    p.display_name,
+    p.image_url
   from public.rate_limit_counters rl
   left join public.profiles p on p.user_id = rl.actor
   order by rl.window_start desc, rl.hits desc
@@ -1391,6 +1477,7 @@ returns table (
   note         text,
   granted_by   text,
   granted_by_name text,
+  granted_by_image_url text,
   granted_at   timestamptz,
   is_self      boolean
 )
@@ -1405,7 +1492,7 @@ begin
   return query
   select
     a.user_id, p.display_name, p.image_url, a.note,
-    a.granted_by, g.display_name, a.granted_at,
+    a.granted_by, g.display_name, g.image_url, a.granted_at,
     a.user_id = requesting_user_id()
   from public.admin_users a
   left join public.profiles p on p.user_id = a.user_id
@@ -1658,8 +1745,8 @@ begin
 end;
 $$;
 
--- What the Trash view lists. The counts are of what is still inside, which is
--- the number that answers "is this safe to leave deleted?"
+-- Half of what the Bans view lists. The counts are of what is still inside,
+-- which is the number that answers "is this safe to leave deleted?"
 create or replace function public.admin_deleted_households()
 returns table (
   id          uuid,
@@ -1690,13 +1777,91 @@ begin
 end;
 $$;
 
+-- The other half of the Bans view: every account the app currently refuses.
+--
+-- Banning happens on one user's detail page, and until this existed it vanished
+-- the instant it was done -- nothing anywhere listed who was banned, so auditing
+-- it meant opening accounts one at a time and hoping you remembered which. That
+-- is the same hole soft delete had before admin_deleted_households(), and it
+-- gets the same answer: a reversible action needs a list of what it has been
+-- applied to, or "reversible" is a claim nobody can act on.
+--
+-- Read off admin_user_facts() rather than profiles directly, for the reason the
+-- header of this file gives about the user list and the user detail page: the
+-- household count beside a banned name is then the SAME number the Users list
+-- shows for them, rather than a second query that agrees by coincidence.
+--
+-- ─── WHY THE REASON COMES OUT OF THE AUDIT TRAIL ────────────────────────────
+--
+-- admin_ban_user() takes a reason and writes it to security_events, not to the
+-- profile. That was the right call -- a profile column would hold only the
+-- latest of several bans, and the audit row has to exist regardless -- but it
+-- means the reason has no home to read it from, so it is read back out of the
+-- event: the newest admin_user_banned naming this account as its target.
+--
+-- Null is ordinary here and must not be rendered as an error. A ban may be
+-- given with no reason at all (admin_ban_user nullifs a blank one), and the
+-- events table is append-only but not eternal.
+create or replace function public.admin_banned_users()
+returns table (
+  user_id      text,
+  display_name text,
+  image_url    text,
+  banned_at    timestamptz,
+  households   bigint,
+  reason       text,
+  banned_by    text,
+  -- The admin who gave it, resolved. The id alone is what the audit row holds,
+  -- and an id is not something a reader recognises at a glance.
+  banned_by_name text,
+  banned_by_image_url text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public.admin_guard();
+
+  return query
+  select
+    f.user_id,
+    f.display_name,
+    f.image_url,
+    f.banned_at,
+    f.households,
+    e.detail->>'reason'  as reason,
+    e.detail->>'actor'   as banned_by,
+    b.display_name       as banned_by_name,
+    b.image_url          as banned_by_image_url
+  from public.admin_user_facts() f
+  -- Lateral rather than a group-by: one row per banned account, and the newest
+  -- event wins. A ban that was lifted and given again reads as the second one,
+  -- which is the one banned_at is describing.
+  left join lateral (
+    select s.detail
+    from public.security_events s
+    where s.kind = 'admin_user_banned'
+      and s.detail->>'target' = f.user_id
+    order by s.created_at desc
+    limit 1
+  ) e on true
+  -- After the lateral, because it resolves the actor the lateral just found.
+  left join public.profiles b on b.user_id = e.detail->>'actor'
+  where f.banned_at is not null
+  order by f.banned_at desc;
+end;
+$$;
+
 revoke all on function public.admin_delete_household(uuid) from public, anon;
 revoke all on function public.admin_restore_household(uuid) from public, anon;
 revoke all on function public.admin_ban_user(text, text) from public, anon;
 revoke all on function public.admin_unban_user(text) from public, anon;
 revoke all on function public.admin_deleted_households() from public, anon;
+revoke all on function public.admin_banned_users() from public, anon;
 grant execute on function public.admin_delete_household(uuid) to authenticated;
 grant execute on function public.admin_restore_household(uuid) to authenticated;
 grant execute on function public.admin_ban_user(text, text) to authenticated;
 grant execute on function public.admin_unban_user(text) to authenticated;
 grant execute on function public.admin_deleted_households() to authenticated;
+grant execute on function public.admin_banned_users() to authenticated;
