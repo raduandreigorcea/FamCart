@@ -406,10 +406,33 @@ onBeforeUnmount(() => {
             :disabled="!showScan && !name.trim()"
             :aria-label="showScan ? t('add.scanLabel') : t('add.submitLabel')"
           >
-            <Transition name="btn-swap" mode="out-in">
-              <AppIcon v-if="showScan" key="scan" class="scan-icon" name="scan-barcode" />
-              <span v-else key="add" class="add-icon"></span>
-            </Transition>
+            <!-- Both icons stay mounted, stacked in one grid cell, and the swap
+                 is opacity and scale on whichever is not the current job.
+
+                 This was a <Transition mode="out-in">, which is the one shape
+                 that can leave the button holding NOTHING: out-in unmounts the
+                 outgoing icon, renders a placeholder comment, and mounts the
+                 incoming one only once the leave resolves. Vue schedules the
+                 second half of a leave inside a double requestAnimationFrame, so
+                 anything that starves rAF -- a backgrounded tab is the easy one
+                 -- strands the placeholder and the primary action of the app is
+                 a blank green square. An empty button is a far worse outcome
+                 than a missing 110ms flourish, and CSS gives the same flourish
+                 with nothing left to stall.
+
+                 The scan icon is still absent entirely where it would never be
+                 used: canScan cannot change while the field is being typed in,
+                 so that one is a real v-if and not a hidden element. -->
+            <AppIcon
+              v-if="canScan"
+              class="add-btn__icon scan-icon"
+              :class="{ 'add-btn__icon--off': !showScan }"
+              name="scan-barcode"
+            />
+            <span
+              class="add-btn__icon add-icon"
+              :class="{ 'add-btn__icon--off': showScan }"
+            ></span>
           </button>
         </div>
       </div>
@@ -1096,6 +1119,24 @@ onBeforeUnmount(() => {
   padding: 0;
 }
 
+/* One cell, both icons in it. */
+.add-btn {
+  display: grid;
+  place-items: center;
+}
+
+.add-btn__icon {
+  grid-area: 1 / 1;
+  transition: opacity 0.11s ease, transform 0.11s ease;
+}
+
+/* The job the button is not doing. Faded rather than unmounted -- see the
+   template. */
+.add-btn__icon--off {
+  opacity: 0;
+  transform: scale(0.7);
+}
+
 .add-icon {
   width: var(--size-icon-lg);
   height: var(--size-icon-lg);
@@ -1130,20 +1171,6 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
 }
 
-/* The swap between the two jobs. Short enough that mode="out-in" never reads as
-   a gap — this is the only place in the row that still animates, now that the
-   quantity stepper it used to keep time with has gone. */
-.btn-swap-enter-active,
-.btn-swap-leave-active {
-  transition: opacity 0.11s ease, transform 0.11s ease;
-}
-
-.btn-swap-enter-from,
-.btn-swap-leave-to {
-  opacity: 0;
-  transform: scale(0.7);
-}
-
 
 /* The screen still opens — it is where the room comes from — it just opens at
    once. The JS checks the same query and skips its half of the slide. */
@@ -1156,8 +1183,7 @@ onBeforeUnmount(() => {
   .suggest-leave-active,
   .suggestion,
   .suggestion-tick,
-  .btn-swap-enter-active,
-  .btn-swap-leave-active {
+  .add-btn__icon {
     transition: none;
   }
 
@@ -1188,8 +1214,8 @@ onBeforeUnmount(() => {
     }
   }
 
-  .btn-swap-enter-from,
-  .btn-swap-leave-to {
+  /* Still swapped, just not scaled into place. */
+  .add-btn__icon--off {
     transform: none;
   }
 }
