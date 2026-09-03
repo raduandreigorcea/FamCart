@@ -12,6 +12,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const platform = vi.hoisted(() => ({ native: true, name: 'android' }))
 
+// Production unless a case says otherwise: the updater exists for the published
+// app, and every other case here is about that one.
+const channel = vi.hoisted(() => ({ nightly: false }))
+
+vi.mock('../src/lib/appChannel', async (importOriginal) => ({
+  ...(await importOriginal()),
+  get IS_NIGHTLY() {
+    return channel.nightly
+  },
+}))
+
 vi.mock('@capacitor/core', () => ({
   Capacitor: {
     isNativePlatform: () => platform.native,
@@ -20,7 +31,7 @@ vi.mock('@capacitor/core', () => ({
   registerPlugin: () => ({}),
 }))
 
-const { compareVersions, fetchLatestRelease, findUpdate, skipVersion } = await import(
+const { canSelfUpdate, compareVersions, fetchLatestRelease, findUpdate, skipVersion } = await import(
   '../src/lib/nativeUpdate'
 )
 
@@ -43,6 +54,7 @@ function releaseResponse(name, assets = [{ name: 'FamCart.apk', browser_download
 beforeEach(() => {
   platform.native = true
   platform.name = 'android'
+  channel.nightly = false
 })
 
 describe('compareVersions', () => {
@@ -286,5 +298,36 @@ describe('a release published below a declined version', () => {
     const found = await findUpdate({ currentVersion: '0.2.0', storage, fetchImpl })
 
     expect(found).toEqual({ version: '0.3.1', apkUrl: 'https://x/FamCart.apk' })
+  })
+})
+
+describe('canSelfUpdate', () => {
+  it('is on for the published Android app', () => {
+    expect(canSelfUpdate()).toBe(true)
+  })
+
+  it('is off anywhere there is nothing to install', () => {
+    platform.native = false
+    expect(canSelfUpdate()).toBe(false)
+  })
+
+  // The rolling GitHub release holds the PRODUCTION APK, under a different
+  // application id and therefore a different app. Offered to a nightly build it
+  // would not update anything: at best Android installs production alongside it,
+  // at worst the user thinks the nightly one just updated. Nightly has no
+  // release feed of its own yet, so the honest answer is that it cannot update.
+  it('is off on a nightly build, which has nothing to update from', () => {
+    channel.nightly = true
+    expect(canSelfUpdate()).toBe(false)
+  })
+
+  it('keeps findUpdate quiet on nightly rather than offering a production APK', async () => {
+    channel.nightly = true
+    const fetchImpl = vi.fn(async () => releaseResponse('FamCart v9.9.9'))
+
+    const found = await findUpdate({ currentVersion: '0.5.0', storage: fakeStorage(), fetchImpl })
+
+    expect(found).toBeNull()
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 })

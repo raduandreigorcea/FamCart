@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!-- The nightly flavour's overrides. A resource declared here wins over the
+     same name in src/main, which is how the launcher label changes without a
+     second copy of the file's other strings.
+
+     package_name and custom_url_scheme are deliberately NOT overridden: they
+     are Capacitor scaffolding that nothing in this app reads, and guessing at
+     values for them would only invite them to drift from the real application
+     id, which gradle already derives from applicationIdSuffix. -->
+<resources>
+    <string name="app_name">FamCart Nightly</string>
+    <string name="title_activity_main">FamCart Nightly</string>
+</resources>

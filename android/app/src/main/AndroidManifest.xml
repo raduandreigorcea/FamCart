@@ -47,14 +47,19 @@
             </intent-filter>
 
             <!-- OAuth return leg: Clerk redirects the system browser to
-                 famcart://sso-callback, which re-opens this activity
+                 <scheme>://sso-callback, which re-opens this activity
                  (singleTask, so the running instance receives it as an
-                 appUrlOpen event instead of a relaunch). -->
+                 appUrlOpen event instead of a relaunch).
+
+                 The scheme is per flavour (famcart, famcartnightly) because a
+                 URL scheme is claimed per app and both are installable at once;
+                 see the productFlavors block in build.gradle for why, and
+                 src/lib/ssoScheme.ts for the half that sends the link. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="famcart" android:host="sso-callback" />
+                <data android:scheme="${ssoScheme}" android:host="sso-callback" />
             </intent-filter>
 
         </activity>
