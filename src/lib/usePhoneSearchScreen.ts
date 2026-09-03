@@ -122,9 +122,52 @@ export function usePhoneSearchScreen(options: {
     row.style.transform = ''
   }
 
+  // Drop an in-flight slide where it stands: its timer, its listener and the
+  // transform it was animating, with the transition silenced so clearing the
+  // transform does not itself animate. The caller decides where the field goes
+  // next. Shared by settle() and the reopen path below, which want opposite
+  // things afterwards and the same thing here.
+  function stopSlide(): void {
+    clearSlideTimer()
+    const row = rowRef.value
+    if (!row) return
+    row.removeEventListener('transitionend', onSlideEnd)
+    row.style.transition = 'none'
+    row.style.transform = ''
+  }
+
   async function expand(): Promise<void> {
     const slot = slotRef.value
-    if (!slot || expanded.value) return
+    if (!slot) return
+
+    // Already a screen, and staying one.
+    //
+    // Unless it is on its way out. A dialog opened from the search hands focus
+    // back to the field when it closes (AppModal restores what was focused when
+    // it opened), and the tap that dismissed it has already blurred the field
+    // and started the slide down. So this arrives mid-collapse, with `expanded`
+    // still true, and returning here let the slide settle a moment later and
+    // turn it off — leaving the field focused, the keyboard up, and the screen
+    // gone. No further focus event is coming for a field that never lost focus,
+    // so the search stayed a dropdown in a 275px gap until the app was
+    // reloaded. Reachable from the item-limit popup, which is exactly what a
+    // full list answers a tapped suggestion with.
+    if (expanded.value) {
+      if (!closing.value) return
+      // Where the field had got to, so it returns from there rather than
+      // jumping back to the top.
+      const from = rowRef.value?.getBoundingClientRect().top ?? null
+      stopSlide()
+      closing.value = false
+      measureScreen()
+      bindViewportListeners(true)
+      await nextTick()
+      if (from !== null) slideFrom(from)
+      // slideFrom clears the silencing itself, but only when it had a distance
+      // to travel; this covers the case where it did not.
+      if (rowRef.value) rowRef.value.style.transition = ''
+      return
+    }
 
     clearSlideTimer()
     const from = slot.getBoundingClientRect()
@@ -186,16 +229,11 @@ export function usePhoneSearchScreen(options: {
   }
 
   async function settle(): Promise<void> {
-    clearSlideTimer()
-    const row = rowRef.value
-    if (row) {
-      row.removeEventListener('transitionend', onSlideEnd)
-      // Silenced first: the offset is dropped while the screen is still open and
-      // the field still carries a transform transition, so clearing it live would
-      // animate the field back up to the top it just came down from.
-      row.style.transition = 'none'
-      row.style.transform = ''
-    }
+    // Silenced first, which is stopSlide's job: the offset is dropped while the
+    // screen is still open and the field still carries a transform transition,
+    // so clearing it live would animate the field back up to the top it just
+    // came down from.
+    stopSlide()
     expanded.value = false
     closing.value = false
     slotStyle.value = null
