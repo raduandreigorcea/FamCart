@@ -23,6 +23,14 @@ export default defineConfig({
     alias: [{ find: /^\/icons\//, replacement: fileURLToPath(new URL('./public/icons/', import.meta.url)) }],
   },
   test: {
+    // The suite describes the shipped app, so it runs as the production
+    // channel. Without this it would run as nightly, because lib/appChannel
+    // treats DEV as nightly and vitest sets it -- which would quietly flip the
+    // version string, the update check and the OAuth scheme under every test
+    // that never mentions channels. Cases that want nightly mock IS_NIGHTLY.
+    env: {
+      VITE_APP_CHANNEL: 'production',
+    },
     environment: 'node',
     include: ['test/**/*.{test,spec}.{js,ts}'],
   },

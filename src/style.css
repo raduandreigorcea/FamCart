@@ -309,6 +309,34 @@
   --shadow-popover: rgba(0, 0, 0, 0.52);
 }
 
+/* The nightly channel, painted by re-pointing the brand tokens rather than by
+   touching the 168 places that use them. main.ts stamps data-channel on the
+   root before mount, next to the theme and for the same reason: doing it after
+   would show a green frame before the indigo one.
+
+   Indigo is as far from the brand green as this palette goes while still
+   looking chosen, which is the whole job. A nightly build has to be obvious in
+   a screenshot with no chrome in it, so that nobody debugs the wrong database
+   for an hour. It also clears white text more comfortably than the green does
+   (5.3:1 against 4.0:1), so nothing gets harder to read on the way. */
+:root[data-channel='nightly'] {
+  --color-primary: #5b5bd6;
+  --color-primary-bg: #eeeefb;
+  --color-primary-text: #3730a3;
+  --shadow-primary-12: rgba(91, 91, 214, 0.12);
+  --shadow-primary-20: rgba(91, 91, 214, 0.2);
+}
+
+/* Dark mode lifts the same hue rather than dimming it, exactly as the green
+   does above: on a dark surface the brand colour has to come toward you. */
+:root[data-theme='dark'][data-channel='nightly'] {
+  --color-primary: #9a9af0;
+  --color-primary-bg: #14162a;
+  --color-primary-text: #c3c3f7;
+  --shadow-primary-12: rgba(154, 154, 240, 0.22);
+  --shadow-primary-20: rgba(154, 154, 240, 0.32);
+}
+
 :root {
   /* Phone safe areas (status bar on top, home/back bar on the bottom).
      The Android shell injects --safe-area-inset-*; env() covers iOS and

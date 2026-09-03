@@ -9,6 +9,7 @@ import { captureEarlyErrors, startErrorReporting } from './lib/errorReporting'
 import { startNativeBack } from './lib/nativeBack'
 import { startAppUpdates } from './lib/appUpdate'
 import { applyResolvedTheme, loadThemeMode } from './lib/theme'
+import { applyChannel } from './lib/appChannel'
 import { getClerkLocalization, initLocale, whenLocaleReady } from './lib/i18n'
 
 // First statement in the module on purpose: everything below can throw or reject,
@@ -48,6 +49,12 @@ window.addEventListener('vite:preloadError', (event) => {
 // modes and the resolver live in lib/theme, shared with the settings dialog
 // that lets the user change them.
 applyResolvedTheme(loadThemeMode(localStorage))
+
+// And which build this is, in the same breath and for the same reason: the
+// channel re-points the brand tokens the theme has just resolved, so applying
+// it later would paint one frame in production green before going indigo.
+// A no-op on production beyond the attribute itself.
+applyChannel()
 
 // Same slot, same reason, one difference. The language has to be settled
 // before the first view renders, so it is chosen here — but its catalog is a
