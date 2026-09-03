@@ -664,7 +664,7 @@ select is(
 );
 set local role authenticated;
 
--- ── 10. Product writes (010_admin_product_writes.sql) ────────────────────────
+-- ── 10. Product writes (008_admin.sql) ──────────────────────────────────────
 -- The three that let an admin curate the app catalog. What is worth pinning is
 -- not that they work but WHAT THEY REFUSE: the guard, the two uniqueness rules,
 -- and the columns an admin must not be able to move.
