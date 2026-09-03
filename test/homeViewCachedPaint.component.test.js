@@ -10,6 +10,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import HomeView from '../src/views/HomeView.vue'
 import ShoppingList from '../src/components/ShoppingList.vue'
+import AppSplash from '../src/components/AppSplash.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
 import { saveHouseholdSnapshot } from '../src/lib/householdCache'
 import { rememberUser } from '../src/lib/session'
@@ -113,13 +114,17 @@ describe('painting the cached list while Clerk warms up', () => {
     expect(wrapper.findComponent(ShoppingList).props('loading')).toBe(false)
   })
 
-  it('still skeletons when there is nothing cached to paint', async () => {
+  it('shows no list at all when there is nothing cached to paint', async () => {
     rememberUser(localStorage, 'user-1')
 
     const wrapper = trackMount(HomeView, { shallow: true })
     await flushPromises()
 
-    expect(wrapper.findComponent(ShoppingList).props('loading')).toBe(true)
+    // A skeleton here would be describing a household nobody has confirmed
+    // exists — the new-account case in homeViewNewAccountBoot. Splash instead,
+    // until loadHouseholds says which of the two screens this user gets.
+    expect(wrapper.findComponent(ShoppingList).exists()).toBe(false)
+    expect(wrapper.findComponent(AppSplash).exists()).toBe(true)
   })
 
   it('drops the painted list when Clerk resolves to a different account', async () => {

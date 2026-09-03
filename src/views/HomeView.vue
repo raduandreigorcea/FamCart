@@ -4,6 +4,7 @@ import { useAuth, useUser } from '@clerk/vue'
 import { useRouter } from 'vue-router'
 import { useSupabase } from '../supabase'
 import AppTopbar from '../components/AppTopbar.vue'
+import AppSplash from '../components/AppSplash.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import CustomProductModal from '../components/CustomProductModal.vue'
 import ErrorModal from '../components/ErrorModal.vue'
@@ -291,6 +292,24 @@ const initialLoading = computed(
 )
 // The skeleton shows on the first-ever load and while switching households.
 const listLoading = computed(() => initialLoading.value || switchingHousehold.value)
+
+// Whether there is a household to draw the screen around at all. Everything
+// below the topbar is shaped like one: the name in the header, the member
+// stack, the rows of the list. A skeleton of that is a promise, and there is one
+// account it cannot keep — a brand-new one, which lands here because the router
+// only pays for a membership lookup on the way to /household-setup, and is
+// replaced by onboarding a round trip later. It saw a mock-up of a shopping
+// list it does not have, and then the sign-up flow.
+//
+// So the chrome waits for evidence rather than assuming it: a household painted
+// from the cached snapshot, or one resolved by loadHouseholds. Until then the
+// boot splash simply continues, which is the screen the user was already
+// looking at. The only case this costs anything is a first sign-in on a new
+// device, which trades a skeleton for a splash for the length of one query.
+// An error has to reach its dialog, so it ends the wait too.
+const householdUnknown = computed(
+  () => !householdId.value && !hasInitialized.value && !loadError.value,
+)
 
 // Has this household ever bought anything? Purchase history is the record, but a
 // checkout in this session counts before the refetch confirms it.
@@ -803,7 +822,10 @@ async function reconcileActiveHousehold() {
 </script>
 
 <template>
-  <div class="dashboard">
+  <!-- Nothing here is worth showing until there is a household for it to be
+       about; see householdUnknown. -->
+  <AppSplash v-if="householdUnknown" />
+  <div v-else class="dashboard">
     <AppTopbar
       :household-id="householdId || ''"
       :household-name="householdName"
