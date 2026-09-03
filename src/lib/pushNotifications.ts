@@ -11,6 +11,7 @@
 import { Capacitor } from '@capacitor/core'
 import { whenIdle } from './idle'
 import { userScopedKey } from './perUserStorage'
+import { IS_NIGHTLY } from './appChannel'
 
 // Minimal slice of the v16 web SDK surface this module touches.
 interface OneSignalWebSdk {
@@ -35,6 +36,17 @@ const WORKER_PATH = 'onesignal/OneSignalSDKWorker.js'
 const WORKER_SCOPE = '/onesignal/'
 
 export function getOneSignalAppId(): string {
+  // Nightly has no push, and this is where that is decided rather than in the
+  // build script: the nightly APK is a different Android package than the one
+  // OneSignal knows, and it reads famcart-dev households, so subscribing it to
+  // the production app would both register a device that app cannot recognise
+  // and risk a real household notification landing on a test build. The same
+  // posture famcart-dev takes by leaving its push webhook unset.
+  //
+  // Returning empty rather than skipping the caller: every path in this module
+  // and in lib/firstRunGreeting already treats an absent app id as push being
+  // switched off, so there is no second way for it to be off.
+  if (IS_NIGHTLY) return ''
   return (import.meta.env.VITE_ONESIGNAL_APP_ID as string | undefined) ?? ''
 }
 

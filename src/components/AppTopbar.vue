@@ -44,6 +44,7 @@ function prefetch(load: () => Promise<unknown>) {
 // would leave the app in the wrong theme until then.
 import AppSettingsModal from './AppSettingsModal.vue'
 import { t } from '../lib/i18n'
+import { IS_NIGHTLY } from '../lib/appChannel'
 
 const props = defineProps({
   householdId: { type: String, default: '' },
@@ -284,6 +285,14 @@ const orderedActiveMembers = computed(() =>
     </div>
 
     <div class="topbar-actions">
+      <!-- The nightly build says so, in the one place that is on screen whatever
+           you are doing. Sits at the head of the actions rather than beside the
+           household name, which ellipsizes and would have had to give up width
+           for it. Untranslated on purpose, like the manifest: it names a build
+           channel, not anything the app does. -->
+      <!-- eslint-disable-next-line vue/no-bare-strings-in-template -- build channel, the same word in every language -->
+      <span v-if="IS_NIGHTLY" class="channel-badge">NIGHTLY</span>
+
       <button
         v-if="householdName"
         class="topbar-icon-btn"
@@ -476,6 +485,23 @@ const orderedActiveMembers = computed(() =>
 
 .household-emoji-skeleton {
   flex-shrink: 0;
+}
+
+/* A stamp, not a control: no press state and no tap target, because there is
+   nothing to do with it. It is drawn from the brand tokens, which the nightly
+   channel has already re-pointed to indigo, so it matches the bar it marks
+   rather than fighting it. */
+.channel-badge {
+  flex-shrink: 0;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 45%, transparent);
+  border-radius: var(--radius-xs);
+  background: var(--color-primary-bg);
+  color: var(--color-primary-text);
+  font-size: 0.625rem;
+  font-weight: var(--weight-extrabold);
+  letter-spacing: 0.08em;
+  line-height: 1.5;
 }
 
 .topbar-logo {

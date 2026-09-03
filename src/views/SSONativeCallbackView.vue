@@ -2,13 +2,18 @@
 import { onMounted } from 'vue'
 import AppCard from '../components/AppCard.vue'
 import { t } from '../lib/i18n'
+import { ssoCallbackUrlFromBounceQuery } from '../lib/ssoScheme'
 
 // Landing spot for the native app's OAuth round-trip. Clerk only accepts
 // http(s) redirect targets from web-mode clients, so the system browser is
-// sent here first; this page forwards everything — including Clerk's query
-// parameters — to the deep link the Android app listens on (famcart://
-// sso-callback: keep in sync with nativeOAuth.ts and AndroidManifest.xml).
-const target = `famcart://sso-callback${window.location.search}`
+// sent here first; this page forwards everything, Clerk's query parameters
+// included, to the deep link the Android app listens on.
+//
+// WHICH app, though, is not something this page can know about itself: it is
+// always the production deployment that serves it, even when the sign-in
+// started in the nightly APK. lib/ssoScheme reads the marker the app left in
+// the URL and picks the scheme from that.
+const target = ssoCallbackUrlFromBounceQuery(window.location.search)
 
 onMounted(() => {
   // Auto-hop into the app. Some browsers refuse custom-scheme navigations
