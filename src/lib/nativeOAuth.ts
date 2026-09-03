@@ -2,17 +2,16 @@ import { App, type URLOpenListenerEvent } from '@capacitor/app'
 import { Browser } from '@capacitor/browser'
 import { toRaw } from 'vue'
 
-// The deep link that actually re-enters the app. Must stay in sync with the
-// famcart://sso-callback intent filter in android/app/src/main/
-// AndroidManifest.xml and the forwarding page in SSONativeCallbackView.vue.
-export const NATIVE_SSO_CALLBACK_URL = 'famcart://sso-callback'
-
-// What Clerk is told to redirect to. Clerk rejects custom URL schemes for
-// web-mode clients (https/http only, and the WebView counts as web), so the
-// browser is sent to this page on the deployed site, which forwards the
-// query string to the famcart:// deep link above. Update when the app's
-// primary domain changes; allowlist it in Clerk → Native applications.
-export const NATIVE_SSO_BOUNCE_URL = 'https://famcart-app.vercel.app/sso-native'
+// Both constants come from lib/ssoScheme, which owns the one thing that is not
+// obvious here: the deep link differs per build channel, because the nightly
+// APK is a second installed app and a URL scheme is claimed per app. That
+// module also holds the matching half, the forwarding rule the bounce page
+// applies on the way back.
+//
+// Re-exported rather than merely imported: this is the module that documents
+// the flow, and every caller and test already reaches for them here.
+import { NATIVE_SSO_BOUNCE_URL, NATIVE_SSO_CALLBACK_URL } from './ssoScheme'
+export { NATIVE_SSO_CALLBACK_URL, NATIVE_SSO_BOUNCE_URL } from './ssoScheme'
 
 // Closing the browser tab and a successful redirect can fire together (the
 // tab dismisses itself as the deep link brings the app forward), so a close

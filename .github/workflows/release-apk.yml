@@ -196,6 +196,12 @@ jobs:
           VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
           VITE_ONESIGNAL_APP_ID: ${{ secrets.VITE_ONESIGNAL_APP_ID }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          # Declared rather than inferred. lib/appChannel would work this out
+          # from the Supabase URL anyway, but this is the file that defines what
+          # a production build IS, so it says so: anything that reaches a phone
+          # from here is production, and a wrong secret becomes a mismatch to
+          # notice rather than a badge that quietly fails to appear.
+          VITE_APP_CHANNEL: production
         run: npm run build
 
       - run: npx cap sync android
@@ -207,9 +213,13 @@ jobs:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/famcart-release.keystore"
 
-      # assembleRelease, not assembleDebug: a debug build is marked debuggable and
-      # signed with a throwaway key. The signing config it uses is chosen in
-      # android/app/build.gradle from these four variables.
+      # assembleProductionRelease, not assembleDebug: a debug build is marked
+      # debuggable and signed with a throwaway key. The signing config it uses is
+      # chosen in android/app/build.gradle from these four variables.
+      #
+      # The flavour is named explicitly because there are two. A plain
+      # assembleRelease would also build the nightly APK, which has no business
+      # being produced by the job that publishes what people install.
       - name: Build APK
         env:
           FAMCART_KEYSTORE_FILE: ${{ runner.temp }}/famcart-release.keystore
@@ -219,10 +229,10 @@ jobs:
         run: |
           chmod +x android/gradlew
           cd android
-          ./gradlew assembleRelease
+          ./gradlew assembleProductionRelease
 
       - name: Rename APK
-        run: cp android/app/build/outputs/apk/release/app-release.apk FamCart.apk
+        run: cp android/app/build/outputs/apk/production/release/app-production-release.apk FamCart.apk
 
       # Read back what was actually built rather than reporting github.sha. On a
       # workflow_dispatch that variable is the tip at dispatch time, which is not

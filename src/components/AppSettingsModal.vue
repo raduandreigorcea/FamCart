@@ -23,6 +23,7 @@ import {
   type ThemeMode,
 } from '../lib/theme'
 import AppIcon from './AppIcon.vue'
+import { IS_NIGHTLY, SUPABASE_PROJECT_REF } from '../lib/appChannel'
 
 // Settings that belong to the app on this device rather than to a household or
 // to the account: how it looks, whether it may notify, and what it is.
@@ -46,7 +47,11 @@ const { userId } = useAuth()
 
 // Replaced at build time with package.json's version, so bumping it there is
 // the only step needed for this to show the new one.
-const appVersion = __APP_VERSION__
+//
+// The nightly suffix rides along with it so it appears in both places the
+// version is shown, the settings row and the About dialog, and so a version
+// quoted in a bug report carries the channel with it.
+const appVersion = IS_NIGHTLY ? `${__APP_VERSION__}-nightly` : __APP_VERSION__
 
 const aboutOpen = ref(false)
 
@@ -290,6 +295,13 @@ watch(
       <!-- eslint-disable-next-line vue/no-bare-strings-in-template -- brand name, the same in every language -->
       <h3 id="about-dialog-title" class="about-name">FamCart</h3>
       <p class="about-version">{{ t('about.versionLine', { version: appVersion }) }}</p>
+
+      <!-- The project this build is actually talking to. Only on nightly, and
+           deliberately raw: it is here so that a screenshot of a phone answers
+           "which database was that?" without anyone having to reproduce the
+           bug first. Untranslated, since a Supabase project ref is a name. -->
+      <!-- eslint-disable-next-line vue/no-bare-strings-in-template -- a project ref, not copy -->
+      <p v-if="IS_NIGHTLY" class="about-project">{{ SUPABASE_PROJECT_REF }}</p>
 
       <div v-if="canCheckForUpdates" class="about-update">
         <AppButton
@@ -607,6 +619,13 @@ watch(
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
+}
+
+.about-project {
+  margin: 0.15rem 0 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-2xs);
+  color: var(--text-disabled);
 }
 
 .about-update {

@@ -24,6 +24,7 @@
 // download itself is done natively (see AppInstallerPlugin.java) where CORS does
 // not apply at all.
 import { Capacitor, registerPlugin } from '@capacitor/core'
+import { IS_NIGHTLY } from './appChannel'
 
 const RELEASE_API_URL =
   'https://api.github.com/repos/raduandreigorcea/FamCart/releases/latest'
@@ -210,7 +211,14 @@ export function canSelfUpdate(): boolean {
   // Android only. On the web there is nothing to install — the service worker
   // already replaced the build behind the user's back — and on a desktop browser
   // the plugin does not exist.
-  return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android'
+  //
+  // And production only. The release this module reads holds the production
+  // APK, which carries a different application id than the nightly build and so
+  // cannot update it; Android would install it as a second app while the user
+  // believed they had just updated this one. The nightly channel has no release
+  // feed of its own yet, so it does not offer updates at all: the About dialog
+  // drops its check row with this, since canCheckForUpdates is built on it.
+  return !IS_NIGHTLY && Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android'
 }
 
 /**

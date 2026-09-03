@@ -55,6 +55,40 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+
+    // TWO CHANNELS, TWO APPS
+    //
+    // The nightly build is not a variant of the installed app, it is a second
+    // app: its own application id, its own icon on the launcher, its own data.
+    // That is the whole point. A nightly APK that replaced production would
+    // mean choosing, every time, between testing and having a working shopping
+    // list on the phone you actually shop with.
+    //
+    // The suffix is what buys that. Everything else here follows from it:
+    //
+    //   ssoScheme      a URL scheme is claimed per app, so if both declared
+    //                  famcart:// Android would interrupt every OAuth sign-in
+    //                  to ask which FamCart should receive it. The matching
+    //                  half lives in src/lib/ssoScheme.ts.
+    //   app_name       src/nightly/res/values/strings.xml, because a resource
+    //                  in a flavour source set overrides main. resValue would
+    //                  collide with the string already declared there.
+    //
+    // The version is shared: separate application ids mean neither build ever
+    // judges an update against the other.
+    flavorDimensions = ["channel"]
+    productFlavors {
+        production {
+            dimension "channel"
+            manifestPlaceholders = [ssoScheme: "famcart"]
+        }
+        nightly {
+            dimension "channel"
+            applicationIdSuffix ".nightly"
+            manifestPlaceholders = [ssoScheme: "famcartnightly"]
+        }
+    }
+
     signingConfigs {
         release {
             if (hasKeystore) {
