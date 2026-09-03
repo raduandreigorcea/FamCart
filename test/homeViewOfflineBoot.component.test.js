@@ -10,6 +10,7 @@ import { flushPromises } from '@vue/test-utils'
 import { mount } from '@vue/test-utils'
 import HomeView from '../src/views/HomeView.vue'
 import ShoppingList from '../src/components/ShoppingList.vue'
+import AppSplash from '../src/components/AppSplash.vue'
 import ErrorModal from '../src/components/ErrorModal.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
 import { saveHouseholdSnapshot } from '../src/lib/householdCache'
@@ -94,9 +95,12 @@ describe('offline boot with a cached session', () => {
     const wrapper = trackMount(HomeView, { shallow: true })
     await flushPromises()
 
-    // Nothing to show and nothing to redirect to offline — just an empty,
-    // non-erroring shell that reconciles once back online.
-    expect(wrapper.findComponent(ShoppingList).props('items')).toHaveLength(0)
+    // Nothing to show and nothing to redirect to offline. Not an empty list
+    // either: a list-shaped screen with no household behind it is the thing
+    // householdUnknown exists to stop. The splash stays up and reconciles once
+    // back online.
+    expect(wrapper.findComponent(ShoppingList).exists()).toBe(false)
+    expect(wrapper.findComponent(AppSplash).exists()).toBe(true)
     expect(mocks.routerReplace).not.toHaveBeenCalled()
   })
 })
