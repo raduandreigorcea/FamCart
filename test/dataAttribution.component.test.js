@@ -1,14 +1,18 @@
 // @vitest-environment happy-dom
 //
-// Part of the product catalog is imported from Open Food Facts, whose data is
-// licensed ODbL. Publishing an app built on it obliges us to credit them
-// somewhere a user can actually reach.
+// The catalog is built from what Auchan, Carrefour and Lidl actually list, and
+// the app says so somewhere a user can reach.
 //
-// That makes the attribution a licence term rather than a design choice, and a
-// licence term nobody tests is one a redesign quietly deletes. This is the test
-// that fails when that happens — and it very nearly did: the credit used to sit
-// in an About tab inside the household settings dialog, and moving About out of
-// there is exactly the kind of change that drops it on the floor.
+// THIS USED TO BE A LICENCE TEST. The catalog was imported from Open Food Facts
+// and its two sibling projects, all ODbL, which obliged anyone publishing an app
+// built on it to credit them. That obligation is gone with those sources -- but
+// the test is kept, because what it really guards is the ROUTE: the credit used
+// to sit in an About tab inside the household settings dialog, and moving About
+// out of there is exactly the kind of change that drops it on the floor. It
+// very nearly did.
+//
+// So this is now a courtesy rather than a licence term, tested to the same
+// standard, because a credit nobody tests is one a redesign quietly deletes.
 import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AppSettingsModal from '../src/components/AppSettingsModal.vue'
@@ -57,29 +61,32 @@ const attributionLinks = (wrapper) =>
   wrapper
     .findAll('a')
     .filter((a) =>
-      /openfoodfacts|openproductsfacts|openbeautyfacts|opendatacommons/.test(
-        a.attributes('href') ?? '',
-      ),
+      /auchan\.ro|carrefour\.ro|lidl\.ro/.test(a.attributes('href') ?? ''),
     )
 
-describe('Open Food Facts attribution', () => {
+describe('product data attribution', () => {
   it('is rendered where a user can see it', async () => {
     const text = (await openAbout()).text()
-    // All three sources, not just the first. ODbL attribution names the data
-    // you actually used, and the importer now pulls non-food from the two
-    // sibling catalogs.
-    expect(text).toContain('Open Food Facts')
-    expect(text).toContain('Open Products Facts')
-    expect(text).toContain('Open Beauty Facts')
-    expect(text).toContain('ODbL')
+    // Every shop the catalog actually reads, not just the biggest one.
+    expect(text).toContain('Auchan')
+    expect(text).toContain('Carrefour')
+    expect(text).toContain('Lidl')
   })
 
-  it('links to the project and to the licence', async () => {
+  it('no longer claims a licence it is not using', async () => {
+    // The catalog was rebuilt around retailer listings on 2026-09-04. Leaving
+    // an ODbL notice up for data the app no longer touches would be a false
+    // statement about where its data comes from.
+    const text = (await openAbout()).text()
+    expect(text).not.toContain('Open Food Facts')
+    expect(text).not.toContain('ODbL')
+  })
+
+  it('links to each shop', async () => {
     const hrefs = attributionLinks(await openAbout()).map((a) => a.attributes('href'))
-    expect(hrefs).toContain('https://openfoodfacts.org')
-    expect(hrefs).toContain('https://openproductsfacts.org')
-    expect(hrefs).toContain('https://openbeautyfacts.org')
-    expect(hrefs).toContain('https://opendatacommons.org/licenses/odbl/1-0/')
+    expect(hrefs).toContain('https://www.auchan.ro')
+    expect(hrefs).toContain('https://carrefour.ro')
+    expect(hrefs).toContain('https://www.lidl.ro')
   })
 
   it('opens those links safely', async () => {
@@ -100,8 +107,8 @@ describe('Open Food Facts attribution', () => {
     expect(attributionLinks(wrapper)).toHaveLength(0)
   })
 
-  // The obligation is that a user can REACH the credit, so the route to it is
-  // part of what this file guards, not just the markup.
+  // The point is that a user can REACH the credit, so the route to it is part
+  // of what this file guards, not just the markup.
   it('is reachable from the account dialog', () => {
     const wrapper = mount(AccountActionModal, {
       global: { stubs: { AppModal: false } },

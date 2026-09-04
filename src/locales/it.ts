@@ -74,7 +74,6 @@ const it: Catalog = {
     'Impossibile contattare GitHub. Riprova quando sei di nuovo online.',
   'about.creditLead': 'Dati sui prodotti da',
   'about.creditAnd': 'e',
-  'about.creditJoin': ', sotto',
   'about.creditEnd': '.',
 
   'error.genericTitle': 'Qualcosa è andato storto',

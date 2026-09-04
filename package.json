@@ -1,7 +1,7 @@
 {
   "name": "famcart",
   "private": true,
-  "version": "0.5.1",
+  "version": "0.5.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,6 +12,13 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "vue-tsc --noEmit",
+    "catalog:scrape": "npm --prefix catalog run scrape --",
+    "catalog:scrape:auchan": "npm --prefix catalog run scrape:auchan",
+    "catalog:scrape:carrefour": "npm --prefix catalog run scrape:carrefour",
+    "catalog:scrape:lidl": "npm --prefix catalog run scrape:lidl",
+    "catalog:scrape:all": "npm --prefix catalog run scrape:all",
+    "catalog:import": "npm --prefix catalog run import --",
+    "catalog:unit": "npm --prefix catalog test",
     "catalog:test": "supabase --workdir catalog db reset && supabase --workdir catalog test db",
     "lint": "eslint ."
   },

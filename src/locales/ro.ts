@@ -76,7 +76,6 @@ const ro: Catalog = {
     'Nu s-a putut contacta GitHub pentru verificare. Încearcă din nou când ești online.',
   'about.creditLead': 'Date despre produse de la',
   'about.creditAnd': 'și',
-  'about.creditJoin': ', sub',
   'about.creditEnd': '.',
 
   'error.genericTitle': 'Ceva nu a mers bine',
