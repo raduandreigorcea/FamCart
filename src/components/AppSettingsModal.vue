@@ -29,7 +29,7 @@ import { IS_NIGHTLY, SUPABASE_PROJECT_REF } from '../lib/appChannel'
 // to the account: how it looks, whether it may notify, and what it is.
 //
 // About lives here because it is the clearest case of the three — an app's
-// version and its Open Food Facts licence credit are not a property of any one
+// version and its product-data credit are not a property of any one
 // household, which is exactly what made it odd sitting in the household dialog
 // behind a flag that pushed it to the bottom of the sidebar.
 //
@@ -283,11 +283,16 @@ watch(
     </div>
   </AppModal>
 
-  <!-- The Open Food Facts credit is a licence term, not a courtesy: their data
-       is ODbL, which obliges anyone publishing an app built on it to say so
-       somewhere a user can reach. Behind a button is still "somewhere a user can
-       reach"; deleting it is not. test/dataAttribution.component.test.js fails
-       if it stops being reachable. -->
+  <!-- Where the product data comes from, said where a user can reach it.
+       Behind a button is still "somewhere a user can reach"; deleting it is not.
+       test/dataAttribution.component.test.js fails if it stops being reachable.
+
+       This USED to be an ODbL licence notice for Open Food Facts and its two
+       sibling projects, which was an obligation rather than a courtesy. The
+       catalog no longer uses any of them -- it is built from what Auchan,
+       Carrefour and Lidl actually list -- so the obligation is gone and the
+       credit changed with it. It is kept because naming your sources is right,
+       not because a licence now compels it. -->
   <AppModal :open="aboutOpen" overlay-class="about-overlay" transition="modal-fade" @close="aboutOpen = false">
     <div class="about-dialog" role="dialog" aria-modal="true" aria-labelledby="about-dialog-title">
       <ModalCloseButton class="about-dialog__close" :aria-label="t('about.close')" @click="aboutOpen = false" />
@@ -322,22 +327,14 @@ watch(
 
       <!-- Fragments because the names are links, and a link cannot be a
            {placeholder}. Every name here is a proper noun and stays as it is;
-           only the connective text is translated.
-
-           Three catalogs now, not one: the importer pulls food from Open Food
-           Facts and the non-food aisles from its two sibling projects. All
-           three are ODbL, and ODbL attribution names the source you actually
-           used — so listing only the first would under-credit the other two.
-           test/dataAttribution.component.test.js fails if any of them stops
-           being reachable. -->
+           only the connective text is translated. -->
       <p class="about-credit">
         {{ t('about.creditLead') }}
-        <!-- eslint-disable vue/no-bare-strings-in-template -- proper nouns; the sources and the licence are named, not described -->
-        <a class="settings-note-link" href="https://openfoodfacts.org" target="_blank" rel="noopener noreferrer">Open Food Facts</a>,
-        <a class="settings-note-link" href="https://openproductsfacts.org" target="_blank" rel="noopener noreferrer">Open Products Facts</a>
+        <!-- eslint-disable vue/no-bare-strings-in-template -- proper nouns; the shops are named, not described -->
+        <a class="settings-note-link" href="https://www.auchan.ro" target="_blank" rel="noopener noreferrer">Auchan</a>,
+        <a class="settings-note-link" href="https://carrefour.ro" target="_blank" rel="noopener noreferrer">Carrefour</a>
         {{ t('about.creditAnd') }}
-        <a class="settings-note-link" href="https://openbeautyfacts.org" target="_blank" rel="noopener noreferrer">Open Beauty Facts</a>{{ t('about.creditJoin') }}
-        <a class="settings-note-link" href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL 1.0</a>{{ t('about.creditEnd') }}
+        <a class="settings-note-link" href="https://www.lidl.ro" target="_blank" rel="noopener noreferrer">Lidl</a>{{ t('about.creditEnd') }}
         <!-- eslint-enable vue/no-bare-strings-in-template -->
       </p>
     </div>

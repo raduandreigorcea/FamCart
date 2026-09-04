@@ -102,14 +102,16 @@ export default {
   'about.checking': 'Checking…',
   'about.upToDate': 'FamCart is up to date.',
   'about.checkFailed': "Couldn't reach GitHub to check. Try again when you're back online.",
-  // The ODbL credit, in three fragments because two of its words are links and
-  // a link cannot be a {placeholder}. "Open Food Facts" and "ODbL 1.0" are
-  // proper nouns and stay untranslated; only the connective text moves. All six
-  // languages keep the "from X, under Y" order, which is what makes splitting
-  // it this way safe.
+  // The product-data credit, in three fragments because the shop names are
+  // links and a link cannot be a {placeholder}. The names are proper nouns and
+  // stay untranslated; only the connective text moves. All six languages keep
+  // the "from A, B and C" order, which is what makes splitting it this way safe.
+  //
+  // There used to be a fourth fragment, ', under', because this was an ODbL
+  // licence notice naming Open Food Facts and its two siblings. The catalog is
+  // built from retailer listings now, so there is no licence to name.
   'about.creditLead': 'Product data from',
   'about.creditAnd': 'and',
-  'about.creditJoin': ', under',
   'about.creditEnd': '.',
 
   'error.genericTitle': 'Something went wrong',
