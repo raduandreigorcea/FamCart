@@ -9,14 +9,37 @@ import { productKey } from '../lib/productSearch'
 import { sumActiveQuantities, sumCheckedQuantities } from '../lib/shoppingList'
 import type { ShoppingItemRow, HouseholdMemberProfile } from '../lib/householdRealtime'
 import type { ProductSuggestion } from '../lib/productSearch'
+import type { ShopMap } from '../lib/shopBadges'
 import { t, tn } from '../lib/i18n'
 import AppIcon from './AppIcon.vue'
 
 // Presentational: renders the list with its move animations, the initial-load
 // skeleton, and the empty state. All mutations stay with the parent, which owns
 // the items.
+
+// Which shops sell a row's product, on nightly.
+//
+// Two lookups, and the second is what makes it work. The catalog answers with
+// ITS canonical name and brand; the row on the list carries whatever the person
+// picked, which is often a shop's own wording and sometimes has no maker at all
+// because they typed it themselves. Falling back to the name alone resolves that
+// second case, and an unknown product yields nothing, which renders nothing.
+function shopsFor(item: ShoppingItemRow): string[] {
+  const map = props.shopMap
+  if (map.size === 0) return []
+  return map.get(productKey(item.name, item.maker ?? null))
+      ?? map.get(productKey(item.name, null))
+      ?? []
+}
 const props = defineProps({
   items: { type: Array as PropType<ShoppingItemRow[]>, default: () => [] },
+  // Which shops carry each product, keyed by productKey. NIGHTLY ONLY, and
+  // resolved by the parent in one call for the whole list -- a row knows a name
+  // and a maker and nothing about the catalog, so it cannot look itself up.
+  shopMap: {
+    type: Map as PropType<ShopMap>,
+    default: () => new Map(),
+  },
   // Map<user_id, { display_name, image_url }> — the household roster, used to
   // resolve each row's author avatar/name from item.added_by at render time.
   memberProfiles: {
@@ -358,6 +381,7 @@ const labelText = computed(() =>
       :avatar-name="row.avatarName"
       :draining="row.draining"
       :drain-index="row.drainIndex"
+      :shops="shopsFor(row.item)"
       :qty-open="row.item.id === openQtyId"
       @toggle="$emit('toggle', $event)"
       @delete="$emit('delete', $event)"

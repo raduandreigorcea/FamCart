@@ -43,8 +43,8 @@ async function mountForm(nightly) {
 // The visible mark is a logo now, so the assertion reads the accessible name
 // rather than the rendered text -- which is also the thing that would break if
 // the logo were shown with nothing to say what it is.
-const shops = (wrapper) => wrapper.findAll('.suggestion-shop__name').map((s) => s.text())
-const discs = (wrapper) => wrapper.findAll('.suggestion-shop')
+const shops = (wrapper) => wrapper.findAll('.shop-badge__name').map((s) => s.text())
+const discs = (wrapper) => wrapper.findAll('.shop-badge')
 
 describe('the shop a suggestion came from', () => {
   it('names every shop carrying it, on nightly', async () => {
@@ -54,7 +54,7 @@ describe('the shop a suggestion came from', () => {
 
   it('shows each shop as its own logo', async () => {
     const wrapper = await mountForm(true)
-    const svgs = wrapper.findAll('.suggestion-shop svg')
+    const svgs = wrapper.findAll('.shop-badge svg')
     expect(svgs).toHaveLength(3)
     // Brand colours, not the theme's. A recoloured Carrefour blue is not
     // Carrefour, so these are the one place in the app where a mark is not
@@ -83,7 +83,7 @@ describe('the shop a suggestion came from', () => {
     // has to render as nothing, not as a blank tag.
     const wrapper = await mountForm(true)
     const rows = wrapper.findAll('.suggestion-text')
-    expect(rows[2].findAll('.suggestion-shop')).toHaveLength(0)
+    expect(rows[2].findAll('.shop-badge')).toHaveLength(0)
   })
 
   it('keeps the maker, which is a different fact from the shop', async () => {
@@ -92,7 +92,7 @@ describe('the shop a suggestion came from', () => {
     const wrapper = await mountForm(true)
     const first = wrapper.findAll('.suggestion-text')[0]
     expect(first.find('.suggestion-maker').text()).toBe('Dorna')
-    expect(first.findAll('.suggestion-shop__name').map((s) => s.text())).toEqual(['Auchan', 'Carrefour'])
+    expect(first.findAll('.shop-badge__name').map((s) => s.text())).toEqual(['Auchan', 'Carrefour'])
   })
 
   it('still renders the sub-line for a row that has shops but no maker', async () => {
