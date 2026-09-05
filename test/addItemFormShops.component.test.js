@@ -52,27 +52,31 @@ describe('the shop a suggestion came from', () => {
     expect(shops(wrapper)).toEqual(['Auchan', 'Carrefour', 'Lidl'])
   })
 
-  it('draws the marks that stay crisp as marks', async () => {
+  it('draws every known shop as its own mark, in its own colours', async () => {
     const wrapper = await mountForm(true)
-    // Auchan's bird and Carrefour's C are single bold shapes and survive being
-    // 15 pixels wide. Brand colours, not the theme's: a recoloured Carrefour
-    // blue is not Carrefour, so these are the one place in this app where a mark
-    // is not tinted by currentColor.
-    expect(wrapper.findAll('.shop-badge svg')).toHaveLength(2)
+    expect(wrapper.findAll('.shop-badge svg')).toHaveLength(3)
+    // Not the theme's colours: a recoloured Carrefour blue is not Carrefour, so
+    // these are the one place in this app where a mark is not tinted by
+    // currentColor.
     expect(wrapper.html()).toContain('#D6180B')
     expect(wrapper.html()).toContain('#004E9F')
   })
 
-  it('draws the one that does not as an initial instead', async () => {
-    // Lidl's logo is a ring with "Lidl" inside it. Those letters are three or
-    // four pixels tall here and no vector precision fixes shapes smaller than
-    // the pixels available to draw them, so it read as smudged next to the other
-    // two. Lidl publish no L-only mark, so this is an initial rather than their
-    // design -- and it is still in their blue.
+  it("keeps the colours in Lidl's mark, which are what make it readable", async () => {
+    // The icon-set version was flattened to a single blue and became a faint
+    // ring with four unreadable letters. This asset is Lidl's OWN favicon, which
+    // they ship for a 16-pixel browser tab, so the yellow and red do the work
+    // that the lettering cannot at this size.
     const wrapper = await mountForm(true)
-    const letters = wrapper.findAll('.shop-badge__letter').map((l) => l.text())
-    expect(letters).toEqual(['L'])
-    expect(wrapper.find('.shop-badge--mono').attributes('style')).toContain('#0050AA')
+    const html = wrapper.html()
+    expect(html).toContain('#fff000')
+    expect(html).toContain('#e60a14')
+    expect(html).toContain('#0050aa')
+  })
+
+  it('lets a mark that is its own disc fill the disc', async () => {
+    const wrapper = await mountForm(true)
+    expect(wrapper.findAll('.shop-badge--bleed')).toHaveLength(1)
   })
 
   it('falls back to an initial for a shop whose logo nobody has drawn', async () => {
