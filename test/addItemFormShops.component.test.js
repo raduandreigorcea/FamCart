@@ -40,12 +40,33 @@ async function mountForm(nightly) {
   return wrapper
 }
 
-const shops = (wrapper) => wrapper.findAll('.suggestion-shop').map((s) => s.text())
+// The visible mark is a logo now, so the assertion reads the accessible name
+// rather than the rendered text -- which is also the thing that would break if
+// the logo were shown with nothing to say what it is.
+const shops = (wrapper) => wrapper.findAll('.suggestion-shop__name').map((s) => s.text())
+const discs = (wrapper) => wrapper.findAll('.suggestion-shop')
 
 describe('the shop a suggestion came from', () => {
   it('names every shop carrying it, on nightly', async () => {
     const wrapper = await mountForm(true)
-    expect(shops(wrapper)).toEqual(['auchan', 'carrefour', 'lidl'])
+    expect(shops(wrapper)).toEqual(['Auchan', 'Carrefour', 'Lidl'])
+  })
+
+  it('shows each shop as its own logo', async () => {
+    const wrapper = await mountForm(true)
+    const svgs = wrapper.findAll('.suggestion-shop svg')
+    expect(svgs).toHaveLength(3)
+    // Brand colours, not the theme's. A recoloured Carrefour blue is not
+    // Carrefour, so these are the one place in the app where a mark is not
+    // tinted by currentColor.
+    expect(wrapper.html()).toContain('#004E9F')
+    expect(wrapper.html()).toContain('#0050AA')
+    expect(wrapper.html()).toContain('#D6180B')
+  })
+
+  it('still says which shop it is for anything that cannot see the logo', async () => {
+    const wrapper = await mountForm(true)
+    expect(discs(wrapper)[0].attributes('title')).toBe('Auchan')
   })
 
   it('shows nothing at all on production', async () => {
@@ -53,6 +74,7 @@ describe('the shop a suggestion came from', () => {
     // supermarkets our scraper happened to read.
     const wrapper = await mountForm(false)
     expect(shops(wrapper)).toEqual([])
+    expect(discs(wrapper)).toHaveLength(0)
   })
 
   it('leaves a row with no shops alone rather than drawing an empty chip', async () => {
@@ -70,7 +92,7 @@ describe('the shop a suggestion came from', () => {
     const wrapper = await mountForm(true)
     const first = wrapper.findAll('.suggestion-text')[0]
     expect(first.find('.suggestion-maker').text()).toBe('Dorna')
-    expect(first.findAll('.suggestion-shop').map((s) => s.text())).toEqual(['auchan', 'carrefour'])
+    expect(first.findAll('.suggestion-shop__name').map((s) => s.text())).toEqual(['Auchan', 'Carrefour'])
   })
 
   it('still renders the sub-line for a row that has shops but no maker', async () => {
@@ -83,7 +105,7 @@ describe('the shop a suggestion came from', () => {
       },
     })
     await wrapper.find('input').trigger('focus')
-    expect(shops(wrapper)).toEqual(['auchan'])
+    expect(shops(wrapper)).toEqual(['Auchan'])
     expect(wrapper.find('.suggestion-maker').exists()).toBe(false)
   })
 })

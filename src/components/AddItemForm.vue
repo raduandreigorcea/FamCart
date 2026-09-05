@@ -279,6 +279,23 @@ function shopsOf(product: ProductSuggestion): string[] {
   return Array.isArray(product.retailers) ? product.retailers : []
 }
 
+// The logos live in src/assets/brands/ and go through AppIcon like every other
+// icon, so they are inlined at build time -- no request per row, and the whole
+// set is under 4 KB.
+//
+// A shop with no logo file falls back to nothing rather than to a broken icon:
+// AppIcon renders '' for a name it does not have, so a fourth retailer added to
+// the registry before its logo shows an empty circle instead of failing.
+const SHOP_NAMES: Record<string, string> = {
+  auchan: 'Auchan',
+  carrefour: 'Carrefour',
+  lidl: 'Lidl',
+}
+
+function shopName(slug: string): string {
+  return SHOP_NAMES[slug] ?? slug
+}
+
 // ─── Confirming the add ──────────────────────────────────────────────────────
 // Which rows this search has already put on the list, and which one to light
 // up about it. All of it lives in lib/useAddedConfirmation; what stays here is
@@ -556,16 +573,23 @@ onBeforeUnmount(() => {
                            filled: a row with no shop came from this household's
                            own contributions rather than from a scrape.
 
-                           Not translated and not styled to be read by a shopper,
-                           because a shopper never sees it. The brand and the shop
-                           are often the same word (Auchan sells Auchan), so the
-                           shop is a chip and the brand is text -- otherwise
-                           "Auchan Auchan" reads as a rendering bug. -->
+                           A LOGO RATHER THAN THE NAME, because the brand and the
+                           shop are often the same word -- Auchan sells products
+                           branded Auchan -- and "Auchan Auchan" reads as a
+                           rendering bug. A mark next to text cannot be misread as
+                           more text.
+
+                           The title is what carries it to a screen reader and to
+                           a hover, since a logo says nothing on its own. -->
                       <span
                         v-for="shop in shopsOf(product)"
                         :key="shop"
                         class="suggestion-shop"
-                      >{{ shop }}</span>
+                        :title="shopName(shop)"
+                      >
+                        <AppIcon :name="`brands/${shop}`" />
+                        <span class="suggestion-shop__name">{{ shopName(shop) }}</span>
+                      </span>
                     </span>
                   </span>
                   <!-- The tick is decoration; this is what carries the state into
@@ -1070,22 +1094,51 @@ onBeforeUnmount(() => {
   line-height: 1.3;
 }
 
-/* NIGHTLY ONLY. Deliberately not pretty and deliberately not the same shape as
-   the maker beside it: Auchan sells products branded Auchan, so if the shop and
-   the brand rendered alike the row would read as a duplicated word rather than
-   as two different facts. */
+/* NIGHTLY ONLY. A disc carrying the shop's mark, which reads as a different KIND
+   of thing from the maker beside it -- the point being that the two are often
+   the same word and must not look like one repeated.
+
+   Fixed size and shrink-proof: this sits on a row whose name already truncates,
+   and a mark that squashes to an ellipse is worse than no mark. */
 .suggestion-shop {
-  font-size: 0.62rem;
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  line-height: 1;
-  padding: 0.12rem 0.3rem;
-  border-radius: 0.3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 50%;
   border: var(--border-width-thin) solid var(--border-light);
-  background: var(--bg-surface-alt);
+  background: var(--bg-surface);
+  /* Lidl's mark is a filled square that reaches the edge of its own viewBox, so
+     without this it would poke out of the circle it is sitting in. */
+  overflow: hidden;
+}
+
+/* The name the logo stands for, for anything that cannot see it. Same
+   visually-hidden pattern as .added-announce above; this app has no shared
+   utility for it and inventing one for a nightly-only affordance would be the
+   wrong place to start. */
+.suggestion-shop__name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* Inset, so a square logo reads as a logo inside a disc rather than as a square
+   fighting the border. The glyphs keep their own brand colours -- these are the
+   one place in the app where a mark is not tinted by the theme, because a
+   recoloured Carrefour blue is not Carrefour. */
+.suggestion-shop :deep(svg) {
+  width: 0.72rem;
+  height: 0.72rem;
+  display: block;
 }
 
 /* The escape hatch is an action, not a product: a rule separates it from the
