@@ -38,6 +38,20 @@ const NAMES: Record<string, string> = {
 function label(slug: string): string {
   return NAMES[slug] ?? slug
 }
+
+// Marks that are ALREADY a disc, and so should fill this one rather than sit
+// inside it.
+//
+// Lidl's is a roundel: a circle with the wordmark in it. Inset like a glyph it
+// became a faint ring with unreadable letters at this size -- there was a
+// printed square border around it too, 0.2 of 24 units, which is a third of a
+// pixel here and rendered as nothing but stopped the round mark from filling a
+// round space. The border is gone from the asset and the mark now goes
+// edge to edge, so the disc IS the logo.
+//
+// Auchan's bird and Carrefour's C are glyphs with no background of their own and
+// keep the inset, or they would touch the rim.
+const FULL_BLEED = new Set(['lidl'])
 </script>
 
 <template>
@@ -45,6 +59,7 @@ function label(slug: string): string {
     v-for="shop in props.shops"
     :key="shop"
     class="shop-badge"
+    :class="{ 'shop-badge--bleed': FULL_BLEED.has(shop) }"
     :title="label(shop)"
   >
     <AppIcon :name="`brands/${shop}`" />
@@ -84,6 +99,17 @@ function label(slug: string): string {
   width: 0.95rem;
   height: 0.95rem;
   display: block;
+}
+
+/* A mark that is its own disc fills this one, and the border would double its
+   outline, so it goes. */
+.shop-badge--bleed {
+  border-color: transparent;
+}
+
+.shop-badge--bleed :deep(svg) {
+  width: 100%;
+  height: 100%;
 }
 
 .shop-badge__name {
