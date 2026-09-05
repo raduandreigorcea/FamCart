@@ -11,6 +11,7 @@ import { productKey, type ProductSuggestion } from '../lib/productSearch'
 import { ITEM_NAME_MAX_LENGTH } from '../lib/limits'
 import { t } from '../lib/i18n'
 import AppIcon from './AppIcon.vue'
+import { IS_NIGHTLY } from '../lib/appChannel'
 
 // Presentational: the typed name lives in the parent (via v-model) so the add
 // flow can restore it when an optimistic insert fails. The suggestions list is
@@ -260,6 +261,23 @@ function onEnter(event: KeyboardEvent) {
 watch([rows, () => props.canAddCustom], () => {
   activeIndex.value = -1
 })
+
+// Which shops carry a suggestion, on nightly only.
+//
+// search_catalog returns `retailers` on every row it answers with; a row from
+// the app database's own search_catalog has none, and neither does one recovered
+// from purchase history. So an empty answer here is meaningful rather than
+// missing: it says this product came from what the household typed in, not from
+// a shop we read.
+//
+// Gated on the channel rather than on import.meta.env.DEV so it survives into a
+// nightly APK, which is where the catalog is actually worth eyeballing -- a
+// dropdown on a phone is the thing being built. A production build never renders
+// it at all.
+function shopsOf(product: ProductSuggestion): string[] {
+  if (!IS_NIGHTLY) return []
+  return Array.isArray(product.retailers) ? product.retailers : []
+}
 
 // ─── Confirming the add ──────────────────────────────────────────────────────
 // Which rows this search has already put on the list, and which one to light
@@ -529,7 +547,26 @@ onBeforeUnmount(() => {
                   </span>
                   <span class="suggestion-text">
                     <span class="suggestion-name">{{ product.name }}</span>
-                    <span v-if="product.maker" class="suggestion-maker">{{ product.maker }}</span>
+                    <span v-if="product.maker || shopsOf(product).length" class="suggestion-sub">
+                      <span v-if="product.maker" class="suggestion-maker">{{ product.maker }}</span>
+                      <!-- NIGHTLY ONLY, and a development aid rather than a
+                           feature. Which shop a suggestion came from is the one
+                           thing you cannot tell by looking at it, and it is the
+                           question worth answering while the catalog is being
+                           filled: a row with no shop came from this household's
+                           own contributions rather than from a scrape.
+
+                           Not translated and not styled to be read by a shopper,
+                           because a shopper never sees it. The brand and the shop
+                           are often the same word (Auchan sells Auchan), so the
+                           shop is a chip and the brand is text -- otherwise
+                           "Auchan Auchan" reads as a rendering bug. -->
+                      <span
+                        v-for="shop in shopsOf(product)"
+                        :key="shop"
+                        class="suggestion-shop"
+                      >{{ shop }}</span>
+                    </span>
                   </span>
                   <!-- The tick is decoration; this is what carries the state into
                        the option's accessible name. -->
@@ -1015,11 +1052,40 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+/* The second line: the maker, and on nightly the shops carrying it. Wraps
+   rather than truncating, because a row with three shops is exactly the row
+   worth looking at. */
+.suggestion-sub {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
 .suggestion-maker {
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
   color: var(--text-secondary);
   line-height: 1.3;
+}
+
+/* NIGHTLY ONLY. Deliberately not pretty and deliberately not the same shape as
+   the maker beside it: Auchan sells products branded Auchan, so if the shop and
+   the brand rendered alike the row would read as a duplicated word rather than
+   as two different facts. */
+.suggestion-shop {
+  font-size: 0.62rem;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  line-height: 1;
+  padding: 0.12rem 0.3rem;
+  border-radius: 0.3rem;
+  border: var(--border-width-thin) solid var(--border-light);
+  background: var(--bg-surface-alt);
+  white-space: nowrap;
 }
 
 /* The escape hatch is an action, not a product: a rule separates it from the
