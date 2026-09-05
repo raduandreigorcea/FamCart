@@ -30,6 +30,64 @@ export function shopsEnabled(): boolean {
   return IS_NIGHTLY && getCatalogSupabase() !== null
 }
 
+// ─── remembering the answer ──────────────────────────────────────────────────
+// The badges used to arrive a beat after the rows, and the reason was never the
+// logos -- those are inlined in the bundle. It was this lookup: the list paints
+// from the household snapshot cache with no network at all, and then had to wait
+// for a round trip to a SECOND database before it could say where anything came
+// from.
+//
+// So the answer is cached the same way the list is. On a warm start the badges
+// paint with the rows, and the fetch below still runs and replaces them, which
+// is what keeps a shop that dropped a product from showing forever.
+//
+// Nothing here is private: it is which shops sell a product, which every signed
+// in user can read anyway. It is keyed by version alone rather than by user, and
+// a household's product NAMES are the only thing about it that came from them --
+// the same names already sitting in the snapshot cache next to it.
+const CACHE_KEY = 'famcart.shop-badges.v1'
+// Enough for a big list several times over. A cap at all is what stops a cache
+// that is only ever added to from growing until a browser refuses to write it.
+const CACHE_MAX = 500
+
+// Read back out of storage and used as an icon name and a label. AppIcon
+// resolves against a fixed set and yields nothing for an unknown name, and the
+// label is text-bound, so neither is a hole -- but a slug that is not a slug is
+// a sign the entry is junk, and dropping it is cheaper than reasoning about it.
+const SLUG = /^[a-z0-9-]{1,40}$/
+
+export function loadCachedShops(storage: Storage = localStorage): ShopMap {
+  const map: ShopMap = new Map()
+  if (!IS_NIGHTLY) return map
+  try {
+    const raw = storage.getItem(CACHE_KEY)
+    if (!raw) return map
+    const stored = JSON.parse(raw) as unknown
+    if (!Array.isArray(stored)) return map
+    for (const entry of stored) {
+      if (!Array.isArray(entry) || entry.length !== 2) continue
+      const [key, shops] = entry as [unknown, unknown]
+      if (typeof key !== 'string' || !Array.isArray(shops)) continue
+      const clean = shops.filter((x): x is string => typeof x === 'string' && SLUG.test(x))
+      if (clean.length > 0) map.set(key, clean)
+    }
+  } catch {
+    // A private window, cleared site data, a quota error, or something that is
+    // not JSON. Every one of them means "no cache", which is the state this
+    // started in.
+  }
+  return map
+}
+
+export function saveCachedShops(map: ShopMap, storage: Storage = localStorage): void {
+  if (!IS_NIGHTLY) return
+  try {
+    storage.setItem(CACHE_KEY, JSON.stringify([...map.entries()].slice(0, CACHE_MAX)))
+  } catch {
+    // Writing a decoration's cache must never be the thing that breaks a list.
+  }
+}
+
 export async function fetchShopsFor(names: string[]): Promise<ShopMap> {
   const empty: ShopMap = new Map()
   if (!shopsEnabled()) return empty
@@ -65,6 +123,7 @@ export async function fetchShopsFor(names: string[]): Promise<ShopMap> {
       map.set(productKey(name, maker), shops)
       if (!map.has(productKey(name, null))) map.set(productKey(name, null), shops)
     }
+    saveCachedShops(map)
     return map
   } catch {
     return empty

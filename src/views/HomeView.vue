@@ -48,7 +48,7 @@ import {
   ITEM_NAME_MAX_LENGTH,
 } from '../lib/limits'
 import { applyUserLocale, getLocale, t } from '../lib/i18n'
-import { fetchShopsFor, shopsEnabled, type ShopMap } from '../lib/shopBadges'
+import { fetchShopsFor, loadCachedShops, shopsEnabled, type ShopMap } from '../lib/shopBadges'
 
 const { userId, isLoaded } = useAuth()
 const { user } = useUser()
@@ -91,7 +91,10 @@ const items = ref<ShoppingItemRow[]>([])
 // Keyed on the set of names rather than on `items` itself, so checking something
 // off, reordering, or a realtime update to a quantity does not re-ask. Only a
 // name arriving or leaving does.
-const shopMap = ref<ShopMap>(new Map())
+// Seeded from the cache SYNCHRONOUSLY, so the badges paint in the same frame as
+// the rows the snapshot cache paints. The fetch below still runs and replaces
+// this, which is what stops a shop that dropped a product from showing forever.
+const shopMap = ref<ShopMap>(loadCachedShops())
 
 watch(
   () => (shopsEnabled() ? JSON.stringify([...new Set(items.value.map((i) => i.name))].sort()) : ''),
@@ -103,7 +106,12 @@ watch(
     // Not guarded by a request id: the answer is a decoration, the calls are
     // rare, and a stale one resolves to the same map as the fresh one for every
     // name both of them asked about.
-    shopMap.value = await fetchShopsFor(items.value.map((i) => i.name))
+    //
+    // Assigned only if it found something. An empty answer here means the
+    // catalog was unreachable, not that nothing is sold anywhere, and replacing
+    // a good cache with that would blank every badge on a flaky connection.
+    const fresh = await fetchShopsFor(items.value.map((i) => i.name))
+    if (fresh.size > 0) shopMap.value = fresh
   },
   { immediate: true },
 )
