@@ -52,16 +52,42 @@ describe('the shop a suggestion came from', () => {
     expect(shops(wrapper)).toEqual(['Auchan', 'Carrefour', 'Lidl'])
   })
 
-  it('shows each shop as its own logo', async () => {
+  it('draws the marks that stay crisp as marks', async () => {
     const wrapper = await mountForm(true)
-    const svgs = wrapper.findAll('.shop-badge svg')
-    expect(svgs).toHaveLength(3)
-    // Brand colours, not the theme's. A recoloured Carrefour blue is not
-    // Carrefour, so these are the one place in the app where a mark is not
-    // tinted by currentColor.
-    expect(wrapper.html()).toContain('#004E9F')
-    expect(wrapper.html()).toContain('#0050AA')
+    // Auchan's bird and Carrefour's C are single bold shapes and survive being
+    // 15 pixels wide. Brand colours, not the theme's: a recoloured Carrefour
+    // blue is not Carrefour, so these are the one place in this app where a mark
+    // is not tinted by currentColor.
+    expect(wrapper.findAll('.shop-badge svg')).toHaveLength(2)
     expect(wrapper.html()).toContain('#D6180B')
+    expect(wrapper.html()).toContain('#004E9F')
+  })
+
+  it('draws the one that does not as an initial instead', async () => {
+    // Lidl's logo is a ring with "Lidl" inside it. Those letters are three or
+    // four pixels tall here and no vector precision fixes shapes smaller than
+    // the pixels available to draw them, so it read as smudged next to the other
+    // two. Lidl publish no L-only mark, so this is an initial rather than their
+    // design -- and it is still in their blue.
+    const wrapper = await mountForm(true)
+    const letters = wrapper.findAll('.shop-badge__letter').map((l) => l.text())
+    expect(letters).toEqual(['L'])
+    expect(wrapper.find('.shop-badge--mono').attributes('style')).toContain('#0050AA')
+  })
+
+  it('falls back to an initial for a shop whose logo nobody has drawn', async () => {
+    // A fourth retailer is one line in a registry; its logo is a separate job.
+    // An initial is legible in the meantime, where a missing asset is a blank
+    // circle that looks like a bug.
+    const wrapper = mount(AddItemForm, {
+      props: {
+        name: 'x',
+        suggestions: [{ name: 'Ceva', maker: null, retailers: ['profi'] }],
+        canAddCustom: false,
+      },
+    })
+    await wrapper.find('input').trigger('focus')
+    expect(wrapper.findAll('.shop-badge__letter').map((l) => l.text())).toEqual(['P'])
   })
 
   it('still says which shop it is for anything that cannot see the logo', async () => {

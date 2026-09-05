@@ -39,19 +39,37 @@ function label(slug: string): string {
   return NAMES[slug] ?? slug
 }
 
-// Marks that are ALREADY a disc, and so should fill this one rather than sit
-// inside it.
+// Shops drawn as an initial rather than as their mark, with the brand colour
+// behind it.
 //
-// Lidl's is a roundel: a circle with the wordmark in it. Inset like a glyph it
-// became a faint ring with unreadable letters at this size -- there was a
-// printed square border around it too, 0.2 of 24 units, which is a third of a
-// pixel here and rendered as nothing but stopped the round mark from filling a
-// round space. The border is gone from the asset and the mark now goes
-// edge to edge, so the disc IS the logo.
+// NOT A STYLE CHOICE -- it is what a mark with fine internal detail costs at
+// twenty pixels. Lidl's logo is a roundel: a ring with "Lidl" written inside it.
+// Those four letters are three or four pixels tall here, and no amount of
+// vector precision helps, because the shapes are smaller than the pixels
+// available to draw them. It read as smudged next to Auchan's bird and
+// Carrefour's C, which are single bold shapes and stay crisp.
 //
-// Auchan's bird and Carrefour's C are glyphs with no background of their own and
-// keep the inset, or they would touch the rim.
-const FULL_BLEED = new Set(['lidl'])
+// Lidl publish no L-only mark, so this is an initial rather than their logo --
+// the same thing an avatar does with a name. That is also why it is drawn in
+// their blue and not passed off as their design.
+//
+// This doubles as the fallback for a retailer whose logo nobody has drawn yet:
+// an initial on a coloured disc is always legible, where a missing asset is an
+// empty circle.
+const MONOGRAM: Record<string, { letter: string; colour: string }> = {
+  lidl: { letter: 'L', colour: '#0050AA' },
+}
+
+function monogram(slug: string): { letter: string; colour: string } | null {
+  if (MONOGRAM[slug]) return MONOGRAM[slug]
+  // Unknown shop, no asset: an initial beats an empty disc.
+  if (!KNOWN_LOGOS.has(slug)) {
+    return { letter: (slug[0] ?? '?').toUpperCase(), colour: 'var(--text-secondary)' }
+  }
+  return null
+}
+
+const KNOWN_LOGOS = new Set(['auchan', 'carrefour'])
 </script>
 
 <template>
@@ -59,10 +77,14 @@ const FULL_BLEED = new Set(['lidl'])
     v-for="shop in props.shops"
     :key="shop"
     class="shop-badge"
-    :class="{ 'shop-badge--bleed': FULL_BLEED.has(shop) }"
+    :class="{ 'shop-badge--mono': monogram(shop) }"
+    :style="monogram(shop) ? { background: monogram(shop)!.colour } : undefined"
     :title="label(shop)"
   >
-    <AppIcon :name="`brands/${shop}`" />
+    <span v-if="monogram(shop)" class="shop-badge__letter" aria-hidden="true">{{
+      monogram(shop)!.letter
+    }}</span>
+    <AppIcon v-else :name="`brands/${shop}`" />
     <!-- A logo says nothing on its own. Same visually-hidden pattern the list
          and the suggestions already use for their own announcements. -->
     <span class="shop-badge__name">{{ label(shop) }}</span>
@@ -101,15 +123,20 @@ const FULL_BLEED = new Set(['lidl'])
   display: block;
 }
 
-/* A mark that is its own disc fills this one, and the border would double its
-   outline, so it goes. */
-.shop-badge--bleed {
+/* An initial on the brand's own colour. The rim goes, because the disc is now
+   the coloured thing rather than a container for one. */
+.shop-badge--mono {
   border-color: transparent;
+  color: #fff;
 }
 
-.shop-badge--bleed :deep(svg) {
-  width: 100%;
-  height: 100%;
+.shop-badge__letter {
+  font-size: 0.78rem;
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  /* The cap sits slightly high in most faces; nudging it down centres the letter
+     in the circle rather than in its own line box. */
+  transform: translateY(0.02em);
 }
 
 .shop-badge__name {
