@@ -20,6 +20,97 @@ import { productKey } from './productSearch'
 /** name + maker, folded, to the shops carrying it. */
 export type ShopMap = Map<string, string[]>
 
+// Read back out of storage and used as an icon name and a label. AppIcon
+// resolves against a fixed set and yields nothing for an unknown name, and the
+// label is text-bound, so neither is a hole -- but a slug that is not a slug is
+// a sign the entry is junk, and dropping it is cheaper than reasoning about it.
+const SLUG = /^[a-z0-9-]{1,40}$/
+
+// ─── the shops themselves ────────────────────────────────────────────────────
+// Read from the catalog rather than hardcoded, so a fourth retailer starts
+// being offered as a filter the moment it has a row -- the same day it starts
+// producing products, without a release.
+//
+// The display names stay here because they are TYPOGRAPHY, not data: the
+// catalog stores a slug, and "Mega Image" is not what capitalising `mega-image`
+// produces. A shop with no entry falls back to its slug, which is ugly and
+// readable, and is the right failure for a retailer added before anybody wrote
+// its name down.
+const SHOP_NAMES: Record<string, string> = {
+  auchan: 'Auchan',
+  carrefour: 'Carrefour',
+  lidl: 'Lidl',
+}
+
+export function shopLabel(slug: string): string {
+  return SHOP_NAMES[slug] ?? slug
+}
+
+const SHOPS_KEY = 'famcart.shops.v1'
+let shopList: string[] | null = null
+
+/**
+ * Every enabled shop, for the filters to offer.
+ *
+ * Three rows, once a session, and cached across sessions so the filter button
+ * is there on the first paint rather than appearing a moment later. On any
+ * failure it answers with what it last knew, and with nothing at all if it has
+ * never known anything -- which HIDES the filter. That is the safe direction:
+ * no filter is a working app, and a filter offering shops that do not exist is
+ * one that returns nothing and looks broken.
+ */
+export async function fetchShopList(): Promise<string[]> {
+  if (!IS_NIGHTLY) return []
+  if (shopList) return shopList
+
+  const cached = readShopCache()
+  const catalogDb = getCatalogSupabase()
+  if (!catalogDb) return cached
+
+  try {
+    const { data, error } = await catalogDb
+      .from('catalog_retailers')
+      .select('slug')
+      .eq('enabled', true)
+      .order('slug')
+    if (error || !Array.isArray(data)) return cached
+
+    const slugs = data
+      .map((row) => (row as { slug?: unknown }).slug)
+      .filter((s): s is string => typeof s === 'string' && SLUG.test(s))
+    if (slugs.length === 0) return cached
+
+    shopList = slugs
+    try {
+      localStorage.setItem(SHOPS_KEY, JSON.stringify(slugs))
+    } catch {
+      // Same posture as the badge cache below: a filter's convenience must
+      // never be the thing that throws.
+    }
+    return slugs
+  } catch {
+    return cached
+  }
+}
+
+function readShopCache(): string[] {
+  if (!IS_NIGHTLY) return []
+  try {
+    const raw = localStorage.getItem(SHOPS_KEY)
+    if (!raw) return []
+    const stored = JSON.parse(raw) as unknown
+    if (!Array.isArray(stored)) return []
+    return stored.filter((s): s is string => typeof s === 'string' && SLUG.test(s))
+  } catch {
+    return []
+  }
+}
+
+/** For tests and a household switch: forget what was learned this session. */
+export function resetShopList(): void {
+  shopList = null
+}
+
 interface ShopRow {
   name?: unknown
   maker?: unknown
@@ -49,12 +140,6 @@ const CACHE_KEY = 'famcart.shop-badges.v1'
 // Enough for a big list several times over. A cap at all is what stops a cache
 // that is only ever added to from growing until a browser refuses to write it.
 const CACHE_MAX = 500
-
-// Read back out of storage and used as an icon name and a label. AppIcon
-// resolves against a fixed set and yields nothing for an unknown name, and the
-// label is text-bound, so neither is a hole -- but a slug that is not a slug is
-// a sign the entry is junk, and dropping it is cheaper than reasoning about it.
-const SLUG = /^[a-z0-9-]{1,40}$/
 
 export function loadCachedShops(storage: Storage = localStorage): ShopMap {
   const map: ShopMap = new Map()

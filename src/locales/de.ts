@@ -102,6 +102,7 @@ const de: Catalog = {
   'list.meta.leftCount': { one: '{n} übrig', other: '{n} übrig' },
   'list.filteredEmpty.checked': 'Noch nichts abgehakt.',
   'list.filteredEmpty.active': 'Hier ist alles abgehakt.',
+  'list.filteredEmpty.shop': 'Nichts auf dieser Liste gibt es bei {shop}.',
   'list.empty.titleShopped': 'Alles gekauft',
   'list.empty.titleNew': 'Noch nichts hier',
   'list.empty.textShopped': 'Es ist nichts mehr abzuholen.',
@@ -134,6 +135,10 @@ const de: Catalog = {
   'filter.active.hint': 'Noch abzuholen',
   'filter.checked.label': 'Abgehakt',
   'filter.checked.hint': 'Im Wagen, bereit zum Abschluss',
+  'filter.shopHeading': 'Geschäft',
+  'filter.shopAny.label': 'Jedes Geschäft',
+  'filter.shopAny.hint': 'Alles, egal woher',
+  'filter.shopOne.hint': 'Gibt es bei {shop}, dazu alles ohne bekanntes Geschäft',
 
   'add.inputLabel': 'Artikel hinzufügen',
   'add.inputPlaceholder': 'Artikel hinzufügen…',
@@ -145,6 +150,8 @@ const de: Catalog = {
   'add.cantFind': 'Nicht gefunden?',
   'add.addYourOwn': 'Selbst hinzufügen',
   'add.typeToSearch': 'Tippe einen Produktnamen ein, um zu suchen.',
+  'add.shopFilter': 'Nach Geschäft filtern',
+  'add.shopAll': 'Alle Geschäfte',
   'add.announced': '{name} zu deiner Liste hinzugefügt',
 
   'custom.message':

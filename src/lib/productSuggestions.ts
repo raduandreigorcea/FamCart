@@ -12,6 +12,7 @@ import { barcodeCandidates } from './barcodeScanner'
 import { getCatalogSupabase } from '../supabase'
 import type { AddedProduct } from './shoppingListActions'
 import { topHouseholdProducts } from './productRecents'
+import { fetchShopList } from './shopBadges'
 import type { Market } from './region'
 import type { ShoppingItemRow } from './householdRealtime'
 
@@ -35,6 +36,27 @@ export interface ProductSuggestions {
   selectedProduct: Ref<ProductSuggestion | null>
   /** True while the phone's full-screen search is up, which earns more rows. */
   searchExpanded: Ref<boolean>
+  /**
+   * Narrow the search to one shop, or null for all of them. NIGHTLY ONLY, the
+   * same as the shop badges and for the same reason: the catalog is a fraction
+   * of what the shops actually stock, so "nothing at Lidl" would usually mean
+   * "not scraped yet" and read as the shop being empty.
+   *
+   * Read here, written through setSearchShop -- never assigned directly. A
+   * watcher would have to tell a tap apart from the reset that clears this on a
+   * household switch, and Vue's watchers are queued rather than synchronous, so
+   * the flag saying which it was is already stale by the time one runs.
+   */
+  searchShop: Ref<string | null>
+  /**
+   * Narrow to a shop, or pass null for all of them, and re-ask the current
+   * question immediately -- no debounce, because a tap is one deliberate event
+   * rather than a burst, and the user is already looking at an answer they have
+   * just invalidated.
+   */
+  setSearchShop: (shop: string | null) => void
+  /** The shops it may be set to. Empty hides the control. */
+  shopOptions: Ref<string[]>
   canAddCustomProduct: Ref<boolean>
   /** This household's purchase habits: the ranking signal, and the empty state's answer. */
   householdProductStats: Ref<Map<string, HouseholdProductStat>>
@@ -118,6 +140,14 @@ export function useProductSuggestions(options: {
 
   const suggestions = ref<ProductSuggestion[]>([])
   const suggestionsLoading = ref(false)
+  const searchShop = ref<string | null>(null)
+  const shopOptions = ref<string[]>([])
+  // Best-effort and unawaited: three rows from the catalog, and an empty answer
+  // simply means the control never appears. Nothing on this path may delay a
+  // keystroke.
+  void fetchShopList().then((shops) => {
+    shopOptions.value = shops
+  })
   const selectedProduct = ref<ProductSuggestion | null>(null)
   const searchExpanded = ref(false)
   const householdProductStats = ref<Map<string, HouseholdProductStat>>(new Map())
@@ -220,6 +250,10 @@ export function useProductSuggestions(options: {
     suggestionsLoading.value = false
     selectedProduct.value = null
     lastAdded.value = null
+    // A narrowed search is a question about the list you were just looking at.
+    // Carrying it into another household would answer the first search there
+    // with a filter nobody set and no visible reason for the gaps.
+    searchShop.value = null
     // A response already on the wire must not land in the new household's
     // dropdown; bumping the id is what makes fetchSuggestions discard it.
     suggestRequestId++
@@ -282,6 +316,15 @@ export function useProductSuggestions(options: {
       // popularity. There is nothing there that should ever be demoted for
       // being foreign — the household typed it in themselves, in whatever
       // language they typed it in.
+      // THE SHOP FILTER SILENCES THE APP DATABASE, and that is the whole of why
+      // it is not simply another argument. This household's own product_catalog
+      // has no retailers and never will -- its rows are things somebody typed
+      // in. Asking it while the filter says "Lidl" would answer with products
+      // that have nothing to do with Lidl, and they would be indistinguishable
+      // from real ones, because a row from there carries no shops to render.
+      // A filter that quietly shows you the wrong shop's products is worse than
+      // no filter.
+      const shop = searchShop.value
       const [globalRes, localRes] = await Promise.allSettled([
         catalogDb
           ? catalogDb.rpc('search_catalog', {
@@ -289,13 +332,16 @@ export function useProductSuggestions(options: {
               p_limit: SUGGEST_POOL,
               ...(markets ? { p_markets: [markets] } : {}),
               ...(langs ? { p_langs: [langs] } : {}),
+              ...(shop ? { p_retailers: [shop] } : {}),
             })
           : Promise.resolve({ data: [], error: null }),
-        db.rpc('search_catalog', {
-          p_query: text,
-          p_household_id: householdId.value || null,
-          p_limit: SUGGEST_POOL,
-        }),
+        shop
+          ? Promise.resolve({ data: [], error: null })
+          : db.rpc('search_catalog', {
+              p_query: text,
+              p_household_id: householdId.value || null,
+              p_limit: SUGGEST_POOL,
+            }),
       ])
       // Stale response: a newer keystroke queried already, and that request owns
       // the dropdown now — including when its skeleton stops.
@@ -330,10 +376,16 @@ export function useProductSuggestions(options: {
       // no network. Catalog rows go first: rankSuggestions dedupes first-wins,
       // so the catalog's spelling and popularity win wherever it did return the
       // product — including over a duplicate of it promoted in the app database.
+      //
+      // The history fold is silenced by the shop filter for the same reason the
+      // app database is: it is drawn from what this household has bought, which
+      // says nothing at all about which shops carry it.
       const candidates = [
         ...globalRows,
         ...localRows,
-        ...matchHouseholdStats(text, householdProductStats.value, { limit: suggestLimit.value }),
+        ...(shop
+          ? []
+          : matchHouseholdStats(text, householdProductStats.value, { limit: suggestLimit.value })),
       ]
       suggestions.value = rankSuggestions(candidates, householdProductStats.value, suggestLimit.value)
 
@@ -466,6 +518,33 @@ export function useProductSuggestions(options: {
     suggestionsLoading.value = true
     suggestTimer = setTimeout(() => void fetchSuggestions(text), SUGGEST_DEBOUNCE_MS)
   })
+
+  // Changing the shop re-asks the SAME question, so it skips the debounce that
+  // exists for typing.
+  //
+  // A function rather than a watcher on searchShop, which is what this was
+  // first. resetForHousehold also clears the filter, and that is not somebody
+  // asking the question again -- there is a new list loading and nothing to
+  // answer yet -- so a watcher would have needed a flag to tell the two apart.
+  // Vue queues watchers rather than running them synchronously, so the flag was
+  // already false by the time the callback read it: the guard looked right and
+  // did nothing. Here the two callers simply do different things.
+  function setSearchShop(shop: string | null): void {
+    if (searchShop.value === shop) return
+    searchShop.value = shop
+    const text = query.value.trim()
+    if (text.length < SUGGEST_MIN_CHARS || selectedProduct.value) {
+      suggestions.value = []
+      return
+    }
+    if (suggestTimer) {
+      clearTimeout(suggestTimer)
+      suggestTimer = null
+    }
+    suggestions.value = []
+    suggestionsLoading.value = true
+    void fetchSuggestions(text)
+  }
 
   // Fold this household's recent purchases into the ranking signal. Best-effort: on
   // failure suggestions just fall back to the global catalog order. Retention
@@ -600,6 +679,9 @@ export function useProductSuggestions(options: {
     householdProductStats,
     productStatsLoaded,
     loadHouseholdProductStats,
+    searchShop,
+    setSearchShop,
+    shopOptions,
     resetForHousehold,
     recentProducts,
     restartProducts,

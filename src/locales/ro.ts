@@ -103,6 +103,7 @@ const ro: Catalog = {
   'list.meta.leftCount': { one: '{n} rămas', few: '{n} rămase', other: '{n} rămase' },
   'list.filteredEmpty.checked': 'Nu ai bifat nimic încă.',
   'list.filteredEmpty.active': 'Totul de aici este bifat.',
+  'list.filteredEmpty.shop': 'Nimic din lista asta nu se vinde la {shop}.',
   'list.empty.titleShopped': 'Totul cumpărat',
   'list.empty.titleNew': 'Nimic aici încă',
   'list.empty.textShopped': 'Nu mai e nimic de luat.',
@@ -140,6 +141,10 @@ const ro: Catalog = {
   'filter.active.hint': 'Rămase de luat',
   'filter.checked.label': 'Bifate',
   'filter.checked.hint': 'În coș, gata de finalizare',
+  'filter.shopHeading': 'Magazin',
+  'filter.shopAny.label': 'Orice magazin',
+  'filter.shopAny.hint': 'Tot, indiferent de unde vine',
+  'filter.shopOne.hint': 'Se vinde la {shop}, plus ce nu știm de unde se ia',
 
   'add.inputLabel': 'Adaugă un produs',
   'add.inputPlaceholder': 'Adaugă un produs…',
@@ -151,6 +156,8 @@ const ro: Catalog = {
   'add.cantFind': 'Nu îl găsești?',
   'add.addYourOwn': 'Adaugă-l tu',
   'add.typeToSearch': 'Scrie numele unui produs pentru a căuta.',
+  'add.shopFilter': 'Filtrează după magazin',
+  'add.shopAll': 'Toate magazinele',
   'add.announced': '{name} adăugat pe lista ta',
 
   'custom.message':

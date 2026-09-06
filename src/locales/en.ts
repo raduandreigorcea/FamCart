@@ -138,6 +138,7 @@ export default {
   'list.meta.leftCount': { one: '{n} left', other: '{n} left' },
   'list.filteredEmpty.checked': 'Nothing checked yet.',
   'list.filteredEmpty.active': 'Everything here is checked.',
+  'list.filteredEmpty.shop': 'Nothing on this list is sold at {shop}.',
   'list.empty.titleShopped': 'All bought',
   'list.empty.titleNew': 'Nothing here yet',
   'list.empty.textShopped': 'Nothing left to pick up.',
@@ -170,6 +171,10 @@ export default {
   'filter.active.hint': 'Still to pick up',
   'filter.checked.label': 'Checked',
   'filter.checked.hint': 'In the cart, ready to check out',
+  'filter.shopHeading': 'Shop',
+  'filter.shopAny.label': 'Any shop',
+  'filter.shopAny.hint': 'Everything, wherever it comes from',
+  'filter.shopOne.hint': 'Sold at {shop}, plus anything we have no shop for',
 
   'add.inputLabel': 'Add an item',
   'add.inputPlaceholder': 'Add an item…',
@@ -181,6 +186,8 @@ export default {
   'add.cantFind': "Can't find it?",
   'add.addYourOwn': 'Add your own',
   'add.typeToSearch': 'Type a product name to search.',
+  'add.shopFilter': 'Filter by shop',
+  'add.shopAll': 'All shops',
   'add.announced': '{name} added to your list',
 
   'custom.message':

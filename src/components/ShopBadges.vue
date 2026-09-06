@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { PropType } from 'vue'
 import AppIcon from './AppIcon.vue'
+import { shopLabel } from '../lib/shopBadges'
 
 // Which shops carry a product, as their logos. NIGHTLY ONLY -- the caller decides
 // that; this renders whatever it is given.
@@ -20,6 +21,13 @@ import AppIcon from './AppIcon.vue'
 
 const props = defineProps({
   shops: { type: Array as PropType<string[]>, default: () => [] },
+  // Show the shop's name beside its mark instead of only to a screen reader.
+  //
+  // For the two filters, where the mark is what you recognise but the name is
+  // what you are choosing. On a product row it stays hidden: the name there
+  // would sit next to a maker that is frequently the same word, which is the
+  // thing the disc exists to avoid.
+  labelled: { type: Boolean, default: false },
 })
 
 // The logos live in src/assets/brands/ and go through AppIcon like every other
@@ -29,15 +37,9 @@ const props = defineProps({
 // A shop with no logo file renders an empty disc rather than a broken image:
 // AppIcon yields '' for a name it does not have. That is the right failure for a
 // fourth retailer added to the registry before somebody draws its mark.
-const NAMES: Record<string, string> = {
-  auchan: 'Auchan',
-  carrefour: 'Carrefour',
-  lidl: 'Lidl',
-}
-
-function label(slug: string): string {
-  return NAMES[slug] ?? slug
-}
+// The names live in lib/shopBadges beside the shop list, because the filters
+// label the same shops these discs do and two copies would drift.
+const label = shopLabel
 
 // Marks that are ALREADY a disc, and so should fill this one rather than sit
 // inside it.
@@ -66,9 +68,27 @@ function monogram(slug: string): { letter: string; colour: string } | null {
 </script>
 
 <template>
+  <!-- Two shapes, because the name belongs OUTSIDE the disc when it is visible
+       and inside it when it is only announced. A wrapper in both cases would
+       put a span around every badge on every list row for nothing. -->
+  <template v-for="shop in props.shops" :key="shop">
   <span
-    v-for="shop in props.shops"
-    :key="shop"
+    v-if="labelled"
+    class="shop-badges__labelled"
+  >
+    <span
+      class="shop-badge"
+      :class="{ 'shop-badge--mono': monogram(shop), 'shop-badge--bleed': FULL_BLEED.has(shop) }"
+      :style="monogram(shop) ? { background: monogram(shop)!.colour } : undefined"
+      aria-hidden="true"
+    >
+      <span v-if="monogram(shop)" class="shop-badge__letter">{{ monogram(shop)!.letter }}</span>
+      <AppIcon v-else :name="`brands/${shop}`" />
+    </span>
+    <span class="shop-badges__name">{{ label(shop) }}</span>
+  </span>
+  <span
+    v-else
     class="shop-badge"
     :class="{ 'shop-badge--mono': monogram(shop), 'shop-badge--bleed': FULL_BLEED.has(shop) }"
     :style="monogram(shop) ? { background: monogram(shop)!.colour } : undefined"
@@ -82,6 +102,7 @@ function monogram(slug: string): { letter: string; colour: string } | null {
          and the suggestions already use for their own announcements. -->
     <span class="shop-badge__name">{{ label(shop) }}</span>
   </span>
+  </template>
 </template>
 
 <style scoped>
@@ -151,6 +172,21 @@ function monogram(slug: string): { letter: string; colour: string } | null {
   border: 0;
   overflow: hidden;
   clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* The mark and its name, for the filters. The disc keeps every rule above; all
+   this adds is the pairing and the gap. */
+.shop-badges__labelled {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.shop-badges__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 </style>
