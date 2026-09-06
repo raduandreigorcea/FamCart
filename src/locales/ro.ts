@@ -144,7 +144,6 @@ const ro: Catalog = {
   'filter.shopHeading': 'Magazin',
   'filter.shopAny.label': 'Orice magazin',
   'filter.shopAny.hint': 'Tot, indiferent de unde vine',
-  'filter.shopOne.hint': 'Se vinde la {shop}, plus ce nu știm de unde se ia',
 
   'add.inputLabel': 'Adaugă un produs',
   'add.inputPlaceholder': 'Adaugă un produs…',

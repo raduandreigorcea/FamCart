@@ -138,7 +138,6 @@ const de: Catalog = {
   'filter.shopHeading': 'Geschäft',
   'filter.shopAny.label': 'Jedes Geschäft',
   'filter.shopAny.hint': 'Alles, egal woher',
-  'filter.shopOne.hint': 'Gibt es bei {shop}, dazu alles ohne bekanntes Geschäft',
 
   'add.inputLabel': 'Artikel hinzufügen',
   'add.inputPlaceholder': 'Artikel hinzufügen…',

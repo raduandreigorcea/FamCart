@@ -137,7 +137,6 @@ const fr: Catalog = {
   'filter.shopHeading': 'Magasin',
   'filter.shopAny.label': 'Tous les magasins',
   'filter.shopAny.hint': 'Tout, d’où que ça vienne',
-  'filter.shopOne.hint': 'Vendu chez {shop}, plus ce dont on ignore la provenance',
 
   'add.inputLabel': 'Ajouter un article',
   'add.inputPlaceholder': 'Ajouter un article…',

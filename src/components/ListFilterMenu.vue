@@ -5,7 +5,6 @@ import PopoverMenu from './PopoverMenu.vue'
 import { t } from '../lib/i18n'
 import AppIcon from './AppIcon.vue'
 import ShopBadges from './ShopBadges.vue'
-import { shopLabel } from '../lib/shopBadges'
 
 // The button that filters the list, and the rows it offers. PopoverMenu owns
 // the panel itself — where it lands, how it dismisses, what a row looks like.
@@ -151,10 +150,13 @@ const isFiltered = computed(() => model.value !== 'all' || shop.value !== null)
         >
           <AppIcon class="menu-check" :name="shop === slug ? 'check-2' : ''" />
           <span class="filter-option__text">
+            <!-- No hint under a shop, unlike every other row here. Its name is
+                 the whole of what it is, and the line that used to sit here
+                 explained the unknowns rule -- which is a fact about how empty
+                 the catalog is today, not about Auchan. -->
             <span class="filter-option__label filter-option__label--shop">
               <ShopBadges :shops="[slug]" labelled />
             </span>
-            <span class="filter-option__hint">{{ t('filter.shopOne.hint', { shop: shopLabel(slug) }) }}</span>
           </span>
           <span class="filter-option__count">{{ props.shopCounts[slug] ?? 0 }}</span>
         </button>

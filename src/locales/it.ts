@@ -137,7 +137,6 @@ const it: Catalog = {
   'filter.shopHeading': 'Negozio',
   'filter.shopAny.label': 'Qualsiasi negozio',
   'filter.shopAny.hint': 'Tutto, da qualunque parte venga',
-  'filter.shopOne.hint': 'Venduto da {shop}, più ciò di cui non sappiamo il negozio',
 
   'add.inputLabel': 'Aggiungi un articolo',
   'add.inputPlaceholder': 'Aggiungi un articolo…',

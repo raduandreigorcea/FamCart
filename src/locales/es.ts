@@ -138,7 +138,6 @@ const es: Catalog = {
   'filter.shopHeading': 'Tienda',
   'filter.shopAny.label': 'Cualquier tienda',
   'filter.shopAny.hint': 'Todo, venga de donde venga',
-  'filter.shopOne.hint': 'Se vende en {shop}, más lo que no sabemos dónde se compra',
 
   'add.inputLabel': 'Añadir un artículo',
   'add.inputPlaceholder': 'Añadir un artículo…',
