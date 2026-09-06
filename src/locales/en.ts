@@ -174,7 +174,6 @@ export default {
   'filter.shopHeading': 'Shop',
   'filter.shopAny.label': 'Any shop',
   'filter.shopAny.hint': 'Everything, wherever it comes from',
-  'filter.shopOne.hint': 'Sold at {shop}, plus anything we have no shop for',
 
   'add.inputLabel': 'Add an item',
   'add.inputPlaceholder': 'Add an item…',
