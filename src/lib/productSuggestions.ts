@@ -12,14 +12,7 @@ import { barcodeCandidates } from './barcodeScanner'
 import { getCatalogSupabase } from '../supabase'
 import type { AddedProduct } from './shoppingListActions'
 import { topHouseholdProducts } from './productRecents'
-import {
-  DISCOVER_DELAY_MS,
-  DISCOVER_MIN_CHARS,
-  discoverBarcode,
-  discoverProducts,
-  localAnswersQuery,
-  type ConceptIntent,
-} from './catalogDiscovery'
+import { fetchShopList } from './shopBadges'
 import type { Market } from './region'
 import type { ShoppingItemRow } from './householdRealtime'
 
@@ -43,6 +36,27 @@ export interface ProductSuggestions {
   selectedProduct: Ref<ProductSuggestion | null>
   /** True while the phone's full-screen search is up, which earns more rows. */
   searchExpanded: Ref<boolean>
+  /**
+   * Narrow the search to one shop, or null for all of them. NIGHTLY ONLY, the
+   * same as the shop badges and for the same reason: the catalog is a fraction
+   * of what the shops actually stock, so "nothing at Lidl" would usually mean
+   * "not scraped yet" and read as the shop being empty.
+   *
+   * Read here, written through setSearchShop -- never assigned directly. A
+   * watcher would have to tell a tap apart from the reset that clears this on a
+   * household switch, and Vue's watchers are queued rather than synchronous, so
+   * the flag saying which it was is already stale by the time one runs.
+   */
+  searchShop: Ref<string | null>
+  /**
+   * Narrow to a shop, or pass null for all of them, and re-ask the current
+   * question immediately -- no debounce, because a tap is one deliberate event
+   * rather than a burst, and the user is already looking at an answer they have
+   * just invalidated.
+   */
+  setSearchShop: (shop: string | null) => void
+  /** The shops it may be set to. Empty hides the control. */
+  shopOptions: Ref<string[]>
   canAddCustomProduct: Ref<boolean>
   /** This household's purchase habits: the ranking signal, and the empty state's answer. */
   householdProductStats: Ref<Map<string, HouseholdProductStat>>
@@ -126,6 +140,14 @@ export function useProductSuggestions(options: {
 
   const suggestions = ref<ProductSuggestion[]>([])
   const suggestionsLoading = ref(false)
+  const searchShop = ref<string | null>(null)
+  const shopOptions = ref<string[]>([])
+  // Best-effort and unawaited: three rows from the catalog, and an empty answer
+  // simply means the control never appears. Nothing on this path may delay a
+  // keystroke.
+  void fetchShopList().then((shops) => {
+    shopOptions.value = shops
+  })
   const selectedProduct = ref<ProductSuggestion | null>(null)
   const searchExpanded = ref(false)
   const householdProductStats = ref<Map<string, HouseholdProductStat>>(new Map())
@@ -228,6 +250,10 @@ export function useProductSuggestions(options: {
     suggestionsLoading.value = false
     selectedProduct.value = null
     lastAdded.value = null
+    // A narrowed search is a question about the list you were just looking at.
+    // Carrying it into another household would answer the first search there
+    // with a filter nobody set and no visible reason for the gaps.
+    searchShop.value = null
     // A response already on the wire must not land in the new household's
     // dropdown; bumping the id is what makes fetchSuggestions discard it.
     suggestRequestId++
@@ -264,35 +290,24 @@ export function useProductSuggestions(options: {
 
       // Two signals about this person, sent to the reference catalog only.
       //
-      // The catalog holds 191,394 products and 190,394 of them name a market,
-      // so without either of these a Romanian household ranks 37,008 French
-      // products above its own 9,011 Romanian ones — popularity is measured
-      // across all of Europe, and every French product wins it.
+      // MARKET NOW FILTERS RATHER THAN DEMOTES, and that reversal came with the
+      // catalog rebuild. The old rule existed because market came from Open Food
+      // Facts country tags, which were unreliable enough that treating them as
+      // fact produced empty dropdowns. The catalog is now built from retailer
+      // listings, and Auchan Romania stocking something is a hard fact about
+      // where you can buy it. Offering it to a phone in Germany is offering a
+      // shop they cannot reach; they get nothing from the catalog and fall back
+      // to this household's own product_catalog, which is the right answer.
       //
-      // LANGUAGE FIRST, MARKET SECOND, and search_catalog encodes that order
-      // rather than this file: p_langs decides whether a name can be read,
-      // p_markets whether the product is on a nearby shelf, and the first
-      // question is the one somebody typing into a search box is really asking.
-      // "Sour Cream & Onion" is no use to a household that wanted "cu smantana
-      // si ceapa", however close the shop is.
-      //
-      // Both DEMOTE rather than filter: a non-matching row sorts last, it does
-      // not disappear. That is deliberate and worth preserving — a hard filter
-      // would give a household in a thin market, or searching a term the
-      // catalog only holds under a foreign name, an empty dropdown
-      // indistinguishable from "we have never heard of that product", which is
-      // the worst failure a search box has.
+      // LANGUAGE NO LONGER RANKS ANYTHING. Every product in the catalog is
+      // Romanian, because every retailer in it is, so there is no second
+      // language to prefer. p_langs is still sent and still accepted, because
+      // dropping an argument is the same silent break as renaming one.
       //
       // Spread rather than `p_markets: null`, because PostgREST resolves an RPC
-      // by the argument names in the body. Omitting the key entirely keeps the
-      // no-region call byte-identical to the one that shipped before this
-      // existed, which is what makes "no preference" mean "exactly as before".
+      // by the argument names in the body. Omitting the key entirely is what
+      // makes "no region" mean "no filter" rather than "match nothing".
       const markets = region()
-      // Sent as a one-element array because search_catalog takes text[]. It
-      // does the English fallback itself — a Romanian caller gets Romanian
-      // names, then English ones, then everything else — so there is no second
-      // language to add here, and adding one would silently promote it above
-      // that fallback.
       const langs = locale()
 
       // Neither is sent to the app database, which has no markets or name_lang
@@ -301,6 +316,15 @@ export function useProductSuggestions(options: {
       // popularity. There is nothing there that should ever be demoted for
       // being foreign — the household typed it in themselves, in whatever
       // language they typed it in.
+      // THE SHOP FILTER SILENCES THE APP DATABASE, and that is the whole of why
+      // it is not simply another argument. This household's own product_catalog
+      // has no retailers and never will -- its rows are things somebody typed
+      // in. Asking it while the filter says "Lidl" would answer with products
+      // that have nothing to do with Lidl, and they would be indistinguishable
+      // from real ones, because a row from there carries no shops to render.
+      // A filter that quietly shows you the wrong shop's products is worse than
+      // no filter.
+      const shop = searchShop.value
       const [globalRes, localRes] = await Promise.allSettled([
         catalogDb
           ? catalogDb.rpc('search_catalog', {
@@ -308,13 +332,16 @@ export function useProductSuggestions(options: {
               p_limit: SUGGEST_POOL,
               ...(markets ? { p_markets: [markets] } : {}),
               ...(langs ? { p_langs: [langs] } : {}),
+              ...(shop ? { p_retailers: [shop] } : {}),
             })
           : Promise.resolve({ data: [], error: null }),
-        db.rpc('search_catalog', {
-          p_query: text,
-          p_household_id: householdId.value || null,
-          p_limit: SUGGEST_POOL,
-        }),
+        shop
+          ? Promise.resolve({ data: [], error: null })
+          : db.rpc('search_catalog', {
+              p_query: text,
+              p_household_id: householdId.value || null,
+              p_limit: SUGGEST_POOL,
+            }),
       ])
       // Stale response: a newer keystroke queried already, and that request owns
       // the dropdown now — including when its skeleton stops.
@@ -349,33 +376,27 @@ export function useProductSuggestions(options: {
       // no network. Catalog rows go first: rankSuggestions dedupes first-wins,
       // so the catalog's spelling and popularity win wherever it did return the
       // product — including over a duplicate of it promoted in the app database.
+      //
+      // The history fold is silenced by the shop filter for the same reason the
+      // app database is: it is drawn from what this household has bought, which
+      // says nothing at all about which shops carry it.
       const candidates = [
         ...globalRows,
         ...localRows,
-        ...matchHouseholdStats(text, householdProductStats.value, { limit: suggestLimit.value }),
+        ...(shop
+          ? []
+          : matchHouseholdStats(text, householdProductStats.value, { limit: suggestLimit.value })),
       ]
       suggestions.value = rankSuggestions(candidates, householdProductStats.value, suggestLimit.value)
 
-      // THE COLD PATH, and it starts only once the warm one has already
-      // answered. Everything above this line is on screen; nothing below it can
-      // delay a row or take one away. Deliberately not awaited — the local
-      // answer is the answer, and this is an addition to it that arrives later
-      // or not at all.
+      // THERE IS NO COLD PATH ANY MORE. This used to fall through to a
+      // `discover` edge function that queried Open Food Facts live, on the
+      // keystroke path, whenever the local rows did not look like an answer.
       //
-      // WHAT THE WORD MEANS comes back on the catalog rows themselves, so
-      // knowing it costs nothing: `search_catalog` resolved the concept in
-      // order to rank, and reports the intent it used. Read off the first
-      // catalog row because every row of one search carries the same value —
-      // it is a fact about the QUERY, not about any product.
-      //
-      // Absent (no catalog project, no rows, no concept for this word) it stays
-      // null and localAnswersQuery falls back to counting branded rows, which
-      // is what it did before concepts existed.
-      const intent = (globalRows[0]?.concept_intent ?? null) as ConceptIntent | null
-
-      if (!localAnswersQuery(candidates, text, intent)) {
-        void discoverMore(text, requestId, [...globalRows, ...localRows])
-      }
+      // The catalog it fed is gone and so is the reason for it: the catalog is
+      // now what real shops actually list, so an empty result means "no shop we
+      // read sells this", which is TRUE and useful. The old empty result meant
+      // "we have not heard of it yet", which is why it went looking.
     } catch {
       // Suggestions are a convenience; a failed lookup changes nothing.
     } finally {
@@ -384,61 +405,6 @@ export function useProductSuggestions(options: {
       // or the dropdown would flash "Can't find it?" mid-search.
       if (requestId === suggestRequestId) suggestionsLoading.value = false
     }
-  }
-
-  // Ask the catalog to go and find what it did not have.
-  //
-  // Runs behind its own delay ON TOP of the debounce that already gated the
-  // search above, so somebody typing "detergent" at speed produces one external
-  // call rather than six. Every early return below is a reason not to spend one.
-  //
-  // Guarded by requestId the same way fetchSuggestions is, and for a stricter
-  // reason: this resolves seconds after the keystroke that started it, so the
-  // chance of the dropdown having moved on is much higher than for a local
-  // query. A stale discovery landing in the list would show products for a word
-  // the person has finished deleting.
-  async function discoverMore(
-    text: string,
-    requestId: number,
-    local: ProductSuggestion[],
-  ): Promise<void> {
-    if (text.length < DISCOVER_MIN_CHARS) return
-    const catalogDb = getCatalogSupabase()
-    if (!catalogDb) return
-
-    await new Promise((resolve) => setTimeout(resolve, DISCOVER_DELAY_MS))
-    // Typed again during the delay: that keystroke owns the dropdown and will
-    // do its own asking.
-    if (requestId !== suggestRequestId || selectedProduct.value || isOffline()) return
-
-    const found = await discoverProducts(catalogDb, {
-      query: text,
-      market: region(),
-      language: locale(),
-      local,
-    })
-
-    if (!found.length) return
-    // Checked AGAIN after the call, not only before it. The request above is
-    // the slow part, and everything that could have happened during the delay
-    // could equally have happened during it.
-    if (requestId !== suggestRequestId || selectedProduct.value) return
-
-    // These rows live in the catalog project now — the function saved them
-    // before returning them — so a bump for one has to go there. Without this
-    // they would be treated as unknown-origin and the app database would be
-    // asked about a product it has never held.
-    for (const row of found) suggestionOrigins.set(productKey(row.name, row.maker), 'catalog')
-
-    // Appended, never substituted. rankSuggestions dedupes first-wins, so what
-    // was already on screen keeps its place and its order, and discoveries fill
-    // whatever room is left. A person watching the dropdown sees rows arrive
-    // rather than the list they were reading rearrange itself.
-    suggestions.value = rankSuggestions(
-      [...suggestions.value, ...found],
-      householdProductStats.value,
-      suggestLimit.value,
-    )
   }
 
   // ─── scanning ──────────────────────────────────────────────────────────────
@@ -513,24 +479,16 @@ export function useProductSuggestions(options: {
         return found
       }
 
-      // ─── the cold path for a scan ────────────────────────────────────────
-      // Neither database has ever seen this code. A search reaches discovery
-      // because what was typed matched nothing GOOD ENOUGH; a scan reaches it
-      // because an exact key matched nothing AT ALL, which is a stronger signal
-      // and worth acting on straight away rather than behind a delay.
+      // Neither database has ever seen this code, and there is nowhere else to
+      // ask. A scan used to fall through to the `discover` edge function, which
+      // looked the barcode up in Open Food Facts; that catalog is gone, and a
+      // barcode no configured retailer lists is a barcode this catalog cannot
+      // resolve.
       //
-      // Nothing below can fail the scan: discoverBarcode resolves null for a
-      // dead function, a rejected token, a timeout or a product no source
-      // knows, and null is exactly what this returned a moment ago anyway. The
-      // worst case is the scan taking a second longer to say the same thing.
-      if (!catalogDb) return null
-      const discovered = await discoverBarcode(catalogDb, candidates)
-      if (discovered) {
-        // It lives in the catalog project now — the function saved it before
-        // returning it — so a later popularity bump has to go there.
-        suggestionOrigins.set(productKey(discovered.name, discovered.maker), 'catalog')
-      }
-      return discovered
+      // The user goes to the naming path, their answer lands in the app
+      // database with the code attached, and the NEXT scan of it is answered
+      // from there. That loop still works and is now the only one.
+      return null
     } catch {
       // Treated as "the catalog does not have it", which puts the user on the
       // naming path rather than on an error they can do nothing about.
@@ -560,6 +518,33 @@ export function useProductSuggestions(options: {
     suggestionsLoading.value = true
     suggestTimer = setTimeout(() => void fetchSuggestions(text), SUGGEST_DEBOUNCE_MS)
   })
+
+  // Changing the shop re-asks the SAME question, so it skips the debounce that
+  // exists for typing.
+  //
+  // A function rather than a watcher on searchShop, which is what this was
+  // first. resetForHousehold also clears the filter, and that is not somebody
+  // asking the question again -- there is a new list loading and nothing to
+  // answer yet -- so a watcher would have needed a flag to tell the two apart.
+  // Vue queues watchers rather than running them synchronously, so the flag was
+  // already false by the time the callback read it: the guard looked right and
+  // did nothing. Here the two callers simply do different things.
+  function setSearchShop(shop: string | null): void {
+    if (searchShop.value === shop) return
+    searchShop.value = shop
+    const text = query.value.trim()
+    if (text.length < SUGGEST_MIN_CHARS || selectedProduct.value) {
+      suggestions.value = []
+      return
+    }
+    if (suggestTimer) {
+      clearTimeout(suggestTimer)
+      suggestTimer = null
+    }
+    suggestions.value = []
+    suggestionsLoading.value = true
+    void fetchSuggestions(text)
+  }
 
   // Fold this household's recent purchases into the ranking signal. Best-effort: on
   // failure suggestions just fall back to the global catalog order. Retention
@@ -675,17 +660,13 @@ export function useProductSuggestions(options: {
 
   onBeforeUnmount(() => {
     if (suggestTimer) clearTimeout(suggestTimer)
-    // And retire the request id, which is what stops a discovery that is
-    // already past the debounce.
-    //
-    // discoverMore waits out its own DISCOVER_DELAY_MS on a bare setTimeout
-    // and then makes an external call. Clearing suggestTimer does not reach
-    // it: a view torn down inside that window still woke up, still asked Open
-    // Food Facts, and still wrote the answer into a ref nobody was rendering.
-    // Every guard in this file is `requestId !== suggestRequestId`, so moving
-    // the id past every request in flight closes all of them at once — the
-    // same mechanism resetForHousehold already uses for a household switch,
-    // which was the only teardown that had it.
+    // And retire the request id, which closes every query already past the
+    // debounce. Clearing suggestTimer only stops the ones that have not
+    // started; a search in flight still resolves and still writes into a ref
+    // nobody is rendering. Every guard in this file is
+    // `requestId !== suggestRequestId`, so moving the id past all of them
+    // closes them at once — the same mechanism resetForHousehold uses for a
+    // household switch.
     suggestRequestId++
   })
 
@@ -698,6 +679,9 @@ export function useProductSuggestions(options: {
     householdProductStats,
     productStatsLoaded,
     loadHouseholdProductStats,
+    searchShop,
+    setSearchShop,
+    shopOptions,
     resetForHousehold,
     recentProducts,
     restartProducts,

@@ -102,14 +102,16 @@ export default {
   'about.checking': 'Checking…',
   'about.upToDate': 'FamCart is up to date.',
   'about.checkFailed': "Couldn't reach GitHub to check. Try again when you're back online.",
-  // The ODbL credit, in three fragments because two of its words are links and
-  // a link cannot be a {placeholder}. "Open Food Facts" and "ODbL 1.0" are
-  // proper nouns and stay untranslated; only the connective text moves. All six
-  // languages keep the "from X, under Y" order, which is what makes splitting
-  // it this way safe.
+  // The product-data credit, in three fragments because the shop names are
+  // links and a link cannot be a {placeholder}. The names are proper nouns and
+  // stay untranslated; only the connective text moves. All six languages keep
+  // the "from A, B and C" order, which is what makes splitting it this way safe.
+  //
+  // There used to be a fourth fragment, ', under', because this was an ODbL
+  // licence notice naming Open Food Facts and its two siblings. The catalog is
+  // built from retailer listings now, so there is no licence to name.
   'about.creditLead': 'Product data from',
   'about.creditAnd': 'and',
-  'about.creditJoin': ', under',
   'about.creditEnd': '.',
 
   'error.genericTitle': 'Something went wrong',
@@ -136,6 +138,7 @@ export default {
   'list.meta.leftCount': { one: '{n} left', other: '{n} left' },
   'list.filteredEmpty.checked': 'Nothing checked yet.',
   'list.filteredEmpty.active': 'Everything here is checked.',
+  'list.filteredEmpty.shop': 'Nothing on this list is sold at {shop}.',
   'list.empty.titleShopped': 'All bought',
   'list.empty.titleNew': 'Nothing here yet',
   'list.empty.textShopped': 'Nothing left to pick up.',
@@ -168,6 +171,9 @@ export default {
   'filter.active.hint': 'Still to pick up',
   'filter.checked.label': 'Checked',
   'filter.checked.hint': 'In the cart, ready to check out',
+  'filter.shopHeading': 'Shop',
+  'filter.shopAny.label': 'Any shop',
+  'filter.shopAny.hint': 'Everything, wherever it comes from',
 
   'add.inputLabel': 'Add an item',
   'add.inputPlaceholder': 'Add an item…',
@@ -179,6 +185,8 @@ export default {
   'add.cantFind': "Can't find it?",
   'add.addYourOwn': 'Add your own',
   'add.typeToSearch': 'Type a product name to search.',
+  'add.shopFilter': 'Filter by shop',
+  'add.shopAll': 'All shops',
   'add.announced': '{name} added to your list',
 
   'custom.message':
