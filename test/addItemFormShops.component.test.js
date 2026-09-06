@@ -139,3 +139,98 @@ describe('the shop a suggestion came from', () => {
     expect(wrapper.find('.suggestion-maker').exists()).toBe(false)
   })
 })
+
+// ─── narrowing the search to one shop ────────────────────────────────────────
+// The chips above the results. Same channel gate as the badges below them, and
+// the same reason: the catalog is a fraction of what the shops really stock, so
+// "nothing at Lidl" would usually mean "not scraped yet" and read to a shopper
+// as the shop being empty.
+describe('the shop filter chips', () => {
+  async function mountWithChips(props = {}) {
+    channel.nightly = true
+    const wrapper = mount(AddItemForm, {
+      props: {
+        name: 'apa',
+        suggestions: SUGGESTIONS,
+        canAddCustom: false,
+        shopOptions: ['auchan', 'lidl'],
+        ...props,
+      },
+    })
+    await wrapper.find('input').trigger('focus')
+    return wrapper
+  }
+
+  const chips = (wrapper) => wrapper.findAll('.shop-filter__chip')
+
+  it('offers every shop, plus a way back to all of them', async () => {
+    const wrapper = await mountWithChips()
+    expect(chips(wrapper).map((c) => c.text())).toEqual(['All shops', 'Auchan', 'Lidl'])
+  })
+
+  it('marks the chosen one, and only that one', async () => {
+    // A radiogroup rather than a set of toggles: exactly one at a time, "All"
+    // included. Pressed buttons would suggest several could be on at once and
+    // leave the none-chosen state with no name.
+    const wrapper = await mountWithChips({ searchShop: 'lidl' })
+    expect(chips(wrapper).map((c) => c.attributes('aria-checked'))).toEqual([
+      'false',
+      'false',
+      'true',
+    ])
+  })
+
+  it('marks "All shops" when nothing is chosen', async () => {
+    const wrapper = await mountWithChips()
+    expect(chips(wrapper)[0].attributes('aria-checked')).toBe('true')
+  })
+
+  it('asks for a shop when one is pressed', async () => {
+    const wrapper = await mountWithChips()
+    await chips(wrapper)[2].trigger('click')
+    expect(wrapper.emitted('select-shop').at(-1)).toEqual(['lidl'])
+  })
+
+  it('lets the chosen chip be pressed again to clear it', async () => {
+    const wrapper = await mountWithChips({ searchShop: 'lidl' })
+    await chips(wrapper)[2].trigger('click')
+    expect(wrapper.emitted('select-shop').at(-1)).toEqual([null])
+  })
+
+  it('renders nothing on production', async () => {
+    channel.nightly = false
+    const wrapper = mount(AddItemForm, {
+      props: {
+        name: 'apa',
+        suggestions: SUGGESTIONS,
+        canAddCustom: false,
+        shopOptions: ['auchan', 'lidl'],
+      },
+    })
+    await wrapper.find('input').trigger('focus')
+    expect(chips(wrapper)).toHaveLength(0)
+  })
+
+  it('renders nothing when there are no shops to offer', async () => {
+    // No catalog configured, or a catalog with no retailers yet. A filter with
+    // one option is not a filter.
+    const wrapper = await mountWithChips({ shopOptions: [] })
+    expect(chips(wrapper)).toHaveLength(0)
+  })
+
+  it('stays out of the way of the recents list', async () => {
+    // Recents come from what this household has bought, which says nothing
+    // about which shops carry it -- so the chips would sit above rows they
+    // cannot narrow, and the one that did nothing would look broken.
+    const wrapper = await mountWithChips({
+      name: '',
+      suggestions: [],
+      recents: [{ name: 'Lapte', maker: null }],
+      expanded: true,
+    })
+    // The recents really are on screen, or this would pass by the panel simply
+    // being shut.
+    expect(wrapper.find('.suggestions-label').exists()).toBe(true)
+    expect(chips(wrapper)).toHaveLength(0)
+  })
+})

@@ -101,6 +101,7 @@ const fr: Catalog = {
   'list.meta.leftCount': { one: '{n} restant', other: '{n} restants' },
   'list.filteredEmpty.checked': 'Rien de coché pour l’instant.',
   'list.filteredEmpty.active': 'Tout est coché ici.',
+  'list.filteredEmpty.shop': 'Rien dans cette liste ne se vend chez {shop}.',
   'list.empty.titleShopped': 'Tout est acheté',
   'list.empty.titleNew': 'Rien ici pour l’instant',
   'list.empty.textShopped': 'Il ne reste rien à prendre.',
@@ -133,6 +134,10 @@ const fr: Catalog = {
   'filter.active.hint': 'Encore à prendre',
   'filter.checked.label': 'Cochés',
   'filter.checked.hint': 'Dans le panier, prêts à valider',
+  'filter.shopHeading': 'Magasin',
+  'filter.shopAny.label': 'Tous les magasins',
+  'filter.shopAny.hint': 'Tout, d’où que ça vienne',
+  'filter.shopOne.hint': 'Vendu chez {shop}, plus ce dont on ignore la provenance',
 
   'add.inputLabel': 'Ajouter un article',
   'add.inputPlaceholder': 'Ajouter un article…',
@@ -144,6 +149,8 @@ const fr: Catalog = {
   'add.cantFind': 'Vous ne le trouvez pas ?',
   'add.addYourOwn': 'Ajoutez le vôtre',
   'add.typeToSearch': 'Saisissez un nom de produit pour rechercher.',
+  'add.shopFilter': 'Filtrer par magasin',
+  'add.shopAll': 'Tous les magasins',
   'add.announced': '{name} ajouté à votre liste',
 
   'custom.message':

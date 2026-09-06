@@ -4,6 +4,8 @@ import type { ShoppingItem } from '../lib/shoppingList'
 import PopoverMenu from './PopoverMenu.vue'
 import { t } from '../lib/i18n'
 import AppIcon from './AppIcon.vue'
+import ShopBadges from './ShopBadges.vue'
+import { shopLabel } from '../lib/shopBadges'
 
 // The button that filters the list, and the rows it offers. PopoverMenu owns
 // the panel itself — where it lands, how it dismisses, what a row looks like.
@@ -14,10 +16,22 @@ import AppIcon from './AppIcon.vue'
 // back out of that.
 const model = defineModel({ type: String, default: 'all' })
 
+// The second dimension, and independent of the first: "to buy, at Lidl" is a
+// question, so these are two filters in one panel rather than one list of five
+// options. NIGHTLY ONLY -- the caller passes no shops on production and the
+// section does not render.
+const shop = defineModel<string | null>('shop', { default: null })
+
 const props = defineProps({
   // Every item, checked and unchecked. Counts are derived here rather than
   // passed in, so a row's number can never disagree with what picking it shows.
   items: { type: Array as PropType<ShoppingItem[]>, default: () => [] },
+  // Only the shops something on THIS list is actually sold at. Derived by the
+  // caller, which is the one that holds the lookup -- and derived rather than
+  // fixed so the menu can never offer a shop that would empty the list.
+  shops: { type: Array as PropType<string[]>, default: () => [] },
+  // How many rows each shop would leave, by the same rule the list filters by.
+  shopCounts: { type: Object as PropType<Record<string, number>>, default: () => ({}) },
 })
 
 const open = ref(false)
@@ -48,7 +62,7 @@ const OPTIONS = computed(() => [
 
 // A filtered list that looks unfiltered is how items get declared missing, so
 // the button carries a mark whenever it is hiding something.
-const isFiltered = computed(() => model.value !== 'all')
+const isFiltered = computed(() => model.value !== 'all' || shop.value !== null)
 </script>
 
 <template>
@@ -98,11 +112,77 @@ const isFiltered = computed(() => model.value !== 'all')
         </span>
         <span class="filter-option__count">{{ counts[option.value as keyof typeof counts] }}</span>
       </button>
+
+      <!-- The second dimension. Only what this list is actually sold at, so a
+           shop offered here always has something behind it.
+
+           A separator with a name rather than a second popover: the two filters
+           combine, and putting them in different panels would hide that from
+           the person setting them. role="separator" is what tells a screen
+           reader the same thing the line tells everyone else. -->
+      <template v-if="props.shops.length > 0">
+        <p class="filter-group" role="separator">{{ t('filter.shopHeading') }}</p>
+
+        <button
+          type="button"
+          class="menu-item filter-option"
+          :class="{ 'menu-item--active': shop === null }"
+          role="menuitemradio"
+          :aria-checked="shop === null"
+          @click="((shop = null), close())"
+        >
+          <AppIcon class="menu-check" :name="shop === null ? 'check-2' : ''" />
+          <span class="filter-option__text">
+            <span class="filter-option__label">{{ t('filter.shopAny.label') }}</span>
+            <span class="filter-option__hint">{{ t('filter.shopAny.hint') }}</span>
+          </span>
+          <span class="filter-option__count">{{ props.items.length }}</span>
+        </button>
+
+        <button
+          v-for="slug in props.shops"
+          :key="slug"
+          type="button"
+          class="menu-item filter-option"
+          :class="{ 'menu-item--active': shop === slug }"
+          role="menuitemradio"
+          :aria-checked="shop === slug"
+          @click="((shop = shop === slug ? null : slug), close())"
+        >
+          <AppIcon class="menu-check" :name="shop === slug ? 'check-2' : ''" />
+          <span class="filter-option__text">
+            <span class="filter-option__label filter-option__label--shop">
+              <ShopBadges :shops="[slug]" labelled />
+            </span>
+            <span class="filter-option__hint">{{ t('filter.shopOne.hint', { shop: shopLabel(slug) }) }}</span>
+          </span>
+          <span class="filter-option__count">{{ props.shopCounts[slug] ?? 0 }}</span>
+        </button>
+      </template>
     </template>
   </PopoverMenu>
 </template>
 
 <style scoped>
+/* Names the second group of rows. Not a menu item, so it takes none of their
+   padding rules -- only their left edge, so the labels below still line up. */
+.filter-group {
+  margin: 0.35rem 0 0.15rem;
+  padding: 0.35rem 1rem 0.15rem;
+  border-top: var(--border-width-thin) solid var(--border-light);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-disabled);
+}
+
+/* The label slot holds a mark and a name here rather than plain text. */
+.filter-option__label--shop {
+  display: inline-flex;
+  min-width: 0;
+}
+
 /* Carries the same surface as the topbar's history and settings buttons -- a
    filled pill with a border -- one size down, because this sits in a meta line
    rather than the chrome. Bare icons in a row of muted text read as labels;
