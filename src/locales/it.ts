@@ -74,7 +74,6 @@ const it: Catalog = {
     'Impossibile contattare GitHub. Riprova quando sei di nuovo online.',
   'about.creditLead': 'Dati sui prodotti da',
   'about.creditAnd': 'e',
-  'about.creditJoin': ', sotto',
   'about.creditEnd': '.',
 
   'error.genericTitle': 'Qualcosa è andato storto',
@@ -102,6 +101,7 @@ const it: Catalog = {
   'list.meta.leftCount': { one: '{n} rimasto', other: '{n} rimasti' },
   'list.filteredEmpty.checked': 'Non hai ancora spuntato nulla.',
   'list.filteredEmpty.active': 'Qui è tutto spuntato.',
+  'list.filteredEmpty.shop': 'Niente in questa lista si vende da {shop}.',
   'list.empty.titleShopped': 'Tutto comprato',
   'list.empty.titleNew': 'Ancora niente qui',
   'list.empty.textShopped': 'Non resta niente da prendere.',
@@ -134,6 +134,9 @@ const it: Catalog = {
   'filter.active.hint': 'Ancora da prendere',
   'filter.checked.label': 'Spuntati',
   'filter.checked.hint': 'Nel carrello, pronti da completare',
+  'filter.shopHeading': 'Negozio',
+  'filter.shopAny.label': 'Qualsiasi negozio',
+  'filter.shopAny.hint': 'Tutto, da qualunque parte venga',
 
   'add.inputLabel': 'Aggiungi un articolo',
   'add.inputPlaceholder': 'Aggiungi un articolo…',
@@ -145,6 +148,8 @@ const it: Catalog = {
   'add.cantFind': 'Non lo trovi?',
   'add.addYourOwn': 'Aggiungilo tu',
   'add.typeToSearch': 'Scrivi il nome di un prodotto per cercare.',
+  'add.shopFilter': 'Filtra per negozio',
+  'add.shopAll': 'Tutti i negozi',
   'add.announced': '{name} aggiunto alla tua lista',
 
   'custom.message':

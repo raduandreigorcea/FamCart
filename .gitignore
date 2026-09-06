@@ -58,5 +58,3 @@ supabase/.temp
 # that wrote them was deleted in 9a4366e along with its products.json. Not
 # committed -- it is data, not code -- but worth keeping off the machine too.
 *.backup.json
-
-PRODUCT_CATALOG_SPEC.md

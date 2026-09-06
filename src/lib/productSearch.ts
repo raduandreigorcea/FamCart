@@ -1,26 +1,28 @@
 // Product suggestion search and ranking.
 //
-// normalizeSearchText is ONE OF THREE COPIES of the fold, and the other two
-// live in databases this file cannot call. Both sides lowercase, strip
+// normalizeSearchText is ONE OF FOUR COPIES of the fold, and the other three
+// live where this file cannot call them. All of them lowercase, strip
 // diacritics and collapse whitespace, so "apă" typed with or without accents
 // matches the stored "apa plata 2l dorna".
 //
-//   • catalog_normalize() in the catalog's 002_products.sql — the authority for
+//   • catalog_normalize() in the catalog's 002_catalog.sql — the authority for
 //     the reference catalog, and the only one whose answer is ever stored.
 //   • product_search_text() in 006_product_catalog.sql — the same rule over the
 //     app database's own rows.
+//   • fold() in catalog/src/core/normalize.ts, used by the scrapers.
 //   • this one, for the client-side dedupe key when both projects return the
 //     same product.
 //
-// A fourth copy sits in catalog/supabase/functions/_shared/normalize.ts, whose
-// header carries the full argument for why the rule cannot be written once, and
-// which is pinned against a fixture of answers read out of a running Postgres.
-// A drift here costs a duplicate line in a dropdown rather than data: the
-// database is the only copy that writes.
+// THIS COPY IS THE ODD ONE OUT, knowingly. Postgres folds with unaccent, which
+// is a DICTIONARY; NFD plus a combining-mark strip is an ALGORITHM, and an
+// algorithm can only remove marks. So this returns ß, œ, æ, đ, ½, ® and ×
+// untouched where the database answers ss, oe, ae, d, 1/2, (r) and *. The
+// catalog's TypeScript copy carries a generated expansion table to close that
+// gap; this one does not, because the cost here is at most a duplicated line in
+// a dropdown and the benefit is that this function stays four lines long.
 //
-// (This used to say the catalog IMPORTER vendored a byte-identical copy of this
-// file. That repo was deleted on 2026-08-29 and the catalog rebuilt as a
-// submodule at catalog/, which shares no code with the app — only the rule.)
+// A drift costs a duplicate row in a dropdown rather than data: the database is
+// the only copy that writes.
 //
 // Ranking (see rankSuggestions) puts what THIS household actually buys first and
 // only falls back to the global catalog ordering for products they have never
@@ -40,25 +42,28 @@ export interface ProductSuggestion {
   // Global cross-household score from product_catalog (006_product_catalog.sql).
   popularity?: number
 
-  // ─── what the catalog project's search_catalog explains about the match ────
+  // ─── what the catalog project's search_catalog adds ────────────────────────
   //
-  // Present only on rows from the CATALOG project; the app database's own
-  // search_catalog returns three columns and knows nothing about concepts, and
-  // rows recovered from household history have none of this either. So every
-  // one of these is optional and nothing may depend on it being there.
+  // Present only on rows from the CATALOG project. The app database's own
+  // search_catalog returns three columns, and rows recovered from household
+  // history have none of this, so every one of these is optional and nothing
+  // may depend on it being there.
   //
-  // `concept_intent` is the one with behaviour attached: it is what lets the
-  // client skip discovery for a generic concept. The rest are for explaining a
-  // ranking that is otherwise very hard to argue with — a wrong result here
-  // looks like a catalog that does not stock something, which is why `apa`
+  // None of them changes behaviour. They are here so a ranking that is
+  // otherwise very hard to argue with can be explained -- a wrong result looks
+  // exactly like a catalog that does not stock something, which is why `apa`
   // returning onions read as bad data for weeks.
-  concept_intent?: string | null
-  matched_concept?: string | null
+  //
+  // (`concept_intent` used to live here and DID change behaviour: it let the
+  // client skip discovery for a generic word. Concepts and discovery are both
+  // gone.)
+  quantity?: number | null
+  quantity_unit?: string | null
+  retailers?: string[] | null
+  min_price?: number | null
+  currency?: string | null
+  available?: boolean | null
   match_type?: string | null
-  matched_alias?: string | null
-  category_match?: boolean | null
-  language_match?: boolean | null
-  market_match?: boolean | null
   relevance_score?: number | null
 }
 

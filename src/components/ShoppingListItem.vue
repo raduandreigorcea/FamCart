@@ -5,11 +5,21 @@ import { ITEM_QUANTITY_MAX } from '../lib/limits'
 import type { ShoppingItemRow } from '../lib/householdRealtime'
 import { t } from '../lib/i18n'
 import AppIcon from './AppIcon.vue'
+import ShopBadges from './ShopBadges.vue'
 
 const props = defineProps({
   item: {
     type: Object as PropType<ShoppingItemRow>,
     required: true
+  },
+  // Which shops carry this product, on nightly. Passed down rather than looked
+  // up here: the parent asks once for the whole list, because twenty rows must
+  // not mean twenty round trips. Empty everywhere else, and empty for a product
+  // no configured shop lists -- which is itself information, since it means
+  // somebody typed this one in.
+  shops: {
+    type: Array as PropType<string[]>,
+    default: () => [],
   },
   // Set while a purchase animation is playing on this checked row: it drains
   // toward the buy bar instead of using the list's normal leave transition.
@@ -396,7 +406,14 @@ function settle() {
         <span class="item-emoji" aria-hidden="true">{{ getProductEmoji(item.name, item.maker || '') }}</span>
         <span class="item-text">
           <span class="item-name">{{ item.name }}</span>
+          <span v-if="item.maker || shops.length" class="item-sub">
           <span v-if="item.maker" class="item-maker">{{ item.maker }}</span>
+          <!-- Which shop sells it, on nightly. Unlike a suggestion, a list row
+               carries no retailers of its own -- it is a row in the app's
+               database and knows nothing about the catalog -- so the parent
+               looks them up for the whole list at once and passes them down. -->
+          <ShopBadges :shops="shops" />
+        </span>
         </span>
       </button>
       <!-- The badge IS the stepper, closed. One element in both states rather
@@ -717,6 +734,14 @@ function settle() {
   color: var(--text-primary);
   line-height: 1.4;
   word-break: break-word;
+}
+
+/* The second line: the maker, and on nightly the shops carrying it. */
+.item-sub {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
 }
 
 .item-maker {

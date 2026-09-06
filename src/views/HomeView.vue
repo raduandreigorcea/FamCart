@@ -48,6 +48,7 @@ import {
   ITEM_NAME_MAX_LENGTH,
 } from '../lib/limits'
 import { applyUserLocale, getLocale, t } from '../lib/i18n'
+import { fetchShopsFor, loadCachedShops, shopsEnabled, type ShopMap } from '../lib/shopBadges'
 
 const { userId, isLoaded } = useAuth()
 const { user } = useUser()
@@ -77,6 +78,43 @@ interface MembershipRow {
 }
 
 const items = ref<ShoppingItemRow[]>([])
+
+// ─── which shop each listed product came from ────────────────────────────────
+// NIGHTLY ONLY, and a development aid rather than a feature: while the catalog
+// is being filled, a scraped product and one somebody typed in render
+// identically on the list.
+//
+// Resolved for the WHOLE list in one call, because a row is a row in this
+// database and knows nothing about the catalog -- it cannot look itself up, and
+// twenty rows must not mean twenty round trips.
+//
+// Keyed on the set of names rather than on `items` itself, so checking something
+// off, reordering, or a realtime update to a quantity does not re-ask. Only a
+// name arriving or leaving does.
+// Seeded from the cache SYNCHRONOUSLY, so the badges paint in the same frame as
+// the rows the snapshot cache paints. The fetch below still runs and replaces
+// this, which is what stops a shop that dropped a product from showing forever.
+const shopMap = ref<ShopMap>(loadCachedShops())
+
+watch(
+  () => (shopsEnabled() ? JSON.stringify([...new Set(items.value.map((i) => i.name))].sort()) : ''),
+  async (key) => {
+    if (!key) {
+      shopMap.value = new Map()
+      return
+    }
+    // Not guarded by a request id: the answer is a decoration, the calls are
+    // rare, and a stale one resolves to the same map as the fresh one for every
+    // name both of them asked about.
+    //
+    // Assigned only if it found something. An empty answer here means the
+    // catalog was unreachable, not that nothing is sold anywhere, and replacing
+    // a good cache with that would blank every badge on a flaky connection.
+    const fresh = await fetchShopsFor(items.value.map((i) => i.name))
+    if (fresh.size > 0) shopMap.value = fresh
+  },
+  { immediate: true },
+)
 // Which rows the list shows: 'all' | 'active' | 'checked'. A view of `items`,
 // never a filter on what is fetched -- every other path (realtime, offline
 // queue, the item cap) keeps working on the whole list.
@@ -84,6 +122,10 @@ const items = ref<ShoppingItemRow[]>([])
 // Deliberately not persisted. Opening the app to a filtered list, with no memory
 // of having set one, is how items get declared missing.
 const listFilter = ref<'all' | 'active' | 'checked'>('all')
+// Which shop the list is narrowed to, independent of the filter above. Nightly
+// only in practice: shopMap is empty on production, so ShoppingList offers no
+// shops and nothing can set this.
+const listShop = ref<string | null>(null)
 // Every household the user belongs to ({ id, name }), listed in the account
 // dialog. householdId below is whichever one is currently active.
 const households = ref<HouseholdRow[]>([])
@@ -116,6 +158,9 @@ const {
   selectedProduct,
   searchExpanded,
   canAddCustomProduct,
+  searchShop,
+  setSearchShop,
+  shopOptions,
   householdProductStats,
   productStatsLoaded,
   loadHouseholdProductStats,
@@ -765,6 +810,9 @@ async function switchHousehold(id: string) {
   // A filter belongs to the list it was chosen for. Carrying "Checked" into a
   // household whose cart is empty opens it on a blank list.
   listFilter.value = 'all'
+  // Same reason, and more so: the shops come from the previous household's
+  // products, so the filter could name one nothing in the new list is sold at.
+  listShop.value = null
   householdMembers.value = []
   // Everything the suggestions composable holds about the household being left,
   // cleared by the composable itself — it is the only thing that can see all of
@@ -859,6 +907,9 @@ async function reconcileActiveHousehold() {
           :suggestions-loading="suggestionsLoading"
           :can-add-custom="canAddCustomProduct"
           :can-scan="canScan"
+          :shop-options="shopOptions"
+          :search-shop="searchShop"
+          @select-shop="setSearchShop"
           @submit="addItem"
           @select="selectSuggestion"
           @add-custom="openCustomProduct"
@@ -867,7 +918,9 @@ async function reconcileActiveHousehold() {
 
         <ShoppingList
           :items="items"
+          :shop-map="shopMap"
           v-model:filter="listFilter"
+          v-model:shop-filter="listShop"
           :member-profiles="memberProfileMap"
           :loading="listLoading"
           :show-empty="showEmptyState"

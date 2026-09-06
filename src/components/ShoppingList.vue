@@ -9,14 +9,37 @@ import { productKey } from '../lib/productSearch'
 import { sumActiveQuantities, sumCheckedQuantities } from '../lib/shoppingList'
 import type { ShoppingItemRow, HouseholdMemberProfile } from '../lib/householdRealtime'
 import type { ProductSuggestion } from '../lib/productSearch'
+import { shopLabel, type ShopMap } from '../lib/shopBadges'
 import { t, tn } from '../lib/i18n'
 import AppIcon from './AppIcon.vue'
 
 // Presentational: renders the list with its move animations, the initial-load
 // skeleton, and the empty state. All mutations stay with the parent, which owns
 // the items.
+
+// Which shops sell a row's product, on nightly.
+//
+// Two lookups, and the second is what makes it work. The catalog answers with
+// ITS canonical name and brand; the row on the list carries whatever the person
+// picked, which is often a shop's own wording and sometimes has no maker at all
+// because they typed it themselves. Falling back to the name alone resolves that
+// second case, and an unknown product yields nothing, which renders nothing.
+function shopsFor(item: ShoppingItemRow): string[] {
+  const map = props.shopMap
+  if (map.size === 0) return []
+  return map.get(productKey(item.name, item.maker ?? null))
+      ?? map.get(productKey(item.name, null))
+      ?? []
+}
 const props = defineProps({
   items: { type: Array as PropType<ShoppingItemRow[]>, default: () => [] },
+  // Which shops carry each product, keyed by productKey. NIGHTLY ONLY, and
+  // resolved by the parent in one call for the whole list -- a row knows a name
+  // and a maker and nothing about the catalog, so it cannot look itself up.
+  shopMap: {
+    type: Map as PropType<ShopMap>,
+    default: () => new Map(),
+  },
   // Map<user_id, { display_name, image_url }> — the household roster, used to
   // resolve each row's author avatar/name from item.added_by at render time.
   memberProfiles: {
@@ -46,6 +69,10 @@ const props = defineProps({
 // A model rather than a prop: the control that changes it lives in this
 // component's header, but the value belongs to the view that owns the list.
 const filter = defineModel('filter', { type: String, default: 'all' })
+// The shop filter, independent of the one above it. NIGHTLY ONLY: shopMap is
+// empty on production, so availableShops is empty, so the section that sets
+// this never renders.
+const shopFilter = defineModel<string | null>('shopFilter', { default: null })
 
 const emit = defineEmits(['toggle', 'delete', 'checkout', 'add', 'set-quantity'])
 
@@ -72,10 +99,48 @@ watch(
 const uncheckedItems = computed(() => props.items.filter((i) => !i.checked))
 const checkedItems = computed(() => props.items.filter((i) => i.checked))
 
+// WE HIDE A ROW ONLY ON POSITIVE EVIDENCE THAT IT IS SOMEWHERE ELSE.
+//
+// Most things on a list have no shop against them -- typed by hand, or in a
+// corner of the catalog no scraper has reached. Treating "we do not know" as
+// "not here" would take a shopper's own item off their screen while they stand
+// in the shop, and they would have no way to tell that from the shop not
+// stocking it. So a row with no shops survives every shop filter, and only a
+// row known to be sold somewhere else is hidden.
+function keptByShop(item: ShoppingItemRow): boolean {
+  if (!shopFilter.value) return true
+  const shops = shopsFor(item)
+  return shops.length === 0 || shops.includes(shopFilter.value)
+}
+
 const visibleItems = computed(() => {
-  if (filter.value === 'active') return uncheckedItems.value
-  if (filter.value === 'checked') return checkedItems.value
-  return props.items
+  const byState =
+    filter.value === 'active'
+      ? uncheckedItems.value
+      : filter.value === 'checked'
+        ? checkedItems.value
+        : props.items
+  return shopFilter.value ? byState.filter(keptByShop) : byState
+})
+
+// Only shops something on this list is actually sold at, so the menu can never
+// offer one that would empty the list, and the counts beside them are what
+// picking one would really leave -- unknowns included, by the rule above.
+const availableShops = computed(() => {
+  const seen = new Set<string>()
+  for (const item of props.items) for (const shop of shopsFor(item)) seen.add(shop)
+  return [...seen].sort()
+})
+
+const shopCounts = computed(() => {
+  const counts: Record<string, number> = {}
+  for (const shop of availableShops.value) {
+    counts[shop] = props.items.filter((item) => {
+      const shops = shopsFor(item)
+      return shops.length === 0 || shops.includes(shop)
+    }).length
+  }
+  return counts
 })
 
 // Everything each row needs, worked out once per render instead of four times
@@ -328,7 +393,13 @@ const labelText = computed(() =>
   <div class="list-meta" v-if="!loading && items.length">
     <span class="list-meta__label">{{ metaLabel }}</span>
     <span class="list-meta__count">{{ metaCount }}</span>
-    <ListFilterMenu v-model="filter" :items="items" />
+    <ListFilterMenu
+      v-model="filter"
+      v-model:shop="shopFilter"
+      :items="items"
+      :shops="availableShops"
+      :shop-counts="shopCounts"
+    />
   </div>
 
   <!-- Skeleton rows while the first fetch is in flight, or the real list: never
@@ -358,6 +429,7 @@ const labelText = computed(() =>
       :avatar-name="row.avatarName"
       :draining="row.draining"
       :drain-index="row.drainIndex"
+      :shops="shopsFor(row.item)"
       :qty-open="row.item.id === openQtyId"
       @toggle="$emit('toggle', $event)"
       @delete="$emit('delete', $event)"
@@ -368,7 +440,15 @@ const labelText = computed(() =>
   </TransitionGroup>
 
   <p v-if="filteredToNothing" class="filter-empty">
-    {{ filter === 'checked' ? t('list.filteredEmpty.checked') : t('list.filteredEmpty.active') }}
+    <!-- The shop filter is named first when it is on, because it is the one
+         that can empty a list nobody expected to be empty. -->
+    {{
+      shopFilter
+        ? t('list.filteredEmpty.shop', { shop: shopLabel(shopFilter) })
+        : filter === 'checked'
+          ? t('list.filteredEmpty.checked')
+          : t('list.filteredEmpty.active')
+    }}
   </p>
 
   <!-- Keeps the last checked row clear of the fixed buy bar. -->

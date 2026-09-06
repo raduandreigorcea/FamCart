@@ -11,6 +11,8 @@ import { productKey, type ProductSuggestion } from '../lib/productSearch'
 import { ITEM_NAME_MAX_LENGTH } from '../lib/limits'
 import { t } from '../lib/i18n'
 import AppIcon from './AppIcon.vue'
+import { IS_NIGHTLY } from '../lib/appChannel'
+import ShopBadges from './ShopBadges.vue'
 
 // Presentational: the typed name lives in the parent (via v-model) so the add
 // flow can restore it when an optimistic insert fails. The suggestions list is
@@ -36,6 +38,11 @@ const props = defineProps({
   maxLength: { type: Number, default: ITEM_NAME_MAX_LENGTH },
   // Product catalog matches for the current input: [{ name, maker }].
   suggestions: { type: Array as PropType<ProductSuggestion[]>, default: () => [] },
+  // The shops the search may be narrowed to, and which one it currently is.
+  // Empty means no filter is offered at all -- production, a missing catalog, or
+  // a catalog with no retailers yet. See useProductSuggestions.
+  shopOptions: { type: Array as PropType<string[]>, default: () => [] },
+  searchShop: { type: String as PropType<string | null>, default: null },
   // What this household buys most, same shape as suggestions. Shown on the phone
   // search screen before anything is typed; ignored everywhere else, where
   // there is no screen to fill.
@@ -63,7 +70,7 @@ const props = defineProps({
 // Uneven widths so the placeholder reads as products rather than a bar chart.
 const skeletonWidths = ['58%', '41%', '66%']
 
-const emit = defineEmits(['submit', 'select', 'add-custom', 'scan'])
+const emit = defineEmits(['submit', 'select', 'add-custom', 'scan', 'select-shop'])
 
 // ─── The button at the end of the row ────────────────────────────────────────
 // With nothing typed there is nothing to add, so the add button spends most of
@@ -260,6 +267,32 @@ function onEnter(event: KeyboardEvent) {
 watch([rows, () => props.canAddCustom], () => {
   activeIndex.value = -1
 })
+
+// Which shops carry a suggestion, on nightly only.
+//
+// search_catalog returns `retailers` on every row it answers with; a row from
+// the app database's own search_catalog has none, and neither does one recovered
+// from purchase history. So an empty answer here is meaningful rather than
+// missing: it says this product came from what the household typed in, not from
+// a shop we read.
+//
+// Gated on the channel rather than on import.meta.env.DEV so it survives into a
+// nightly APK, which is where the catalog is actually worth eyeballing -- a
+// dropdown on a phone is the thing being built. A production build never renders
+// it at all.
+function shopsOf(product: ProductSuggestion): string[] {
+  if (!IS_NIGHTLY) return []
+  return Array.isArray(product.retailers) ? product.retailers : []
+}
+
+
+// The shop filter shows while SEARCHING and not while showing recents. Recents
+// come from what this household has bought, which says nothing about which shops
+// carry it -- so the chips would sit above rows they cannot narrow, and the one
+// that did nothing would look broken rather than empty.
+const showingShopFilter = computed(
+  () => IS_NIGHTLY && props.shopOptions.length > 0 && !showingRecents.value,
+)
 
 // ─── Confirming the add ──────────────────────────────────────────────────────
 // Which rows this search has already put on the list, and which one to light
@@ -468,6 +501,46 @@ onBeforeUnmount(() => {
                Out here it is ordinary text, and aria-label carries the name. -->
           <p v-if="showingRecents" class="suggestions-label">{{ t('list.buyAgain') }}</p>
 
+          <!-- NIGHTLY ONLY, above the listbox rather than inside it: a listbox
+               exposes its options and nothing else, so controls placed in it are
+               dropped on the way to a screen reader.
+
+               A radiogroup, not a set of toggles. Exactly one shop at a time,
+               "All" included, and that is what a radio group means -- pressed
+               buttons would suggest several could be on at once and leave no
+               name for the state where none are. -->
+          <div
+            v-if="showingShopFilter"
+            class="shop-filter"
+            role="radiogroup"
+            :aria-label="t('add.shopFilter')"
+          >
+            <button
+              type="button"
+              class="shop-filter__chip"
+              :class="{ 'shop-filter__chip--on': !searchShop }"
+              role="radio"
+              :aria-checked="!searchShop"
+              @mousedown.prevent
+              @click="emit('select-shop', null)"
+            >
+              {{ t('add.shopAll') }}
+            </button>
+            <button
+              v-for="shop in shopOptions"
+              :key="shop"
+              type="button"
+              class="shop-filter__chip"
+              :class="{ 'shop-filter__chip--on': searchShop === shop }"
+              role="radio"
+              :aria-checked="searchShop === shop"
+              @mousedown.prevent
+              @click="emit('select-shop', searchShop === shop ? null : shop)"
+            >
+              <ShopBadges :shops="[shop]" labelled />
+            </button>
+          </div>
+
           <ul
             class="suggestions"
             :id="listboxId"
@@ -529,7 +602,14 @@ onBeforeUnmount(() => {
                   </span>
                   <span class="suggestion-text">
                     <span class="suggestion-name">{{ product.name }}</span>
-                    <span v-if="product.maker" class="suggestion-maker">{{ product.maker }}</span>
+                    <span v-if="product.maker || shopsOf(product).length" class="suggestion-sub">
+                      <span v-if="product.maker" class="suggestion-maker">{{ product.maker }}</span>
+                      <!-- Where this row came from, on nightly. A suggestion
+                           carries `retailers` because it came out of the catalog
+                           a moment ago; see ShopBadges for why it is a logo and
+                           not the name. -->
+                      <ShopBadges :shops="shopsOf(product)" />
+                    </span>
                   </span>
                   <!-- The tick is decoration; this is what carries the state into
                        the option's accessible name. -->
@@ -813,6 +893,59 @@ onBeforeUnmount(() => {
   color: var(--text-disabled);
 }
 
+/* The shop filter, above the results. NIGHTLY ONLY.
+
+   Scrolls sideways rather than wrapping: three shops fit on a phone today and a
+   fourth would not, and a row that grows a second line pushes the results down
+   by 40px every time somebody types. flex-shrink: 0 keeps it out of the
+   dropdown's own vertical squeeze for the same reason. */
+.shop-filter {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.4rem;
+  padding: 0.6rem 1rem;
+  overflow-x: auto;
+  /* The scrollbar would sit on the results below it. */
+  scrollbar-width: none;
+  border-bottom: var(--border-width-thin) solid var(--border-light);
+}
+
+.shop-filter::-webkit-scrollbar {
+  display: none;
+}
+
+/* The list's chips, at the size a filter wants: they are pressed on the way to
+   something else rather than being the thing, so they give up the 40px tap
+   target the add chips keep. */
+.shop-filter__chip {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0.4rem;
+  padding: 0.3rem 0.65rem;
+  background: var(--bg-surface);
+  border: var(--border-width-thin) solid var(--border-main);
+  border-radius: var(--radius-pill);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.shop-filter__chip:hover,
+.shop-filter__chip:focus-visible {
+  border-color: var(--color-primary);
+}
+
+/* The selected one has to read as selected while the mark inside it keeps its
+   own brand colours -- so the state is carried by the pill, never by the logo. */
+.shop-filter__chip--on {
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--bg-surface));
+  border-color: var(--color-primary);
+  color: var(--text-main);
+  font-weight: var(--weight-bold);
+}
+
 .suggestions-hint {
   margin: 0;
   padding: 1.5rem 1rem;
@@ -1015,12 +1148,24 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+/* The second line: the maker, and on nightly the shops carrying it. Wraps
+   rather than truncating, because a row with three shops is exactly the row
+   worth looking at. */
+.suggestion-sub {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
 .suggestion-maker {
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
   color: var(--text-secondary);
   line-height: 1.3;
 }
+
 
 /* The escape hatch is an action, not a product: a rule separates it from the
    matches above, and it takes the primary colour so it reads as a way out
