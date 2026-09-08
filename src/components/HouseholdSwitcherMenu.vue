@@ -63,7 +63,7 @@ function addHousehold(close: () => void) {
     :label="t('nav.switchLabel')"
     :heading="t('switcher.heading')"
     :hint="t('switcher.hint')"
-    icon-name="layout-grid"
+    icon-name="menu"
   >
     <template #default="{ close }">
       <!-- menuitemradio, not menuitem: these are one choice with one answer, and
