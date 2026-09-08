@@ -584,9 +584,13 @@ const orderedActiveMembers = computed(() =>
   display: block;
   width: 24px;
   height: 24px;
-  /* The lucide sources are drawn at stroke-width 1, which is a hairline at this
-     size and disappears next to an emoji and a photograph in the same row. */
-  stroke-width: 1.9;
+  /* Actual thickness is stroke-width x rendered / 24, because the sources all
+     share a 24-unit viewBox — so the number here says nothing on its own and
+     the app's other icons are the only scale worth reading it against. The
+     filter button paints 1.25px, an armed swipe action 2px. These are resting
+     chrome sitting beside an emoji and a photograph, so 1.5px: heavier than the
+     hairline the assets ship at, lighter than anything asking to be noticed. */
+  stroke-width: 1.5;
 }
 
 .nav-slot__mark--emoji {
@@ -641,10 +645,14 @@ const orderedActiveMembers = computed(() =>
     box-shadow var(--transition-fast);
 }
 
+/* The one mark in the bar that should be noticed, so it stays the heaviest:
+   2.7px against the small slots' 1.5. add.svg ships at 3, which on a filled
+   disc this size reads as a slab rather than a plus. */
 .nav-add__disc :deep(svg) {
   display: block;
   width: 26px;
   height: 26px;
+  stroke-width: 2.5;
 }
 
 .nav-slot--add .nav-slot__label {
