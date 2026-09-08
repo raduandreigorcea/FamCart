@@ -97,24 +97,16 @@ const emit = defineEmits([
   'add',
 ])
 
-function selectHousehold(id: string) {
-  accountMenuOpen.value = false
-  if (id !== props.householdId) emit('switch-household', id)
-}
-function addHousehold() {
-  accountMenuOpen.value = false
-  emit('add-household')
-}
-
 const clerk = useClerk()
 const { user } = useUser()
 
 const accountMenuOpen = ref(false)
 const signingOut = ref(false)
 
-// The household switcher hangs off the bar's fourth slot. The button lives here
-// because it has to look like the four beside it; the menu is its own component
-// and takes this element to hang itself from.
+// The household switcher. Both shells have a button for it -- the bar's fourth
+// slot and the header's actions row -- and they live here rather than in the menu
+// because each has to look like the controls beside it. The menu is its own
+// component and takes whichever button opened it to hang itself from.
 const switcherOpen = ref(false)
 // Set by whoever opened the menu rather than bound to one element, because both
 // shells have a switcher button and both are in the DOM at once -- only a media
@@ -130,12 +122,14 @@ function openSwitcher(event: MouseEvent) {
 
 // Closes the menu itself; the switch is the parent's to perform, because it owns
 // which household is active and everything that has to be refetched with it.
-function switchFromBar(id: string) {
+// The menu has already dropped the case where the pick is the household you are
+// on, so anything arriving here is a real change.
+function switchHousehold(id: string) {
   switcherOpen.value = false
   emit('switch-household', id)
 }
 
-function addFromBar() {
+function addHousehold() {
   switcherOpen.value = false
   emit('add-household')
 }
@@ -538,8 +532,8 @@ const orderedActiveMembers = computed(() =>
     :trigger="switcherBtn"
     :households="households"
     :household-id="householdId"
-    @switch-household="switchFromBar"
-    @add-household="addFromBar"
+    @switch-household="switchHousehold"
+    @add-household="addHousehold"
   />
 
   <AccountActionModal
@@ -551,16 +545,12 @@ const orderedActiveMembers = computed(() =>
     :initial="userInitial"
     :household-name="householdName"
     :household-member-count="memberCount"
-    :households="households"
-    :household-id="householdId"
     @close="accountMenuOpen = false"
     @edit-account="openAccountSettings"
     @manage-household="openHouseholdSettings"
     @invite-members="inviteMembersFromAccountMenu"
     @app-settings="openAppSettings"
     @report-issue="openReportIssue"
-    @switch-household="selectHousehold"
-    @add-household="addHousehold"
     @sign-out="handleSignOut"
   />
 
