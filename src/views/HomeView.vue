@@ -3,7 +3,7 @@ import { ref, onMounted, onBeforeUnmount, computed, provide, watch } from 'vue'
 import { useAuth, useUser } from '@clerk/vue'
 import { useRouter } from 'vue-router'
 import { useSupabase } from '../supabase'
-import AppTopbar from '../components/AppTopbar.vue'
+import AppNavBar from '../components/AppNavBar.vue'
 import AppSplash from '../components/AppSplash.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import CustomProductModal from '../components/CustomProductModal.vue'
@@ -48,6 +48,11 @@ import {
   ITEM_NAME_MAX_LENGTH,
 } from '../lib/limits'
 import { applyUserLocale, getLocale, t } from '../lib/i18n'
+import { DEFAULT_HOUSEHOLD_EMOJI } from '../lib/householdEmoji'
+// The nightly stamp moved down here with the household name: the topbar it used
+// to sit in is desktop-only now, and a build channel has to be visible in a
+// screenshot with no chrome in it or somebody debugs the wrong database.
+import { IS_NIGHTLY } from '../lib/appChannel'
 import { fetchShopsFor, loadCachedShops, shopsEnabled, type ShopMap } from '../lib/shopBadges'
 
 const { userId, isLoaded } = useAuth()
@@ -874,7 +879,8 @@ async function reconcileActiveHousehold() {
        about; see householdUnknown. -->
   <AppSplash v-if="householdUnknown" />
   <div v-else class="dashboard">
-    <AppTopbar
+    <AppNavBar
+      layout="bar"
       :household-id="householdId || ''"
       :household-name="householdName"
       :households="households"
@@ -891,12 +897,29 @@ async function reconcileActiveHousehold() {
       @add-household="openAddHousehold"
       @household-deleted="reconcileActiveHousehold"
       @household-left="reconcileActiveHousehold"
+      @add="searchExpanded = true"
     />
 
     <main class="dashboard-main">
       <div class="dashboard-content">
 
+        <!-- Which household this list belongs to, on a phone, where there is no
+             longer a bar at the top saying so.
+
+             Content, not chrome: it scrolls away with the list rather than
+             holding 72px of the screen for the length of a shopping trip. And
+             it is deliberately not a button — the way into household settings
+             is the bar's first slot, and two doors to one room is what the
+             topbar was. -->
+        <header v-if="householdName" class="list-heading">
+          <span class="list-heading__emoji" aria-hidden="true">{{ householdEmoji || DEFAULT_HOUSEHOLD_EMOJI }}</span>
+          <h1 class="list-heading__name">{{ householdName }}</h1>
+          <!-- eslint-disable-next-line vue/no-bare-strings-in-template -- build channel, the same word in every language -->
+          <span v-if="IS_NIGHTLY" class="list-heading__channel">NIGHTLY</span>
+        </header>
+
         <!-- Add item form -->
+
         <AddItemForm
           v-model:name="newItem"
           v-model:expanded="searchExpanded"
@@ -1009,13 +1032,17 @@ async function reconcileActiveHousehold() {
   background: var(--color-primary-bg);
 }
 
+/* On a phone there is no fixed chrome above this, so the content starts at the
+   status bar rather than 72px below it; the bottom is where the room is spent
+   instead, clearing the action bar. The desktop block below puts the topbar's
+   offset back. */
 .dashboard-main {
   flex: 1;
   display: flex;
   justify-content: center;
-  padding: 2rem 1rem;
-  padding-top: calc(72px + 2rem + var(--safe-top));
-  padding-bottom: calc(2rem + var(--safe-bottom));
+  padding: 1rem 1rem 0;
+  padding-top: calc(1rem + var(--safe-top));
+  padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 1rem);
 }
 
 .dashboard-content {
@@ -1023,15 +1050,68 @@ async function reconcileActiveHousehold() {
   max-width: 480px;
 }
 
+/* ─── Whose list this is ─────────────────────────────────────────────────────
+   Reads as a title, not as a control: no fill, no press state, no chevron. The
+   emoji leads it for the same reason it led the topbar block — the name is
+   ragged text and needs something holding the left edge. */
+.list-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 1.25rem;
+  min-width: 0;
+}
+
+.list-heading__emoji {
+  flex-shrink: 0;
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.list-heading__name {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-extrabold);
+  line-height: var(--leading-tight);
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Same stamp the topbar carried, at the same weight and colours. */
+.list-heading__channel {
+  flex-shrink: 0;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 45%, transparent);
+  border-radius: var(--radius-xs);
+  background: var(--color-primary-bg);
+  color: var(--color-primary-text);
+  font-size: 0.625rem;
+  font-weight: var(--weight-extrabold);
+  letter-spacing: 0.08em;
+  line-height: 1.5;
+}
+
 /* Desktop: a phone-width strip looks lost on a big screen. Widen to the shared
-   column and add air under the bar; past that, item rows get too long to scan. */
+   column and add air under the bar; past that, item rows get too long to scan.
+   The action bar is gone at this width and the topbar is back, so the padding
+   goes back to what it was. */
 @media (min-width: 900px) {
   .dashboard-main {
     padding-top: calc(72px + 2.5rem + var(--safe-top));
+    padding-bottom: calc(2rem + var(--safe-bottom));
   }
 
   .dashboard-content {
     max-width: var(--desktop-column);
+  }
+
+  /* The topbar says this up there, in the same words. */
+  .list-heading {
+    display: none;
   }
 }
 </style>

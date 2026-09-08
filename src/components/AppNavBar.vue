@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, ref, type PropType } from 'vue'
 import { useClerk, useUser } from '@clerk/vue'
 import AccountActionModal from './AccountActionModal.vue'
+import AppIcon from './AppIcon.vue'
 import MemberAvatarStack from './MemberAvatarStack.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { sortMembersSelfFirst } from '../lib/memberRoles'
@@ -47,6 +48,18 @@ import { t } from '../lib/i18n'
 import { IS_NIGHTLY } from '../lib/appChannel'
 
 const props = defineProps({
+  // Which of this component's two shells to draw.
+  //
+  // 'bar' is the list screen: a fixed bottom action bar on a phone, and the
+  // header below at 900px and up. 'header' is the header at every width, which
+  // is what HouseholdSetupView wants — there is no household there yet, so a bar
+  // offering household settings, checkout history and an add button would be
+  // four controls with nothing behind them.
+  //
+  // Both shells live in one component because the five dialogs do. Splitting the
+  // markup into two components would mean either two copies of that state or a
+  // third component holding it, and the dialogs are most of this file.
+  layout: { type: String as PropType<'bar' | 'header'>, default: 'header' },
   householdId: { type: String, default: '' },
   householdName: { type: String, default: '' },
   // Every household the user belongs to ({ id, name }); the account dialog lists
@@ -77,6 +90,10 @@ const emit = defineEmits([
   'household-left',
   'switch-household',
   'add-household',
+  // The bar's centre button. The search itself belongs to AddItemForm and its
+  // open state is HomeView's `searchExpanded`, so the bar only says it was
+  // pressed rather than owning anything.
+  'add',
 ])
 
 function selectHousehold(id: string) {
@@ -238,7 +255,92 @@ const orderedActiveMembers = computed(() =>
 </script>
 
 <template>
-  <header class="topbar">
+  <!-- The list screen's shell on a phone. Five slots, and none of them is ever
+       the current one: there is a single route behind all of this, so a
+       selected state would be pointing at the page you are already on. It is an
+       action bar wearing a tab bar's shape, and the shape is where the
+       resemblance stops.
+
+       Two of the five marks are the user's own things rather than icons — the
+       household's emoji and their avatar — which is also what makes the first
+       slot answer "which household" for somebody in more than one. -->
+  <nav v-if="layout === 'bar'" class="navbar" :aria-label="t('nav.label')">
+    <button
+      class="nav-slot"
+      type="button"
+      aria-haspopup="dialog"
+      :aria-expanded="settingsOpen"
+      @pointerdown="prefetch(loadHouseholdSettingsModal)"
+      @click="openHouseholdSettings"
+    >
+      <span class="nav-slot__mark nav-slot__mark--emoji" aria-hidden="true">
+        {{ activeHouseholdEmoji }}
+      </span>
+      <span class="nav-slot__label">{{ t('nav.household') }}</span>
+    </button>
+
+    <button
+      class="nav-slot"
+      type="button"
+      aria-haspopup="dialog"
+      :aria-expanded="historyOpen"
+      @pointerdown="prefetch(loadPurchaseHistoryModal)"
+      @click="openHistory"
+    >
+      <span class="nav-slot__mark">
+        <AppIcon name="history" />
+      </span>
+      <span class="nav-slot__label">{{ t('nav.history') }}</span>
+    </button>
+
+    <!-- The disc stays inside the bar's top edge. A notched, protruding FAB is
+         the default here and it would have collided with the checkout slider,
+         which is the one thing on this screen with a stronger claim to the
+         bottom edge. A solid green knob riding a neutral track is already this
+         app's vocabulary — see .buy-bar__thumb — so the bar borrows from the
+         slider rather than from Material.
+
+         aria-label carries the full sentence; the visible label is only the
+         verb, because it has to fit under a 44px disc in six languages. -->
+    <button
+      class="nav-slot nav-slot--add"
+      type="button"
+      :aria-label="t('nav.addLabel')"
+      @click="emit('add')"
+    >
+      <span class="nav-add__disc" aria-hidden="true">
+        <AppIcon name="add" />
+      </span>
+      <span class="nav-slot__label">{{ t('nav.add') }}</span>
+    </button>
+
+    <!-- Holds the fifth column's width so the four real slots sit where they
+         will still sit once something fills it. An empty cell rather than a
+         disabled button: a disabled control promises something is coming, and
+         nothing is, yet. -->
+    <span class="nav-slot nav-slot--empty" aria-hidden="true"></span>
+
+    <button
+      class="nav-slot"
+      type="button"
+      aria-haspopup="dialog"
+      :aria-expanded="accountMenuOpen"
+      @click="openAccountMenu"
+    >
+      <span class="nav-slot__mark nav-slot__mark--avatar">
+        <img
+          v-if="userAvatarUrl"
+          :src="userAvatarUrl"
+          :alt="t('topbar.avatarAlt')"
+          class="nav-avatar-img"
+        />
+        <span v-else class="nav-avatar-fallback" aria-hidden="true">{{ userInitial }}</span>
+      </span>
+      <span class="nav-slot__label">{{ t('nav.you') }}</span>
+    </button>
+  </nav>
+
+  <header class="topbar" :class="{ 'topbar--desktop-only': layout === 'bar' }">
     <div class="topbar-left">
       <template v-if="householdName">
         <!-- The household you are looking at, and the way into its settings. One
@@ -381,6 +483,201 @@ const orderedActiveMembers = computed(() =>
 </template>
 
 <style scoped>
+/* ─── The bottom action bar ──────────────────────────────────────────────────
+   Five equal cells and one baseline. Every slot is a bottom-aligned column, so
+   the labels line up whatever sits above them: a 26px mark in four of them and
+   a 44px disc in the fifth. That is the whole layout, and it is why the disc
+   can be much bigger than the icons without needing a position of its own. */
+.navbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  align-items: stretch;
+  height: calc(var(--nav-height) + var(--safe-bottom));
+  /* The surface runs down behind the phone's home bar, the way the topbar's
+     runs up behind the status bar. */
+  padding-bottom: var(--safe-bottom);
+  background: var(--bg-surface);
+  border-top: var(--border-width-thin) solid var(--border-main);
+}
+
+/* Below the checkout slider (z-index 50), which has to stay reachable while the
+   bar is on screen, and above the list. */
+
+.nav-slot {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  padding: 0 0.25rem 0.5rem;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--transition-fast), color var(--transition-fast),
+    transform var(--transition-fast) var(--ease-rise);
+}
+
+.nav-slot--empty {
+  cursor: default;
+}
+
+.nav-slot__mark {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.nav-slot__mark :deep(svg) {
+  width: 22px;
+  height: 22px;
+  stroke-width: 1.75;
+}
+
+.nav-slot__mark--emoji {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.nav-slot__mark--avatar {
+  border-radius: var(--radius-pill);
+  border: var(--border-width-thin) solid var(--border-main);
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+
+.nav-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.nav-avatar-fallback {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+}
+
+.nav-slot__label {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  letter-spacing: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ─── The centre disc ────────────────────────────────────────────────────────
+   The only saturated thing along the bottom edge of the screen, and the only
+   place in this bar where boldness is spent. Nothing else here is coloured. */
+.nav-add__disc {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-pill);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-primary);
+  color: var(--text-inverse);
+  box-shadow: var(--elevation-primary);
+  transition: transform var(--transition-fast) var(--ease-rise),
+    box-shadow var(--transition-fast);
+}
+
+.nav-add__disc :deep(svg) {
+  width: 24px;
+  height: 24px;
+}
+
+.nav-slot--add .nav-slot__label {
+  color: var(--color-primary);
+}
+
+/* ─── How the bar answers a press ────────────────────────────────────────────
+   The same rule the header below uses, for the same two reasons written out
+   there: the press is not transitioned on the way in, because easing into a
+   pressed state is how a button comes to feel slower than the finger; and it
+   moves to --bg-press, which is a real step away from the surface in both
+   themes where --border-light was not.
+
+   The fill is a pill behind the mark rather than the whole cell: a full-height
+   rectangle lighting up under a thumb reads as the bar breaking into panels. */
+.nav-slot:not(.nav-slot--empty):active {
+  color: var(--text-primary);
+  transform: scale(0.92);
+  transition-duration: 0s;
+}
+
+.nav-slot:not(.nav-slot--add):not(.nav-slot--empty):active .nav-slot__mark {
+  box-shadow: 0 0 0 8px var(--bg-press);
+  border-radius: var(--radius-pill);
+  transition-duration: 0s;
+}
+
+/* Less travel than the small slots: the same ratio that reads as a press on a
+   26px mark reads as a lurch on a 44px disc. It recedes and its shadow tightens
+   with it, so the disc settles toward the bar rather than just shrinking. */
+.nav-slot--add:active {
+  transform: none;
+}
+
+.nav-slot--add:active .nav-add__disc {
+  transform: scale(0.94);
+  box-shadow: var(--elevation-soft);
+  transition-duration: 0s;
+}
+
+@media (hover: hover) {
+  .nav-slot:not(.nav-slot--empty):hover {
+    color: var(--text-primary);
+  }
+
+  .nav-slot:not(.nav-slot--add):not(.nav-slot--empty):hover .nav-slot__mark {
+    box-shadow: 0 0 0 8px var(--bg-hover);
+    border-radius: var(--radius-pill);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-slot:active,
+  .nav-slot--add:active .nav-add__disc {
+    transform: none;
+  }
+}
+
+/* The bar is the phone shell. At the desktop column the header takes over, so
+   this goes and the header stops hiding. */
+@media (min-width: 900px) {
+  .navbar {
+    display: none;
+  }
+}
+
+/* Doubled class on purpose. `.topbar` sets display:flex further down this file
+   and would win a same-specificity tie by coming later, so hiding it needs to
+   outrank it rather than merely precede it. */
+.topbar.topbar--desktop-only {
+  display: none;
+}
+
+@media (min-width: 900px) {
+  .topbar.topbar--desktop-only {
+    display: flex;
+  }
+}
+
 .topbar {
   display: flex;
   align-items: center;

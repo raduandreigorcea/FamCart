@@ -190,6 +190,13 @@ const es: Catalog = {
   'topbar.account': 'Tu cuenta',
   'topbar.avatarAlt': 'Tu avatar',
 
+  'nav.label': 'Acciones principales',
+  'nav.household': 'Hogar',
+  'nav.history': 'Historial',
+  'nav.add': 'Añadir',
+  'nav.addLabel': 'Añadir un artículo',
+  'nav.you': 'Tú',
+
   'account.title': 'Ajustes de la cuenta',
   'account.subtitle': 'Gestiona tu perfil y tus preferencias',
   'account.close': 'Cerrar la ventana de la cuenta',

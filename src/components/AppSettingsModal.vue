@@ -84,7 +84,7 @@ async function chooseLanguage(next: Locale) {
 // Back on the update dialog declines that version, and without this the app
 // would have nothing to say until the next release.
 //
-// Provided by HomeView rather than passed down through AppTopbar. Absent (null)
+// Provided by HomeView rather than passed down through AppNavBar. Absent (null)
 // anywhere that view does not own — the setup screen, and every test that mounts
 // this modal on its own — so the row simply does not appear there.
 const runUpdateCheck = inject(updateCheckKey, null)

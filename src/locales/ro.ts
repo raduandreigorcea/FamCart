@@ -195,6 +195,13 @@ const ro: Catalog = {
   'topbar.account': 'Contul tău',
   'topbar.avatarAlt': 'Avatarul tău',
 
+  'nav.label': 'Acțiuni principale',
+  'nav.household': 'Gospodărie',
+  'nav.history': 'Istoric',
+  'nav.add': 'Adaugă',
+  'nav.addLabel': 'Adaugă un produs',
+  'nav.you': 'Tu',
+
   'account.title': 'Setările contului',
   'account.subtitle': 'Gestionează-ți profilul și preferințele',
   'account.close': 'Închide fereastra contului',

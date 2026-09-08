@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { ref } from 'vue'
-import AppTopbar from '../src/components/AppTopbar.vue'
+import AppNavBar from '../src/components/AppNavBar.vue'
 import AccountActionModal from '../src/components/AccountActionModal.vue'
 
 const clerkUser = vi.hoisted(() => ({ value: null }))
@@ -17,8 +17,8 @@ vi.mock('@clerk/vue', () => ({
   useAuth: () => ({ userId: ref(null), getToken: ref(async () => null) }),
 }))
 
-// AccountActionModal (always mounted inside the topbar) talks to Supabase for
-// notification prefs; stub it so the topbar can mount in isolation.
+// AccountActionModal (always mounted inside the bar) talks to Supabase for
+// notification prefs; stub it so the bar can mount in isolation.
 vi.mock('../src/supabase', () => ({
   useSupabase: () => ({
     from: () => ({
@@ -45,8 +45,8 @@ vi.mock('../src/lib/pushNotifications', async (importOriginal) => ({
 }))
 
 const wrappers = []
-function mountTopbar(props) {
-  const w = mount(AppTopbar, { props })
+function mountBar(props) {
+  const w = mount(AppNavBar, { props })
   wrappers.push(w)
   return w
 }
@@ -66,9 +66,9 @@ const profiles = [
   { user_id: 'u_other', display_name: 'Alex', image_url: '', role: 'member' },
 ]
 
-describe('AppTopbar account identity offline', () => {
+describe('AppNavBar account identity offline', () => {
   it('falls back to the cached profile when Clerk has no user', () => {
-    const wrapper = mountTopbar({
+    const wrapper = mountBar({
       householdName: 'Home',
       memberProfiles: profiles,
       currentUserId: 'u_self',
@@ -84,7 +84,7 @@ describe('AppTopbar account identity offline', () => {
   })
 
   it('shows the generic Account label when no cached profile matches', () => {
-    const wrapper = mountTopbar({
+    const wrapper = mountBar({
       householdName: 'Home',
       memberProfiles: profiles,
       currentUserId: 'u_missing',
@@ -101,7 +101,7 @@ describe('AppTopbar account identity offline', () => {
       imageUrl: 'https://img/avatar.png',
       primaryEmailAddress: { emailAddress: 'clerk@example.com' },
     }
-    const wrapper = mountTopbar({
+    const wrapper = mountBar({
       householdName: 'Home',
       memberProfiles: profiles,
       currentUserId: 'u_self',
@@ -114,7 +114,7 @@ describe('AppTopbar account identity offline', () => {
   })
 })
 
-describe('AppTopbar household block', () => {
+describe('AppNavBar household block', () => {
   const households = [
     { id: 'fam-1', name: 'Home' },
     { id: 'fam-2', name: 'Parents' },
@@ -126,7 +126,7 @@ describe('AppTopbar household block', () => {
   // row. It goes straight to that household's settings now, and switching moved
   // into the account dialog where it only appears once there is a choice.
   it('opens household settings directly, with no menu in between', async () => {
-    const wrapper = mountTopbar({
+    const wrapper = mountBar({
       householdId: 'fam-1',
       householdName: 'Home',
       households,
@@ -144,7 +144,7 @@ describe('AppTopbar household block', () => {
   })
 
   it('keeps a standalone settings gear out of the bar', () => {
-    const wrapper = mountTopbar({
+    const wrapper = mountBar({
       householdId: 'fam-1',
       householdName: 'Home',
       households,
@@ -161,7 +161,7 @@ describe('AppTopbar household block', () => {
   // The household's own emoji anchors the block, the same square it wears on its
   // row in the account dialog.
   it('leads the household block with its emoji', () => {
-    const wrapper = mountTopbar({
+    const wrapper = mountBar({
       householdId: 'fam-1',
       householdName: 'Home',
       householdEmoji: 'HOUSEEMOJI',
@@ -174,7 +174,7 @@ describe('AppTopbar household block', () => {
   })
 
   it('hands the household roster to the account dialog to switch with', () => {
-    const wrapper = mountTopbar({
+    const wrapper = mountBar({
       householdId: 'fam-1',
       householdName: 'Home',
       households,
@@ -194,7 +194,7 @@ describe('AppTopbar household block', () => {
   })
 
   it('offers the same destination from the account dialog', () => {
-    const wrapper = mountTopbar({
+    const wrapper = mountBar({
       householdId: 'fam-1',
       householdName: 'Home',
       households,
@@ -213,7 +213,7 @@ describe('AppTopbar household block', () => {
       { id: 'b', name: 'B' },
       { id: 'c', name: 'C' },
     ]
-    const wrapper = mountTopbar({
+    const wrapper = mountBar({
       householdId: 'a',
       householdName: 'A',
       households: three,
@@ -227,7 +227,7 @@ describe('AppTopbar household block', () => {
 })
 
 
-// Switching households lives in the account dialog now: the topbar name goes
+// Switching households lives in the account dialog now: the header name goes
 // straight to settings, so this is the surface that has to answer "where else
 // can I go".
 describe('AccountActionModal households', () => {
@@ -325,8 +325,8 @@ describe('AccountActionModal report issue', () => {
     expect(rows[rows.length - 2].classes()).toContain('account-report-item')
   })
 
-  it('reaches the topbar as a handled event', () => {
-    const wrapper = mountTopbar({
+  it('reaches the navbar as a handled event', () => {
+    const wrapper = mountBar({
       householdName: 'Home',
       memberProfiles: profiles,
       currentUserId: 'u_self',
@@ -384,9 +384,9 @@ describe('AccountActionModal row icons', () => {
 // event, so an account left attached at sign-out would be blamed for whatever
 // the next person on the device hits. The redirect usually ends the page first;
 // this covers the case where it does not.
-describe('AppTopbar sign out', () => {
+describe('AppNavBar sign out', () => {
   it('detaches the account from error reporting', async () => {
-    const wrapper = mountTopbar({
+    const wrapper = mountBar({
       householdName: 'Home',
       memberProfiles: profiles,
       currentUserId: 'u_self',

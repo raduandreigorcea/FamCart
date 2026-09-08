@@ -1,35 +1,48 @@
-import { nextTick, onBeforeUnmount, ref, type Ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 
-// The add form becoming a screen, on a phone.
+// The add form as a screen, on a phone.
 //
-// On a phone the suggestions dropdown has nowhere to go: 72px of fixed topbar
-// above it and the keyboard below leave it a 275px slot in the middle of an
-// empty screen. Focusing the input turns the whole thing into a screen instead —
-// the field rises into a header band at the top edge and the matches run edge to
-// edge beneath it, on one surface, down to wherever the keyboard starts.
+// On a phone the suggestions dropdown has nowhere to go, so the search is the
+// whole viewport instead: a sheet that rises from the bottom edge, with the
+// field in a header band at the top of it and the matches running edge to edge
+// beneath, down to wherever the keyboard starts.
 //
-// Only the field travels; the band, the results and the way out fade in around
-// it. It is the one thing the user touched, so it is the one thing that should
-// not blink out and reappear somewhere else.
+// It used to be a FLIP. The field lived inline above the list, and focusing it
+// froze the slot's height, translated the field's row back to where it had just
+// been and let the browser animate the release, so that the one thing the user
+// had touched was the one thing that did not blink out and reappear somewhere
+// else. That was the right answer for a field with a place in the flow.
 //
-// Extracted from AddItemForm, where it was the largest of that component's four
-// jobs and the one least related to the others: everything here is measurement
-// and transition timing, and none of it knows what a product is. It is also the
-// part most likely to need changing for a new device or WebView, which is a poor
-// argument for it living inside a 1,300-line component.
+// The field no longer has one. The list screen's shell is a bottom bar now and
+// adding starts from its centre button, so there is no origin to fly from and
+// the measurement, the inversion and the transitionend plumbing all had nothing
+// left to measure. What replaced them is the motion the app already owns for
+// anything anchored to the bottom edge (--modal-rise: 100% with the shared
+// modal-rise keyframes in style.css), which is also the edge the keyboard is
+// about to come from.
+//
+// What survives is the part that was always the hard bit: knowing where the
+// visual viewport actually is. Android resizes the WebView and leaves offsetTop
+// at 0; iOS does not resize and puts the difference in offsetTop. Both are
+// wrong in different ways if you reach for window.innerHeight.
 
-// The same boundary PopoverMenu uses to pick sheet over popover. Above it
-// nothing here applies and the form stays in the flow.
-const PHONE_QUERY = '(max-width: 599.98px)'
+// The width at which the bar hands over to the header shell, matching the 900px
+// boundary in AppNavBar and --desktop-column. Above it the form stays in the
+// flow as an ordinary field with a dropdown, and none of this applies.
+//
+// This was 599.98px when the split was "does the dropdown fit", which is a
+// different question from "which shell is this". One breakpoint answering both
+// is what would have left a 600-899px window with a bar it could not open.
+const SHEET_QUERY = '(max-width: 899.98px)'
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
 
-// How long the form is allowed to be mid-slide before we tidy up regardless.
-// Comfortably past --transition-base, so it only ever fires when the
-// transitionend was swallowed rather than racing a real one.
-const SLIDE_TIMEOUT_MS = 400
+// How long the sheet is allowed to be on its way out before we tidy up
+// regardless. Comfortably past --transition-slow, which is what the exit
+// animation runs at.
+const EXIT_TIMEOUT_MS = 400
 
-// Not exported: isPhoneWidth below is the question callers actually ask, and
-// the two REDUCED_MOTION checks are this file's own.
+// Not exported: isSheetWidth below is the question callers actually ask, and the
+// reduced-motion check is this file's own.
 function mediaMatches(query: string): boolean {
   return (
     typeof window !== 'undefined' &&
@@ -38,41 +51,36 @@ function mediaMatches(query: string): boolean {
   )
 }
 
-/** Whether the viewport is narrow enough for the form to become a screen. */
-export function isPhoneWidth(): boolean {
-  return mediaMatches(PHONE_QUERY)
+/** Whether the viewport is narrow enough for the search to be a sheet. */
+export function isSheetWidth(): boolean {
+  return mediaMatches(SHEET_QUERY)
 }
 
 export interface PhoneSearchScreen {
-  /** Frozen height for the slot, so the list below does not jump up. */
-  slotStyle: Ref<Record<string, string> | null>
-  /** The band's box, measured from the visual viewport. */
+  /** The sheet's box, measured from the visual viewport. */
   screenBox: Ref<Record<string, string> | null>
-  /** True while the field is travelling back down. */
+  /** True while the sheet is travelling back down. */
   closing: Ref<boolean>
-  expand: () => Promise<void>
+  /**
+   * Whether the sheet is on screen at all: open, or still leaving. Everything
+   * that draws it keys off this rather than off `expanded`, which answers the
+   * different question of whether the user wants it.
+   */
+  present: Readonly<Ref<boolean>>
+  expand: () => void
   collapse: () => void
 }
 
 export function usePhoneSearchScreen(options: {
   /** The caller's expanded model — owned there because the parent reads it too. */
   expanded: Ref<boolean>
-  // The two template refs, declared by the component rather than here. They
-  // belong to its markup, and a string `ref="slotRef"` only resolves against a
-  // directly-declared const — a binding destructured out of this function is not
-  // one, so vue-tsc reports it unused and the element never populates it.
-  /** Holds the form's place in the flow while it is lifted. */
-  slotRef: Ref<HTMLElement | null>
-  /** The row that actually travels. */
-  rowRef: Ref<HTMLElement | null>
 }): PhoneSearchScreen {
-  const { expanded, slotRef, rowRef } = options
+  const { expanded } = options
 
-  const slotStyle = ref<Record<string, string> | null>(null)
   const screenBox = ref<Record<string, string> | null>(null)
   const closing = ref(false)
 
-  let slideTimer: ReturnType<typeof setTimeout> | null = null
+  let exitTimer: ReturnType<typeof setTimeout> | null = null
 
   // offsetTop + height is the visual viewport in layout coordinates, which is
   // what makes this right both on Android (the WebView resizes, offsetTop stays
@@ -90,11 +98,11 @@ export function usePhoneSearchScreen(options: {
     }
   }
 
-  // A rotation can cross out of phone width with the screen still open, and a
-  // phone's search screen stretched across a desktop column is not a layout.
+  // A rotation can cross out of sheet width with the search still open, and a
+  // phone's sheet stretched across a desktop column is not a layout.
   function onResize(): void {
     if (!expanded.value) return
-    if (!isPhoneWidth()) collapse()
+    if (!isSheetWidth()) settle()
     else measureScreen()
   }
 
@@ -106,148 +114,91 @@ export function usePhoneSearchScreen(options: {
     window.visualViewport?.[method]('scroll', measureScreen)
   }
 
-  // Move the field back to where it just was, with transitions off, then release
-  // it: the browser animates the release rather than the jump. Without silencing
-  // the transition first, this inverting step would itself animate — the wrong
-  // way, at the wrong time.
-  function slideFrom(startTop: number): void {
-    const row = rowRef.value
-    if (!row) return
-    const delta = Math.round(startTop - row.getBoundingClientRect().top)
-    if (!delta || mediaMatches(REDUCED_MOTION_QUERY)) return
-    row.style.transition = 'none'
-    row.style.transform = `translateY(${delta}px)`
-    void row.offsetHeight
-    row.style.transition = ''
-    row.style.transform = ''
+  function clearExitTimer(): void {
+    if (exitTimer) clearTimeout(exitTimer)
+    exitTimer = null
   }
 
-  // Drop an in-flight slide where it stands: its timer, its listener and the
-  // transform it was animating, with the transition silenced so clearing the
-  // transform does not itself animate. The caller decides where the field goes
-  // next. Shared by settle() and the reopen path below, which want opposite
-  // things afterwards and the same thing here.
-  function stopSlide(): void {
-    clearSlideTimer()
-    const row = rowRef.value
-    if (!row) return
-    row.removeEventListener('transitionend', onSlideEnd)
-    row.style.transition = 'none'
-    row.style.transform = ''
-  }
-
-  async function expand(): Promise<void> {
-    const slot = slotRef.value
-    if (!slot) return
-
-    // Already a screen, and staying one.
-    //
-    // Unless it is on its way out. A dialog opened from the search hands focus
-    // back to the field when it closes (AppModal restores what was focused when
-    // it opened), and the tap that dismissed it has already blurred the field
-    // and started the slide down. So this arrives mid-collapse, with `expanded`
-    // still true, and returning here let the slide settle a moment later and
-    // turn it off — leaving the field focused, the keyboard up, and the screen
-    // gone. No further focus event is coming for a field that never lost focus,
-    // so the search stayed a dropdown in a 275px gap until the app was
-    // reloaded. Reachable from the item-limit popup, which is exactly what a
-    // full list answers a tapped suggestion with.
-    if (expanded.value) {
-      if (!closing.value) return
-      // Where the field had got to, so it returns from there rather than
-      // jumping back to the top.
-      const from = rowRef.value?.getBoundingClientRect().top ?? null
-      stopSlide()
-      closing.value = false
-      measureScreen()
-      bindViewportListeners(true)
-      await nextTick()
-      if (from !== null) slideFrom(from)
-      // slideFrom clears the silencing itself, but only when it had a distance
-      // to travel; this covers the case where it did not.
-      if (rowRef.value) rowRef.value.style.transition = ''
-      return
-    }
-
-    clearSlideTimer()
-    const from = slot.getBoundingClientRect()
-    slotStyle.value = { height: `${from.height}px` }
-    measureScreen()
+  // Everything the open state needs, wherever the decision to open came from.
+  //
+  // It is a watcher rather than the body of expand() because expand() is no
+  // longer the only way in. The bar's centre button opens the sheet by setting
+  // the parent's model, and a sheet opened that way still has to measure the
+  // visual viewport and start listening to it, or it renders at 100dvh with the
+  // results running underneath the keyboard.
+  //
+  // immediate, so a component mounted with the model already true is open
+  // properly rather than open-looking.
+  function attach(): void {
+    clearExitTimer()
     closing.value = false
-    expanded.value = true
-
-    // The band's back row pushes the field down as it mounts, so the landing
-    // spot is only knowable once the screen has rendered.
-    await nextTick()
-    slideFrom(from.top)
+    measureScreen()
     bindViewportListeners(true)
   }
 
+  watch(
+    expanded,
+    (open) => {
+      if (open) attach()
+      else bindViewportListeners(false)
+    },
+    { immediate: true },
+  )
+
+  function expand(): void {
+    // Already open, and staying open. Reopening mid-exit is not this case: the
+    // model went false the moment the sheet was dismissed, so it falls through
+    // and the watcher picks it up, which is what reverses the exit.
+    //
+    // That path is real rather than theoretical. A dialog opened from the search
+    // hands focus back to the field when it closes (AppModal restores what was
+    // focused when it opened), and the tap that dismissed it has already started
+    // the exit — reachable from the item-limit popup, which is exactly what a
+    // full list answers a tapped suggestion with.
+    if (expanded.value) return
+    expanded.value = true
+  }
+
   function collapse(): void {
-    const slot = slotRef.value
-    const row = rowRef.value
     // Escape closes by blurring, so this arrives twice: once from the key and
-    // once from the blur it caused. The second must not restart the slide.
-    if (!expanded.value || slideTimer) return
-    bindViewportListeners(false)
+    // once from the blur it caused. The second must not restart the exit.
+    if (!expanded.value) return
 
-    // The slot never left the flow, so its rect is the destination. Measured
-    // before `closing` changes anything, though nothing it fades takes the field
-    // out of the flow.
-    if (!slot || !row) {
+    // The model goes false NOW, not when the animation ends. It answers "does
+    // the user want the search open", and they have just said no; holding it
+    // true for the length of the exit would leave the bar's centre button
+    // unable to raise the sheet again until the travel finished, and would tell
+    // the parent it was still searching while it visibly was not.
+    expanded.value = false
+
+    if (mediaMatches(REDUCED_MOTION_QUERY)) {
       settle()
       return
     }
-    const delta = Math.round(slot.getBoundingClientRect().top - row.getBoundingClientRect().top)
-    if (!delta || mediaMatches(REDUCED_MOTION_QUERY)) {
-      settle()
-      return
-    }
+
+    // What keeps the sheet on screen while it leaves. The animation is CSS,
+    // driven by this flag; the timer only takes the sheet down afterwards.
+    // animationend would be tighter, but it is also the event a backgrounded tab
+    // never delivers, and a sheet that never unmounts is a worse failure than
+    // one that unmounts 60ms late.
     closing.value = true
-
-    row.addEventListener('transitionend', onSlideEnd)
-    slideTimer = setTimeout(settle, SLIDE_TIMEOUT_MS)
-    // Leaving, not arriving: --ease-rise decelerates into its destination, which
-    // on the way back down is the shape of a swiped row snapping into place. The
-    // fall curve at the cover's own duration reads as getting out of the way
-    // instead, and brings the field and the list back together. Inline rather
-    // than a class so it takes effect in the same recalc as the transform below.
-    row.style.transition = `border-color var(--transition-fast), transform var(--transition-fast) var(--ease-fall)`
-    row.style.transform = `translateY(${delta}px)`
+    exitTimer = setTimeout(settle, EXIT_TIMEOUT_MS)
   }
 
-  // .add-row transitions its border colour on focus too, on this very element —
-  // only the transform means the slide is over.
-  function onSlideEnd(event: TransitionEvent): void {
-    if (event.target !== rowRef.value || event.propertyName !== 'transform') return
-    settle()
-  }
-
-  function clearSlideTimer(): void {
-    if (slideTimer) clearTimeout(slideTimer)
-    slideTimer = null
-  }
-
-  async function settle(): Promise<void> {
-    // Silenced first, which is stopSlide's job: the offset is dropped while the
-    // screen is still open and the field still carries a transform transition,
-    // so clearing it live would animate the field back up to the top it just
-    // came down from.
-    stopSlide()
+  function settle(): void {
+    clearExitTimer()
+    bindViewportListeners(false)
     expanded.value = false
     closing.value = false
-    slotStyle.value = null
     screenBox.value = null
-
-    await nextTick()
-    if (rowRef.value) rowRef.value.style.transition = ''
   }
 
   onBeforeUnmount(() => {
-    clearSlideTimer()
+    clearExitTimer()
     bindViewportListeners(false)
-    rowRef.value?.removeEventListener('transitionend', onSlideEnd)
   })
 
-  return { slotStyle, screenBox, closing, expand, collapse }
+  const present = computed(() => expanded.value || closing.value)
+
+  return { screenBox, closing, present, expand, collapse }
 }

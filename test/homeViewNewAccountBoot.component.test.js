@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import HomeView from '../src/views/HomeView.vue'
 import AppSplash from '../src/components/AppSplash.vue'
-import AppTopbar from '../src/components/AppTopbar.vue'
+import AppNavBar from '../src/components/AppNavBar.vue'
 import ShoppingList from '../src/components/ShoppingList.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
 import { markTourSeen } from '../src/lib/onboarding'
@@ -88,7 +88,7 @@ describe('booting an account that has no household yet', () => {
 
     expect(wrapper.findComponent(AppSplash).exists()).toBe(true)
     expect(wrapper.findComponent(ShoppingList).exists()).toBe(false)
-    expect(wrapper.findComponent(AppTopbar).exists()).toBe(false)
+    expect(wrapper.findComponent(AppNavBar).exists()).toBe(false)
 
     release()
     await flushPromises()

@@ -169,7 +169,7 @@ describe('disable', () => {
 // Both of these reach the SDK through a module instance that has never fetched
 // it — which is the state of any session that never ran syncPushUser, and that
 // is more reachable than it looks: syncPushUser is called from HomeView alone,
-// while AppTopbar (and so the settings dialog and sign-out) also renders on
+// while AppNavBar (and so the settings dialog and sign-out) also renders on
 // HouseholdSetupView.
 //
 // The 'opts the web subscription out' test above cannot catch this. It shares

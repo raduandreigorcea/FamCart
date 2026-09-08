@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { ref } from 'vue'
-import AppTopbar from '../src/components/AppTopbar.vue'
+import AppNavBar from '../src/components/AppNavBar.vue'
 
 const channel = vi.hoisted(() => ({ nightly: false }))
 
@@ -40,7 +40,7 @@ vi.mock('../src/lib/errorReporting', () => ({
 
 const wrappers = []
 function mountTopbar() {
-  const w = mount(AppTopbar, { props: { householdName: 'Home' } })
+  const w = mount(AppNavBar, { props: { householdName: 'Home' } })
   wrappers.push(w)
   return w
 }
@@ -53,7 +53,7 @@ afterEach(() => {
   while (wrappers.length) wrappers.pop().unmount()
 })
 
-describe('AppTopbar channel badge', () => {
+describe('AppNavBar channel badge', () => {
   it('shows nothing on a production build', () => {
     expect(mountTopbar().find('.channel-badge').exists()).toBe(false)
   })

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useId, watch, type PropType } from 'vue'
 import { closeModal, openModal } from '../lib/modalStack'
-import { isPhoneWidth, usePhoneSearchScreen } from '../lib/usePhoneSearchScreen'
+import { isSheetWidth, usePhoneSearchScreen } from '../lib/usePhoneSearchScreen'
 import { useTapPops } from '../lib/useTapPops'
 import { useAddedConfirmation } from '../lib/useAddedConfirmation'
 import { getProductEmoji } from '../lib/productEmoji'
@@ -106,19 +106,10 @@ const inputRef = ref<HTMLInputElement | null>(null)
 // the id stays unique if this form is ever mounted twice.
 const listboxId = useId()
 
-// The phone-only choreography — measuring the visual viewport, freezing the slot
-// the form leaves behind, and sliding the field between the two positions. All
-// of it lives in lib/usePhoneSearchScreen; this component keeps only the
-// decision of WHEN to expand and collapse.
-// Declared here rather than inside the composable: a string `ref="slotRef"` in
-// the template only binds to a directly-declared const.
-const slotRef = ref<HTMLElement | null>(null)
-const rowRef = ref<HTMLElement | null>(null)
-const { slotStyle, screenBox, closing, expand, collapse } = usePhoneSearchScreen({
-  expanded,
-  slotRef,
-  rowRef,
-})
+// The phone-only choreography: measuring the visual viewport and running the
+// sheet in and out. All of it lives in lib/usePhoneSearchScreen; this component
+// keeps only the decision of WHEN to expand and collapse.
+const { screenBox, closing, present, expand, collapse } = usePhoneSearchScreen({ expanded })
 
 // ─── Counting the taps out loud ──────────────────────────────────────────────
 // The running x2 / x3 / x4 that flies off a suggestion tapped more than once.
@@ -162,7 +153,7 @@ function onAddCustomClick(event: MouseEvent) {
 // common case — the same bread as last week — is one tap and no typing. Once
 // there is a query it is the matches' screen, and these step aside.
 const showingRecents = computed(
-  () => expanded.value && !name.value.trim() && props.recents.length > 0,
+  () => present.value && !name.value.trim() && props.recents.length > 0,
 )
 
 const rows = computed(() => (showingRecents.value ? props.recents : props.suggestions))
@@ -174,7 +165,12 @@ const rows = computed(() => (showingRecents.value ? props.recents : props.sugges
 const hasResults = computed(
   () => props.suggestionsLoading || rows.value.length > 0 || props.canAddCustom,
 )
-const panelOpen = computed(() => inputFocused.value && (expanded.value || hasResults.value))
+// `closing` keeps the results mounted while the sheet travels down. Dismissing
+// blurs the field, so without it the body would empty on the first frame and
+// what slid off screen would be an empty white panel.
+const panelOpen = computed(
+  () => (inputFocused.value || closing.value) && (present.value || hasResults.value),
+)
 
 // A household with no history yet gets a line telling them what to do rather than
 // a blank screen. Only on an empty query: telling someone who has typed a
@@ -183,7 +179,7 @@ const panelOpen = computed(() => inputFocused.value && (expanded.value || hasRes
 // come up.
 const showingHint = computed(
   () =>
-    expanded.value &&
+    present.value &&
     !name.value.trim() &&
     !props.suggestionsLoading &&
     !rows.value.length &&
@@ -315,13 +311,28 @@ watch(panelOpen, (open) => {
 })
 
 // ─── Phone search mode ───────────────────────────────────────────────────────
-// Focusing the input on a phone turns the form into a screen rather than opening
-// a dropdown into a 275px gap. The measurement and the slide are
-// lib/usePhoneSearchScreen's; what stays here is when it happens.
+// Below 900px this form has no place in the flow: the list screen's shell is a
+// bottom bar and the search is a sheet its centre button raises. So the sheet is
+// opened from OUTSIDE, by whoever owns the `expanded` model, and this component
+// answers by putting the keyboard where the user is already looking.
+//
+// Above 900px nothing here applies: the field is an ordinary field in the
+// column, focusing it opens a dropdown, and expand() is never called.
+watch(expanded, (open) => {
+  if (!open || !isSheetWidth()) return
+  // The field is inside the sheet, which mounts in this same tick. Focusing it
+  // before that lands would focus an element with no layout, which iOS answers
+  // by declining to raise the keyboard at all.
+  void nextTick(() => inputRef.value?.focus())
+})
 
 function onFocus() {
   inputFocused.value = true
-  if (isPhoneWidth()) void expand()
+  // Above the sheet boundary this is the whole story. Below it the sheet is
+  // already open by the time the field can be focused, and expand() no-ops —
+  // except mid-close, which is the one case it exists to catch. See the comment
+  // on expand() in the composable.
+  if (isSheetWidth()) expand()
 }
 
 // The one way out, whether it came from the cover, Escape or an ordinary
@@ -366,14 +377,15 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <!-- Holds the form's place in the flow while it is lifted to the top of a
-       phone screen; the height is frozen at that moment so nothing below moves. -->
-  <div class="add-slot" ref="slotRef" :style="slotStyle">
+  <!-- The form's place in the flow at the desktop column, and nothing at all
+       below it: see the media query on .add-slot. `present` rather than
+       `expanded` because the sheet has to stay drawn while it leaves. -->
+  <div class="add-slot" :class="{ 'add-slot--open': present }">
     <Transition name="add-cover">
       <!-- mousedown, not click, for the same reason the options use it: the tap
            must not steal focus before we decide what to do with it. -->
       <div
-        v-if="expanded"
+        v-if="present"
         class="add-cover"
         @mousedown.prevent="close"
         @touchmove.prevent
@@ -382,7 +394,7 @@ onBeforeUnmount(() => {
 
     <form
       class="add-form"
-      :class="{ 'add-form--expanded': expanded, 'add-form--closing': closing }"
+      :class="{ 'add-form--expanded': present, 'add-form--closing': closing }"
       :style="screenBox"
       @submit.prevent="emit('submit')"
     >
@@ -395,14 +407,14 @@ onBeforeUnmount(() => {
              which has just landed — back down for the length of the fade. It
              fades on the way out via .add-form--closing instead, which leaves
              the layout alone, and is already invisible when it goes. -->
-        <div v-if="expanded" class="add-head__bar">
+        <div v-if="present" class="add-head__bar">
           <!-- mousedown holds focus through the tap the way the option rows
                do; click is what a keyboard sends, and close() no-ops on the
                second call. -->
           <BackButton @mousedown.prevent="close" @click="close" />
         </div>
 
-        <div class="add-row" ref="rowRef">
+        <div class="add-row">
           <!-- The button uses mousedown.prevent for the same reason the option
                rows do: pressing it must not take focus off the input. Adding an
                item is the middle of the job, not the end of it, and losing focus
@@ -478,7 +490,7 @@ onBeforeUnmount(() => {
            place. Lifted, the results are a screen-tall surface hanging off a
            field that is itself moving, and fading them out means sweeping all
            of that down the page on the way out; cutting is quieter. -->
-      <Transition name="suggest" :css="!expanded">
+      <Transition name="suggest" :css="!present">
         <div v-if="panelOpen" ref="wrapRef" class="suggestions-wrap">
           <!-- Always mounted so a screen reader is already listening when the
                confirmation arrives; announcing depends on the region
@@ -674,11 +686,31 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* Carries the margin the form used to, so that when the form goes fixed the
-   slot's frozen height is exactly the space it vacated. */
+/* At the desktop column this still holds the form's place in the flow, and the
+   margin below is the form's own. Below 900px it holds nothing: see the block
+   at the foot of this file. */
 .add-slot {
   position: relative;
   margin-bottom: 1.25rem;
+}
+
+/* ─── Below the bar boundary the form is not in the flow at all ──────────────
+   The list screen's shell is a bottom bar and the field lives in the sheet its
+   centre button raises, so there is nothing here to lay out until it does.
+
+   Hidden rather than unmounted, because the parent owns one instance and its
+   state — the query, the shop filter, the added-confirmation record — has to
+   survive the sheet closing. `display:none` on the slot takes the collapsed
+   form out with it; when it opens, both children inside are position:fixed and
+   the slot itself still contributes no height. */
+@media (max-width: 899.98px) {
+  .add-slot {
+    margin-bottom: 0;
+  }
+
+  .add-slot:not(.add-slot--open) {
+    display: none;
+  }
 }
 
 .add-form {
@@ -701,6 +733,23 @@ onBeforeUnmount(() => {
   height: 100dvh;
   z-index: 61;
   gap: 0;
+  /* Up from the bottom edge, its whole height, which is what --modal-rise: 100%
+     means to the shared keyframes in style.css. Same motion every bottom sheet
+     in the app uses, and the same edge the keyboard is about to arrive from.
+
+     It used to fly from the field's own position in the list, which was the
+     right answer while the field had one. It has not had one since the bar
+     took over the shell — see the header of lib/usePhoneSearchScreen. */
+  --modal-rise: 100%;
+  animation: modal-rise-in var(--transition-slow) var(--ease-rise) both;
+}
+
+/* Leaving goes the other way: --ease-fall starts slow and gets out of the way,
+   which is what a sheet being dismissed should do. The composable's timer
+   unmounts it after this has run; the duration there is deliberately longer
+   than this one. */
+.add-form--closing {
+  animation: modal-rise-out var(--transition-slow) var(--ease-fall) both;
 }
 
 /* The header band. Collapsed it draws nothing — no padding, no rule — so the
@@ -764,11 +813,11 @@ onBeforeUnmount(() => {
   transition: opacity var(--transition-fast) var(--ease-standard);
 }
 
-/* The same duration AND the same curve as the field's fall (set inline in
-   collapse()), so the list comes back at exactly the rate the field travels
-   rather than being most of the way there while it is still barely moving. */
+/* The same duration AND the same curve as the sheet's own exit, so the list
+   comes back at exactly the rate the sheet clears it rather than being most of
+   the way there while the sheet is still barely moving. */
 .add-cover-leave-active {
-  transition: opacity var(--transition-fast) var(--ease-fall);
+  transition: opacity var(--transition-slow) var(--ease-fall);
 }
 
 .add-cover-enter-from,
@@ -1317,8 +1366,10 @@ onBeforeUnmount(() => {
 }
 
 
-/* The screen still opens — it is where the room comes from — it just opens at
-   once. The JS checks the same query and skips its half of the slide. */
+/* The sheet still opens — it is where the room comes from — it just opens at
+   once. Its own rise needs nothing here: style.css redefines the modal-rise
+   keyframes under this query so every sheet in the app loses the travel and
+   keeps the fade. The composable checks the same query and skips its timer. */
 @media (prefers-reduced-motion: reduce) {
   .add-form--expanded .add-row,
   .add-form--expanded .add-head__bar,

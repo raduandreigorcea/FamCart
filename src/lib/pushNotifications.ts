@@ -374,7 +374,7 @@ export async function disablePushNotifications(): Promise<void> {
     // This deliberately does NOT gate on `webSdkRequested`. That flag says
     // "loaded during THIS session", and it is set only by syncPushUser (called
     // from HomeView) and enableWebPush — so a session that reached the settings
-    // dialog another way, which AppTopbar allows from HouseholdSetupView, has
+    // dialog another way, which AppNavBar allows from HouseholdSetupView, has
     // it false while the device is genuinely subscribed from a previous
     // session. Skipping the opt-out there is the one outcome this toggle exists
     // to prevent, and it is unfalsifiable from the client: the toggle reads Off

@@ -225,6 +225,21 @@ export default {
   'topbar.account': 'Your account',
   'topbar.avatarAlt': 'Your avatar',
 
+  // The bottom bar. Four of these are visible labels sitting under a 24px mark
+  // in an 11px face, so they are single words wherever the language allows one.
+  // The topbar strings they stand next to are descriptions ('Checkout history',
+  // and in Romanian 'Istoricul cumpărăturilor') — a different job at a length
+  // this bar has no room for, which is why they are not reused.
+  //
+  // 'nav.addLabel' is the accessible name for the centre button, whose visible
+  // label is only the verb. The short label does not have to do both jobs.
+  'nav.label': 'Main actions',
+  'nav.household': 'Household',
+  'nav.history': 'History',
+  'nav.add': 'Add',
+  'nav.addLabel': 'Add an item',
+  'nav.you': 'You',
+
   'account.title': 'Account Settings',
   'account.subtitle': 'Manage your profile and preferences',
   'account.close': 'Close account modal',
