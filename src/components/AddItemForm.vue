@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useId, watch, type PropType } from 'vue'
 import { closeModal, openModal } from '../lib/modalStack'
-import { isSheetWidth, usePhoneSearchScreen } from '../lib/usePhoneSearchScreen'
+import { isSheetWidth, useSearchSheet } from '../lib/useSearchSheet'
 import { useTapPops } from '../lib/useTapPops'
 import { useAddedConfirmation } from '../lib/useAddedConfirmation'
 import { getProductEmoji } from '../lib/productEmoji'
@@ -26,9 +26,13 @@ import ShopBadges from './ShopBadges.vue'
 // corrected. Adding is one tap; adding the same thing twice sums, as it always
 // has.
 const name = defineModel('name', { type: String, default: '' })
-// Whether the form is currently lifted to the top of a phone screen. Exposed
-// because the parent widens the search while it is: the panel has room for
-// twice the rows, so capping the query at six would waste it.
+// Whether the search is open as a sheet.
+//
+// Two-way, and below the bar boundary the parent WRITES it first: the bar's
+// centre button raises the sheet by setting this, and the component answers by
+// focusing the field. It reads it back for two reasons -- to widen the query
+// while the sheet is up, since a screen has room for twice the rows a dropdown
+// does, and to learn that the sheet dismissed itself.
 const expanded = defineModel('expanded', { type: Boolean, default: false })
 
 const props = defineProps({
@@ -43,9 +47,9 @@ const props = defineProps({
   // a catalog with no retailers yet. See useProductSuggestions.
   shopOptions: { type: Array as PropType<string[]>, default: () => [] },
   searchShop: { type: String as PropType<string | null>, default: null },
-  // What this household buys most, same shape as suggestions. Shown on the phone
-  // search screen before anything is typed; ignored everywhere else, where
-  // there is no screen to fill.
+  // What this household buys most, same shape as suggestions. Shown in the
+  // sheet before anything is typed; ignored above the bar boundary, where the
+  // dropdown has no screen to fill.
   recents: { type: Array as PropType<ProductSuggestion[]>, default: () => [] },
   // The product that just landed on the list, as a fresh object each time so
   // adding the same thing twice still reads as two adds. Only the search screen
@@ -106,10 +110,10 @@ const inputRef = ref<HTMLInputElement | null>(null)
 // the id stays unique if this form is ever mounted twice.
 const listboxId = useId()
 
-// The phone-only choreography: measuring the visual viewport and running the
-// sheet in and out. All of it lives in lib/usePhoneSearchScreen; this component
-// keeps only the decision of WHEN to expand and collapse.
-const { screenBox, closing, present, expand, collapse } = usePhoneSearchScreen({ expanded })
+// Measuring the visual viewport and running the sheet in and out. All of it
+// lives in lib/useSearchSheet; this component keeps only the decision of WHEN to
+// expand and collapse.
+const { screenBox, closing, present, expand, collapse } = useSearchSheet({ expanded })
 
 // ─── Counting the taps out loud ──────────────────────────────────────────────
 // The running x2 / x3 / x4 that flies off a suggestion tapped more than once.
@@ -405,7 +409,7 @@ watch(
 
 onBeforeUnmount(() => {
   // The slide timer, the viewport listeners and the transitionend handler are
-  // usePhoneSearchScreen's own teardown, and the confirmation timer is
+  // useSearchSheet's own teardown, and the confirmation timer is
   // useAddedConfirmation's. Only the layer registration is this component's.
   closeModal(layer)
 })
@@ -774,7 +778,7 @@ onBeforeUnmount(() => {
 
      It used to fly from the field's own position in the list, which was the
      right answer while the field had one. It has not had one since the bar
-     took over the shell — see the header of lib/usePhoneSearchScreen. */
+     took over the shell — see the header of lib/useSearchSheet. */
   --modal-rise: 100%;
   animation: modal-rise-in var(--transition-slow) var(--ease-rise) both;
 }
@@ -787,9 +791,9 @@ onBeforeUnmount(() => {
   animation: modal-rise-out var(--transition-slow) var(--ease-fall) both;
 }
 
-/* The header band. Collapsed it draws nothing — no padding, no rule — so the
-   field sits exactly where the flow puts it and the slot's frozen height is
-   right. */
+/* The header band. Collapsed it draws nothing — no padding, no rule — so above
+   the bar boundary the field sits exactly where the flow puts it. Below it there
+   is no collapsed state on screen at all; see the media query on .add-slot. */
 .add-head {
   display: flex;
   flex-direction: column;
@@ -819,12 +823,13 @@ onBeforeUnmount(() => {
   margin-left: -0.4rem;
 }
 
-/* Fades over exactly the field's journey home — same duration, same curve as
-   the field's fall and the cover's — so the screen resolves in one moment
-   rather than the field landing and something else finishing afterwards. It
-   keeps its layout box the whole way, so nothing it does moves the field. */
+/* The band fades as the sheet drops, rather than cutting out the moment the
+   dismissal is decided. Same duration and curve as the sheet's own exit and the
+   cover's, so the screen resolves in one moment instead of the sheet still
+   travelling while its header has already gone. It keeps its layout box the
+   whole way, so nothing it does moves the field. */
 .add-form--expanded .add-head__bar {
-  transition: opacity var(--transition-fast) var(--ease-fall);
+  transition: opacity var(--transition-slow) var(--ease-fall);
 }
 
 .add-form--closing .add-head__bar {
@@ -835,8 +840,12 @@ onBeforeUnmount(() => {
    content now, and content sits on a surface everywhere else in the app. The
    page colour would say "you are still on the list", which is the lie that
    makes a half-dimmed list behind the matches feel wrong. Fading this in is
-   what takes the list away, so it doubles as the dismissal target — above the
-   buy bar (50) and the topbar (10), below the teleported menus (1000). */
+   what takes the list away.
+
+   It is not a dismissal target: a full-screen tap-to-close under a search you
+   raised on purpose is the largest misclick in the app, so it only swallows
+   touchmove. The stack it has to clear is the action bar (40) and the checkout
+   slider (50); teleported menus stay above it at 1000. */
 .add-cover {
   position: fixed;
   inset: 0;
@@ -1298,14 +1307,13 @@ onBeforeUnmount(() => {
   transition: border-color var(--transition-fast);
 }
 
-/* The field is the only thing that travels between the list and the search
-   screen — the band, the results and Cancel fade in around it. It is what the
-   user touched, so it is the one thing that should not blink out and reappear
-   somewhere else. The fall back down is set inline in collapse(). */
+/* Nothing travels on its own any more: the whole sheet rises and falls as one
+   object, so the field only has to hold its height inside it. The transform
+   transition that used to carry it between the list and the screen is gone with
+   the FLIP that set it — see the header of lib/useSearchSheet. */
 .add-form--expanded .add-row {
   flex-shrink: 0;
-  transition: border-color var(--transition-fast),
-    transform var(--transition-base) var(--ease-rise);
+  transition: border-color var(--transition-fast);
 }
 
 .add-row:focus-within {
@@ -1406,7 +1414,6 @@ onBeforeUnmount(() => {
    keyframes under this query so every sheet in the app loses the travel and
    keeps the fade. The composable checks the same query and skips its timer. */
 @media (prefers-reduced-motion: reduce) {
-  .add-form--expanded .add-row,
   .add-form--expanded .add-head__bar,
   .add-cover-enter-active,
   .add-cover-leave-active,

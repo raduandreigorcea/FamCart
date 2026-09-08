@@ -106,7 +106,7 @@ export default ts.config(
       // plugin calls — and there are dozens of them, all deliberate.
       'no-empty': ['error', { allowEmptyCatch: true }],
 
-      // Component names: the single-word ones here (AppModal, AppTopbar,
+      // Component names: the single-word ones here (AppModal, AppNavBar,
       // ShoppingList) are all prefixed or domain nouns already, and the rule
       // mostly objects to filenames this project has settled on.
       'vue/multi-word-component-names': 'off',

@@ -1,6 +1,6 @@
 import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 
-// The add form as a screen, on a phone.
+// The add search as a bottom sheet.
 //
 // On a phone the suggestions dropdown has nowhere to go, so the search is the
 // whole viewport instead: a sheet that rises from the bottom edge, with the
@@ -41,8 +41,8 @@ const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
 // animation runs at.
 const EXIT_TIMEOUT_MS = 400
 
-// Not exported: isSheetWidth below is the question callers actually ask, and the
-// reduced-motion check is this file's own.
+// The raw query check. isSheetWidth() below wraps the one callers actually ask
+// about; the reduced-motion query is this file's own business.
 function mediaMatches(query: string): boolean {
   return (
     typeof window !== 'undefined' &&
@@ -56,7 +56,7 @@ export function isSheetWidth(): boolean {
   return mediaMatches(SHEET_QUERY)
 }
 
-export interface PhoneSearchScreen {
+export interface SearchSheet {
   /** The sheet's box, measured from the visual viewport. */
   screenBox: Ref<Record<string, string> | null>
   /** True while the sheet is travelling back down. */
@@ -71,10 +71,10 @@ export interface PhoneSearchScreen {
   collapse: () => void
 }
 
-export function usePhoneSearchScreen(options: {
+export function useSearchSheet(options: {
   /** The caller's expanded model — owned there because the parent reads it too. */
   expanded: Ref<boolean>
-}): PhoneSearchScreen {
+}): SearchSheet {
   const { expanded } = options
 
   const screenBox = ref<Record<string, string> | null>(null)

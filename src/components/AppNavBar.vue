@@ -265,11 +265,20 @@ const orderedActiveMembers = computed(() =>
        household's emoji and their avatar — which is also what makes the first
        slot answer "which household" for somebody in more than one. -->
   <nav v-if="layout === 'bar'" class="navbar" :aria-label="t('nav.label')">
+    <!-- Every slot here carries an aria-label, for the same reason the centre
+         disc does: the visible labels are single words because they sit under a
+         24px mark in six languages, and a single word is not always a name. The
+         household's is the one that matters most — the emoji that says WHICH
+         household is decorative, so without this a screen reader gets
+         "Household" for each of the three you might belong to. -->
     <button
       class="nav-slot"
       type="button"
       aria-haspopup="dialog"
       :aria-expanded="settingsOpen"
+      :aria-label="
+        householdName ? t('topbar.householdSettings', { name: householdName }) : t('nav.household')
+      "
       @pointerdown="prefetch(loadHouseholdSettingsModal)"
       @click="openHouseholdSettings"
     >
@@ -284,6 +293,7 @@ const orderedActiveMembers = computed(() =>
       type="button"
       aria-haspopup="dialog"
       :aria-expanded="historyOpen"
+      :aria-label="t('topbar.history')"
       @pointerdown="prefetch(loadPurchaseHistoryModal)"
       @click="openHistory"
     >
@@ -335,13 +345,19 @@ const orderedActiveMembers = computed(() =>
       type="button"
       aria-haspopup="dialog"
       :aria-expanded="accountMenuOpen"
+      :aria-label="t('topbar.account')"
       @click="openAccountMenu"
     >
-      <span class="nav-slot__mark nav-slot__mark--avatar">
+      <!-- aria-hidden, unlike the topbar's copy of this, because there the
+           button's own aria-label overrode the img's alt and here the two would
+           be concatenated: "Your avatar You" with a photo and "You" without, so
+           the same control announced differently depending on whether somebody
+           had uploaded one. The label above is the name; this is decoration. -->
+      <span class="nav-slot__mark nav-slot__mark--avatar" aria-hidden="true">
         <img
           v-if="userAvatarUrl"
           :src="userAvatarUrl"
-          :alt="t('topbar.avatarAlt')"
+          alt=""
           class="nav-avatar-img"
         />
         <span v-else class="nav-avatar-fallback" aria-hidden="true">{{ userInitial }}</span>
@@ -511,15 +527,14 @@ const orderedActiveMembers = computed(() =>
      runs up behind the status bar. */
   padding-bottom: var(--safe-bottom);
   background: var(--bg-surface);
+  /* Below the checkout slider (50), which has to stay reachable while the bar
+     is on screen, and above the list. */
   border-top: var(--border-width-thin) solid var(--border-main);
   /* Load-bearing, and the default, which is exactly why it is written down: the
      centre disc is taller than the bar and hangs over its top edge. Clipping
      here would cut the primary action in half. */
   overflow: visible;
 }
-
-/* Below the checkout slider (z-index 50), which has to stay reachable while the
-   bar is on screen, and above the list. */
 
 .nav-slot {
   flex: 1;
@@ -733,6 +748,27 @@ const orderedActiveMembers = computed(() =>
     box-shadow: 0 0 0 8px var(--bg-hover);
     border-radius: var(--radius-pill);
   }
+}
+
+/* Every one of these opens a dialog, and AppModal hands focus back to whatever
+   opened it when it closes — so keyboard focus lands on a nav slot after every
+   close, more often than on any other control in the app. The ring goes on the
+   mark rather than the cell for the same reason the press fill does: a
+   full-height rectangle lighting up reads as the bar breaking into panels.
+
+   The disc is already a filled shape, so it takes the ring outside itself
+   instead of inside a 26px circle that is not there. */
+.nav-slot:focus-visible {
+  outline: none;
+}
+
+.nav-slot:focus-visible .nav-slot__mark {
+  border-radius: var(--radius-pill);
+  box-shadow: var(--focus-ring-primary-soft);
+}
+
+.nav-slot--add:focus-visible .nav-add__disc {
+  box-shadow: var(--elevation-primary), var(--focus-ring-primary-soft);
 }
 
 @media (prefers-reduced-motion: reduce) {
