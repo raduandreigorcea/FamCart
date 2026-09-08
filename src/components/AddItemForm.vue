@@ -85,6 +85,52 @@ const emit = defineEmits(['submit', 'select', 'add-custom', 'scan', 'select-shop
 // the action that has become available.
 const showScan = computed(() => props.canScan && !name.value.trim())
 
+// The add's answer, given on the button that performed it.
+//
+// Tapping a suggestion is answered on its row (see useAddedConfirmation), but
+// typing a name and pressing Add was answered nowhere: the field keeps its text,
+// the row lands on a list this screen is covering, and the press produced no
+// visible result at all. So the plus becomes a tick for a beat, and then goes
+// back to being the way to add the next thing.
+//
+// Short on purpose. It is the receipt for a press, not a state the button is in
+// -- the button is still the add button throughout, and pressing it again
+// during the tick adds again.
+const ADD_CONFIRMED_MS = 1100
+const addConfirmed = ref(false)
+let addConfirmedTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearAddConfirmed() {
+  if (addConfirmedTimer) clearTimeout(addConfirmedTimer)
+  addConfirmedTimer = null
+  addConfirmed.value = false
+}
+
+watch(
+  () => props.lastAdded,
+  (product) => {
+    clearAddConfirmed()
+    // Null is the parent taking an add back -- see clearLastAdded, "it did not
+    // land". A tick for a write that failed is worse than no tick at all.
+    if (!product) return
+    // Only while this button IS the add button. With an empty field it is the
+    // scanner, and a tick flashing over the camera glyph would be a different
+    // control answering for something it did not do.
+    if (showScan.value) return
+    addConfirmed.value = true
+    addConfirmedTimer = setTimeout(() => {
+      addConfirmed.value = false
+      addConfirmedTimer = null
+    }, ADD_CONFIRMED_MS)
+  },
+)
+
+// The next keystroke is the next item; the tick was about the last one. The text
+// is not cleared by an add, so this only fires on real typing.
+watch(name, clearAddConfirmed)
+
+onBeforeUnmount(clearAddConfirmed)
+
 function onAction() {
   // Not a scan means this is the submit button, and the form's own submit
   // handler is already on its way. Nothing to do here.
@@ -510,13 +556,21 @@ onBeforeUnmount(() => {
             <AppIcon
               v-if="canScan"
               class="add-btn__icon scan-icon"
-              :class="{ 'add-btn__icon--off': !showScan }"
+              :class="{ 'add-btn__icon--off': !showScan || addConfirmed }"
               name="scan-barcode"
             />
             <span
               class="add-btn__icon add-icon"
-              :class="{ 'add-btn__icon--off': showScan }"
+              :class="{ 'add-btn__icon--off': showScan || addConfirmed }"
             ></span>
+            <!-- The tick the plus turns into once an add has landed. A third
+                 occupant of the same cell, faded in and out by the same two
+                 rules, so it cannot leave the button empty either. -->
+            <AppIcon
+              class="add-btn__icon confirm-icon"
+              :class="{ 'add-btn__icon--off': !addConfirmed }"
+              name="check"
+            />
           </button>
         </div>
       </div>
@@ -1380,6 +1434,26 @@ onBeforeUnmount(() => {
   background-color: var(--text-inverse);
   mask: url('../assets/add.svg') no-repeat center / contain;
   -webkit-mask: url('../assets/add.svg') no-repeat center / contain;
+}
+
+/* Inlined rather than masked, for the reason the scan glyph below is: a tick is
+   a single hairline in the asset and would dissolve into the green. Weighted to
+   the plus it stands in for, so the swap changes the shape and nothing else. */
+.confirm-icon {
+  width: var(--size-icon-lg);
+  height: var(--size-icon-lg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.confirm-icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 3;
+  fill: none;
 }
 
 /* Inlined rather than masked like its neighbours, for the reason .suggestion-tick

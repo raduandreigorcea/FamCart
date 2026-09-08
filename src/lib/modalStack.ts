@@ -42,7 +42,7 @@ function locksAnything(): boolean {
 // Only the dialog on top acts on Escape, so one keystroke closes one dialog
 // rather than every open one at once.
 export function isTopModal(token: symbol): boolean {
-  return stack.length > 0 && stack[stack.length - 1].token === token
+  return stack.length > 0 && stack[stack.length - 1]!.token === token
 }
 
 export function openModal(

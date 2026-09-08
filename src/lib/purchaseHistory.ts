@@ -66,10 +66,14 @@ function checkoutKey(entry: CheckoutEntry): string {
 // rows belong to a single checkout, keep them — a partial view beats an empty
 // one.
 export function trimPartialTail(entries: CheckoutEntry[], limit: number): CheckoutEntry[] {
+  // Nothing was cut off if nothing came back. Its own clause rather than part of
+  // the comparison below, which does not cover it: a limit of zero or less makes
+  // `0 < limit` false and sends an empty list on to index -1.
+  if (entries.length === 0) return entries
   if (entries.length < limit) return entries
-  const lastKey = checkoutKey(entries[entries.length - 1])
+  const lastKey = checkoutKey(entries[entries.length - 1]!)
   let cut = entries.length
-  while (cut > 0 && checkoutKey(entries[cut - 1]) === lastKey) cut--
+  while (cut > 0 && checkoutKey(entries[cut - 1]!) === lastKey) cut--
   return cut === 0 ? entries : entries.slice(0, cut)
 }
 

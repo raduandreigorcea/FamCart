@@ -10,6 +10,7 @@ const es: Catalog = {
   'common.ok': 'OK',
   'common.cancel': 'Cancelar',
   'common.closeModal': 'Cerrar el diálogo',
+  'common.closeMenu': 'Cerrar el menú',
   'common.confirm': 'Confirmar',
   'common.continue': 'Continuar',
 
@@ -80,6 +81,8 @@ const es: Catalog = {
   'error.offline': 'Parece que estás sin conexión. Comprueba tu conexión e inténtalo de nuevo.',
   'error.nameTooLongTitle': 'Nombre demasiado largo',
   'error.householdNameTooLong': 'El nombre del hogar debe tener {max} caracteres o menos.',
+  'error.nameRequiredTitle': 'Nombre obligatorio',
+  'error.householdNameRequired': 'Ponle un nombre a tu hogar antes de guardar.',
   'error.ownOneHousehold':
     'Solo puedes ser propietario de un hogar. Abandona o elimina el actual antes de crear otro.',
   'error.membershipCapCreate':

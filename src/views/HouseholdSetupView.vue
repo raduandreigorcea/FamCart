@@ -11,7 +11,6 @@ import ErrorModal from '../components/ErrorModal.vue'
 import AppCard from '../components/AppCard.vue'
 import AppButton from '../components/AppButton.vue'
 import ChoiceButton from '../components/ChoiceButton.vue'
-import BackButton from '../components/BackButton.vue'
 import LanguagePicker from '../components/LanguagePicker.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import { isOfflineError } from '../lib/offlineQueue'
@@ -113,6 +112,25 @@ const pickerTitle = computed(() =>
 )
 
 const mode = ref<'create' | 'join' | null>(null)
+
+// The way back lives in the topbar, in the logo's slot, rather than inside the
+// card -- so every step that has somewhere to go back to says so in the same
+// place, and the card starts at its heading. Which step it is decides where it
+// leads: out of a form is back to the picker, out of the picker is back to the
+// list you came from. The language and welcome steps are a brand-new user's
+// first two screens and have nothing behind them.
+const canGoBack = computed(
+  () => !showLanguage.value && !showWelcome.value && (!!mode.value || isAddingHousehold.value),
+)
+
+function goBack() {
+  if (mode.value) {
+    mode.value = null
+    error.value = ''
+    return
+  }
+  router.replace('/')
+}
 const householdName = ref('')
 const inviteCode = ref('')
 const error = ref('')
@@ -264,7 +282,7 @@ async function joinHousehold() {
 <template>
   <div class="setup-page">
     <!-- Top bar -->
-    <AppNavBar />
+    <AppNavBar :back="canGoBack" @back="goBack" />
 
     <!-- Content -->
     <main class="setup-main">
@@ -323,9 +341,6 @@ async function joinHousehold() {
 
         <!-- Picker -->
         <template v-else-if="!mode">
-          <div v-if="isAddingHousehold" class="setup-back">
-            <BackButton @click="router.replace('/')" />
-          </div>
           <div class="card-header">
             <p class="card-eyebrow">{{ t(isAddingHousehold ? 'setup.picker.eyebrowAdd' : 'setup.picker.eyebrowNew') }}</p>
             <h2 class="heading">{{ pickerTitle[0]
@@ -359,9 +374,6 @@ async function joinHousehold() {
 
         <!-- Create form -->
         <template v-else-if="mode === 'create'">
-          <div class="setup-back">
-            <BackButton @click="mode = null; error = ''" />
-          </div>
           <div class="card-header">
             <p class="card-eyebrow">{{ t('setup.create.eyebrow') }}</p>
             <h2 class="heading">{{ t('setup.create.title') }}</h2>
@@ -376,9 +388,6 @@ async function joinHousehold() {
 
         <!-- Join form -->
         <template v-else-if="mode === 'join'">
-          <div class="setup-back">
-            <BackButton @click="mode = null; error = ''" />
-          </div>
           <div class="card-header">
             <p class="card-eyebrow">{{ t('setup.join.eyebrow') }}</p>
             <h2 class="heading">{{ t('setup.join.title') }}</h2>
@@ -608,12 +617,6 @@ async function joinHousehold() {
 }
 
 /* ── Back to households ────────────────────────────────────── */
-.setup-back {
-  /* Pull the button up so its own padding lines it up with the card edge,
-     then leave clear space before the heading below. */
-  margin: -0.35rem 0 0.85rem -0.4rem;
-}
-
 /* ── Choice list ─────────────────────────────────────────── */
 .choice-row {
   display: flex;

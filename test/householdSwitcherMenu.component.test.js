@@ -116,4 +116,50 @@ describe('HouseholdSwitcherMenu', () => {
     expect(rows()[0].querySelector('.switcher-emoji').textContent.trim()).not.toBe('')
     expect(names()).toEqual(['Household'])
   })
+
+  // A role="menu" exposes only its menuitems, so anything in here without a
+  // role is not one of this menu's children and can be left out of what a
+  // screen reader announces. The join row is the one that had no role, and it
+  // is the only thing in here most accounts will ever press.
+  //
+  // The switch rows are menuitemradio and the join row is not, deliberately:
+  // the rows answer "which household", and this one leaves to go and make one.
+  it('gives every row in the menu a role, and the right one', () => {
+    mountMenu({ households: two, householdId: 'fam-1' })
+
+    expect(rows().map((r) => r.getAttribute('role'))).toEqual([
+      'menuitemradio',
+      'menuitemradio',
+    ])
+    expect(addRow().getAttribute('role')).toBe('menuitem')
+
+    // The line above the join row draws a division a screen reader could not
+    // otherwise hear, and it uses the shell's shared divider rather than a
+    // copy of it.
+    const divider = document.querySelector('.menu-divider')
+    expect(divider).not.toBeNull()
+    expect(divider.getAttribute('role')).toBe('separator')
+    expect(document.querySelector('.switcher-divider')).toBeNull()
+  })
+
+  // On a phone this is a full-width sheet over the bottom bar: the surface you
+  // would tap to dismiss is the list you are trying to look at, and the thing
+  // under your thumb is the bar the sheet is covering. Escape and Android Back
+  // still work; this is the route that is actually visible.
+  it('offers a way out of the sheet', async () => {
+    const wrapper = mountMenu({ households: two, householdId: 'fam-1' })
+
+    const closeBtn = document.querySelector('.popover-header__close')
+    expect(closeBtn).not.toBeNull()
+    // In the header, which sits outside the role="menu" — so it is an ordinary
+    // button rather than a child a menu is not allowed to have.
+    expect(closeBtn.closest('[role="menu"]')).toBeNull()
+
+    closeBtn.click()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([false])
+    // Closing is not choosing: nothing was switched on the way out.
+    expect(wrapper.emitted('switch-household')).toBeFalsy()
+  })
 })

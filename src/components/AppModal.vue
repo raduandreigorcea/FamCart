@@ -81,8 +81,9 @@ function trapTab(event: KeyboardEvent) {
     event.preventDefault()
     return
   }
-  const first = items[0]
-  const last = items[items.length - 1]
+  // Both guarded by the empty-list return above.
+  const first = items[0]!
+  const last = items[items.length - 1]!
   const active = document.activeElement
   const inside = overlay.value?.contains(active)
   if (event.shiftKey && (active === first || !inside)) {

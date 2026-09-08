@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, ref, type PropType } from 'vue'
 import { useClerk, useUser } from '@clerk/vue'
 import AccountActionModal from './AccountActionModal.vue'
 import AppIcon from './AppIcon.vue'
+import BackButton from './BackButton.vue'
 import HouseholdSwitcherMenu from './HouseholdSwitcherMenu.vue'
 import MemberAvatarStack from './MemberAvatarStack.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
@@ -11,9 +12,7 @@ import type { HouseholdMemberProfile } from '../lib/householdRealtime'
 import { DEFAULT_HOUSEHOLD_EMOJI } from '../lib/householdEmoji'
 import { ITEM_LIMIT_DEFAULT } from '../lib/limits'
 import { getUserDisplayName, getUserInitial, getUserPrimaryEmail } from '../lib/userIdentity'
-import { forgetLocalUserState } from '../lib/session'
-import { logoutPushUser } from '../lib/pushNotifications'
-import { captureException, identifyUser } from '../lib/errorReporting'
+import { useSignOut } from '../lib/useSignOut'
 import { shareInvite } from '../lib/inviteShare'
 
 // The settings modal is by far the heaviest part of the topbar; load its chunk
@@ -61,6 +60,11 @@ const props = defineProps({
   // markup into two components would mean either two copies of that state or a
   // third component holding it, and the dialogs are most of this file.
   layout: { type: String as PropType<'bar' | 'header'>, default: 'header' },
+  // Whether the header's left slot is a way back rather than the brand mark.
+  // Only the 'header' shell has that slot, and only a screen with a step behind
+  // it asks for this -- see HouseholdSetupView, which is every screen that draws
+  // the logo today.
+  back: { type: Boolean, default: false },
   householdId: { type: String, default: '' },
   householdName: { type: String, default: '' },
   // Every household the user belongs to ({ id, name }); the account dialog lists
@@ -95,13 +99,15 @@ const emit = defineEmits([
   // open state is HomeView's `searchExpanded`, so the bar only says it was
   // pressed rather than owning anything.
   'add',
+  // The back control above `back` draws. Where it leads is the parent's, because
+  // only the parent knows which step it is on.
+  'back',
 ])
 
 const clerk = useClerk()
 const { user } = useUser()
 
 const accountMenuOpen = ref(false)
-const signingOut = ref(false)
 
 // The household switcher. Both shells have a button for it -- the bar's fourth
 // slot and the header's actions row -- and they live here rather than in the menu
@@ -206,41 +212,16 @@ function inviteMembersFromAccountMenu() {
   })
 }
 
-async function handleSignOut() {
-  if (signingOut.value) return
-  signingOut.value = true
-  try {
-    // Drop the cached session and local data so the offline-boot path and the
-    // snapshot can't resurrect this account after signing out. The list of what
-    // that means lives in lib/session, next to the thing that writes the first
-    // entry — spelled out here, it was one key short.
-    //
-    // Scoped to this account where the topbar knows it. On the setup screen it
-    // renders without props and currentUserId is '', which clears every FamCart
-    // queue and snapshot on the device instead — the safer answer when we cannot
-    // say whose this is.
-    forgetLocalUserState(localStorage, props.currentUserId || undefined)
-    // Detach the account from error reporting for the same reason. Sentry's
-    // setUser is sticky module state, not per-event, so anything raised after
-    // this point would still be filed under the person who just left. The
-    // redirect below usually tears the page down before that can happen -- but
-    // it is a redirect Clerk performs, and the catch below exists precisely
-    // because it does not always get there.
-    identifyUser(null)
-    // Unlink this device in OneSignal so the next account's pushes don't land
-    // on top of the old one's. Best-effort; sign-out must not wait on the CDN.
-    void logoutPushUser()
-    await clerk.value?.signOut({ redirectUrl: `${window.location.origin}/login` })
+// Signing out is four subsystems torn down in a fixed order, and none of that
+// is a navigation shell's business — see lib/useSignOut, which owns the order
+// and the reasons for it. What stays here is the one thing that IS this
+// component's: closing the menu the press came from.
+const { signingOut, signOut: handleSignOut } = useSignOut({
+  userId: () => props.currentUserId,
+  onSignedOut: () => {
     accountMenuOpen.value = false
-  } catch (error) {
-    // The local data is already cleared by this point, so the session is
-    // effectively over either way; what failed is Clerk's own teardown, which
-    // is worth knowing about but not worth a dialog on the way out.
-    captureException(error)
-  } finally {
-    signingOut.value = false
-  }
-}
+  },
+})
 
 // Offline (cold-booted from cache) Clerk can't load, so `user` is null. The
 // cached household roster still holds this user's profile, so fall back to it for
@@ -290,9 +271,9 @@ const orderedActiveMembers = computed(() =>
   <!-- The nightly stamp, at the top of the viewport rather than inside the bar.
        It lost its old home when the topbar became desktop-only, and a build
        channel has to be obvious in a screenshot with no chrome in it so that
-       nobody debugs the wrong database for an hour. The list pays for it with
-       --channel-ribbon, which is 0px on production, so this costs an unmarked
-       build nothing at all.
+       nobody debugs the wrong database for an hour. It costs the layout
+       nothing: it hangs over the list rather than pushing it down, so a nightly
+       build and a production one are the same screen with a stamp on it.
 
        Untranslated on purpose, like the manifest: it names a build channel, not
        anything the app does. -->
@@ -446,6 +427,11 @@ const orderedActiveMembers = computed(() =>
           </div>
         </div>
       </template>
+      <!-- The way back takes the logo's place instead of sitting inside the
+           card below it. Both cannot have this corner, and between them only one
+           is a control: the mark names an app you are already inside, while the
+           left edge of the bar is where a phone puts the way out of a step. -->
+      <BackButton v-else-if="back" class="topbar-back" @click="emit('back')" />
       <template v-else>
         <!-- eslint-disable-next-line vue/no-bare-strings-in-template -- brand name, the same in every language -->
         <img src="/icons/pwa-192.png" alt="FamCart" class="topbar-logo" />
@@ -569,8 +555,13 @@ const orderedActiveMembers = computed(() =>
 /* The build stamp, at the top of the viewport. Fixed rather than in the flow so
    it cannot be scrolled away — it answers "which database am I looking at",
    which is a question you can have at any moment, not only at the top of the
-   list. The list keeps clear of it through --channel-ribbon, which is 0px on
-   production, so this rule and that padding both cost an unmarked build nothing.
+   list.
+
+   Nothing below it is moved out of its way. The list used to reserve the
+   stamp's height (a --channel-ribbon token in the top padding), which meant
+   nightly and production were laid out differently — so the channel a build was
+   pointed at changed where its content sat, and every judgement about spacing on
+   nightly was being made about a screen production never draws.
 
    pointer-events: none because it is a label, not a control, and it sits over
    the one row of the list that has controls in it. */
@@ -1010,6 +1001,14 @@ const orderedActiveMembers = computed(() =>
   font-weight: var(--weight-extrabold);
   letter-spacing: 0.08em;
   line-height: 1.5;
+}
+
+/* Shared BackButton. Its top margin is for standing alone at the top of a card;
+   here the bar centres it, and the left inset it keeps matches .household-btn's
+   own padding, so whichever of the three things can hold this slot starts in the
+   same place. A negative margin would be clipped by .topbar-left anyway. */
+.topbar-back {
+  margin-top: 0;
 }
 
 .topbar-logo {

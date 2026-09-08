@@ -64,6 +64,7 @@ function addHousehold(close: () => void) {
     :heading="t('switcher.heading')"
     :hint="t('switcher.hint')"
     icon-name="menu"
+    closable
   >
     <template #default="{ close }">
       <!-- menuitemradio, not menuitem: these are one choice with one answer, and
@@ -83,9 +84,11 @@ function addHousehold(close: () => void) {
             {{ household.emoji || DEFAULT_HOUSEHOLD_EMOJI }}
           </span>
           <span class="switcher-name">{{ household.name || t('account.householdFallback') }}</span>
-        </span>
-        <span v-if="household.id === householdId" class="switcher-item__hint">
-          {{ t('account.current') }}
+          <!-- Inside the label rather than beside it, which is what lets it sit
+               on the name's baseline. See the note on .switcher-item__hint. -->
+          <span v-if="household.id === householdId" class="switcher-item__hint">
+            {{ t('account.current') }}
+          </span>
         </span>
       </button>
 
@@ -94,8 +97,23 @@ function addHousehold(close: () => void) {
            profile dialog, which is a strange place to keep the answer to "we
            want a second list". -->
       <template v-if="canAddHousehold">
-        <div class="switcher-divider"></div>
-        <button class="menu-item switcher-add" type="button" @click="addHousehold(close)">
+        <!-- role="separator", like the filter's own group line: inside a
+             role="menu" a bare div is a generic child that says nothing, and
+             the rule is drawing a division a screen reader could not otherwise
+             hear. .menu-divider is PopoverMenu's, shared with every menu that
+             needs one rather than restated here. -->
+        <div class="menu-divider" role="separator"></div>
+        <!-- role="menuitem": a menu exposes only its menuitems, so a bare
+             <button> here is not one of this menu's children and can be left
+             out of what is announced. It is not a radio like the rows above --
+             it does not answer "which household", it leaves to go and make
+             one. -->
+        <button
+          class="menu-item switcher-add"
+          type="button"
+          role="menuitem"
+          @click="addHousehold(close)"
+        >
           <span class="switcher-item__label">
             <AppIcon class="switcher-add__icon" name="plus" />
             <span>{{ t('account.joinOrCreate') }}</span>
@@ -134,10 +152,31 @@ function addHousehold(close: () => void) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Pairs with the hint below -- both have to opt into baseline alignment or
+     they are not in the same baseline group and nothing lines up. */
+  align-self: baseline;
 }
 
+/* "Current", against the name it is about.
+ *
+ * IT SITS INSIDE .switcher-item__label, AND THAT IS THE FIX. As a child of the
+ * row it was aligned by the row's `align-items: center`, which centres BOXES --
+ * and a 12px hint's line box is 15px against the 14px name's 18px, so centring
+ * both left their baselines 1.5px apart and the word floated above the name.
+ *
+ * `align-items: baseline` on the row is the obvious answer and is wrong here:
+ * the row carries `min-height: 48px` for touch, so a baseline group parks at the
+ * top of it and takes the whole line 7px off centre. The label has no such
+ * slack -- its height IS the name's -- so aligning the pair inside it costs the
+ * row nothing. The emoji stays centred, since only these two opt in.
+ *
+ * The margin is the label's own 0.6rem gap topped back up to the --space-3 the
+ * row used to put here, so moving the element changed the alignment and nothing
+ * else. */
 .switcher-item__hint {
   flex-shrink: 0;
+  align-self: baseline;
+  margin-left: calc(var(--space-3) - 0.6rem);
   font-size: var(--text-xs);
   color: var(--text-secondary);
 }
@@ -157,9 +196,8 @@ function addHousehold(close: () => void) {
   stroke-width: 2;
 }
 
-.switcher-divider {
-  height: var(--border-width-thin);
-  margin: 0.35rem 0;
-  background: var(--border-light);
-}
+/* No .switcher-divider here any more. PopoverMenu already ships .menu-divider
+   in its :slotted rules -- the same 1px line, inset to match the rows -- and
+   this file had grown a near-identical copy beside it, which left the shared
+   one used by nobody. */
 </style>

@@ -10,6 +10,7 @@ const de: Catalog = {
   'common.ok': 'OK',
   'common.cancel': 'Abbrechen',
   'common.closeModal': 'Dialog schließen',
+  'common.closeMenu': 'Menü schließen',
   'common.confirm': 'Bestätigen',
   'common.continue': 'Weiter',
 
@@ -80,6 +81,8 @@ const de: Catalog = {
   'error.offline': 'Du scheinst offline zu sein. Prüfe deine Verbindung und versuche es erneut.',
   'error.nameTooLongTitle': 'Name zu lang',
   'error.householdNameTooLong': 'Der Name des Haushalts darf höchstens {max} Zeichen lang sein.',
+  'error.nameRequiredTitle': 'Name erforderlich',
+  'error.householdNameRequired': 'Gib deinem Haushalt einen Namen, bevor du speicherst.',
   'error.ownOneHousehold':
     'Du kannst nur einen Haushalt besitzen. Verlasse oder lösche deinen aktuellen, bevor du einen neuen erstellst.',
   'error.membershipCapCreate':

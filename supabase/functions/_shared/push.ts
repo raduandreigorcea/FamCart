@@ -58,26 +58,151 @@ export function itemLabel(name: string, quantity: number | null): string {
 }
 
 /**
+ * The six languages the app speaks, and the copy each of them gets.
+ *
+ * WHY THIS TABLE IS HERE AND NOT IN src/locales.
+ *
+ * A Supabase edge function may only import files under supabase/functions —
+ * that is the directory the CLI uploads — so it cannot read the app's own
+ * catalogs even though they hold the same six languages. The duplication is a
+ * deployment constraint, not a choice, and it is small and self-contained for
+ * that reason: three sentences per language and no interpolation the app's
+ * `t()` would do better.
+ *
+ * `en` is the fallback and must stay complete: OneSignal falls back to it for
+ * any subscriber whose language is not a key here.
+ *
+ * THE COUNT IS OFTEN ONE, which is the trap in the counted branch. It is
+ * `labels.length - 2`, so a three-item checkout — much the commonest kind —
+ * spells it "and 1 more". English and Spanish read the same either way; German,
+ * French and Italian do not, and "et 1 autres" is the kind of wrong that makes
+ * an app look machine-translated. So `andMore` branches on the count in the
+ * three languages that need it, and Intl.PluralRules is deliberately not
+ * reached for: two forms over a number that is always a positive integer is
+ * what a ternary is for, and the plural machinery belongs in lib/i18n where
+ * there are hundreds of strings to justify it.
+ *
+ * Two known cosmetic limits, named so they are not mistaken for oversights.
+ * Spanish turns "y" into "e" before a word starting with i- or hi-, and Italian
+ * turns "e" into "ed" before a vowel; both depend on the next word, which here
+ * is an arbitrary product name. Getting them right means a phonetic rule over
+ * user data for one conjunction on a lock screen, which is not worth the code.
+ */
+export type PushLocale = 'en' | 'ro' | 'de' | 'es' | 'fr' | 'it'
+
+export const PUSH_LOCALES: PushLocale[] = ['en', 'ro', 'de', 'es', 'fr', 'it']
+
+interface PushCopy {
+  /** "{who} added {item}" */
+  added: (who: string, item: string) => string
+  /** "{who} bought {list}" */
+  bought: (who: string, list: string) => string
+  /** Exactly two products named in full. */
+  pair: (a: string, b: string) => string
+  /** Two named, the rest counted. */
+  andMore: (a: string, b: string, rest: number) => string
+}
+
+const COPY: Record<PushLocale, PushCopy> = {
+  en: {
+    added: (who, item) => `${who} added ${item}`,
+    bought: (who, list) => `${who} bought ${list}`,
+    pair: (a, b) => `${a} and ${b}`,
+    andMore: (a, b, rest) => `${a}, ${b} and ${rest} more`,
+  },
+  ro: {
+    added: (who, item) => `${who} a adăugat ${item}`,
+    bought: (who, list) => `${who} a cumpărat ${list}`,
+    pair: (a, b) => `${a} și ${b}`,
+    andMore: (a, b, rest) => `${a}, ${b} și încă ${rest}`,
+  },
+  de: {
+    added: (who, item) => `${who} hat ${item} hinzugefügt`,
+    bought: (who, list) => `${who} hat ${list} gekauft`,
+    pair: (a, b) => `${a} und ${b}`,
+    // "weiteres" agrees with the neuter Produkt that is implied but not said.
+    andMore: (a, b, rest) =>
+      rest === 1 ? `${a}, ${b} und 1 weiteres` : `${a}, ${b} und ${rest} weitere`,
+  },
+  es: {
+    added: (who, item) => `${who} añadió ${item}`,
+    bought: (who, list) => `${who} compró ${list}`,
+    pair: (a, b) => `${a} y ${b}`,
+    andMore: (a, b, rest) => `${a}, ${b} y ${rest} más`,
+  },
+  fr: {
+    added: (who, item) => `${who} a ajouté ${item}`,
+    bought: (who, list) => `${who} a acheté ${list}`,
+    pair: (a, b) => `${a} et ${b}`,
+    andMore: (a, b, rest) =>
+      rest === 1 ? `${a}, ${b} et 1 autre` : `${a}, ${b} et ${rest} autres`,
+  },
+  it: {
+    added: (who, item) => `${who} ha aggiunto ${item}`,
+    bought: (who, list) => `${who} ha comprato ${list}`,
+    pair: (a, b) => `${a} e ${b}`,
+    andMore: (a, b, rest) =>
+      rest === 1 ? `${a}, ${b} e 1 altro` : `${a}, ${b} e altri ${rest}`,
+  },
+}
+
+function copyFor(locale: PushLocale): PushCopy {
+  return COPY[locale] ?? COPY.en
+}
+
+/**
  * The list of products in a checkout notification.
  *
  * Named in full up to two, then counted, because a lock screen truncates and
  * the useful half of the sentence is the beginning. "Bread, Milk and 4 more"
  * says what happened; six names elided mid-word do not.
  */
-export function summariseCheckout(labels: string[]): string {
-  if (labels.length === 1) return labels[0]
-  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`
-  return `${labels[0]}, ${labels[1]} and ${labels.length - 2} more`
+export function summariseCheckout(labels: string[], locale: PushLocale = 'en'): string {
+  const copy = copyFor(locale)
+  // Nothing to name. The caller already refuses to send for an empty checkout,
+  // so this is unreachable from the handler -- but it was not unreachable from
+  // the type, and the counted branch below would have read
+  // "undefined, undefined and -2 more" on somebody's lock screen. A guard is
+  // cheaper than relying on one caller to keep being careful.
+  if (labels.length === 0) return ''
+  // Beyond here the indices are guarded by the length checks, which is what the
+  // assertions are recording.
+  if (labels.length === 1) return labels[0]!
+  if (labels.length === 2) return copy.pair(labels[0]!, labels[1]!)
+  return copy.andMore(labels[0]!, labels[1]!, labels.length - 2)
 }
 
 /** "Radu added Milk ×2" */
-export function itemAddedBody(who: string, item: ItemRecord): string {
-  return `${who} added ${itemLabel(item.name, item.quantity)}`
+export function itemAddedBody(who: string, item: ItemRecord, locale: PushLocale = 'en'): string {
+  return copyFor(locale).added(who, itemLabel(item.name, item.quantity))
 }
 
 /** "Radu bought Bread, Milk and 4 more" */
-export function checkoutBody(who: string, items: PurchasedItem[]): string {
-  return `${who} bought ${summariseCheckout(items.map((i) => itemLabel(i.name, i.quantity)))}`
+export function checkoutBody(
+  who: string,
+  items: PurchasedItem[],
+  locale: PushLocale = 'en',
+): string {
+  const labels = items.map((i) => itemLabel(i.name, i.quantity))
+  return copyFor(locale).bought(who, summariseCheckout(labels, locale))
+}
+
+/**
+ * Every language's version of one message, in the shape OneSignal's `contents`
+ * field takes.
+ *
+ * This is what makes push multilingual without this function knowing anything
+ * about who is receiving it. OneSignal holds a language per subscription — the
+ * app sets it from the language the user actually reads, see
+ * setPushLanguage() in src/lib/pushNotifications.ts — and picks the matching
+ * key at delivery, falling back to `en`. So one REST call serves a household
+ * whose members read three different languages, which is the common case here
+ * and the reason this is not a per-recipient loop.
+ */
+export function localisedContents(build: (locale: PushLocale) => string): Record<string, string> {
+  const contents: Record<string, string> = {}
+  for (const locale of PUSH_LOCALES) contents[locale] = build(locale)
+  return contents
 }
 
 /**
@@ -121,7 +246,9 @@ export async function secretMatches(given: string | null, expected: string): Pro
   const av = new Uint8Array(a)
   const bv = new Uint8Array(b)
   let diff = 0
-  for (let i = 0; i < av.length; i++) diff |= av[i] ^ bv[i]
+  // Both digests are SHA-256, so both are exactly 32 bytes and every index in
+  // range hits on each. No early exit, deliberately -- see above.
+  for (let i = 0; i < av.length; i++) diff |= av[i]! ^ bv[i]!
   return diff === 0
 }
 

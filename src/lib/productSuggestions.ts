@@ -142,10 +142,16 @@ export function useProductSuggestions(options: {
   const suggestionsLoading = ref(false)
   const searchShop = ref<string | null>(null)
   const shopOptions = ref<string[]>([])
+  // Set on the way out, and checked by every async path that resolves into a
+  // ref. The search and the stats fetch each have a sharper guard of their own
+  // (a request id, a pinned household id) because they also have to reject a
+  // STALE answer, not merely a late one; this only has to know the view is gone.
+  let disposed = false
   // Best-effort and unawaited: three rows from the catalog, and an empty answer
   // simply means the control never appears. Nothing on this path may delay a
   // keystroke.
   void fetchShopList().then((shops) => {
+    if (disposed) return
     shopOptions.value = shops
   })
   const selectedProduct = ref<ProductSuggestion | null>(null)
@@ -496,6 +502,37 @@ export function useProductSuggestions(options: {
     }
   }
 
+  // Ask the current question, however it came to be asked.
+  //
+  // The two callers below differ in ONE thing -- whether the dispatch waits out
+  // the typing debounce -- and used to spell the other four steps out twice. The
+  // steps are not obvious enough to duplicate safely: clearing the matches
+  // before raising the skeleton is what stops the dropdown offering "Can't find
+  // it?" mid-search, and the pending timer has to be cancelled whichever way the
+  // question changed. A guard added to one copy and not the other is the drift
+  // this prevents.
+  function startSearch(text: string, options: { debounce: boolean }): void {
+    if (suggestTimer) {
+      clearTimeout(suggestTimer)
+      suggestTimer = null
+    }
+    if (text.length < SUGGEST_MIN_CHARS || selectedProduct.value) {
+      suggestions.value = []
+      suggestionsLoading.value = false
+      return
+    }
+    // The last question's matches are not this question's answers, so drop them
+    // and show the skeleton from the first keystroke -- across the debounce as
+    // well as the request, since both are time the user spends waiting.
+    suggestions.value = []
+    suggestionsLoading.value = true
+    if (!options.debounce) {
+      void fetchSuggestions(text)
+      return
+    }
+    suggestTimer = setTimeout(() => void fetchSuggestions(text), SUGGEST_DEBOUNCE_MS)
+  }
+
   watch(query, (value) => {
     const text = value.trim()
     // Editing away from a picked suggestion drops its maker; retyping the exact
@@ -503,20 +540,7 @@ export function useProductSuggestions(options: {
     if (selectedProduct.value && text !== selectedProduct.value.name) {
       selectedProduct.value = null
     }
-    if (suggestTimer) clearTimeout(suggestTimer)
-    if (text.length < SUGGEST_MIN_CHARS || selectedProduct.value) {
-      suggestions.value = []
-      suggestionsLoading.value = false
-      return
-    }
-    // The last query's matches are not this query's answers, so drop them and
-    // show the skeleton from the first keystroke — across the debounce as well
-    // as the request, since both are time the user spends waiting. Without this
-    // the dropdown would offer "Can't find it?" while the search is still
-    // running.
-    suggestions.value = []
-    suggestionsLoading.value = true
-    suggestTimer = setTimeout(() => void fetchSuggestions(text), SUGGEST_DEBOUNCE_MS)
+    startSearch(text, { debounce: true })
   })
 
   // Changing the shop re-asks the SAME question, so it skips the debounce that
@@ -532,18 +556,7 @@ export function useProductSuggestions(options: {
   function setSearchShop(shop: string | null): void {
     if (searchShop.value === shop) return
     searchShop.value = shop
-    const text = query.value.trim()
-    if (text.length < SUGGEST_MIN_CHARS || selectedProduct.value) {
-      suggestions.value = []
-      return
-    }
-    if (suggestTimer) {
-      clearTimeout(suggestTimer)
-      suggestTimer = null
-    }
-    suggestions.value = []
-    suggestionsLoading.value = true
-    void fetchSuggestions(text)
+    startSearch(query.value.trim(), { debounce: false })
   }
 
   // Fold this household's recent purchases into the ranking signal. Best-effort: on
@@ -659,6 +672,7 @@ export function useProductSuggestions(options: {
   }
 
   onBeforeUnmount(() => {
+    disposed = true
     if (suggestTimer) clearTimeout(suggestTimer)
     // And retire the request id, which closes every query already past the
     // debounce. Clearing suggestTimer only stops the ones that have not

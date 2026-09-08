@@ -506,6 +506,63 @@ describe('addItem', () => {
     expect(items[0].created_at).toBe('2026-02-02T00:00:00.000Z')
   })
 
+  // The insert was the last write with no guard on it. For the length of its
+  // round trip the row exists locally and nowhere else, so a refetch landing
+  // inside that window rebuilds the array from a server answer that cannot
+  // contain it — and the item the user just added vanishes from under them.
+  //
+  // Realtime's INSERT echo puts it back, which is why this was never reported;
+  // but the echo is the part that is allowed to be late, and reconnect, the
+  // watchdog and every subscribe acknowledgement all call loadItems.
+  it('keeps the optimistic row when a refetch lands mid-insert', async () => {
+    const wrapper = await mountHome()
+
+    let resolveInsert
+    mocks.db.handlers['shopping_list_items.insert'] = (q) =>
+      new Promise((resolve) => {
+        resolveInsert = () =>
+          resolve({
+            data: { ...q.payload, checked: false, created_at: '2026-02-02T00:00:00.000Z' },
+            error: null,
+          })
+      })
+
+    await submitAdd(wrapper, 'Milk')
+    expect(listedItems(wrapper)).toHaveLength(1)
+
+    // The server still knows nothing about it, so this refetch answers empty.
+    // Substitution cannot help here — there is no fetched row to substitute —
+    // which is why the guard is keyed on the insert being on the wire.
+    await wrapper.vm.loadItems()
+    expect(listedItems(wrapper).map((i) => i.name)).toEqual(['Milk'])
+
+    resolveInsert()
+    await flushPromises()
+
+    // And once it lands, the server's own row is what stands — not a duplicate
+    // beside the optimistic one, which is the other way this can go wrong.
+    expect(listedItems(wrapper)).toHaveLength(1)
+    expect(listedItems(wrapper)[0].created_at).toBe('2026-02-02T00:00:00.000Z')
+  })
+
+  // The other half of the same rule. A row taken off the list locally must NOT
+  // come back just because a refetch overlapped a write on it: re-adding every
+  // guarded row the fetch omitted would resurrect a row somebody else deleted.
+  it('does not resurrect a row whose delete is already committed locally', async () => {
+    const existing = makeItem({ id: 'item-1', name: 'Milk' })
+    const wrapper = await mountHome({ items: [existing] })
+    mocks.db.handlers['shopping_list_items.delete'] = () => ({ data: null, error: null })
+
+    wrapper.findComponent(ShoppingList).vm.$emit('delete', listedItems(wrapper)[0])
+    await flushPromises()
+    expect(listedItems(wrapper)).toHaveLength(0)
+
+    // The server has it gone too, so the refetch is empty and stays empty.
+    setDefaultHandlers(mocks.db, { items: [] })
+    await wrapper.vm.loadItems()
+    expect(listedItems(wrapper)).toHaveLength(0)
+  })
+
   it('rolls back the optimistic row and restores the form when the insert fails', async () => {
     const wrapper = await mountHome()
     mocks.db.handlers['shopping_list_items.insert'] = () => ({

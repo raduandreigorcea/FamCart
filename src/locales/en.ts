@@ -34,6 +34,7 @@ export default {
   'common.ok': 'OK',
   'common.cancel': 'Cancel',
   'common.closeModal': 'Close modal',
+  'common.closeMenu': 'Close menu',
   'common.confirm': 'Confirm',
   'common.continue': 'Continue',
 
@@ -118,6 +119,8 @@ export default {
   'error.offline': 'You appear to be offline. Check your connection and try again.',
   'error.nameTooLongTitle': 'Name Too Long',
   'error.householdNameTooLong': 'Household name must be {max} characters or fewer.',
+  'error.nameRequiredTitle': 'Name Required',
+  'error.householdNameRequired': 'Give your household a name before saving.',
   'error.ownOneHousehold':
     'You can only own one household. Leave or delete your current one before creating another.',
   'error.membershipCapCreate':

@@ -42,6 +42,17 @@
 //     greppable string in Sentry.
 //   • errorReporting.ts breadcrumbs and tags, issueReport.ts payload fields.
 //     Read by us, not by users, and worth less once they vary by language.
+//
+// ── THE ONE CATALOG THAT IS NOT HERE ──────────────────────────────────────
+// Push notification copy IS translated, and deliberately not from this file.
+// It lives in supabase/functions/_shared/push.ts, because a Supabase edge
+// function may only import from under supabase/functions — the directory the
+// CLI uploads — so it cannot reach src/locales however much it would like to.
+// Six languages, three sentences each. If a seventh language is ever added
+// here, that table is the other place it has to be added, and nothing will say
+// so: a missing key there is a silent fall back to English rather than an
+// error. lib/pushNotifications' setPushLanguage() is the half that tells
+// OneSignal which of them to deliver.
 //   • android/app/src/main/res/values/strings.xml. Two brand names and two
 //     identifiers, one of which is the famcart:// scheme Clerk's OAuth return
 //     leg matches — see CLAUDE.md.
@@ -382,7 +393,11 @@ export function tn(key: PluralKey, n: number, params: MessageParams = {}): strin
 export function tAccent(key: TextKey, params?: MessageParams): [string, string, string] {
   const raw = rawMessage(key)
   const match = /^(.*?)\[(.+?)\](.*)$/s.exec(raw)
-  const parts: [string, string, string] = match ? [match[1], match[2], match[3]] : [raw, '', '']
+  // All three groups are unconditional in the pattern above -- none sits behind
+  // a `?` or an alternation -- so a match that succeeded captured all three.
+  const parts: [string, string, string] = match
+    ? [match[1]!, match[2]!, match[3]!]
+    : [raw, '', '']
   return [
     interpolate(parts[0], params),
     interpolate(parts[1], params),

@@ -277,8 +277,32 @@ export function useShoppingListActions(options: {
       // sorts by creation time like every other, so its position is unaffected.
       const localById = new Map(items.value.map((i) => [i.id, i]))
       for (let i = 0; i < fresh.length; i++) {
-        const local = pendingItemWrites.has(fresh[i].id) && localById.get(fresh[i].id)
+        const local = pendingItemWrites.has(fresh[i]!.id) && localById.get(fresh[i]!.id)
         if (local) fresh[i] = local
+      }
+    }
+
+    // A row whose INSERT is still on the wire is not in the answer above at
+    // all, and substitution cannot save what was never fetched.
+    //
+    // That is a different failure from the one the block above prevents, and
+    // the one this list was missing. For the length of the insert's round trip
+    // the row exists locally and nowhere else, so a refetch landing inside that
+    // window replaces the array with a server answer that cannot contain it,
+    // and the item the user just added disappears from under them. The realtime
+    // INSERT echo puts it back, which is why this was never reported -- but the
+    // echo is precisely the part that is allowed to be late, and reconnect, the
+    // watchdog and every subscribe acknowledgement all call this function.
+    //
+    // Keyed on inFlightInserts rather than on pendingItemWrites, because only
+    // inFlightInserts means "the server has not been told about this row yet".
+    // Re-adding every guarded row that the fetch omitted would also resurrect a
+    // row someone else deleted while a write of ours was in flight, which is
+    // the opposite mistake.
+    if (inFlightInserts.size) {
+      const fetchedIds = new Set(fresh.map((i) => i.id))
+      for (const item of items.value) {
+        if (inFlightInserts.has(item.id) && !fetchedIds.has(item.id)) fresh.push(item)
       }
     }
 
@@ -579,7 +603,7 @@ export function useShoppingListActions(options: {
       // echo verbatim would undo them, and the queued write would then send the
       // number back down. Everything else is server-authoritative.
       items.value[index] = quantityIntent.has(id)
-        ? { ...server, quantity: items.value[index].quantity }
+        ? { ...server, quantity: items.value[index]!.quantity }
         : server
       // The server's created_at replaces the optimistic client timestamp — a
       // different sort key. Re-sort now so the row settles into its canonical spot
@@ -599,7 +623,7 @@ export function useShoppingListActions(options: {
     const addedQty = Number(source.quantity) || 1
 
     target.quantity = previousTargetQty + addedQty
-    const removedSource = sourceIndex !== -1 ? items.value.splice(sourceIndex, 1)[0] : source
+    const removedSource = sourceIndex !== -1 ? items.value.splice(sourceIndex, 1)[0]! : source
 
     const rollback = (message: string) => {
       target.quantity = previousTargetQty
@@ -958,7 +982,7 @@ export function useShoppingListActions(options: {
     // Optimistic: remove immediately, restore at its original position on failure.
     const index = items.value.findIndex((i) => i.id === item.id)
     if (index === -1) return
-    const [removed] = items.value.splice(index, 1)
+    const [removed] = items.value.splice(index, 1) as [ShoppingItemRow]
 
     if (isOffline()) {
       enqueueOfflineMutation(localStorage, userId.value, { kind: 'delete', id: item.id })

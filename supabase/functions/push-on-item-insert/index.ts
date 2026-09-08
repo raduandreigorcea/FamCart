@@ -35,6 +35,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 import {
   checkoutBody,
   itemAddedBody,
+  localisedContents,
   recipientsFor,
   routePayload,
   secretMatches,
@@ -68,7 +69,13 @@ async function fetchDisplayName(userId: string): Promise<string> {
 
 async function sendPush(options: {
   recipientIds: string[]
-  body: string
+  /**
+   * The message in every language the app speaks, keyed by language code.
+   * OneSignal picks the one matching each subscription's own language and
+   * falls back to `en`, so a household reading in three languages is still
+   * one REST call. See localisedContents in ../_shared/push.ts.
+   */
+  contents: Record<string, string>
   householdId: string
   idempotencyKey: string
 }): Promise<Response> {
@@ -85,8 +92,10 @@ async function sendPush(options: {
       app_id: Deno.env.get('ONESIGNAL_APP_ID'),
       target_channel: 'push',
       include_aliases: { external_id: options.recipientIds },
+      // The brand name, which is the same word in all six languages, so this
+      // stays a single key while `contents` below does not.
       headings: { en: 'FamCart' },
-      contents: { en: options.body },
+      contents: options.contents,
       web_push_topic: tag,
       collapse_id: tag,
       // Webhook retries (and per-row checkout fan-in) resend the same key;
@@ -116,7 +125,7 @@ async function handleItemAdded(item: ItemRecord): Promise<Response> {
   const who = await fetchDisplayName(item.added_by)
   return sendPush({
     recipientIds,
-    body: itemAddedBody(who, item),
+    contents: localisedContents((locale) => itemAddedBody(who, item, locale)),
     householdId: item.household_id,
     idempotencyKey: item.id,
   })
@@ -142,7 +151,7 @@ async function handleCheckout(purchase: PurchaseRecord): Promise<Response> {
   const who = await fetchDisplayName(purchase.purchased_by)
   return sendPush({
     recipientIds,
-    body: checkoutBody(who, items),
+    contents: localisedContents((locale) => checkoutBody(who, items, locale)),
     householdId: purchase.household_id,
     idempotencyKey: purchase.checkout_id,
   })

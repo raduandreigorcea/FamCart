@@ -52,6 +52,17 @@ const emit = defineEmits([
 
 const resolvedDisplayName = computed(() => props.displayName || t('account.fallbackName'))
 
+// Both household rows are drawn only once there IS a household. AppNavBar also
+// renders on HouseholdSetupView, where it is given no household props at all --
+// and there "Manage household" and "Invite people" both landed on
+// HouseholdSettingsModal wired to an empty id: an untitled dialog with no
+// members, no code to send, and a danger tab offering to leave or delete
+// nothing. An empty name is what the rest of the bar already reads as "no
+// household yet" (the topbar's own household block and its switcher and history
+// buttons are gated on the same thing), so this stays on that one signal rather
+// than adding a flag the two could disagree about.
+const hasHousehold = computed(() => Boolean(props.householdName))
+
 </script>
 
 <template>
@@ -101,14 +112,24 @@ const resolvedDisplayName = computed(() => props.displayName || t('account.fallb
           </button>
 
           <div class="account-section">
-            <button class="account-menu-item" type="button" @click="emit('manage-household')">
+            <button
+              v-if="hasHousehold"
+              class="account-menu-item"
+              type="button"
+              @click="emit('manage-household')"
+            >
               <span class="account-menu-item__label">
                 <AppIcon class="account-item-icon" name="house" />
                 <span>{{ t('account.manageHousehold') }}</span>
               </span>
-              <span class="account-menu-item__hint">{{ householdName || t('account.householdFallback') }}</span>
+              <span class="account-menu-item__hint">{{ householdName }}</span>
             </button>
-            <button class="account-menu-item" type="button" @click="emit('invite-members')">
+            <button
+              v-if="hasHousehold"
+              class="account-menu-item"
+              type="button"
+              @click="emit('invite-members')"
+            >
               <span class="account-menu-item__label">
                 <AppIcon class="account-item-icon" name="user-round-plus" />
                 <span>{{ t('account.invitePeople') }}</span>

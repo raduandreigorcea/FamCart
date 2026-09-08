@@ -675,7 +675,8 @@ async function runInitializeHome() {
   // Restore the last active household if it is still one we belong to, else default
   // to the first; persist the choice so it survives reloads.
   const storedActiveId = loadActiveHouseholdId(localStorage, userId.value)
-  const activeHousehold = households.value.find((f) => f.id === storedActiveId) || households.value[0]
+  const activeHousehold =
+    households.value.find((f) => f.id === storedActiveId) || households.value[0]!
   householdId.value = activeHousehold.id
   saveActiveHouseholdId(localStorage, effectiveUserId.value, activeHousehold.id)
   // Started here, the moment householdId exists, rather than after the three
@@ -857,7 +858,7 @@ async function reconcileActiveHousehold() {
   if (error) return
   if (households.value.some((f) => f.id === householdId.value)) return
   if (households.value.length) {
-    await switchHousehold(households.value[0].id)
+    await switchHousehold(households.value[0]!.id)
     return
   }
   cleanupRealtimeSubscriptions()
@@ -1023,7 +1024,7 @@ async function reconcileActiveHousehold() {
   display: flex;
   justify-content: center;
   padding: 1rem 1rem 0;
-  padding-top: calc(1rem + var(--safe-top) + var(--channel-ribbon));
+  padding-top: calc(1rem + var(--safe-top));
   padding-bottom: calc(
     var(--nav-height) + var(--nav-disc-overhang) + var(--safe-bottom) + 0.75rem
   );

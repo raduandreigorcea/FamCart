@@ -2,8 +2,9 @@
 //
 // The suggestions dropdown: what it shows, and that picking never races the
 // input's blur (the options use mousedown, not click, for exactly that reason).
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import AddItemForm from '../src/components/AddItemForm.vue'
 
 const PRODUCTS = [
@@ -301,6 +302,75 @@ describe('AddItemForm suggestions', () => {
       await wrapper.find('.add-btn').trigger('click')
 
       expect(wrapper.emitted('scan')).toBeUndefined()
+    })
+
+    // Pressing Add puts the row on a list this screen is covering, and the field
+    // keeps its text, so the press had nothing to show for itself. The button
+    // answers for it: the plus becomes a tick and then goes back.
+    describe('once the add has landed', () => {
+      const confirmIcon = (wrapper) => wrapper.find('.confirm-icon')
+
+      beforeEach(() => {
+        vi.useFakeTimers()
+      })
+
+      afterEach(() => {
+        vi.useRealTimers()
+      })
+
+      it('turns the plus into a tick, and still draws exactly one icon', async () => {
+        const wrapper = await mountForm({ name: 'apa', canScan: true })
+
+        await wrapper.setProps({ lastAdded: { name: 'Apa Plata 2L', maker: 'Dorna' } })
+
+        expect(showing(confirmIcon(wrapper))).toBe(true)
+        expect(showing(addIcon(wrapper))).toBe(false)
+        expect(wrapper.findAll('.add-btn__icon').filter(showing)).toHaveLength(1)
+      })
+
+      it('goes back to the plus on its own', async () => {
+        const wrapper = await mountForm({ name: 'apa', canScan: true })
+        await wrapper.setProps({ lastAdded: { name: 'Apa Plata 2L', maker: 'Dorna' } })
+
+        vi.advanceTimersByTime(2000)
+        await nextTick()
+
+        expect(showing(confirmIcon(wrapper))).toBe(false)
+        expect(showing(addIcon(wrapper))).toBe(true)
+      })
+
+      // The parent clears lastAdded when the insert did not land after all. A
+      // tick for a row that never reached the list is worse than no tick.
+      it('takes the tick back when the add is taken back', async () => {
+        const wrapper = await mountForm({ name: 'apa', canScan: true })
+        await wrapper.setProps({ lastAdded: { name: 'Apa Plata 2L', maker: 'Dorna' } })
+
+        await wrapper.setProps({ lastAdded: null })
+
+        expect(showing(confirmIcon(wrapper))).toBe(false)
+        expect(showing(addIcon(wrapper))).toBe(true)
+      })
+
+      // With an empty field the button is the scanner, and a tick flashing over
+      // the camera glyph would be a different control taking the credit.
+      it('leaves the scan button alone', async () => {
+        const wrapper = await mountForm({ name: '', canScan: true })
+
+        await wrapper.setProps({ lastAdded: { name: 'Paine Alba', maker: 'Vel Pitar' } })
+
+        expect(showing(confirmIcon(wrapper))).toBe(false)
+        expect(showing(scanIcon(wrapper))).toBe(true)
+      })
+
+      it('drops the tick as soon as the next name is typed', async () => {
+        const wrapper = await mountForm({ name: 'apa', canScan: true })
+        await wrapper.setProps({ lastAdded: { name: 'Apa Plata 2L', maker: 'Dorna' } })
+
+        await wrapper.setProps({ name: 'lapte' })
+
+        expect(showing(confirmIcon(wrapper))).toBe(false)
+        expect(showing(addIcon(wrapper))).toBe(true)
+      })
     })
   })
 
