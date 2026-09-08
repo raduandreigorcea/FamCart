@@ -71,23 +71,31 @@ describe('AppNavBar channel badge', () => {
     expect(badge.text()).toBe('NIGHTLY')
   })
 
-  // The header is desktop-only on the list screen, so on a phone the stamp would
-  // have had nowhere to be. It takes the bar's spare slot until something else
-  // claims it — the one place that is on screen whatever you are doing.
-  describe('in the bottom bar', () => {
-    it('leaves the spare slot empty on a production build', () => {
-      const wrapper = mountBar()
-
-      expect(wrapper.find('.nav-channel').exists()).toBe(false)
-      expect(wrapper.find('.nav-slot--empty').text()).toBe('')
+  // The header is desktop-only on the list screen, so on a phone the stamp has
+  // nowhere in the chrome to sit. It had the bar's spare slot for a while; the
+  // switcher took that, and it is a ribbon at the top of the viewport now — the
+  // one place that is on screen whatever you are doing, and the reason
+  // --channel-ribbon exists to keep the list clear of it.
+  describe('on a phone', () => {
+    it('draws no ribbon on a production build', () => {
+      expect(mountBar().find('.channel-ribbon').exists()).toBe(false)
     })
 
-    it('stamps the spare slot on a nightly build', () => {
+    it('draws the ribbon on a nightly build', () => {
       channel.nightly = true
-      const badge = mountBar().find('.nav-slot--empty .nav-channel')
+      const ribbon = mountBar().find('.channel-ribbon')
 
-      expect(badge.exists()).toBe(true)
-      expect(badge.text()).toBe('NIGHTLY')
+      expect(ribbon.exists()).toBe(true)
+      expect(ribbon.text()).toBe('NIGHTLY')
+    })
+
+    // The header carries its own badge at the desktop column, so a ribbon there
+    // as well would be the same word twice on one screen.
+    it('leaves the ribbon to the bar shell alone', () => {
+      channel.nightly = true
+
+      expect(mountHeader().find('.channel-ribbon').exists()).toBe(false)
+      expect(mountHeader().find('.channel-badge').exists()).toBe(true)
     })
   })
 })

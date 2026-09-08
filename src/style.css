@@ -186,6 +186,11 @@
      has to stay clear of the bar clears this too: the list's bottom padding and
      the checkout slider. */
   --nav-disc-overhang: 9px;
+  /* How much room the channel ribbon takes at the top of the list screen. Zero
+     here, and only the nightly channel below sets it -- so a production build
+     pays nothing for a stamp it never draws, and nothing has to know which
+     channel it is beyond this one line. */
+  --channel-ribbon: 0px;
   --size-control-sm: 32px;
   --size-control-md: 40px;
   --size-control-lg: 52px;
@@ -344,6 +349,9 @@
   --color-primary-text: #3730a3;
   --shadow-primary-12: rgba(91, 91, 214, 0.12);
   --shadow-primary-20: rgba(91, 91, 214, 0.2);
+  /* The stamp's own height plus the air under it, so the list starts below it
+     rather than behind it. */
+  --channel-ribbon: 22px;
 }
 
 /* Dark mode lifts the same hue rather than dimming it, exactly as the green

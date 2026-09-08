@@ -133,6 +133,9 @@ const ro: Catalog = {
 
   'filter.buttonLabel': 'Filtrează produsele',
   'filter.buttonLabelFiltered': 'Filtrează produsele (filtrat)',
+  'switcher.heading': 'Gospodăriile tale',
+  'switcher.hint': 'Ce listă vezi acum',
+
   'filter.heading': 'Filtre',
   'filter.hint': 'Ce afișează lista',
   'filter.all.label': 'Fără filtru',
@@ -201,6 +204,8 @@ const ro: Catalog = {
   'nav.add': 'Adaugă',
   'nav.addLabel': 'Adaugă un produs',
   'nav.you': 'Tu',
+  'nav.switch': 'Schimbă',
+  'nav.switchLabel': 'Schimbă gospodăria',
 
   'account.title': 'Setările contului',
   'account.subtitle': 'Gestionează-ți profilul și preferințele',

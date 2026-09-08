@@ -153,9 +153,10 @@ describe('AppNavBar household block', () => {
     })
 
     expect(wrapper.find('.household-settings-btn').exists()).toBe(false)
-    // Three targets, not four: the household block, history, and the account
-    // avatar.
-    expect(wrapper.findAll('.topbar button')).toHaveLength(3)
+    // Four targets: the household block, the switcher, history, and the account
+    // avatar. Still no standalone gear -- the block itself is the way into
+    // settings.
+    expect(wrapper.findAll('.topbar button')).toHaveLength(4)
   })
 
   // The household's own emoji anchors the block, the same square it wears on its
@@ -173,7 +174,10 @@ describe('AppNavBar household block', () => {
     expect(wrapper.find('.household-btn .household-emoji').text()).toBe('HOUSEEMOJI')
   })
 
-  it('hands the household roster to the account dialog to switch with', () => {
+  // The account dialog is about YOU. Which household's list is on screen is a
+  // fact about the screen, so the roster goes to the switcher instead and this
+  // dialog is not even told about it.
+  it('keeps the household roster out of the account dialog', () => {
     const wrapper = mountBar({
       householdId: 'fam-1',
       householdName: 'Home',
@@ -183,14 +187,8 @@ describe('AppNavBar household block', () => {
     })
 
     const modal = wrapper.findComponent(AccountActionModal)
-    expect(modal.props('households')).toEqual(households)
-    expect(modal.props('householdId')).toBe('fam-1')
-
-    modal.vm.$emit('switch-household', 'fam-2')
-    expect(wrapper.emitted('switch-household')?.[0]).toEqual(['fam-2'])
-
-    modal.vm.$emit('add-household')
-    expect(wrapper.emitted('add-household')).toBeTruthy()
+    expect(modal.props('households')).toBeUndefined()
+    expect(modal.props('householdId')).toBeUndefined()
   })
 
   it('offers the same destination from the account dialog', () => {
@@ -207,93 +205,8 @@ describe('AppNavBar household block', () => {
     expect(modal.props('householdMemberCount')).toBe(2)
   })
 
-  it('hides join/create at the cap of three households', () => {
-    const three = [
-      { id: 'a', name: 'A' },
-      { id: 'b', name: 'B' },
-      { id: 'c', name: 'C' },
-    ]
-    const wrapper = mountBar({
-      householdId: 'a',
-      householdName: 'A',
-      households: three,
-      memberProfiles: profiles,
-      currentUserId: 'u_self',
-    })
-
-    // The cap is enforced where the row now lives.
-    expect(wrapper.findComponent(AccountActionModal).props('households')).toHaveLength(3)
-  })
 })
 
-
-// Switching households lives in the account dialog now: the header name goes
-// straight to settings, so this is the surface that has to answer "where else
-// can I go".
-describe('AccountActionModal households', () => {
-  function mountAccount(props) {
-    const w = mount(AccountActionModal, { props: { open: true, ...props } })
-    wrappers.push(w)
-    return w
-  }
-
-  const two = [
-    { id: 'fam-1', name: 'Home', emoji: 'E1' },
-    { id: 'fam-2', name: 'Parents', emoji: 'E2' },
-  ]
-
-  it('lists the households, marks the active one, and emits a switch', async () => {
-    const wrapper = mountAccount({ households: two, householdId: 'fam-1' })
-
-    const rows = wrapper.findAll('.account-household-item')
-    expect(rows.map((r) => r.find('.account-household-name').text())).toEqual(['Home', 'Parents'])
-    expect(rows[0].find('.account-menu-item__hint').text()).toBe('Current')
-    expect(rows[1].find('.account-menu-item__hint').exists()).toBe(false)
-
-    await rows[1].trigger('click')
-    expect(wrapper.emitted('switch-household')?.[0]).toEqual(['fam-2'])
-  })
-
-  // Tapping the one you are already on is not a switch; it is a way of saying
-  // "never mind", so it just closes.
-  it('closes rather than switching when the active household is tapped', async () => {
-    const wrapper = mountAccount({ households: two, householdId: 'fam-1' })
-
-    await wrapper.findAll('.account-household-item')[0].trigger('click')
-    expect(wrapper.emitted('switch-household')).toBeFalsy()
-    expect(wrapper.emitted('close')).toBeTruthy()
-  })
-
-  // With one household the rows would be a single row you are already on, so
-  // there is nothing to list -- but there is still somewhere to go.
-  it('lists nothing to switch to when there is only one household', () => {
-    const wrapper = mountAccount({
-      households: [{ id: 'fam-1', name: 'Home' }],
-      householdId: 'fam-1',
-    })
-
-    expect(wrapper.findAll('.account-household-item')).toHaveLength(0)
-    expect(wrapper.find('.account-household-add').exists()).toBe(true)
-  })
-
-  it('drops the whole section at the cap with nowhere left to switch', () => {
-    const wrapper = mountAccount({
-      households: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }],
-      householdId: 'a',
-    })
-
-    // Three to switch between, but no room for a fourth.
-    expect(wrapper.findAll('.account-household-item')).toHaveLength(3)
-    expect(wrapper.find('.account-household-add').exists()).toBe(false)
-  })
-
-  it('emits add-household from the join/create row', async () => {
-    const wrapper = mountAccount({ households: two, householdId: 'fam-1' })
-
-    await wrapper.find('.account-household-add').trigger('click')
-    expect(wrapper.emitted('add-household')).toBeTruthy()
-  })
-})
 
 // Reporting a problem sits with sign out at the bottom rather than among the
 // four rows above it: those lead further into the app, these two are the ways of

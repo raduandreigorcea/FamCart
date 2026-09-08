@@ -163,6 +163,9 @@ export default {
 
   'filter.buttonLabel': 'Filter items',
   'filter.buttonLabelFiltered': 'Filter items (filtered)',
+  'switcher.heading': 'Your households',
+  'switcher.hint': 'Which list you are looking at',
+
   'filter.heading': 'Filters',
   'filter.hint': 'What this list shows',
   'filter.all.label': 'No filter',
@@ -239,6 +242,8 @@ export default {
   'nav.add': 'Add',
   'nav.addLabel': 'Add an item',
   'nav.you': 'You',
+  'nav.switch': 'Switch',
+  'nav.switchLabel': 'Switch household',
 
   'account.title': 'Account Settings',
   'account.subtitle': 'Manage your profile and preferences',
