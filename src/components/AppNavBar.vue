@@ -317,8 +317,18 @@ const orderedActiveMembers = computed(() =>
     <!-- Holds the fifth column's width so the four real slots sit where they
          will still sit once something fills it. An empty cell rather than a
          disabled button: a disabled control promises something is coming, and
-         nothing is, yet. -->
-    <span class="nav-slot nav-slot--empty" aria-hidden="true"></span>
+         nothing is, yet.
+
+         Until then it carries the nightly stamp, which needs somewhere that is
+         on screen whatever you are doing and lost its old home when the topbar
+         became desktop-only. A build channel has to be obvious in a screenshot
+         with no chrome in it, so that nobody debugs the wrong database for an
+         hour. Untranslated on purpose, like the manifest: it names a build
+         channel, not anything the app does. -->
+    <span class="nav-slot nav-slot--empty">
+      <!-- eslint-disable-next-line vue/no-bare-strings-in-template -- build channel, the same word in every language -->
+      <span v-if="IS_NIGHTLY" class="nav-channel">NIGHTLY</span>
+    </span>
 
     <button
       class="nav-slot"
@@ -527,6 +537,27 @@ const orderedActiveMembers = computed(() =>
 
 .nav-slot--empty {
   cursor: default;
+  /* Centred rather than bottom-aligned like the four real slots: there is no
+     mark above a label here, only the stamp, and sitting it on the label
+     baseline would leave it hanging off the bottom of an otherwise empty cell. */
+  justify-content: center;
+  padding-bottom: 0;
+}
+
+/* A stamp, not a control: no press state and no tap target, because there is
+   nothing to do with it. Drawn from the brand tokens, which the nightly channel
+   has already re-pointed to indigo, so it matches the bar it marks rather than
+   fighting it. Same shape it wore in the topbar. */
+.nav-channel {
+  padding: 0.15rem 0.35rem;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 45%, transparent);
+  border-radius: var(--radius-xs);
+  background: var(--color-primary-bg);
+  color: var(--color-primary-text);
+  font-size: 0.5625rem;
+  font-weight: var(--weight-extrabold);
+  letter-spacing: 0.06em;
+  line-height: 1.5;
 }
 
 .nav-slot__mark {
@@ -538,10 +569,24 @@ const orderedActiveMembers = computed(() =>
   flex-shrink: 0;
 }
 
+/* AppIcon renders a bare <span> around the SVG and deliberately carries no
+   styles of its own, so left alone that span is an inline box and the icon
+   inside it sits on a text baseline. That put every mark in this bar a few
+   pixels high with a descender's worth of dead space beneath it, which reads as
+   the icons floating away from their labels. Both halves are needed: the span
+   has to stop being a line box, and the SVG has to stop being inline content. */
+.nav-slot__mark > span,
+.nav-add__disc > span {
+  display: flex;
+}
+
 .nav-slot__mark :deep(svg) {
-  width: 22px;
-  height: 22px;
-  stroke-width: 1.75;
+  display: block;
+  width: 24px;
+  height: 24px;
+  /* The lucide sources are drawn at stroke-width 1, which is a hairline at this
+     size and disappears next to an emoji and a photograph in the same row. */
+  stroke-width: 1.9;
 }
 
 .nav-slot__mark--emoji {
@@ -597,8 +642,9 @@ const orderedActiveMembers = computed(() =>
 }
 
 .nav-add__disc :deep(svg) {
-  width: 24px;
-  height: 24px;
+  display: block;
+  width: 26px;
+  height: 26px;
 }
 
 .nav-slot--add .nav-slot__label {

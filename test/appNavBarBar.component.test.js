@@ -53,7 +53,6 @@ describe('AppNavBar as the bottom bar', () => {
     // A gap rather than a disabled control: a disabled button promises that
     // something is coming, and nothing is, yet.
     expect(wrapper.find('.nav-slot--empty').element.tagName).toBe('SPAN')
-    expect(wrapper.find('.nav-slot--empty').attributes('aria-hidden')).toBe('true')
   })
 
   // Not a generic house icon. The emoji is the one the owner picked, already on
