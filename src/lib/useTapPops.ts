@@ -43,7 +43,7 @@ export interface TapPops {
 }
 
 export function useTapPops(options: {
-  // Declared by the component, for the same reason usePhoneSearchScreen takes
+  // Declared by the component, for the same reason useSearchSheet takes
   // its refs: a string `ref="wrapRef"` in the template only resolves against a
   // directly-declared const.
   /** The element the pop coordinates are measured against. */

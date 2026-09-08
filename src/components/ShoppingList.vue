@@ -775,9 +775,16 @@ const labelText = computed(() =>
 }
 
 /* Buy bar */
-/* Keeps the last checked row clear of the slider. The dashboard already pads
-   for the action bar itself, so this only has to cover the slider and the gap
-   above it. */
+/* Keeps the last checked row clear of the slider. The dashboard already pads for
+   the action bar itself, so this only has to cover the slider and the gap above
+   it — about 58px on a phone, less on desktop.
+
+   84px is what it has always been, and it is left alone deliberately: it
+   over-covers by a comfortable margin at both widths, and the cost of being
+   generous here is a little dead space under the last row, where the cost of
+   being exact is a checked row hiding behind the slider that checks it out.
+   It is NOT derived from --nav-height the way .buy-bar-wrap below is, so do not
+   read it as tracking the bar. */
 .buy-bar-spacer {
   height: 84px;
 }

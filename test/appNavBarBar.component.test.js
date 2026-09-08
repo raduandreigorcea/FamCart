@@ -90,6 +90,45 @@ describe('AppNavBar as the bottom bar', () => {
     expect(add.attributes('aria-label')).toBe('Add an item')
   })
 
+  // The visible labels are single words because they sit under a 24px mark in
+  // six languages. A single word is not always a name, so every slot carries the
+  // fuller one for a screen reader — the pattern the centre disc established.
+  describe('accessible names', () => {
+    it('names the household the slot is actually about', () => {
+      const household = mountBar({ householdName: 'Gorcea' }).findAll('.navbar button')[0]
+
+      // Not "Household": somebody in three of them would hear the same word for
+      // all three, and the emoji that tells them apart is decoration.
+      expect(household.attributes('aria-label')).toBe('Gorcea settings')
+      expect(household.find('.nav-slot__label').text()).toBe('Household')
+    })
+
+    it('falls back to the plain label before a household is known', () => {
+      const household = mountBar({ householdName: '' }).findAll('.navbar button')[0]
+
+      // Rather than " settings" with the name interpolated as empty.
+      expect(household.attributes('aria-label')).toBe('Household')
+    })
+
+    it('keeps the descriptive names the topbar used', () => {
+      const buttons = mountBar().findAll('.navbar button')
+
+      expect(buttons[1].attributes('aria-label')).toBe('Checkout history')
+      expect(buttons[1].find('.nav-slot__label').text()).toBe('History')
+      expect(buttons[3].attributes('aria-label')).toBe('Your account')
+      expect(buttons[3].find('.nav-slot__label').text()).toBe('You')
+    })
+
+    // The avatar used to be announced alongside the label, so the same control
+    // said "Your avatar You" with a photo and "You" without.
+    it('does not let the avatar into the account button name', () => {
+      const wrapper = mountBar()
+      const avatar = wrapper.find('.nav-slot__mark--avatar')
+
+      expect(avatar.attributes('aria-hidden')).toBe('true')
+    })
+  })
+
   // There is one route behind all of this, so no slot is ever the current page.
   // aria-current would be pointing at the page you are already on.
   it('marks nothing as current, because it is an action bar', () => {

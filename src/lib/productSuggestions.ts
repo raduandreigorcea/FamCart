@@ -97,8 +97,8 @@ export interface ProductSuggestions {
 const SUGGEST_DEBOUNCE_MS = 300
 const SUGGEST_MIN_CHARS = 2
 const SUGGEST_LIMIT = 6
-// On a phone the form lifts to the top of the screen when focused, and the
-// dropdown gets the whole screen instead of a 275px slot. Twice the room is
+// Below the bar boundary the search is a full-screen sheet, so the results get
+// the whole screen instead of the dropdown's 275px cap. Twice the room is
 // worth twice the matches; the pool below already dwarfs both numbers, so this
 // costs nothing but stops throwing ranked matches away.
 const SUGGEST_LIMIT_EXPANDED = 12

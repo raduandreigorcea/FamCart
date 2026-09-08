@@ -338,9 +338,9 @@ const initialLoading = computed(
 // The skeleton shows on the first-ever load and while switching households.
 const listLoading = computed(() => initialLoading.value || switchingHousehold.value)
 
-// Whether there is a household to draw the screen around at all. Everything
-// below the topbar is shaped like one: the name in the header, the member
-// stack, the rows of the list. A skeleton of that is a promise, and there is one
+// Whether there is a household to draw the screen around at all. Every part of
+// this screen is shaped like one: the rows of the list, the household the bar's
+// first slot is about, the member stack in the header at the desktop column. A skeleton of that is a promise, and there is one
 // account it cannot keep — a brand-new one, which lands here because the router
 // only pays for a membership lookup on the way to /household-setup, and is
 // replaced by onboarding a round trip later. It saw a mock-up of a shopping
@@ -898,7 +898,9 @@ async function reconcileActiveHousehold() {
     <main class="dashboard-main">
       <div class="dashboard-content">
 
-        <!-- Add item form -->
+        <!-- The add search. Below 900px it is not in this flow at all: it
+             renders as a sheet the bar's centre button raises, and takes up no
+             room here until it does. See the media query on .add-slot. -->
 
         <AddItemForm
           v-model:name="newItem"

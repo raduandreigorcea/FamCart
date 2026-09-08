@@ -39,7 +39,7 @@ vi.mock('../src/lib/errorReporting', () => ({
 }))
 
 const wrappers = []
-function mountTopbar() {
+function mountHeader() {
   const w = mount(AppNavBar, { props: { householdName: 'Home' } })
   wrappers.push(w)
   return w
@@ -61,12 +61,12 @@ afterEach(() => {
 
 describe('AppNavBar channel badge', () => {
   it('shows nothing on a production build', () => {
-    expect(mountTopbar().find('.channel-badge').exists()).toBe(false)
+    expect(mountHeader().find('.channel-badge').exists()).toBe(false)
   })
 
   it('marks a nightly build in the header', () => {
     channel.nightly = true
-    const badge = mountTopbar().find('.channel-badge')
+    const badge = mountHeader().find('.channel-badge')
     expect(badge.exists()).toBe(true)
     expect(badge.text()).toBe('NIGHTLY')
   })
