@@ -79,6 +79,18 @@ describe('the filter button', () => {
     expect(text('.filter-option__count')).toEqual(['3', '2', '1'])
   })
 
+  // PopoverMenu's close button is opt-in, and this menu deliberately does not
+  // take it: it is a small panel hanging off a button that is still on screen
+  // and still visibly pressed, so tapping away is the obvious move and there is
+  // somewhere obvious to tap. The switcher's sheet has neither and does opt in.
+  // Pinned here so `closable` cannot quietly become the default.
+  it('has no close button, unlike the switcher sheet', async () => {
+    const wrapper = mountMenu()
+    await wrapper.find('.filter-btn').trigger('click')
+    expect(menuOpen()).toBe(true)
+    expect(document.querySelector('.popover-header__close')).toBeNull()
+  })
+
   // A filtered list that looks unfiltered is how items get declared missing.
   it('marks itself while it is hiding something', () => {
     expect(mountMenu({ modelValue: 'all' }).find('.filter-btn__dot').exists()).toBe(false)

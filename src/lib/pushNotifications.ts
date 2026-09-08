@@ -12,13 +12,22 @@ import { Capacitor } from '@capacitor/core'
 import { whenIdle } from './idle'
 import { userScopedKey } from './perUserStorage'
 import { IS_NIGHTLY } from './appChannel'
+// The language the app is actually in, which is what a notification about this
+// app should be in too. Read rather than passed, because every caller of
+// setPushLanguage below would otherwise have to remember to look it up, and the
+// one that forgot would silently subscribe a device to English. No cycle:
+// lib/i18n depends on vue and lib/locale only.
+import { getLocale } from './i18n'
 
 // Minimal slice of the v16 web SDK surface this module touches.
 interface OneSignalWebSdk {
   init(options: Record<string, unknown>): Promise<void>
   login(externalId: string): Promise<void>
   logout(): Promise<void>
-  User: { PushSubscription: { optIn(): Promise<void>; optOut(): Promise<void> } }
+  User: {
+    PushSubscription: { optIn(): Promise<void>; optOut(): Promise<void> }
+    setLanguage(language: string): Promise<void>
+  }
   Notifications: {
     addEventListener(
       event: 'foregroundWillDisplay',
@@ -249,6 +258,50 @@ export function initPushNotifications(): void {
   })
 }
 
+// Tell OneSignal which language this device reads, so a notification arrives in
+// it.
+//
+// The edge function sends every message in all six languages at once (see
+// localisedContents in supabase/functions/_shared/push.ts) and OneSignal picks
+// per subscription, falling back to English. This is the half that makes the
+// pick right: without it OneSignal uses the language it inferred from the
+// browser or the handset, which is the device's language rather than the one
+// the user chose in Settings — and on a phone whose owner reads the app in
+// Romanian on an English handset, those differ.
+//
+// Best-effort and never awaited by anything user-facing. A failed call leaves
+// the subscription on whatever language it already had, which is the state
+// before this existed; the next boot's syncPushUser tries again.
+//
+// Called from three places, and all three are needed for a different reason:
+// subscribing (the language is part of what is being registered), booting
+// (repairs a subscription made before this existed, or before the user changed
+// languages on another device), and the Settings control itself (so the change
+// takes effect now rather than at the next launch).
+export async function setPushLanguage(): Promise<void> {
+  const appId = getOneSignalAppId()
+  if (!appId || !isPushSupported()) return
+  const language = getLocale()
+  try {
+    if (Capacitor.isNativePlatform()) {
+      const { default: OneSignal } = await import('@onesignal/capacitor-plugin')
+      await OneSignal.initialize(appId)
+      await OneSignal.User.setLanguage(language)
+      return
+    }
+    // Deliberately does NOT call ensureWebSdkLoaded: a language is only worth
+    // recording for a device that has a subscription, and every path that
+    // creates one has already loaded the SDK. Fetching ~100KB here would put
+    // that cost on the language picker, which is exactly the boot-time download
+    // ensureWebSdkLoaded's own comment explains at length. An unloaded SDK
+    // resolves null and this does nothing.
+    const sdk = await webSdk(3000)
+    await sdk?.User.setLanguage(language)
+  } catch {
+    // See above: leaving the language as it was is the pre-existing behaviour.
+  }
+}
+
 export type EnablePushResult =
   | 'subscribed'
   | 'unsupported'
@@ -269,6 +322,10 @@ async function enableNativePush(userId: string): Promise<EnablePushResult> {
     const accepted = await OneSignal.Notifications.requestPermission(true)
     if (!accepted) return 'permission-denied'
     await OneSignal.User.pushSubscription.optIn()
+    // After the opt-in, not before: there is no subscription to record a
+    // language against until it succeeds. Not awaited — the toggle's answer is
+    // 'subscribed' either way, and boot repairs a language that did not land.
+    void setPushLanguage()
     return 'subscribed'
   } catch {
     return 'error'
@@ -290,7 +347,11 @@ async function enableWebPush(userId: string): Promise<EnablePushResult> {
   } catch {
     return Notification.permission === 'denied' ? 'permission-denied' : 'error'
   }
-  return Notification.permission === 'granted' ? 'subscribed' : 'permission-denied'
+  if (Notification.permission !== 'granted') return 'permission-denied'
+  // Same placement as the native path: only once there is a subscription for
+  // the language to belong to.
+  void setPushLanguage()
+  return 'subscribed'
 }
 
 export async function enablePushNotifications(userId: string): Promise<EnablePushResult> {
@@ -334,6 +395,10 @@ export async function syncPushUser(
       // and takes the app down when touched before initialize.
       await OneSignal.initialize(appId)
       await OneSignal.login(userId)
+      // Boot is also where a stale language is reconciled — a subscription made
+      // before this existed has whatever OneSignal inferred from the handset,
+      // and a language changed on another device has not reached this one.
+      await OneSignal.User.setLanguage(getLocale())
       return
     }
     // This is the path that fetches the web SDK for a device already opted in,
@@ -347,6 +412,8 @@ export async function syncPushUser(
     // out one launch short of arriving is a repair that never happens.
     const sdk = await webSdk()
     await sdk?.login(userId)
+    // Same reconciliation as the native branch above.
+    await sdk?.User.setLanguage(getLocale())
   } catch {
     // Best-effort. A failed re-bind leaves push exactly as broken as it already
     // was, and the toggle in Account settings is still there to force it.

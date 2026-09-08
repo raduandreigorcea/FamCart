@@ -18,9 +18,11 @@
 // it is the only authentication this function has.
 import { describe, it, expect } from 'vitest'
 import {
+  PUSH_LOCALES,
   checkoutBody,
   itemAddedBody,
   itemLabel,
+  localisedContents,
   recipientsFor,
   routePayload,
   secretMatches,
@@ -76,6 +78,106 @@ describe('the message bodies', () => {
         { name: 'Eggs', quantity: 1 },
       ]),
     ).toBe('Radu bought Milk ×2, Bread and 1 more')
+  })
+})
+
+// The app speaks six languages and the push copy used to speak one, so every
+// notification arrived in English however the recipient reads the app.
+//
+// The fix is a language map rather than a per-recipient send: OneSignal holds a
+// language per subscription and picks the matching key, so one REST call serves
+// a household reading in three languages. What these pin is that the map is
+// COMPLETE — a missing key is not an error anywhere, it is a silent fall back
+// to English, which is indistinguishable from the bug this replaced.
+describe('the localised bodies', () => {
+  const item = { name: 'Lapte', quantity: 2 }
+  const bought = [
+    { name: 'Pâine', quantity: 1 },
+    { name: 'Lapte', quantity: 2 },
+    { name: 'Ouă', quantity: 1 },
+  ]
+
+  it('speaks each language for an added item', () => {
+    expect(itemAddedBody('Radu', item, 'en')).toBe('Radu added Lapte ×2')
+    expect(itemAddedBody('Radu', item, 'ro')).toBe('Radu a adăugat Lapte ×2')
+    expect(itemAddedBody('Radu', item, 'de')).toBe('Radu hat Lapte ×2 hinzugefügt')
+    expect(itemAddedBody('Radu', item, 'es')).toBe('Radu añadió Lapte ×2')
+    expect(itemAddedBody('Radu', item, 'fr')).toBe('Radu a ajouté Lapte ×2')
+    expect(itemAddedBody('Radu', item, 'it')).toBe('Radu ha aggiunto Lapte ×2')
+  })
+
+  it('speaks each language for a checkout', () => {
+    expect(checkoutBody('Radu', bought, 'en')).toBe('Radu bought Pâine, Lapte ×2 and 1 more')
+    expect(checkoutBody('Radu', bought, 'ro')).toBe('Radu a cumpărat Pâine, Lapte ×2 și încă 1')
+    expect(checkoutBody('Radu', bought, 'de')).toBe(
+      'Radu hat Pâine, Lapte ×2 und 1 weiteres gekauft',
+    )
+    expect(checkoutBody('Radu', bought, 'es')).toBe('Radu compró Pâine, Lapte ×2 y 1 más')
+    expect(checkoutBody('Radu', bought, 'fr')).toBe('Radu a acheté Pâine, Lapte ×2 et 1 autre')
+    expect(checkoutBody('Radu', bought, 'it')).toBe('Radu ha comprato Pâine, Lapte ×2 e 1 altro')
+  })
+
+  // The count is labels.length - 2, so a three-item checkout says "1" — the
+  // commonest case, and the one German, French and Italian inflect. These pin
+  // both sides of that branch, because "et 1 autres" is the failure it exists
+  // to prevent and nothing else in the suite would show it.
+  it('inflects the counted remainder where the language demands it', () => {
+    const one = ['A', 'B', 'C']
+    const many = ['A', 'B', 'C', 'D', 'E']
+    expect(summariseCheckout(one, 'de')).toBe('A, B und 1 weiteres')
+    expect(summariseCheckout(many, 'de')).toBe('A, B und 3 weitere')
+    expect(summariseCheckout(one, 'fr')).toBe('A, B et 1 autre')
+    expect(summariseCheckout(many, 'fr')).toBe('A, B et 3 autres')
+    expect(summariseCheckout(one, 'it')).toBe('A, B e 1 altro')
+    expect(summariseCheckout(many, 'it')).toBe('A, B e altri 3')
+    // The two that read the same either way, pinned so a later "tidy-up" that
+    // adds a branch to them has to justify it.
+    expect(summariseCheckout(one, 'en')).toBe('A, B and 1 more')
+    expect(summariseCheckout(many, 'en')).toBe('A, B and 3 more')
+    expect(summariseCheckout(one, 'es')).toBe('A, B y 1 más')
+    expect(summariseCheckout(many, 'es')).toBe('A, B y 3 más')
+  })
+
+  it('joins a pair in each language', () => {
+    expect(summariseCheckout(['Pâine', 'Lapte'], 'ro')).toBe('Pâine și Lapte')
+    expect(summariseCheckout(['Pâine', 'Lapte'], 'de')).toBe('Pâine und Lapte')
+    expect(summariseCheckout(['Pâine', 'Lapte'], 'es')).toBe('Pâine y Lapte')
+    expect(summariseCheckout(['Pâine', 'Lapte'], 'fr')).toBe('Pâine et Lapte')
+    expect(summariseCheckout(['Pâine', 'Lapte'], 'it')).toBe('Pâine e Lapte')
+  })
+
+  // Every call site omits the locale nowhere, but the default is what keeps the
+  // existing English assertions above meaningful and is OneSignal's fallback
+  // key. Both have to be 'en'.
+  it('defaults to English', () => {
+    expect(itemAddedBody('Radu', item)).toBe(itemAddedBody('Radu', item, 'en'))
+    expect(checkoutBody('Radu', bought)).toBe(checkoutBody('Radu', bought, 'en'))
+    expect(summariseCheckout(['A', 'B'])).toBe(summariseCheckout(['A', 'B'], 'en'))
+  })
+
+  // A language the table does not carry must not produce `undefined` on a lock
+  // screen. OneSignal would never ask for one, but neither would it complain.
+  it('falls back to English for a language it does not know', () => {
+    expect(itemAddedBody('Radu', item, 'pt')).toBe('Radu added Lapte ×2')
+  })
+})
+
+describe('localisedContents', () => {
+  it('carries every language the app speaks', () => {
+    const contents = localisedContents((locale) => `body-${locale}`)
+    expect(Object.keys(contents).sort()).toEqual([...PUSH_LOCALES].sort())
+  })
+
+  // OneSignal rejects a notification with no `en` and falls back to it for any
+  // subscriber whose language is not a key here, so this one is load-bearing.
+  it('always includes the English fallback key', () => {
+    expect(localisedContents(() => 'x').en).toBe('x')
+  })
+
+  it('builds each entry with its own locale', () => {
+    const contents = localisedContents((locale) => itemAddedBody('Radu', { name: 'Lapte', quantity: 1 }, locale))
+    expect(contents.en).toBe('Radu added Lapte')
+    expect(contents.ro).toBe('Radu a adăugat Lapte')
   })
 })
 

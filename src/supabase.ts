@@ -14,26 +14,29 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 // Its schema lives in a repository of its own, checked out here as a submodule
 // at `catalog/` (raduandreigorcea/FamCart-catalog). The separation is real
 // rather than a naming convention: its own Supabase project in its own
-// organisation, its own migrations, its own pgTAP suite, its own edge function
-// and its own release cadence.
+// organisation, its own migrations, its own pgTAP suite and its own release
+// cadence. It has no edge function of any kind, which is worth saying because
+// it used to: `discover` queried Open Food Facts live on the keystroke path,
+// and both it and the src/lib/catalogDiscovery.ts that called it went with the
+// catalog rebuild.
 //
-// So what this file depends on is an API rather than a schema. Three RPCs, all
-// defined in catalog/supabase/migrations/004_search.sql:
+// So what this file depends on is an API rather than a schema. Four RPCs:
 //
-//   search_catalog(p_query, p_limit, p_markets, p_langs, p_fuzzy)
-//   lookup_barcode(p_codes, p_langs)
+//   search_catalog(p_query, p_limit, p_markets, p_langs, p_fuzzy, p_retailers)
+//   lookup_barcode(p_codes, p_langs)                    005_search.sql
 //   bump_product_popularity(p_name, p_maker)
+//   catalog_shops_for(p_names)                          008_shops_for.sql
 //
 // PostgREST resolves an RPC by the argument NAMES in the body, so renaming one
 // breaks this app with nothing on this side to warn you. That is why the
 // catalog's own pgTAP suite runs in THIS repo's CI as well as its own (the
-// catalog-tests job): it turns a change to either RPC into a failed build
+// catalog-tests job): it turns a change to any of them into a failed build
 // rather than into an empty suggestions dropdown in production.
 //
 // This app reads; it does not write rows here. A popularity bump is the single
-// exception, and it increments a counter rather than contributing content. New
-// products arrive through the catalog's own `discover` edge function, which
-// src/lib/catalogDiscovery.ts asks and which does its own saving.
+// exception, and it increments a counter rather than contributing content. A
+// product the catalog has never heard of is contributed to the APP database
+// instead, through add_custom_product() — see lib/productSuggestions.
 //
 // One Clerk session authenticates both, because the catalog project's
 // Third-Party Auth integration names the same issuer. That is why the resolver

@@ -12,6 +12,7 @@ const ro: Catalog = {
   'common.ok': 'OK',
   'common.cancel': 'Anulează',
   'common.closeModal': 'Închide fereastra',
+  'common.closeMenu': 'Închide meniul',
   'common.confirm': 'Confirmă',
   'common.continue': 'Continuă',
 
@@ -82,6 +83,8 @@ const ro: Catalog = {
   'error.offline': 'Se pare că ești offline. Verifică conexiunea și încearcă din nou.',
   'error.nameTooLongTitle': 'Nume prea lung',
   'error.householdNameTooLong': 'Numele gospodăriei trebuie să aibă cel mult {max} caractere.',
+  'error.nameRequiredTitle': 'Nume necesar',
+  'error.householdNameRequired': 'Dă-i gospodăriei un nume înainte de a salva.',
   'error.ownOneHousehold':
     'Poți deține o singură gospodărie. Părăsește-o sau șterge-o pe cea actuală înainte de a crea alta.',
   'error.membershipCapCreate':

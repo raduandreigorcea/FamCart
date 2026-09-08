@@ -78,3 +78,26 @@ describe('AccountActionModal identity card', () => {
     expect(labels.some((t) => t.includes('Manage household'))).toBe(true)
   })
 })
+
+// A brand-new account reaches this dialog from the setup screen, where AppNavBar
+// renders with no household props at all. Both household rows were drawn anyway,
+// and both led to HouseholdSettingsModal wired to an empty household id: an
+// untitled dialog with no members, no invite code to send, and a danger tab
+// offering to leave or delete a household that does not exist.
+describe('AccountActionModal before there is a household', () => {
+  const labels = (w) => w.findAll('.account-menu-item__label').map((el) => el.text())
+
+  it('drops the household rows when there is no household', () => {
+    const shown = labels(mountModal({ householdName: '' }))
+    expect(shown.some((l) => l.includes('Manage household'))).toBe(false)
+    expect(shown.some((l) => l.includes('Invite people'))).toBe(false)
+  })
+
+  // The rest of the dialog is about the person and the device, so it survives.
+  it('keeps the rows that work without one', () => {
+    const shown = labels(mountModal({ householdName: '' }))
+    expect(shown.some((l) => l.includes('App settings'))).toBe(true)
+    expect(shown.some((l) => l.includes('Report'))).toBe(true)
+    expect(shown.some((l) => l.includes('Sign out'))).toBe(true)
+  })
+})

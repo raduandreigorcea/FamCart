@@ -15,7 +15,23 @@
     "noEmit": true,
     "skipLibCheck": true,
     "noUnusedLocals": true,
-    "noUnusedParameters": true
+    "noUnusedParameters": true,
+    // `strict` does not cover indexing, and this codebase indexes constantly --
+    // items.value[index], rows.value[activeIndex], digitRefs.value[0],
+    // RETRY_DELAYS_MS[attempt]. Without this, every one of those is typed as if
+    // it always hits, which is the one remaining way an undefined can travel
+    // some distance from where it was produced before anything notices.
+    //
+    // Most of the sites it flags are provably safe from a bounds check a line
+    // above that the compiler cannot see, so the fix there is a non-null
+    // assertion with that check beside it rather than a new runtime branch. The
+    // value is not in those; it is that the NEXT one has to say which it is.
+    "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    // Formalises the `import type` convention the codebase already follows
+    // everywhere, so a type-only import can never be emitted as a runtime one.
+    "verbatimModuleSyntax": true
   },
   // The edge function's shared half is checked here; the function itself is not,
   // and the line between them is what makes that possible.

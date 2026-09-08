@@ -39,7 +39,12 @@ const steps = computed(() => [
   { key: 'invite', title: t('tour.invite.title'), body: t('tour.invite.body') },
 ])
 
-const current = computed(() => steps.value[step.value])
+// Falls back to the first beat rather than to nothing. `step` is only ever
+// moved by next() and back(), which both stay in range, so the fallback is
+// unreachable today -- but the alternative is six `current?.` in the template
+// below, each of which would render an empty tour rather than say anything, and
+// a tour that silently shows nothing is worse than one that shows step one.
+const current = computed(() => steps.value[step.value] ?? steps.value[0]!)
 const isLast = computed(() => step.value === steps.value.length - 1)
 
 // Restart at the first beat each time it opens.

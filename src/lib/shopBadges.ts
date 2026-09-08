@@ -106,7 +106,13 @@ function readShopCache(): string[] {
   }
 }
 
-/** For tests and a household switch: forget what was learned this session. */
+// For tests: forget what was learned this session.
+//
+// It used to say "and a household switch", which was never true and would have
+// been wrong if it were. The shop list comes from catalog_retailers and belongs
+// to nobody -- it is the same three rows whichever household you are in -- so a
+// switch has nothing to forget here, unlike the suggestions and the filters
+// that resetForHousehold does clear.
 export function resetShopList(): void {
   shopList = null
 }

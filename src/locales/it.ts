@@ -10,6 +10,7 @@ const it: Catalog = {
   'common.ok': 'OK',
   'common.cancel': 'Annulla',
   'common.closeModal': 'Chiudi la finestra',
+  'common.closeMenu': 'Chiudi il menu',
   'common.confirm': 'Conferma',
   'common.continue': 'Continua',
 
@@ -80,6 +81,8 @@ const it: Catalog = {
   'error.offline': 'Sembra che tu sia offline. Controlla la connessione e riprova.',
   'error.nameTooLongTitle': 'Nome troppo lungo',
   'error.householdNameTooLong': 'Il nome della famiglia deve avere al massimo {max} caratteri.',
+  'error.nameRequiredTitle': 'Nome obbligatorio',
+  'error.householdNameRequired': 'Dai un nome alla tua famiglia prima di salvare.',
   'error.ownOneHousehold':
     'Puoi possedere una sola famiglia. Abbandona o elimina quella attuale prima di crearne un’altra.',
   'error.membershipCapCreate':

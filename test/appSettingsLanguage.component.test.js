@@ -30,6 +30,10 @@ vi.mock('../src/lib/pushNotifications', () => ({
   disablePushNotifications: vi.fn(async () => undefined),
   getNotificationPreference: () => null,
   setNotificationPreference: () => {},
+  // Changing the language tells OneSignal which of the six the server should
+  // deliver, so the picker calls this too. Stubbed rather than asserted here —
+  // supabase/functions/_shared/push.ts is where the copy itself is pinned.
+  setPushLanguage: vi.fn(async () => undefined),
 }))
 
 const scopedKey = userScopedKey(LOCALE_PREFIX, 'user-1')

@@ -389,7 +389,7 @@ export async function flushOfflineQueue(
     const queued = loadOfflineQueue(storage, userId)
     if (!queued.length) return result
 
-    const sent = queued[0]
+    const sent = queued[0]!
     const { ok, transient } = await applyMutation(db, sent)
 
     // The window closed. Whatever is in storage now is what the next decision
@@ -416,7 +416,7 @@ export async function flushOfflineQueue(
     // in flight cancels that insert out of the queue entirely, so there is
     // nothing left to remove. Leaving the queue alone is right there, and the
     // loop still makes progress because the next pass reads a different head.
-    if (current.length && isSameMutation(current[0], sent)) {
+    if (current.length && isSameMutation(current[0]!, sent)) {
       saveOfflineQueue(storage, userId, current.slice(1))
     }
   }

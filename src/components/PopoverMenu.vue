@@ -2,17 +2,20 @@
 import { onBeforeUnmount, ref, watch, type PropType } from 'vue'
 import { closeModal, openModal } from '../lib/modalStack'
 import AppIcon from './AppIcon.vue'
+import ModalCloseButton from './ModalCloseButton.vue'
+import { t } from '../lib/i18n'
 
 // The menu shell: a panel that hangs off a button on a wide screen and comes up
 // as a bottom sheet on a phone. Owns the teleport, the overlay, the transition,
 // dismissal, and where the panel lands. Knows nothing about what is in it.
 //
 // Extracted from the household switcher and the list filter, which had grown the
-// same twenty lines each. The switcher is gone -- the list filter is the only
-// caller left -- but the split is still worth keeping: what lives here is the
-// sheet/popover behaviour, not anything about filtering. The panel chrome and the row styling live here (see
-// the :slotted rules below), so a menu added later looks like the two that
-// already exist instead of approximating them.
+// same twenty lines each. Both are callers again -- the switcher was removed for
+// a while and came back as the bottom bar's fourth slot -- and what lives here
+// is the sheet/popover behaviour, not anything about filtering or switching. The
+// panel chrome and the row styling live here too (see the :slotted rules below),
+// so a menu added later looks like the two that already exist instead of
+// approximating them.
 //
 // Teleported to <body> because both callers sit inside a container that clips
 // or stacks: the topbar has overflow:hidden to ellipsize the household name, and
@@ -38,6 +41,19 @@ const props = defineProps({
   // something it did not author.
   iconName: { type: String, default: '' },
   hint: { type: String, default: '' },
+  // Whether the header carries a way out.
+  //
+  // Opt-in rather than always, because the two menus are dismissed differently
+  // in practice. The list filter is a small panel hanging off a button that is
+  // still on screen and still visibly pressed -- tapping away is the obvious
+  // move and there is somewhere obvious to tap. The switcher comes up as a
+  // full-width sheet over a bottom bar, where the surface you would tap to
+  // dismiss is the list you are trying to look at, and the thing under your
+  // thumb is the bar the sheet is covering.
+  //
+  // Escape, the backdrop and Android Back all still work either way. This adds
+  // a fourth route for the case where the other three are not discoverable.
+  closable: { type: Boolean, default: false },
   // Which edge of the trigger the panel lines up with on a wide screen.
   align: {
     type: String,
@@ -158,6 +174,16 @@ onBeforeUnmount(() => {
               <span class="popover-header__title">{{ heading }}</span>
               <span v-if="hint" class="popover-header__hint">{{ hint }}</span>
             </span>
+            <!-- In the header, which sits OUTSIDE the role="menu" below, so it
+                 is an ordinary button rather than a child a menu may not have.
+                 Same control the dialogs use, so the way out looks the same
+                 wherever it appears. -->
+            <ModalCloseButton
+              v-if="closable"
+              class="popover-header__close"
+              :aria-label="t('common.closeMenu')"
+              @click="close"
+            />
           </header>
           <!-- The rows live in their own box so the header can stay put while
                they scroll, the way a modal's header does.
@@ -270,6 +296,14 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+
+/* Pushed to the far edge, and only ever present when `closable` is set. The
+   margin rather than justify-content on the header, so the icon and the text
+   keep sitting together at the start whether or not this is there. */
+.popover-header__close {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .popover-header__title {

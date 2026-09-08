@@ -88,13 +88,19 @@ describe('renaming the household', () => {
     expect(title).toBeTruthy()
   })
 
-  it('sends nothing for a name that is only whitespace', async () => {
+  // Both halves matter. Sending a blank name would write one; saying nothing
+  // about it is what the panel used to do, and Save then looked exactly like a
+  // Save that had worked.
+  it('refuses a name that is only whitespace, and says so', async () => {
     const wrapper = mountPanel()
     await wrapper.find('.panel-input').setValue('   ')
     await saveButtons(wrapper)[0].trigger('click')
     await flushPromises()
 
     expect(updates()).toHaveLength(0)
+    const [message, title] = wrapper.emitted('error')[0]
+    expect(message).toBeTruthy()
+    expect(title).toBeTruthy()
   })
 
   it('surfaces a rejected rename instead of reporting success', async () => {

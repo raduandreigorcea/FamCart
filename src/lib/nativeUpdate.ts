@@ -108,15 +108,22 @@ export const AppInstallerPlugin = registerPlugin<AppInstaller>('AppInstaller')
  * so that boundary is crossed within days of shipping, not eventually.
  */
 export function compareVersions(a: string, b: string): number {
-  const parse = (value: string) => {
+  // Typed as a triple rather than number[], so the loop below indexes something
+  // the compiler agrees is always there. All three groups are unconditional in
+  // the pattern, so a match that succeeded has all of them.
+  const parse = (value: string): [number, number, number] => {
     const match = /(\d+)\.(\d+)\.(\d+)/.exec(value)
     return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : [0, 0, 0]
   }
-  const left = parse(a)
-  const right = parse(b)
-  for (let i = 0; i < 3; i += 1) {
-    if (left[i] !== right[i]) return left[i] < right[i] ? -1 : 1
-  }
+  // Destructured rather than indexed in a loop. A tuple indexed by a general
+  // `number` is still `number | undefined` to the compiler, which is right --
+  // it cannot see that the bound is 3 -- and three named comparisons say what
+  // the loop said without asserting anything away.
+  const [aMajor, aMinor, aPatch] = parse(a)
+  const [bMajor, bMinor, bPatch] = parse(b)
+  if (aMajor !== bMajor) return aMajor < bMajor ? -1 : 1
+  if (aMinor !== bMinor) return aMinor < bMinor ? -1 : 1
+  if (aPatch !== bPatch) return aPatch < bPatch ? -1 : 1
   return 0
 }
 

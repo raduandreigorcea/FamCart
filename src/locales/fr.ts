@@ -10,6 +10,7 @@ const fr: Catalog = {
   'common.ok': 'OK',
   'common.cancel': 'Annuler',
   'common.closeModal': 'Fermer la boîte de dialogue',
+  'common.closeMenu': 'Fermer le menu',
   'common.confirm': 'Confirmer',
   'common.continue': 'Continuer',
 
@@ -80,6 +81,8 @@ const fr: Catalog = {
   'error.offline': 'Vous semblez hors ligne. Vérifiez votre connexion et réessayez.',
   'error.nameTooLongTitle': 'Nom trop long',
   'error.householdNameTooLong': 'Le nom du foyer doit comporter au maximum {max} caractères.',
+  'error.nameRequiredTitle': 'Nom requis',
+  'error.householdNameRequired': 'Donnez un nom à votre foyer avant d’enregistrer.',
   'error.ownOneHousehold':
     'Vous ne pouvez posséder qu’un seul foyer. Quittez ou supprimez le vôtre avant d’en créer un autre.',
   'error.membershipCapCreate':

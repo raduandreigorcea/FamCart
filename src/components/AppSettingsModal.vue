@@ -13,6 +13,7 @@ import {
   disablePushNotifications,
   getNotificationPreference,
   setNotificationPreference,
+  setPushLanguage,
   type NotificationPreference,
 } from '../lib/pushNotifications'
 import { getLocale, setLocale, t, type Locale } from '../lib/i18n'
@@ -73,6 +74,13 @@ const currentLocale = computed(() => getLocale())
 
 async function chooseLanguage(next: Locale) {
   await setLocale(next, localStorage, userId.value ?? '')
+  // Notifications are written by the server in every language at once and
+  // picked per subscription, so changing the language here has to reach
+  // OneSignal or the next push still arrives in the old one. After setLocale,
+  // because setPushLanguage reads the current locale rather than taking it.
+  // Not awaited: the screen has already switched language and nothing here is
+  // waiting on a third-party round trip. A no-op unless push is actually on.
+  void setPushLanguage()
 }
 
 // Asking for an update by hand.

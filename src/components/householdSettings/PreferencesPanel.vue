@@ -83,7 +83,16 @@ onBeforeUnmount(() => {
 async function renameHousehold() {
   if (!props.isOwner) return
   const nextName = renameValue.value.trim()
-  if (!nextName || !props.householdId || savingName.value) return
+  if (!props.householdId || savingName.value) return
+  // An empty field is a mistake, not an instruction, and it used to be answered
+  // with nothing at all: Save sent no write, raised no dialog, and left the
+  // button looking as though it had worked. It is refused the same way the
+  // ceiling below it is, because both are the same thing to whoever pressed the
+  // button -- a name this household cannot have.
+  if (!nextName) {
+    emit('error', t('error.householdNameRequired'), t('error.nameRequiredTitle'))
+    return
+  }
   if (renameOverLimit.value) {
     emit(
       'error',

@@ -74,8 +74,8 @@ describe('AppNavBar channel badge', () => {
   // The header is desktop-only on the list screen, so on a phone the stamp has
   // nowhere in the chrome to sit. It had the bar's spare slot for a while; the
   // switcher took that, and it is a ribbon at the top of the viewport now — the
-  // one place that is on screen whatever you are doing, and the reason
-  // --channel-ribbon exists to keep the list clear of it.
+  // one place that is on screen whatever you are doing. It floats over the list
+  // rather than displacing it, so nightly and production lay out identically.
   describe('on a phone', () => {
     it('draws no ribbon on a production build', () => {
       expect(mountBar().find('.channel-ribbon').exists()).toBe(false)
