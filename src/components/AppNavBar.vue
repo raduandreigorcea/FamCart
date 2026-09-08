@@ -381,7 +381,7 @@ const orderedActiveMembers = computed(() =>
       @click="openSwitcher"
     >
       <span class="nav-slot__mark">
-        <AppIcon name="layout-grid" />
+        <AppIcon name="menu" />
       </span>
       <span class="nav-slot__label">{{ t('nav.switch') }}</span>
     </button>
@@ -476,7 +476,7 @@ const orderedActiveMembers = computed(() =>
         :aria-label="t('nav.switchLabel')"
         @click="openSwitcher"
       >
-        <AppIcon class="topbar-switcher-icon" name="layout-grid" />
+        <AppIcon class="topbar-switcher-icon" name="menu" />
       </button>
 
       <button
@@ -683,30 +683,6 @@ const orderedActiveMembers = computed(() =>
     transform var(--transition-fast) var(--ease-rise);
 }
 
-.nav-slot--empty {
-  cursor: default;
-  /* Centred rather than bottom-aligned like the four real slots: there is no
-     mark above a label here, only the stamp, and sitting it on the label
-     baseline would leave it hanging off the bottom of an otherwise empty cell. */
-  justify-content: center;
-}
-
-/* A stamp, not a control: no press state and no tap target, because there is
-   nothing to do with it. Drawn from the brand tokens, which the nightly channel
-   has already re-pointed to indigo, so it matches the bar it marks rather than
-   fighting it. Same shape it wore in the topbar. */
-.nav-channel {
-  padding: 0.15rem 0.35rem;
-  border: 1px solid color-mix(in srgb, var(--color-primary) 45%, transparent);
-  border-radius: var(--radius-xs);
-  background: var(--color-primary-bg);
-  color: var(--color-primary-text);
-  font-size: 0.5625rem;
-  font-weight: var(--weight-extrabold);
-  letter-spacing: 0.06em;
-  line-height: 1.5;
-}
-
 .nav-slot__mark {
   width: 26px;
   height: 26px;
@@ -838,13 +814,13 @@ const orderedActiveMembers = computed(() =>
 
    The fill is a pill behind the mark rather than the whole cell: a full-height
    rectangle lighting up under a thumb reads as the bar breaking into panels. */
-.nav-slot:not(.nav-slot--empty):active {
+.nav-slot:active {
   color: var(--text-primary);
   transform: scale(0.92);
   transition-duration: 0s;
 }
 
-.nav-slot:not(.nav-slot--add):not(.nav-slot--empty):active .nav-slot__mark {
+.nav-slot:not(.nav-slot--add):active .nav-slot__mark {
   box-shadow: 0 0 0 8px var(--bg-press);
   border-radius: var(--radius-pill);
   transition-duration: 0s;
@@ -863,14 +839,14 @@ const orderedActiveMembers = computed(() =>
   transition-duration: 0s;
 }
 
+/* Colour only. There was a ring around the mark here too, matching the press
+   state, and it was decoration nobody was ever going to see: a phone has no
+   hover, and the bar is display:none at the desktop column, so the only place it
+   could fire was a desktop window narrowed past 900px. The press ring stays --
+   that one answers a real finger. */
 @media (hover: hover) {
-  .nav-slot:not(.nav-slot--empty):hover {
+  .nav-slot:hover {
     color: var(--text-primary);
-  }
-
-  .nav-slot:not(.nav-slot--add):not(.nav-slot--empty):hover .nav-slot__mark {
-    box-shadow: 0 0 0 8px var(--bg-hover);
-    border-radius: var(--radius-pill);
   }
 }
 
