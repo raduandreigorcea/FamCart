@@ -580,17 +580,32 @@ const orderedActiveMembers = computed(() =>
   display: flex;
 }
 
+/* Exactly the weight the topbar's history button had, which is the icon this
+   slot replaces: 20px at the source's own stroke-width 1, knocked back to 86%.
+   That works out to 0.83px of actual stroke — the faintest icon in the app, and
+   deliberately so. The topbar reached it by a different route, painting the
+   asset as a CSS mask, which cannot override stroke-width and so could only
+   ever render the hairline the file ships with.
+
+   Worth writing down because the number reads alarming next to every other
+   :deep(svg) rule in this codebase, which sit at 2 to 2.4. Actual thickness is
+   stroke-width x rendered / 24 — every asset shares a 24-unit viewBox — so
+   those are 1.25px to 2px, and none of them is a comparison for this. 20px also
+   happens to match the household emoji beside it, which renders at 20px. */
 .nav-slot__mark :deep(svg) {
   display: block;
-  width: 24px;
-  height: 24px;
-  /* Actual thickness is stroke-width x rendered / 24, because the sources all
-     share a 24-unit viewBox — so the number here says nothing on its own and
-     the app's other icons are the only scale worth reading it against. The
-     filter button paints 1.25px, an armed swipe action 2px. These are resting
-     chrome sitting beside an emoji and a photograph, so 1.5px: heavier than the
-     hairline the assets ship at, lighter than anything asking to be noticed. */
-  stroke-width: 1.5;
+  width: 20px;
+  height: 20px;
+  stroke-width: 1;
+  opacity: 0.86;
+}
+
+/* The topbar lifted the same icon in dark mode, where a hairline against a dark
+   surface has less to hold onto. It had to force white to do it, because a mask
+   needs an explicit background-color; currentColor follows --text-secondary
+   here, so only the opacity is left to carry it. */
+:global(:root[data-theme='dark']) .nav-slot__mark :deep(svg) {
+  opacity: 0.96;
 }
 
 .nav-slot__mark--emoji {
