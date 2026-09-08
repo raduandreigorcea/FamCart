@@ -46,13 +46,11 @@ describe('AppNavBar as the bottom bar', () => {
   it('draws five cells, four of which are buttons', () => {
     const wrapper = mountBar()
 
-    // Five slots, because the fifth is what the fourth is spaced against. Only
-    // four of them do anything yet.
     expect(wrapper.findAll('.nav-slot')).toHaveLength(5)
-    expect(wrapper.findAll('.navbar button')).toHaveLength(4)
-    // A gap rather than a disabled control: a disabled button promises that
-    // something is coming, and nothing is, yet.
-    expect(wrapper.find('.nav-slot--empty').element.tagName).toBe('SPAN')
+    // All five do something now: the fourth held its width as an empty cell
+    // until the switcher claimed it.
+    expect(wrapper.findAll('.navbar button')).toHaveLength(5)
+    expect(wrapper.find('.nav-slot--empty').exists()).toBe(false)
   })
 
   // Not a generic house icon. The emoji is the one the owner picked, already on
@@ -115,8 +113,8 @@ describe('AppNavBar as the bottom bar', () => {
 
       expect(buttons[1].attributes('aria-label')).toBe('Checkout history')
       expect(buttons[1].find('.nav-slot__label').text()).toBe('History')
-      expect(buttons[3].attributes('aria-label')).toBe('Your account')
-      expect(buttons[3].find('.nav-slot__label').text()).toBe('You')
+      expect(buttons[4].attributes('aria-label')).toBe('Your account')
+      expect(buttons[4].find('.nav-slot__label').text()).toBe('You')
     })
 
     // The avatar used to be announced alongside the label, so the same control
@@ -136,10 +134,12 @@ describe('AppNavBar as the bottom bar', () => {
 
     expect(wrapper.find('[aria-current]').exists()).toBe(false)
     expect(wrapper.find('nav').attributes('aria-label')).toBe('Main actions')
-    for (const button of wrapper.findAll('.navbar button')) {
-      if (button.classes().includes('nav-slot--add')) continue
-      expect(button.attributes('aria-haspopup')).toBe('dialog')
-    }
+    // Every slot but the centre one summons a layer, and says which kind: the
+    // three dialogs say "dialog", the switcher says "menu".
+    const popups = wrapper
+      .findAll('.navbar button')
+      .map((b) => b.attributes('aria-haspopup') ?? null)
+    expect(popups).toEqual(['dialog', 'dialog', null, 'menu', 'dialog'])
   })
 
   it('opens the household settings from the first slot', async () => {
@@ -154,11 +154,26 @@ describe('AppNavBar as the bottom bar', () => {
 
   it('opens the account dialog from the last slot', async () => {
     const wrapper = mountBar()
-    const you = wrapper.findAll('.navbar button')[3]
+    const you = wrapper.findAll('.navbar button')[4]
 
     await you.trigger('click')
 
     expect(you.attributes('aria-expanded')).toBe('true')
+  })
+
+  // Slot four. The trigger lives here because it has to look like the four
+  // buttons beside it; the menu itself is HouseholdSwitcherMenu's.
+  it('opens the household switcher from the fourth slot', async () => {
+    const wrapper = mountBar({ households: [{ id: 'a', name: 'A' }] })
+    const switcher = wrapper.findAll('.navbar button')[3]
+
+    expect(switcher.attributes('aria-label')).toBe('Switch household')
+    expect(switcher.find('.nav-slot__label').text()).toBe('Switch')
+    expect(switcher.attributes('aria-expanded')).toBe('false')
+
+    await switcher.trigger('click')
+
+    expect(switcher.attributes('aria-expanded')).toBe('true')
   })
 
   // The header shell and the bar are mutually exclusive by media query, but both

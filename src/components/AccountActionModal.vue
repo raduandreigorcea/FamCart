@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, type PropType } from 'vue'
+import { computed } from 'vue'
 import AppModal from './AppModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
 // One icon per row, and each one distinct: their job here is to tell three
@@ -10,8 +10,6 @@ import ModalCloseButton from './ModalCloseButton.vue'
 // The identity card's affordance. It is the only control here that leads
 // somewhere without a hint on the right saying what it holds, because what it
 // holds is the face and name already printed on it.
-import { DEFAULT_HOUSEHOLD_EMOJI } from '../lib/householdEmoji'
-import { HOUSEHOLD_MEMBERSHIP_CAP } from '../lib/limits'
 import { t, tn } from '../lib/i18n'
 import AppIcon from './AppIcon.vue'
 
@@ -20,14 +18,14 @@ import AppIcon from './AppIcon.vue'
 // than for the person, so they moved to AppSettingsModal and this now offers a
 // row leading there.
 //
-// Switching households lives here too. It used to be the topbar's own popover,
-// hung off the household name -- but a user may belong to at most three
-// households and may own only one, so most people have exactly one for the life
-// of the account. That made the most prominent control in the app a menu whose
-// only real content, nearly always, was a single already-ticked row. The name up
-// there now opens that household's settings directly, and switching sits in the
-// dialog you open when you want to move between things rather than act on the
-// one in front of you.
+// Switching households is NOT here, and was, twice. It was the topbar's own
+// popover first, hung off the household name, which spent the app's most
+// prominent control on a menu whose only content is usually one already-ticked
+// row. Then it was a section in this dialog, which is the place you open to act
+// on YOURSELF -- and which household's list is on screen is a fact about the
+// screen, not about you. It is the action bar's fourth slot now, one press from
+// the list, in HouseholdSwitcherMenu. What stays here is the row that manages
+// the household you are already in.
 const props = defineProps({
   open: { type: Boolean, default: false },
   loadingSignOut: { type: Boolean, default: false },
@@ -40,17 +38,8 @@ const props = defineProps({
   initial: { type: String, default: '?' },
   householdName: { type: String, default: '' },
   householdMemberCount: { type: Number, default: 0 },
-  // Every household the user belongs to, and which one is active.
-  households: {
-    type: Array as PropType<{ id: string; name: string; emoji?: string | null }[]>,
-    default: () => [],
-  },
-  householdId: { type: String, default: '' },
 })
 
-// The household rows below lead somewhere the topbar also reaches directly. That
-// is deliberate: people look for the same thing in different places, and a
-// second route costs a row here while saving someone a hunt.
 const emit = defineEmits([
   'close',
   'edit-account',
@@ -59,27 +48,9 @@ const emit = defineEmits([
   'manage-household',
   'invite-members',
   'app-settings',
-  'switch-household',
-  'add-household',
 ])
 
 const resolvedDisplayName = computed(() => props.displayName || t('account.fallbackName'))
-
-// Only worth listing when there is somewhere to go: with one household the rows
-// would be a single row you are already on.
-const canSwitch = computed(() => props.households.length > 1)
-// At the cap there is nowhere to add another.
-const canAddHousehold = computed(() => props.households.length < HOUSEHOLD_MEMBERSHIP_CAP)
-// The section earns its heading and divider only if it has something in it.
-const showHouseholdSection = computed(() => canSwitch.value || canAddHousehold.value)
-
-function switchHousehold(id: string) {
-  if (id === props.householdId) {
-    emit('close')
-    return
-  }
-  emit('switch-household', id)
-}
 
 </script>
 
@@ -154,43 +125,6 @@ function switchHousehold(id: string) {
               </span>
               <span class="account-menu-item__hint">{{ t('account.appSettingsHint') }}</span>
             </button>
-
-            <!-- Households you can move to, and the way to gain another. Absent
-                 entirely for someone with one household and no room for more,
-                 which is the only state where neither row has anything to do. -->
-            <template v-if="showHouseholdSection">
-              <div class="account-divider"></div>
-
-              <button
-                v-for="household in (canSwitch ? households : [])"
-                :key="household.id"
-                class="account-menu-item account-household-item"
-                type="button"
-                role="menuitemradio"
-                :aria-checked="household.id === householdId"
-                @click="switchHousehold(household.id)"
-              >
-                <span class="account-menu-item__label">
-                  <span class="account-household-emoji" aria-hidden="true">
-                    {{ household.emoji || DEFAULT_HOUSEHOLD_EMOJI }}
-                  </span>
-                  <span class="account-household-name">{{ household.name || t('account.householdFallback') }}</span>
-                </span>
-                <span v-if="household.id === householdId" class="account-menu-item__hint">{{ t('account.current') }}</span>
-              </button>
-
-              <button
-                v-if="canAddHousehold"
-                class="account-menu-item account-household-add"
-                type="button"
-                @click="emit('add-household')"
-              >
-                <span class="account-menu-item__label">
-                  <AppIcon class="account-item-icon" name="plus" />
-                  <span>{{ t('account.joinOrCreate') }}</span>
-                </span>
-              </button>
-            </template>
 
             <div class="account-divider"></div>
 
@@ -491,11 +425,8 @@ function switchHousehold(id: string) {
   color: var(--text-primary);
 }
 
-/* 16px, and .account-household-emoji matches it. Every row in this menu leads
-   with a mark on the same gap, so the two kinds have to occupy the same width
-   or the labels do not share a left edge -- which is what happened while the
-   emoji sat in a 26px tile and started the household rows' text 10px right of
-   every other row. */
+/* 16px. Every row in this menu leads with a mark on the same gap, so they all
+   occupy the same width and the labels share a left edge. */
 .account-item-icon {
   width: 16px;
   height: 16px;
@@ -530,42 +461,6 @@ function switchHousehold(id: string) {
   font-size: var(--text-xs);
   color: var(--text-secondary);
   flex-shrink: 0;
-}
-
-/* A household wears its own emoji where the other rows wear an icon: it
-   identifies one particular household rather than naming a kind of destination.
-   The same 16px slot the line icons get, so a household row starts its name on
-   the left edge every other row starts its label on.
-
-   No tile behind it any more. The tinted square was what the extra 10px were
-   for, and at this size it has nothing left to hold -- the emoji fills the box,
-   so the background reads as a smudge rather than a surface. The emoji is the
-   mark here, the way the glyph is on every other row. */
-.account-household-emoji {
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  /* One step under the box, so a wide emoji cannot push it out. */
-  font-size: var(--text-sm);
-  line-height: 1;
-}
-
-/* Names run to 25 characters and "Current" must survive beside them. */
-.account-household-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Gaining a household is not one of the households, so the row is quieter than
-   the ones above it -- the same distinction the panel it replaces drew with a
-   dashed tile. */
-.account-household-add .account-menu-item__label {
-  color: var(--text-secondary);
-  font-weight: var(--weight-semibold);
 }
 
 .account-menu-item--danger {

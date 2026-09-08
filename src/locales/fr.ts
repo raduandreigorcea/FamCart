@@ -126,6 +126,9 @@ const fr: Catalog = {
 
   'filter.buttonLabel': 'Filtrer les articles',
   'filter.buttonLabelFiltered': 'Filtrer les articles (filtré)',
+  'switcher.heading': 'Vos foyers',
+  'switcher.hint': 'La liste que vous consultez',
+
   'filter.heading': 'Filtres',
   'filter.hint': 'Ce que montre cette liste',
   'filter.all.label': 'Aucun filtre',
@@ -194,6 +197,8 @@ const fr: Catalog = {
   'nav.add': 'Ajouter',
   'nav.addLabel': 'Ajouter un article',
   'nav.you': 'Vous',
+  'nav.switch': 'Changer',
+  'nav.switchLabel': 'Changer de foyer',
 
   'account.title': 'Réglages du compte',
   'account.subtitle': 'Gérez votre profil et vos préférences',

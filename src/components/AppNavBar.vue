@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, ref, type PropType } from 'vue'
 import { useClerk, useUser } from '@clerk/vue'
 import AccountActionModal from './AccountActionModal.vue'
 import AppIcon from './AppIcon.vue'
+import HouseholdSwitcherMenu from './HouseholdSwitcherMenu.vue'
 import MemberAvatarStack from './MemberAvatarStack.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { sortMembersSelfFirst } from '../lib/memberRoles'
@@ -110,6 +111,34 @@ const { user } = useUser()
 
 const accountMenuOpen = ref(false)
 const signingOut = ref(false)
+
+// The household switcher hangs off the bar's fourth slot. The button lives here
+// because it has to look like the four beside it; the menu is its own component
+// and takes this element to hang itself from.
+const switcherOpen = ref(false)
+// Set by whoever opened the menu rather than bound to one element, because both
+// shells have a switcher button and both are in the DOM at once -- only a media
+// query decides which is drawn. Anchoring to a fixed ref would mean measuring a
+// display:none button on the other shell, which reports a zero rect and puts the
+// panel in the top-left corner of the screen.
+const switcherBtn = ref<HTMLElement | null>(null)
+
+function openSwitcher(event: MouseEvent) {
+  switcherBtn.value = event.currentTarget as HTMLElement
+  switcherOpen.value = !switcherOpen.value
+}
+
+// Closes the menu itself; the switch is the parent's to perform, because it owns
+// which household is active and everything that has to be refetched with it.
+function switchFromBar(id: string) {
+  switcherOpen.value = false
+  emit('switch-household', id)
+}
+
+function addFromBar() {
+  switcherOpen.value = false
+  emit('add-household')
+}
 
 const settingsOpen = ref(false)
 // Stays true after the first open so the async chunk keeps its close transition.
@@ -264,6 +293,18 @@ const orderedActiveMembers = computed(() =>
        Two of the five marks are the user's own things rather than icons — the
        household's emoji and their avatar — which is also what makes the first
        slot answer "which household" for somebody in more than one. -->
+  <!-- The nightly stamp, at the top of the viewport rather than inside the bar.
+       It lost its old home when the topbar became desktop-only, and a build
+       channel has to be obvious in a screenshot with no chrome in it so that
+       nobody debugs the wrong database for an hour. The list pays for it with
+       --channel-ribbon, which is 0px on production, so this costs an unmarked
+       build nothing at all.
+
+       Untranslated on purpose, like the manifest: it names a build channel, not
+       anything the app does. -->
+  <!-- eslint-disable-next-line vue/no-bare-strings-in-template -- build channel, the same word in every language -->
+  <p v-if="layout === 'bar' && IS_NIGHTLY" class="channel-ribbon">NIGHTLY</p>
+
   <nav v-if="layout === 'bar'" class="navbar" :aria-label="t('nav.label')">
     <!-- Every slot here carries an aria-label, for the same reason the centre
          disc does: the visible labels are single words because they sit under a
@@ -324,21 +365,26 @@ const orderedActiveMembers = computed(() =>
       <span class="nav-slot__label">{{ t('nav.add') }}</span>
     </button>
 
-    <!-- Holds the fifth column's width so the four real slots sit where they
-         will still sit once something fills it. An empty cell rather than a
-         disabled button: a disabled control promises something is coming, and
-         nothing is, yet.
+    <!-- Which household's list you are looking at. Drawn even for the account
+         that has one, which is most of them: with nothing to switch to the menu
+         is still the way to a second household, and a slot that comes and goes
+         is a bar that changes shape under you.
 
-         Until then it carries the nightly stamp, which needs somewhere that is
-         on screen whatever you are doing and lost its old home when the topbar
-         became desktop-only. A build channel has to be obvious in a screenshot
-         with no chrome in it, so that nobody debugs the wrong database for an
-         hour. Untranslated on purpose, like the manifest: it names a build
-         channel, not anything the app does. -->
-    <span class="nav-slot nav-slot--empty">
-      <!-- eslint-disable-next-line vue/no-bare-strings-in-template -- build channel, the same word in every language -->
-      <span v-if="IS_NIGHTLY" class="nav-channel">NIGHTLY</span>
-    </span>
+         "Switch", not "Households": the first slot is already "Household" and
+         the two would read as the same word. -->
+    <button
+      class="nav-slot"
+      type="button"
+      aria-haspopup="menu"
+      :aria-expanded="switcherOpen"
+      :aria-label="t('nav.switchLabel')"
+      @click="openSwitcher"
+    >
+      <span class="nav-slot__mark">
+        <AppIcon name="layout-grid" />
+      </span>
+      <span class="nav-slot__label">{{ t('nav.switch') }}</span>
+    </button>
 
     <button
       class="nav-slot"
@@ -425,6 +471,18 @@ const orderedActiveMembers = computed(() =>
         v-if="householdName"
         class="topbar-icon-btn"
         type="button"
+        aria-haspopup="menu"
+        :aria-expanded="switcherOpen"
+        :aria-label="t('nav.switchLabel')"
+        @click="openSwitcher"
+      >
+        <AppIcon class="topbar-switcher-icon" name="layout-grid" />
+      </button>
+
+      <button
+        v-if="householdName"
+        class="topbar-icon-btn"
+        type="button"
         :aria-label="t('topbar.history')"
         @pointerdown="prefetch(loadPurchaseHistoryModal)"
         @click="openHistory"
@@ -475,6 +533,15 @@ const orderedActiveMembers = computed(() =>
     @household-left="emit('household-left')"
   />
 
+  <HouseholdSwitcherMenu
+    v-model="switcherOpen"
+    :trigger="switcherBtn"
+    :households="households"
+    :household-id="householdId"
+    @switch-household="switchFromBar"
+    @add-household="addFromBar"
+  />
+
   <AccountActionModal
     :open="accountMenuOpen"
     :loading-sign-out="signingOut"
@@ -509,6 +576,63 @@ const orderedActiveMembers = computed(() =>
 </template>
 
 <style scoped>
+/* The build stamp, at the top of the viewport. Fixed rather than in the flow so
+   it cannot be scrolled away — it answers "which database am I looking at",
+   which is a question you can have at any moment, not only at the top of the
+   list. The list keeps clear of it through --channel-ribbon, which is 0px on
+   production, so this rule and that padding both cost an unmarked build nothing.
+
+   pointer-events: none because it is a label, not a control, and it sits over
+   the one row of the list that has controls in it. */
+.channel-ribbon {
+  position: fixed;
+  top: calc(var(--safe-top) + 0.35rem);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  margin: 0;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 45%, transparent);
+  border-radius: var(--radius-xs);
+  background: var(--color-primary-bg);
+  color: var(--color-primary-text);
+  font-size: 0.5625rem;
+  font-weight: var(--weight-extrabold);
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+@media (min-width: 900px) {
+  /* The header is back and carries its own badge, next to the household name. */
+  .channel-ribbon {
+    display: none;
+  }
+}
+
+/* The header's switcher: the desktop column's door to the same menu the bar's
+   fourth slot opens. Matched to the history icon beside it, which is painted as
+   a CSS mask and so can only ever render the hairline the asset ships with --
+   0.83px at this size, then knocked back to 86%. Two icons in one row have to
+   agree, and the mask is the one that cannot be argued with. */
+.topbar-switcher-icon {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+}
+
+.topbar-switcher-icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  stroke-width: 1;
+  opacity: 0.86;
+}
+
+:global(:root[data-theme='dark']) .topbar-switcher-icon :deep(svg) {
+  opacity: 0.96;
+}
+
 /* ─── The bottom action bar ──────────────────────────────────────────────────
    Five equal cells and one baseline. Every slot is a bottom-aligned column, so
    the labels line up whatever sits above them: a 26px mark in four of them and

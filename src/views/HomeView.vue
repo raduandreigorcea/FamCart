@@ -1023,7 +1023,7 @@ async function reconcileActiveHousehold() {
   display: flex;
   justify-content: center;
   padding: 1rem 1rem 0;
-  padding-top: calc(1rem + var(--safe-top));
+  padding-top: calc(1rem + var(--safe-top) + var(--channel-ribbon));
   padding-bottom: calc(
     var(--nav-height) + var(--nav-disc-overhang) + var(--safe-bottom) + 0.75rem
   );
