@@ -414,7 +414,7 @@ describe('AddItemForm suggestions', () => {
       const wrapper = await mountSheet({ suggestions: PRODUCTS })
       expect(wrapper.find('.back-btn').exists()).toBe(true)
 
-      await wrapper.find('input').trigger('blur')
+      await wrapper.find('.back-btn').trigger('click')
       await flushPromises()
 
       expect(dismissed(wrapper)).toBe(true)
@@ -692,11 +692,29 @@ describe('AddItemForm suggestions', () => {
       expect(wrapper.find('.add-slot').classes()).toContain('add-slot--open')
     })
 
-    it('puts the form back when the input is blurred', async () => {
+    // A sheet raised on purpose is dismissed on purpose. Losing focus is not
+    // that: anything unfocusable inside the screen — the shop-filter chips, the
+    // gap under a short list, a scroll begun on the padding — took the keyboard
+    // down, and used to take the screen and whatever had been typed with it.
+    it('stays up when the field loses focus, keyboard and all', async () => {
       const wrapper = await mountSheet({ suggestions: PRODUCTS })
       await wrapper.find('input').trigger('blur')
+      await flushPromises()
 
-      expect(dismissed(wrapper)).toBe(true)
+      expect(wrapper.find('.add-form').classes()).toContain('add-form--expanded')
+      expect(wrapper.find('.add-form').classes()).not.toContain('add-form--closing')
+      expect(wrapper.emitted('update:expanded')).toBeUndefined()
+    })
+
+    // The results are the screen's body, not a dropdown hanging off a focused
+    // field, so a dropped keyboard must not empty them.
+    it('keeps the results up with the keyboard gone', async () => {
+      const wrapper = await mountSheet({ suggestions: PRODUCTS })
+      await wrapper.find('input').trigger('blur')
+      await flushPromises()
+
+      expect(wrapper.find('.suggestions-wrap').exists()).toBe(true)
+      expect(wrapper.findAll('.suggestion-name')).toHaveLength(2)
     })
 
     it('puts the form back on Escape', async () => {
@@ -706,17 +724,18 @@ describe('AddItemForm suggestions', () => {
       expect(dismissed(wrapper)).toBe(true)
     })
 
-    // Same contract as the option rows: the cover must close search without
-    // the tap itself moving focus first.
-    it('closes when the cover is pressed, without stealing focus', async () => {
+    // The cover is the surface the sheet sits on, not a dismissal target. On a
+    // phone it is the whole screen, so a stray tap on it closing the search was
+    // the largest misclick target in the app.
+    it('does not close when the surface behind it is pressed', async () => {
       const wrapper = await mountSheet({ suggestions: PRODUCTS })
 
       const event = new Event('mousedown', { bubbles: true, cancelable: true })
       wrapper.find('.add-cover').element.dispatchEvent(event)
       await flushPromises()
 
-      expect(event.defaultPrevented).toBe(true)
-      expect(dismissed(wrapper)).toBe(true)
+      expect(wrapper.find('.add-form').classes()).toContain('add-form--expanded')
+      expect(wrapper.emitted('update:expanded')).toBeUndefined()
     })
 
     it('leaves a wider screen entirely alone', async () => {

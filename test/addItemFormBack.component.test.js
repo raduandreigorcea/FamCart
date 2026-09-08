@@ -113,6 +113,25 @@ describe('the add form and the Back press', () => {
       window.matchMedia = realMatchMedia
     })
 
+    // Back is the ONLY way out of the sheet now — blur does not dismiss it and
+    // neither does the surface behind it — so the registration has to survive
+    // the keyboard going away. Keyed on focus, as it once was, a tap on
+    // anything unfocusable inside the search would have quietly handed the next
+    // Back press to Home's root-route case, which exits the app with a
+    // half-typed search still on screen.
+    it('stays the press\'s business when the keyboard goes away', async () => {
+      mountForm({ expanded: true })
+      await wrapper.find('input').trigger('focus')
+      await flushPromises()
+      expect(hasOpenModal()).toBe(true)
+
+      await wrapper.find('input').trigger('blur')
+      await flushPromises()
+
+      expect(hasOpenModal()).toBe(true)
+      expect(closeTopModal()).toBe(true)
+    })
+
     it('puts the search screen away instead of the app', async () => {
       // Raised the way the bar raises it, then focused, which is the order the
       // component itself uses on the way up.
