@@ -512,6 +512,10 @@ const orderedActiveMembers = computed(() =>
   padding-bottom: var(--safe-bottom);
   background: var(--bg-surface);
   border-top: var(--border-width-thin) solid var(--border-main);
+  /* Load-bearing, and the default, which is exactly why it is written down: the
+     centre disc is taller than the bar and hangs over its top edge. Clipping
+     here would cut the primary action in half. */
+  overflow: visible;
 }
 
 /* Below the checkout slider (z-index 50), which has to stay reachable while the
@@ -525,7 +529,12 @@ const orderedActiveMembers = computed(() =>
   align-items: center;
   justify-content: flex-end;
   gap: 3px;
-  padding: 0 0.25rem 0.5rem;
+  /* Equal top and bottom, which is the whole of the bar's height calculation:
+     a small slot's mark, gap and label come to 42px, and these two 8px bands
+     are the rest of --nav-height. flex-end rather than center so the labels of
+     all five slots share one baseline whatever sits above them -- which is what
+     lets the disc be 44px in a 42px box without moving anything. */
+  padding: 0.5rem 0.25rem;
   border: none;
   background: transparent;
   color: var(--text-secondary);
@@ -541,7 +550,6 @@ const orderedActiveMembers = computed(() =>
      mark above a label here, only the stamp, and sitting it on the label
      baseline would leave it hanging off the bottom of an otherwise empty cell. */
   justify-content: center;
-  padding-bottom: 0;
 }
 
 /* A stamp, not a control: no press state and no tap target, because there is
@@ -637,6 +645,11 @@ const orderedActiveMembers = computed(() =>
   font-weight: var(--weight-semibold);
   line-height: var(--leading-tight);
   letter-spacing: 0;
+  /* The centre slot asks for more height than it has, on purpose — that is the
+     disc's overhang. Something has to absorb the difference, and a flex item
+     gives way by default, so without this the label was the thing that gave:
+     squeezed to zero height, and the word "Add" simply did not render. */
+  flex-shrink: 0;
   max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
@@ -649,6 +662,9 @@ const orderedActiveMembers = computed(() =>
 .nav-add__disc {
   width: 44px;
   height: 44px;
+  /* Without this the column would shrink it to the 34px its slot has spare,
+     since a flex item's default is to give way. The overhang IS the design. */
+  flex-shrink: 0;
   border-radius: var(--radius-pill);
   display: flex;
   align-items: center;
