@@ -165,12 +165,13 @@ const rows = computed(() => (showingRecents.value ? props.recents : props.sugges
 const hasResults = computed(
   () => props.suggestionsLoading || rows.value.length > 0 || props.canAddCustom,
 )
-// `closing` keeps the results mounted while the sheet travels down. Dismissing
-// blurs the field, so without it the body would empty on the first frame and
-// what slid off screen would be an empty white panel.
-const panelOpen = computed(
-  () => (inputFocused.value || closing.value) && (present.value || hasResults.value),
-)
+// In the sheet the results ARE the body, so they are mounted for as long as the
+// sheet is — including empty, and including while it travels back down, which
+// `present` covers. Focus has nothing to do with it: the keyboard can be
+// dismissed with the sheet still up, and a screen with nothing under its header
+// is still the screen. Above the sheet boundary this is an ordinary dropdown
+// again, open only while the field has focus and there is something to show.
+const panelOpen = computed(() => present.value || (inputFocused.value && hasResults.value))
 
 // A household with no history yet gets a line telling them what to do rather than
 // a blank screen. Only on an empty query: telling someone who has typed a
@@ -335,12 +336,27 @@ function onFocus() {
   if (isSheetWidth()) expand()
 }
 
-// The one way out, whether it came from the cover, Escape or an ordinary
-// blur. Blurring re-enters through @blur, which is why expand/collapse both
-// no-op when there is nothing to do.
+// A DELIBERATE dismissal: the back button, Escape, or handing the screen over to
+// the scanner. Not blur, and not a tap on the surface behind the sheet.
+//
+// Both of those used to land here, and on a phone that made the search screen
+// feel like it was waiting for an excuse to leave. Anything not focusable took
+// the keyboard down and the whole screen with it — the shop-filter chips, the
+// gap under a short results list, a scroll that started on the padding — and
+// whatever had been typed went with it. A sheet raised on purpose should be
+// dismissed on purpose.
 function close() {
   inputFocused.value = false
   inputRef.value?.blur()
+  collapse()
+}
+
+// Losing focus is not a dismissal while the sheet is up; it only means the
+// keyboard went away. Above the sheet boundary it is the whole story, because
+// there the dropdown belongs to the focused field and nothing else.
+function onBlur() {
+  inputFocused.value = false
+  if (present.value) return
   collapse()
 }
 
@@ -352,20 +368,40 @@ function close() {
 // search still up — losing whatever had been typed, which is the one thing Back
 // is never supposed to do.
 //
-// Keyed on focus rather than on `expanded`, because the lift is phone-only: on a
-// wider screen the field takes focus without becoming a screen, and Back should
-// still hand the focus back rather than quit. close() no-ops on the half that
-// does not apply.
+// Registered whenever there is something for Back to put away: the sheet for as
+// long as it is up, or — above the sheet boundary, where there is no sheet — a
+// focused field with a dropdown under it.
 //
-// It does not lock the page's scroll. Lifted, the form owns the viewport itself
+// It cannot be keyed on focus alone any more. Blur no longer dismisses the
+// sheet, so a keyboard dropped inside an open search would have taken this
+// registration with it and left Back falling through to Home's root-route case,
+// which exits the app. That is the exact failure this was written to eliminate,
+// and Back is now the ONLY way out on a phone, so it has to be the thing that
+// cannot come unstuck.
+//
+// It does not lock the page's scroll. Raised, the sheet owns the viewport itself
 // and its cover already swallows touch; collapsed, a text cursor is no reason to
 // freeze the list.
 const layer = Symbol('add-item-search')
 
-watch(inputFocused, (focused) => {
-  if (focused) openModal(layer, { close, locksScroll: false })
-  else closeModal(layer)
-})
+// immediate, because the bar can hand this component a sheet that is ALREADY
+// open: HomeView sets the model and the form mounts with it true, so the value
+// never changes and a lazy watcher would never fire. That left the one state
+// where Back is the only exit as the one state Back was not registered for.
+// closeModal ignores a token it has never seen, so the false case is free.
+watch(
+  // `expanded`, not `present`: the layer means "there is a search open for Back
+  // to put away", and once it has been dismissed there is not — even though the
+  // sheet is still drawn for the length of its exit. Keyed on `present`, a
+  // second Back during those 280ms would report itself handled and then do
+  // nothing, eating a press the list screen should have had.
+  () => expanded.value || inputFocused.value,
+  (open) => {
+    if (open) openModal(layer, { close, locksScroll: false })
+    else closeModal(layer)
+  },
+  { immediate: true },
+)
 
 onBeforeUnmount(() => {
   // The slide timer, the viewport listeners and the transitionend handler are
@@ -384,12 +420,11 @@ onBeforeUnmount(() => {
     <Transition name="add-cover">
       <!-- mousedown, not click, for the same reason the options use it: the tap
            must not steal focus before we decide what to do with it. -->
-      <div
-        v-if="present"
-        class="add-cover"
-        @mousedown.prevent="close"
-        @touchmove.prevent
-      ></div>
+      <!-- The surface the sheet sits on, and nothing more. It used to dismiss
+           on mousedown, which on a phone is a full-screen target sitting under
+           a search you raised on purpose. touchmove is still swallowed so the
+           list behind cannot be scrolled through it. -->
+      <div v-if="present" class="add-cover" @touchmove.prevent></div>
     </Transition>
 
     <form
@@ -434,7 +469,7 @@ onBeforeUnmount(() => {
             :aria-controls="panelOpen ? listboxId : undefined"
             :aria-activedescendant="activeOptionId"
             @focus="onFocus"
-            @blur="close"
+            @blur="onBlur"
             @keydown.esc="close"
             @keydown.down.prevent="moveActive(1)"
             @keydown.up.prevent="moveActive(-1)"
