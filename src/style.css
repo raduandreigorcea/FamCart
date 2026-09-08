@@ -171,9 +171,21 @@
      the bar adds as padding underneath. A token because three files have to
      agree on it and none of them can see the others: AppNavBar draws it,
      HomeView pads the scroll container for it, and ShoppingList floats the
-     checkout slider above it. The number is what a 44px disc plus its label
-     needs; the four small slots have room to spare inside it. */
-  --nav-height: 72px;
+     checkout slider above it.
+
+     The number is what a SMALL slot needs and nothing more: 8px, a 26px mark,
+     a 3px gap, a 13px label, 8px, plus the 1px top border, which counts because
+     everything here is border-box. The bar used to be sized by the centre disc
+     instead, which bought the disc its room by giving the other four 22px of
+     dead space above them. */
+  --nav-height: 59px;
+  /* How far the centre disc stands proud of the bar's top edge: 8.64px in
+     practice, rounded up. It is 44px in a slot with 42px to give, so it hangs
+     out rather than being sized down -- deliberately, since a bar tall enough
+     to contain it is a bar built around its largest element. Everything that
+     has to stay clear of the bar clears this too: the list's bottom padding and
+     the checkout slider. */
+  --nav-disc-overhang: 9px;
   --size-control-sm: 32px;
   --size-control-md: 40px;
   --size-control-lg: 52px;

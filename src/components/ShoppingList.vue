@@ -793,7 +793,9 @@ const labelText = computed(() =>
   position: fixed;
   left: 0;
   right: 0;
-  bottom: calc(var(--nav-height) + var(--safe-bottom) + 0.5rem);
+  bottom: calc(
+    var(--nav-height) + var(--nav-disc-overhang) + var(--safe-bottom) + 0.5rem
+  );
   z-index: 50;
   display: flex;
   justify-content: center;
