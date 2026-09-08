@@ -167,6 +167,13 @@
      edges line up on wide screens. Applied behind identical 900px media
      queries (media queries can't read custom properties). */
   --desktop-column: 720px;
+  /* The bottom action bar's own height, without the phone's safe area, which
+     the bar adds as padding underneath. A token because three files have to
+     agree on it and none of them can see the others: AppNavBar draws it,
+     HomeView pads the scroll container for it, and ShoppingList floats the
+     checkout slider above it. The number is what a 44px disc plus its label
+     needs; the four small slots have room to spare inside it. */
+  --nav-height: 72px;
   --size-control-sm: 32px;
   --size-control-md: 40px;
   --size-control-lg: 52px;

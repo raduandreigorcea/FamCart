@@ -5,7 +5,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useSupabase } from '../supabase'
 import { saveActiveHouseholdId } from '../lib/householdCache'
 import { deriveProfileFields } from '../lib/userIdentity'
-import AppTopbar from '../components/AppTopbar.vue'
+import AppNavBar from '../components/AppNavBar.vue'
 import InputRow from '../components/InputRow.vue'
 import ErrorModal from '../components/ErrorModal.vue'
 import AppCard from '../components/AppCard.vue'
@@ -264,7 +264,7 @@ async function joinHousehold() {
 <template>
   <div class="setup-page">
     <!-- Top bar -->
-    <AppTopbar />
+    <AppNavBar />
 
     <!-- Content -->
     <main class="setup-main">

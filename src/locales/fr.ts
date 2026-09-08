@@ -188,6 +188,13 @@ const fr: Catalog = {
   'topbar.account': 'Votre compte',
   'topbar.avatarAlt': 'Votre avatar',
 
+  'nav.label': 'Actions principales',
+  'nav.household': 'Foyer',
+  'nav.history': 'Historique',
+  'nav.add': 'Ajouter',
+  'nav.addLabel': 'Ajouter un article',
+  'nav.you': 'Vous',
+
   'account.title': 'Réglages du compte',
   'account.subtitle': 'Gérez votre profil et vos préférences',
   'account.close': 'Fermer la fenêtre du compte',

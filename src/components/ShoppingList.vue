@@ -775,15 +775,25 @@ const labelText = computed(() =>
 }
 
 /* Buy bar */
+/* Keeps the last checked row clear of the slider. The dashboard already pads
+   for the action bar itself, so this only has to cover the slider and the gap
+   above it. */
 .buy-bar-spacer {
   height: 84px;
 }
 
+/* Just clear of the action bar rather than on the screen's own bottom edge,
+   which the bar now owns. The two are one assembly read from the bottom up:
+   the bar, then the thing this trip is actually for.
+
+   --nav-height is a token in style.css precisely so this number and the bar's
+   own height cannot drift apart; the bar is display:none above 900px, which is
+   why the desktop block at the foot of this file puts the old offset back. */
 .buy-bar-wrap {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: calc(1rem + var(--safe-bottom));
+  bottom: calc(var(--nav-height) + var(--safe-bottom) + 0.5rem);
   z-index: 50;
   display: flex;
   justify-content: center;
@@ -983,6 +993,14 @@ const labelText = computed(() =>
   .buybar-enter-active,
   .buybar-leave-active {
     transition: none;
+  }
+}
+
+/* The action bar is the phone shell only, so above the desktop column there is
+   nothing under the slider and it goes back to the screen's own bottom edge. */
+@media (min-width: 900px) {
+  .buy-bar-wrap {
+    bottom: calc(1rem + var(--safe-bottom));
   }
 }
 </style>

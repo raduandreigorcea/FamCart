@@ -10,7 +10,7 @@ import HomeView from '../src/views/HomeView.vue'
 import AddItemForm from '../src/components/AddItemForm.vue'
 import CustomProductModal from '../src/components/CustomProductModal.vue'
 import ShoppingList from '../src/components/ShoppingList.vue'
-import AppTopbar from '../src/components/AppTopbar.vue'
+import AppNavBar from '../src/components/AppNavBar.vue'
 import ConfirmModal from '../src/components/ConfirmModal.vue'
 import ErrorModal from '../src/components/ErrorModal.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
@@ -959,7 +959,7 @@ describe('multiple households', () => {
     await flushPromises()
     await flushPromises()
 
-    const topbar = wrapper.findComponent(AppTopbar)
+    const topbar = wrapper.findComponent(AppNavBar)
     // Both households reach the switcher, name-ordered, with the first active.
     expect(topbar.props('households').map((f) => f.name)).toEqual(['Home', 'Parents'])
     expect(topbar.props('householdName')).toBe('Home')

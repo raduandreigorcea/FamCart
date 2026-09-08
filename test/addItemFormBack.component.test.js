@@ -102,7 +102,7 @@ describe('the add form and the Back press', () => {
     beforeEach(() => {
       realMatchMedia = window.matchMedia
       window.matchMedia = (query) => ({
-        matches: query.includes('599.98px'),
+        matches: query.includes('899.98px'),
         media: query,
         addEventListener() {},
         removeEventListener() {},
@@ -114,7 +114,9 @@ describe('the add form and the Back press', () => {
     })
 
     it('puts the search screen away instead of the app', async () => {
-      mountForm()
+      // Raised the way the bar raises it, then focused, which is the order the
+      // component itself uses on the way up.
+      mountForm({ expanded: true })
       await wrapper.find('input').trigger('focus')
       await flushPromises()
       expect(wrapper.find('.add-form').classes()).toContain('add-form--expanded')
@@ -122,8 +124,10 @@ describe('the add form and the Back press', () => {
       expect(closeTopModal()).toBe(true)
       await flushPromises()
 
-      expect(wrapper.find('.add-form').classes()).not.toContain('add-form--expanded')
-      expect(wrapper.find('.add-cover').exists()).toBe(false)
+      // Dismissed at once. The sheet is still drawn, because it is travelling
+      // back down, but nobody is searching any more and Back has been answered.
+      expect(wrapper.emitted('update:expanded').at(-1)).toEqual([false])
+      expect(wrapper.find('.add-form').classes()).toContain('add-form--closing')
       // And the press is spent: a second one has nothing left to close and falls
       // through to the router, which is how Back gets you out of the app from
       // the list itself.

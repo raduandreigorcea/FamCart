@@ -9,12 +9,15 @@
 // starts the slide down, and then straight back onto the field, because
 // AppModal hands focus to whatever was focused when it opened.
 //
-// That focus lands mid-slide, and expand() used to read `expanded` as "already
-// a screen" and do nothing. A moment later the slide it ignored settled and
+// That focus lands mid-exit, and expand() used to read `expanded` as "already
+// a screen" and do nothing. A moment later the exit it ignored settled and
 // turned `expanded` off underneath it. The field kept focus and the keyboard
 // stayed up, so no further focus event was ever coming: the search was stuck as
 // a 275px dropdown in the middle of an empty screen for the rest of the
 // session, which is the layout this whole module exists to avoid.
+//
+// The sheet is no longer a slide off an inline field, but the window is the
+// same one and so is the failure it used to end in.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import AddItemForm from '../src/components/AddItemForm.vue'
@@ -27,22 +30,13 @@ const PRODUCTS = [
 let wrapper = null
 let realMatchMedia
 
-// happy-dom measures everything as zero, and a zero delta is the one case
-// collapse() settles synchronously — the very window this is about would not
-// exist. Give the row and its slot real, different positions so the slide is a
-// slide.
-function measureAsPhone() {
-  wrapper.find('.add-row').element.getBoundingClientRect = () => ({ top: 100, height: 56 })
-  wrapper.find('.add-slot').element.getBoundingClientRect = () => ({ top: 300, height: 56 })
-}
-
 beforeEach(() => {
   vi.useFakeTimers()
   realMatchMedia = window.matchMedia
   // Phone width, and motion not reduced: both queries have to answer for the
   // slide to run at all.
   window.matchMedia = (query) => ({
-    matches: query.includes('599.98px'),
+    matches: query.includes('899.98px'),
     media: query,
     addEventListener() {},
     removeEventListener() {},
@@ -56,11 +50,14 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+// Raised the way the bar raises it, then focused: the order the component uses
+// on its own way up, and the state the item-limit popup opens on top of.
 async function focusIntoSearch() {
-  wrapper = mount(AddItemForm, { props: { name: 'coca', suggestions: PRODUCTS } })
+  wrapper = mount(AddItemForm, {
+    props: { name: 'coca', suggestions: PRODUCTS, expanded: true },
+  })
   await wrapper.find('input').trigger('focus')
   await flushPromises()
-  measureAsPhone()
   expect(wrapper.find('.add-form').classes()).toContain('add-form--expanded')
 }
 
@@ -68,16 +65,16 @@ describe('the phone search screen and a dialog that hands focus back', () => {
   it('stays a screen when the field is refocused mid-collapse', async () => {
     await focusIntoSearch()
 
-    // Tapping the dialog's button blurs the field: the slide down begins.
+    // Tapping the dialog's button blurs the field: the exit begins.
     await wrapper.find('input').trigger('blur')
     await flushPromises()
     expect(wrapper.find('.add-form').classes()).toContain('add-form--closing')
 
-    // The dialog closes and gives the field its focus back, mid-slide.
+    // The dialog closes and gives the field its focus back, mid-exit.
     await wrapper.find('input').trigger('focus')
     await flushPromises()
 
-    // Past the slide's own fallback timer, which is what used to end it.
+    // Past the exit's own fallback timer, which is what used to end it.
     vi.advanceTimersByTime(500)
     await flushPromises()
 

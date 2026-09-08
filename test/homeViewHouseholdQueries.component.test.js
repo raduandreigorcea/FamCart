@@ -13,7 +13,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import HomeView from '../src/views/HomeView.vue'
-import AppTopbar from '../src/components/AppTopbar.vue'
+import AppNavBar from '../src/components/AppNavBar.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
 import { markTourSeen } from '../src/lib/onboarding'
 import { __setOnlineForTest } from '../src/lib/connectivity'
@@ -127,7 +127,7 @@ describe('the household header and switcher queries', () => {
   it('still surfaces the emoji to the topbar', async () => {
     const wrapper = await bootHome()
 
-    const topbar = wrapper.findComponent(AppTopbar)
+    const topbar = wrapper.findComponent(AppNavBar)
     expect(topbar.props('householdEmoji')).toBe('🏠')
     expect(topbar.props('households')[0].emoji).toBe('🏠')
   })

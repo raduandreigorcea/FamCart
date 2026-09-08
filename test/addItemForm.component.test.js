@@ -322,7 +322,7 @@ describe('AddItemForm suggestions', () => {
 
     const stubViewport = (isPhone) => {
       window.matchMedia = (query) => ({
-        matches: isPhone && query.includes('599.98px'),
+        matches: isPhone && query.includes('899.98px'),
         media: query,
         addEventListener() {},
         removeEventListener() {},
@@ -338,16 +338,41 @@ describe('AddItemForm suggestions', () => {
       window.matchMedia = realMatchMedia
     })
 
-    it('lifts the form and covers the list when the input takes focus', async () => {
-      const wrapper = await mountForm({ suggestions: PRODUCTS })
+    // Below the bar boundary this form has no place in the flow, so focusing it
+    // is not how it opens any more: the bar's centre button raises the sheet by
+    // setting the parent's `expanded` model, and the field is focused because
+    // the sheet is open rather than the other way round. mountForm's focus
+    // stands in for the focus the component gives itself on the way up.
+    const mountSheet = (props = {}) => mountForm({ expanded: true, ...props })
+
+    // Dismissing is reported at once, and the sheet is then marked as leaving
+    // and stays drawn for the length of its travel. Both halves matter: the
+    // model going false immediately is what lets the bar raise it again, and
+    // the sheet outliving it is what there is to animate.
+    const dismissed = (wrapper) =>
+      wrapper.emitted('update:expanded').at(-1)[0] === false &&
+      wrapper.find('.add-form').classes().includes('add-form--closing')
+
+    it('is a raised sheet covering the list, sized to the viewport', async () => {
+      const wrapper = await mountSheet({ suggestions: PRODUCTS })
 
       expect(wrapper.find('.add-form').classes()).toContain('add-form--expanded')
       expect(wrapper.find('.add-cover').exists()).toBe(true)
-      expect(wrapper.emitted('update:expanded').at(-1)).toEqual([true])
+    })
+
+    // Opening it is the parent's to do, and closing it has to be reported back
+    // or the bar could never raise it a second time.
+    it('reports closing back to whoever opened it', async () => {
+      const wrapper = await mountSheet({ suggestions: PRODUCTS })
+
+      await wrapper.find('.back-btn').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.emitted('update:expanded').at(-1)).toEqual([false])
     })
 
     it('sizes the screen to the viewport rather than capping the list', async () => {
-      const wrapper = await mountForm({ suggestions: PRODUCTS })
+      const wrapper = await mountSheet({ suggestions: PRODUCTS })
       await flushPromises()
 
       // The screen is measured; the list simply fills what is left of it, so
@@ -357,7 +382,7 @@ describe('AddItemForm suggestions', () => {
     })
 
     it('offers a way out that the keyboard cannot cover', async () => {
-      const wrapper = await mountForm({ suggestions: PRODUCTS })
+      const wrapper = await mountSheet({ suggestions: PRODUCTS })
       const back = wrapper.find('.back-btn')
       expect(back.exists()).toBe(true)
 
@@ -367,44 +392,47 @@ describe('AddItemForm suggestions', () => {
       await flushPromises()
 
       expect(event.defaultPrevented).toBe(true)
-      expect(wrapper.find('.add-form').classes()).not.toContain('add-form--expanded')
+      expect(dismissed(wrapper)).toBe(true)
     })
 
     // Enter on a focused back button sends click, never mousedown.
     it('also closes from the keyboard', async () => {
-      const wrapper = await mountForm({ suggestions: PRODUCTS })
+      const wrapper = await mountSheet({ suggestions: PRODUCTS })
       await wrapper.find('.back-btn').trigger('click')
 
-      expect(wrapper.find('.add-form').classes()).not.toContain('add-form--expanded')
+      expect(dismissed(wrapper)).toBe(true)
     })
 
-    // A leave transition here would keep the button mounted past the moment the
-    // band loses its padding, and it would then take ordinary layout above the
-    // field and shove the field — just landed — back down for the length of the
-    // fade. It has to be gone the instant the screen is.
-    it('takes the way out with it, leaving nothing above the field', async () => {
-      const wrapper = await mountForm({ suggestions: PRODUCTS })
+    // The band used to have to vanish the instant the screen did: the field flew
+    // home on its own while the band stayed put, so a band outliving it by even
+    // a frame took ordinary layout above the field and shoved it back down.
+    //
+    // Nothing travels alone now — the whole sheet leaves as one object — so the
+    // band rides down with it and fades on the way, and the thing to hold onto
+    // is that it is still there to do that.
+    it('carries the way out down with it rather than dropping it first', async () => {
+      const wrapper = await mountSheet({ suggestions: PRODUCTS })
       expect(wrapper.find('.back-btn').exists()).toBe(true)
 
       await wrapper.find('input').trigger('blur')
       await flushPromises()
 
-      expect(wrapper.find('.add-form').classes()).not.toContain('add-form--expanded')
-      expect(wrapper.find('.add-head__bar').exists()).toBe(false)
+      expect(dismissed(wrapper)).toBe(true)
+      expect(wrapper.find('.add-head__bar').exists()).toBe(true)
     })
 
     // The row used to open with a stepper in front of the field, asking how many
     // before anything had said of what — and it could never be corrected once the
     // item existed. Quantity belongs to the row on the list now.
     it('offers no quantity control at all', async () => {
-      const wrapper = await mountForm({ suggestions: PRODUCTS })
+      const wrapper = await mountSheet({ suggestions: PRODUCTS })
 
       expect(wrapper.find('.qty-picker').exists()).toBe(false)
       expect(wrapper.findAll('.qty-btn')).toHaveLength(0)
     })
 
     it('stays open while the add button is pressed', async () => {
-      const wrapper = await mountForm({ suggestions: PRODUCTS })
+      const wrapper = await mountSheet({ suggestions: PRODUCTS })
 
       // The press must not move focus off the input, or the blur would put the
       // whole screen away mid-flow.
@@ -416,7 +444,7 @@ describe('AddItemForm suggestions', () => {
     })
 
     it('stays open when the add button is pressed', async () => {
-      const wrapper = await mountForm({ suggestions: PRODUCTS })
+      const wrapper = await mountSheet({ suggestions: PRODUCTS })
 
       const event = new Event('mousedown', { bubbles: true, cancelable: true })
       wrapper.find('.add-btn').element.dispatchEvent(event)
@@ -433,7 +461,7 @@ describe('AddItemForm suggestions', () => {
       // The confirmation used to be a band above the results restating the
       // product. It said the same thing twice and said it away from the thing.
       it('marks the row that was tapped, with no band above the list', async () => {
-        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        const wrapper = await mountSheet({ suggestions: PRODUCTS })
         await wrapper.setProps({ lastAdded: { name: 'Banane 1kg', maker: null } })
 
         expect(wrapper.find('.added-row').exists()).toBe(false)
@@ -444,7 +472,7 @@ describe('AddItemForm suggestions', () => {
       // Two makers' versions of the same product are two rows, and only the one
       // that was added is on the list.
       it('marks by product and maker, not by name alone', async () => {
-        const wrapper = await mountForm({
+        const wrapper = await mountSheet({
           suggestions: [
             { name: 'Lapte 1L', maker: 'Napolact' },
             { name: 'Lapte 1L', maker: 'Zuzu' },
@@ -457,7 +485,7 @@ describe('AddItemForm suggestions', () => {
       })
 
       it('keeps marking every product added from one search', async () => {
-        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        const wrapper = await mountSheet({ suggestions: PRODUCTS })
         await wrapper.setProps({ lastAdded: { name: 'Banane 1kg', maker: null } })
         await wrapper.setProps({ lastAdded: { name: 'Apa Plata 2L', maker: 'Dorna' } })
 
@@ -468,14 +496,14 @@ describe('AddItemForm suggestions', () => {
 
       // The tick is decoration; the state has to reach the accessible name too.
       it('says so in the option, not only in colour', async () => {
-        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        const wrapper = await mountSheet({ suggestions: PRODUCTS })
         await wrapper.setProps({ lastAdded: { name: 'Banane 1kg', maker: null } })
 
         expect(added(wrapper)[0].text()).toContain('on your list')
       })
 
       it('announces it to a screen reader', async () => {
-        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        const wrapper = await mountSheet({ suggestions: PRODUCTS })
         const region = wrapper.find('p.added-announce')
 
         // The live region has to pre-exist the news for it to be announced.
@@ -500,7 +528,7 @@ describe('AddItemForm suggestions', () => {
         lit(wrapper)[0].classes().find((c) => c.startsWith('suggestion--lit-'))
 
       it('flashes the row that was tapped, and only that row', async () => {
-        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        const wrapper = await mountSheet({ suggestions: PRODUCTS })
         await wrapper.setProps({ lastAdded: { name: 'Banane 1kg', maker: null } })
 
         expect(lit(wrapper)).toHaveLength(1)
@@ -512,7 +540,7 @@ describe('AddItemForm suggestions', () => {
       // so re-applying it would change nothing in the DOM and the animation would
       // never restart — hence two rules that differ only in name.
       it('flashes again on every further tap of the same row', async () => {
-        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        const wrapper = await mountSheet({ suggestions: PRODUCTS })
 
         await wrapper.setProps({ lastAdded: { name: 'Banane 1kg', maker: null } })
         const first = litClass(wrapper)
@@ -537,7 +565,7 @@ describe('AddItemForm suggestions', () => {
         })
 
       it('says nothing on the first tap, where one is just one', async () => {
-        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        const wrapper = await mountSheet({ suggestions: PRODUCTS })
         await tapRow(wrapper, 0)
 
         expect(wrapper.findAll('.pop')).toHaveLength(0)
@@ -545,7 +573,7 @@ describe('AddItemForm suggestions', () => {
       })
 
       it('counts each further tap of the same row', async () => {
-        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        const wrapper = await mountSheet({ suggestions: PRODUCTS })
         await tapRow(wrapper, 0)
         await tapRow(wrapper, 0)
         expect(wrapper.findAll('.pop').map((p) => p.text())).toEqual(['x2'])
@@ -557,7 +585,7 @@ describe('AddItemForm suggestions', () => {
       // Each one lands somewhere of its own: three in the same place would read
       // as one badge being replaced, which is what the count exists to disprove.
       it('throws them in scattered directions', async () => {
-        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        const wrapper = await mountSheet({ suggestions: PRODUCTS })
         for (let i = 0; i < 6; i++) await tapRow(wrapper, 0)
 
         const drifts = wrapper.findAll('.pop').map((p) => p.attributes('style'))
@@ -566,7 +594,7 @@ describe('AddItemForm suggestions', () => {
       })
 
       it('counts each product separately', async () => {
-        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        const wrapper = await mountSheet({ suggestions: PRODUCTS })
         await tapRow(wrapper, 0)
         await tapRow(wrapper, 0)
         await tapRow(wrapper, 1)
@@ -577,7 +605,7 @@ describe('AddItemForm suggestions', () => {
 
       // Decorative: the count is already in the row's tick and the announcement.
       it('keeps the counters out of the reader and out of the way', async () => {
-        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        const wrapper = await mountSheet({ suggestions: PRODUCTS })
         await tapRow(wrapper, 0)
         await tapRow(wrapper, 0)
 
@@ -585,7 +613,7 @@ describe('AddItemForm suggestions', () => {
       })
 
       it('takes the mark back when the add turns out to have failed', async () => {
-        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        const wrapper = await mountSheet({ suggestions: PRODUCTS })
         await wrapper.setProps({ lastAdded: { name: 'Banane 1kg', maker: null } })
         expect(added(wrapper)).toHaveLength(1)
 
@@ -594,7 +622,7 @@ describe('AddItemForm suggestions', () => {
       })
 
       it('takes back only the one that failed', async () => {
-        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        const wrapper = await mountSheet({ suggestions: PRODUCTS })
         await wrapper.setProps({ lastAdded: { name: 'Banane 1kg', maker: null } })
         await wrapper.setProps({ lastAdded: { name: 'Apa Plata 2L', maker: 'Dorna' } })
         await wrapper.setProps({ lastAdded: null })
@@ -609,7 +637,7 @@ describe('AddItemForm suggestions', () => {
       // much here.
       it('marks the row on a wider screen too, where the band never showed', async () => {
         stubViewport(false)
-        const wrapper = await mountForm({ suggestions: PRODUCTS })
+        const wrapper = await mountSheet({ suggestions: PRODUCTS })
         await wrapper.setProps({ lastAdded: { name: 'Banane 1kg', maker: null } })
 
         expect(wrapper.find('.added-row').exists()).toBe(false)
@@ -618,7 +646,7 @@ describe('AddItemForm suggestions', () => {
     })
 
     it('opens on what the household buys before anything is typed', async () => {
-      const wrapper = await mountForm({ name: '', suggestions: [], recents: RECENTS })
+      const wrapper = await mountSheet({ name: '', suggestions: [], recents: RECENTS })
 
       expect(wrapper.find('.suggestions-label').text()).toBe('Buy again')
       expect(wrapper.findAll('.suggestion-name').map((n) => n.text())).toEqual([
@@ -628,7 +656,7 @@ describe('AddItemForm suggestions', () => {
     })
 
     it('drops the usuals the moment there is a query to answer', async () => {
-      const wrapper = await mountForm({ name: 'apa', suggestions: PRODUCTS, recents: RECENTS })
+      const wrapper = await mountSheet({ name: 'apa', suggestions: PRODUCTS, recents: RECENTS })
 
       expect(wrapper.find('.suggestions-label').exists()).toBe(false)
       expect(wrapper.findAll('.suggestion-name').map((n) => n.text())).toEqual([
@@ -638,12 +666,15 @@ describe('AddItemForm suggestions', () => {
     })
 
     it('tells a household with no history what to do with the empty screen', async () => {
-      const wrapper = await mountForm({ name: '', suggestions: [], recents: [] })
+      const wrapper = await mountSheet({ name: '', suggestions: [], recents: [] })
 
       expect(wrapper.find('.suggestions-hint').text()).toBe('Type a product name to search.')
       expect(wrapper.find('.suggestions-label').exists()).toBe(false)
     })
 
+    // mountForm rather than mountSheet: above the bar boundary nothing raises a
+    // sheet, so the form is the inline field it has always been there and the
+    // usuals have nowhere to go.
     it('never shows the usuals on a wider screen, which has no room for them', async () => {
       stubViewport(false)
       const wrapper = await mountForm({ name: '', suggestions: [], recents: RECENTS })
@@ -651,41 +682,41 @@ describe('AddItemForm suggestions', () => {
       expect(wrapper.find('.suggestions-wrap').exists()).toBe(false)
     })
 
-    it('holds the gap the form leaves behind, so the list below cannot jump', async () => {
-      const wrapper = await mountForm({ suggestions: PRODUCTS })
-      expect(wrapper.find('.add-slot').attributes('style')).toMatch(/height:/)
+    // The slot froze its own height while the form was lifted out of it, so the
+    // list below could not jump up into the gap. There is no gap now: below the
+    // bar boundary the form has no place in the flow to leave.
+    it('takes up no room in the list it covers', async () => {
+      const wrapper = await mountSheet({ suggestions: PRODUCTS })
 
-      await wrapper.find('input').trigger('blur')
       expect(wrapper.find('.add-slot').attributes('style')).toBeUndefined()
+      expect(wrapper.find('.add-slot').classes()).toContain('add-slot--open')
     })
 
     it('puts the form back when the input is blurred', async () => {
-      const wrapper = await mountForm({ suggestions: PRODUCTS })
+      const wrapper = await mountSheet({ suggestions: PRODUCTS })
       await wrapper.find('input').trigger('blur')
 
-      expect(wrapper.find('.add-form').classes()).not.toContain('add-form--expanded')
-      expect(wrapper.emitted('update:expanded').at(-1)).toEqual([false])
+      expect(dismissed(wrapper)).toBe(true)
     })
 
     it('puts the form back on Escape', async () => {
-      const wrapper = await mountForm({ suggestions: PRODUCTS })
+      const wrapper = await mountSheet({ suggestions: PRODUCTS })
       await wrapper.find('input').trigger('keydown.esc')
 
-      expect(wrapper.find('.add-form').classes()).not.toContain('add-form--expanded')
-      expect(wrapper.find('.suggestions-wrap').exists()).toBe(false)
+      expect(dismissed(wrapper)).toBe(true)
     })
 
     // Same contract as the option rows: the cover must close search without
     // the tap itself moving focus first.
     it('closes when the cover is pressed, without stealing focus', async () => {
-      const wrapper = await mountForm({ suggestions: PRODUCTS })
+      const wrapper = await mountSheet({ suggestions: PRODUCTS })
 
       const event = new Event('mousedown', { bubbles: true, cancelable: true })
       wrapper.find('.add-cover').element.dispatchEvent(event)
       await flushPromises()
 
       expect(event.defaultPrevented).toBe(true)
-      expect(wrapper.find('.add-form').classes()).not.toContain('add-form--expanded')
+      expect(dismissed(wrapper)).toBe(true)
     })
 
     it('leaves a wider screen entirely alone', async () => {
