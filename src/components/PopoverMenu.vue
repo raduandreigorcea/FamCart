@@ -61,14 +61,36 @@ const isWide = () =>
   typeof window.matchMedia === 'function' &&
   window.matchMedia('(min-width: 600px)').matches
 
+// How far the panel sits off the button it belongs to.
+const GAP = 8
+
 function measure() {
   if (!open.value || !props.trigger || !isWide()) {
     anchor.value = null
     return
   }
   const rect = props.trigger.getBoundingClientRect()
+
+  // Below the trigger, or above it when there is more room that way.
+  //
+  // It only ever hung downwards before, and that was right for as long as every
+  // trigger was near the top of the screen -- the topbar's household name, and
+  // the list filter in the list header. The household switcher's is in the
+  // bottom action bar, which is the visible shell right up to 900px, so between
+  // the two breakpoints this placed the panel 8px below a button already sitting
+  // on the bottom edge: the menu opened, entirely off screen, and nobody saw it.
+  //
+  // Anchored by its BOTTOM edge when it flips, so the panel never has to know its
+  // own height -- which it does not, at the moment this runs, since it has not
+  // been laid out yet. max-height in the stylesheet keeps a long list from
+  // running off the top.
+  const roomBelow = window.innerHeight - rect.bottom
+  const flipUp = rect.top > roomBelow
+
   anchor.value = {
-    top: `${Math.round(rect.bottom + 8)}px`,
+    ...(flipUp
+      ? { top: 'auto', bottom: `${Math.round(window.innerHeight - rect.top + GAP)}px` }
+      : { top: `${Math.round(rect.bottom + GAP)}px`, bottom: 'auto' }),
     width: props.width,
     ...(props.align === 'right'
       ? { right: `${Math.round(window.innerWidth - rect.right)}px`, left: 'auto' }
