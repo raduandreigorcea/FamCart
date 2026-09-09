@@ -34,9 +34,10 @@ const props = defineProps({
 // icon, so they are inlined at build time -- no request per row, under 4 KB for
 // the set, and they work offline.
 //
-// A shop with no logo file renders an empty disc rather than a broken image:
-// AppIcon yields '' for a name it does not have. That is the right failure for a
-// fourth retailer added to the registry before somebody draws its mark.
+// A shop with no logo file renders its initial rather than a broken image:
+// AppIcon yields '' for a name it does not have, and the monogram below fills
+// the gap. That is the right failure for a retailer added to the registry before
+// somebody draws its mark -- which is exactly what Mega Image was for a day.
 // The names live in lib/shopBadges beside the shop list, because the filters
 // label the same shops these discs do and two copies would drift.
 const label = shopLabel
@@ -52,14 +53,22 @@ const label = shopLabel
 // tab, so it is drawn to survive being tiny -- the colour does the work and the
 // lettering is a detail rather than the whole thing.
 //
+// Mega Image's is their app tile: a red rounded square with the gull glyph on
+// white. It bleeds for the same reason -- the red IS the mark at this size, and
+// insetting it would leave a small red square adrift in a circle. The disc's
+// overflow clips the tile's corners, which is what an app icon expects anyway.
+// The wordmark under the glyph was dropped from the asset: it is four letters
+// tall at 20 pixels and reads as a smudge, the same trap Lidl's icon-set version
+// fell into. The glyph is nudged down to sit centred without it.
+//
 // Auchan's bird and Carrefour's C are single-colour glyphs with no background of
 // their own and keep the inset, or they would touch the rim.
-const FULL_BLEED = new Set(['lidl'])
+const FULL_BLEED = new Set(['lidl', 'mega-image'])
 
 // A retailer is one line in a registry and drawing its logo is a separate job,
 // so a shop with no asset gets its initial rather than an empty circle that
 // looks like a bug.
-const KNOWN_LOGOS = new Set(['auchan', 'carrefour', 'lidl'])
+const KNOWN_LOGOS = new Set(['auchan', 'carrefour', 'lidl', 'mega-image'])
 
 function monogram(slug: string): { letter: string; colour: string } | null {
   if (KNOWN_LOGOS.has(slug)) return null
