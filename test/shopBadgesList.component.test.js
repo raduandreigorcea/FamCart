@@ -73,4 +73,23 @@ describe('shop logos on the shopping list', () => {
     expect(wrapper.findAll('.shop-badge')).toHaveLength(0)
     expect(wrapper.text()).toContain('Lapte Zuzu 1L')
   })
+
+  // THE LOGO IS A SEPARATE JOB FROM THE SCRAPER, and forgetting it is silent:
+  // the badge still renders, as the shop's initial on a grey disc, so nothing
+  // looks broken and nothing says the mark is missing either. Mega Image shipped
+  // that way for a day.
+  it('draws a mark for a shop with a logo and an initial for one without', () => {
+    const wrapper = mountList(
+      new Map([
+        [productKey('Lapte Zuzu 1L', 'Zuzu'), ['mega-image']],
+        [productKey('Ciocolată', 'Ritter SPORT'), ['profi']],
+      ]),
+    )
+    const discs = wrapper.findAll('.shop-badge')
+    const drawn = discs.filter((d) => d.find('svg').exists())
+    const lettered = discs.filter((d) => d.find('.shop-badge__letter').exists())
+    expect(drawn.length).toBe(1)
+    expect(lettered.length).toBe(1)
+    expect(lettered[0].text()).toContain('P')
+  })
 })
