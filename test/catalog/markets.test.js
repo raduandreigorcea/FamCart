@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { MARKETS, isMarket } from '../../catalog/src/core/types.ts'
 import { SCRAPERS, IMPLEMENTED } from '../../catalog/src/core/registry.ts'
 import { MARKETS as APP_MARKETS } from '../../src/lib/region.ts'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 // The catalog and the app have to agree on which markets exist, and there is no
@@ -38,10 +38,20 @@ import { fileURLToPath } from 'node:url'
 // Romanian retailers in Romanian, search_catalog accepts p_langs and ignores it,
 // and there is no language vocabulary left to drift.)
 
-const migration = readFileSync(
-  fileURLToPath(new URL('../../catalog/supabase/migrations/002_catalog.sql', import.meta.url)),
-  'utf8',
-)
+const MIGRATIONS = fileURLToPath(new URL('../../catalog/supabase/migrations/', import.meta.url))
+
+const migration = readFileSync(MIGRATIONS + '002_catalog.sql', 'utf8')
+
+// EVERY migration, for the shop rows, and only 002 for the country constraint.
+// 002 seeded the first three shops; Mega Image arrived in 011, because 002 is
+// applied everywhere already and editing it would reach a fresh database and
+// nothing else. So "which shops does the schema claim" is a question about the
+// whole directory rather than about one file in it.
+const allMigrations = readdirSync(MIGRATIONS)
+  .filter((f) => f.endsWith('.sql'))
+  .sort()
+  .map((f) => readFileSync(MIGRATIONS + f, 'utf8'))
+  .join('\n')
 
 describe('market vocabulary', () => {
   it('lists exactly the markets src/lib/region.ts can derive from a timezone', () => {
@@ -93,10 +103,10 @@ describe('the retailers the catalog is built from', () => {
     // retailer with no scraper would give it listings that a run which can never
     // happen would be responsible for sweeping.
     for (const scraper of IMPLEMENTED) {
-      expect(migration, `${scraper.retailer} is seeded`).toContain(`'${scraper.retailer}',`)
+      expect(allMigrations, `${scraper.retailer} is seeded`).toContain(`'${scraper.retailer}',`)
     }
     for (const scraper of SCRAPERS.filter((s) => !s.implemented)) {
-      expect(migration, `${scraper.retailer} is NOT seeded`).not.toContain(`('${scraper.retailer}',`)
+      expect(allMigrations, `${scraper.retailer} is NOT seeded`).not.toContain(`('${scraper.retailer}',`)
     }
   })
 })

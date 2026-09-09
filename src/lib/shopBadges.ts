@@ -27,9 +27,9 @@ export type ShopMap = Map<string, string[]>
 const SLUG = /^[a-z0-9-]{1,40}$/
 
 // ─── the shops themselves ────────────────────────────────────────────────────
-// Read from the catalog rather than hardcoded, so a fourth retailer starts
-// being offered as a filter the moment it has a row -- the same day it starts
-// producing products, without a release.
+// Read from the catalog rather than hardcoded, so the next retailer starts being
+// offered as a filter the moment it has a row -- the same day it starts producing
+// products, without a release. Mega Image arrived that way.
 //
 // The display names stay here because they are TYPOGRAPHY, not data: the
 // catalog stores a slug, and "Mega Image" is not what capitalising `mega-image`
@@ -40,6 +40,7 @@ const SHOP_NAMES: Record<string, string> = {
   auchan: 'Auchan',
   carrefour: 'Carrefour',
   lidl: 'Lidl',
+  'mega-image': 'Mega Image',
 }
 
 export function shopLabel(slug: string): string {
@@ -52,8 +53,8 @@ let shopList: string[] | null = null
 /**
  * Every enabled shop, for the filters to offer.
  *
- * Three rows, once a session, and cached across sessions so the filter button
- * is there on the first paint rather than appearing a moment later. On any
+ * A handful of rows, once a session, and cached across sessions so the filter
+ * button is there on the first paint rather than appearing a moment later. On any
  * failure it answers with what it last knew, and with nothing at all if it has
  * never known anything -- which HIDES the filter. That is the safe direction:
  * no filter is a working app, and a filter offering shops that do not exist is
@@ -110,8 +111,8 @@ function readShopCache(): string[] {
 //
 // It used to say "and a household switch", which was never true and would have
 // been wrong if it were. The shop list comes from catalog_retailers and belongs
-// to nobody -- it is the same three rows whichever household you are in -- so a
-// switch has nothing to forget here, unlike the suggestions and the filters
+// to nobody -- it is the same handful of rows whichever household you are in --
+// so a switch has nothing to forget here, unlike the suggestions and the filters
 // that resetForHousehold does clear.
 export function resetShopList(): void {
   shopList = null
