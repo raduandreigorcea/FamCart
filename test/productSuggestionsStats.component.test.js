@@ -28,6 +28,10 @@ function mountSuggestions(householdId) {
         items: ref([]),
         query: ref(''),
         isOffline: () => false,
+        // Required by the composable, which reads the market as soon as it is
+        // created to ask for the shops of this country.
+        region: () => 'RO',
+        locale: () => 'ro',
       })
       return () => null
     },

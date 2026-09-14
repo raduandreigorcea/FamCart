@@ -110,7 +110,10 @@ watch(
     // Assigned only if it found something. An empty answer here means the
     // catalog was unreachable, not that nothing is sold anywhere, and replacing
     // a good cache with that would blank every badge on a flaky connection.
-    const fresh = await fetchShopsFor(items.value.map((i) => i.name))
+    const fresh = await fetchShopsFor(
+      items.value.map((i) => i.name),
+      resolveRegion(deviceTimeZone()),
+    )
     if (fresh.size > 0) shopMap.value = fresh
   },
   { immediate: true },

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { PropType } from 'vue'
 import AppIcon from './AppIcon.vue'
-import { shopLabel } from '../lib/shopBadges'
+import { shopLabel, shopBrand } from '../lib/shopBadges'
 
 // Which shops carry a product, as their logos. NIGHTLY ONLY -- the caller decides
 // that; this renders whatever it is given.
@@ -70,8 +70,17 @@ const FULL_BLEED = new Set(['lidl', 'mega-image'])
 // looks like a bug.
 const KNOWN_LOGOS = new Set(['auchan', 'carrefour', 'lidl', 'mega-image'])
 
+// Logos belong to the CHAIN: Lidl Germany wears the Lidl roundel. See shopBrand.
+function logo(slug: string): string {
+  return `brands/${shopBrand(slug)}`
+}
+
+function bleeds(slug: string): boolean {
+  return FULL_BLEED.has(shopBrand(slug))
+}
+
 function monogram(slug: string): { letter: string; colour: string } | null {
-  if (KNOWN_LOGOS.has(slug)) return null
+  if (KNOWN_LOGOS.has(shopBrand(slug))) return null
   return { letter: (slug[0] ?? '?').toUpperCase(), colour: 'var(--text-secondary)' }
 }
 </script>
@@ -87,26 +96,26 @@ function monogram(slug: string): { letter: string; colour: string } | null {
   >
     <span
       class="shop-badge"
-      :class="{ 'shop-badge--mono': monogram(shop), 'shop-badge--bleed': FULL_BLEED.has(shop) }"
+      :class="{ 'shop-badge--mono': monogram(shop), 'shop-badge--bleed': bleeds(shop) }"
       :style="monogram(shop) ? { background: monogram(shop)!.colour } : undefined"
       aria-hidden="true"
     >
       <span v-if="monogram(shop)" class="shop-badge__letter">{{ monogram(shop)!.letter }}</span>
-      <AppIcon v-else :name="`brands/${shop}`" />
+      <AppIcon v-else :name="logo(shop)" />
     </span>
     <span class="shop-badges__name">{{ label(shop) }}</span>
   </span>
   <span
     v-else
     class="shop-badge"
-    :class="{ 'shop-badge--mono': monogram(shop), 'shop-badge--bleed': FULL_BLEED.has(shop) }"
+    :class="{ 'shop-badge--mono': monogram(shop), 'shop-badge--bleed': bleeds(shop) }"
     :style="monogram(shop) ? { background: monogram(shop)!.colour } : undefined"
     :title="label(shop)"
   >
     <span v-if="monogram(shop)" class="shop-badge__letter" aria-hidden="true">{{
       monogram(shop)!.letter
     }}</span>
-    <AppIcon v-else :name="`brands/${shop}`" />
+    <AppIcon v-else :name="logo(shop)" />
     <!-- A logo says nothing on its own. Same visually-hidden pattern the list
          and the suggestions already use for their own announcements. -->
     <span class="shop-badge__name">{{ label(shop) }}</span>

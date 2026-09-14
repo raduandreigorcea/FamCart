@@ -66,7 +66,17 @@ beforeEach(() => {
     from: () => ({
       select: () => ({
         eq: () => ({
-          order: () => Promise.resolve({ data: [{ slug: 'auchan' }, { slug: 'lidl' }], error: null }),
+          // A shop in another country, which a phone in Romania must not be
+          // offered: one catalog serves every market.
+          order: () =>
+            Promise.resolve({
+              data: [
+                { slug: 'auchan', country: 'RO' },
+                { slug: 'lidl', country: 'RO' },
+                { slug: 'lidl-it', country: 'IT' },
+              ],
+              error: null,
+            }),
         }),
       }),
     }),
@@ -107,8 +117,9 @@ async function search(query, text) {
 const searchArgs = () => catalogCalls.filter((c) => c.fn === 'search_catalog').map((c) => c.args)
 
 describe('the shops the filter can offer', () => {
-  it('reads them from the catalog rather than holding a list', async () => {
-    // A fourth shop starts being offered the day it has a row, with no release.
+  it('reads them from the catalog rather than holding a list, for this country only', async () => {
+    // A fourth shop starts being offered the day it has a row, with no release --
+    // and Lidl Italy, in the same table, is not offered to a phone in Romania.
     const { api } = mountSuggestions()
     await flushPromises()
     expect(api.shopOptions.value).toEqual(['auchan', 'lidl'])
