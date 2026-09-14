@@ -150,7 +150,8 @@ export function useProductSuggestions(options: {
   // Best-effort and unawaited: three rows from the catalog, and an empty answer
   // simply means the control never appears. Nothing on this path may delay a
   // keystroke.
-  void fetchShopList().then((shops) => {
+  // The phone's own country only: ten Lidls are one Lidl to a person in one.
+  void fetchShopList(region()).then((shops) => {
     if (disposed) return
     shopOptions.value = shops
   })
@@ -331,7 +332,72 @@ export function useProductSuggestions(options: {
       // A filter that quietly shows you the wrong shop's products is worse than
       // no filter.
       const shop = searchShop.value
-      const [globalRes, localRes] = await Promise.allSettled([
+
+      // Whether an answer arriving now may still touch the dropdown.
+      //
+      // Stale: a newer keystroke queried already, and that request owns the
+      // dropdown now — including when its skeleton stops. Late: the input was
+      // cleared or a product picked meanwhile, so these matches must not reopen
+      // the list.
+      const stale = () => requestId !== suggestRequestId
+      const owns = () =>
+        !stale() && !selectedProduct.value && query.value.trim().length >= SUGGEST_MIN_CHARS
+
+      const rowsOf = (res: { data: unknown; error: unknown }): ProductSuggestion[] =>
+        res.error ? [] : ((res.data ?? []) as ProductSuggestion[])
+
+      // The pool is capped and ordered globally, so a product this household buys
+      // every week can be crowded out of it entirely by a catalog this large.
+      // householdProductStats is already loaded, so recovering those matches costs
+      // no network — which is also why they can be on screen before either
+      // database has answered.
+      //
+      // The history fold is silenced by the shop filter for the same reason the
+      // app database is: it is drawn from what this household has bought, which
+      // says nothing at all about which shops carry it.
+      const historyRows = shop
+        ? []
+        : matchHouseholdStats(text, householdProductStats.value, { limit: suggestLimit.value })
+      let globalRows: ProductSuggestion[] = []
+      let localRows: ProductSuggestion[] = []
+
+      // EACH SOURCE LANDS ON ITS OWN. This used to await both, so every search
+      // was as slow as the slower one, and the slower one is the catalog project:
+      // a small instance that swaps, measured at 230-870ms of server time for a
+      // word nobody had searched yet, on top of the network. A household's own
+      // rows had no reason to sit behind that.
+      //
+      // `done` is false while a source is still out. Until then an empty answer
+      // publishes nothing and the skeleton stays: an empty list offering "Can't
+      // find it?", replaced a moment later by the catalog's matches, would be a
+      // claim the search had not yet earned.
+      const publish = (done: boolean): void => {
+        const candidates = [...globalRows, ...localRows, ...historyRows]
+        if (!done && !candidates.length) return
+
+        // Which project each product came from, so the popularity bump goes to
+        // the row the user actually saw. Rebuilt per publish: it only ever
+        // describes what is on screen now, which also keeps it from growing all
+        // session.
+        suggestionOrigins.clear()
+        for (const row of globalRows) suggestionOrigins.set(productKey(row.name, row.maker), 'catalog')
+        // Local second, so a product in both is remembered as local: its row is
+        // the one carrying this household's own add_count, and the app database
+        // is where a promoted row keeps earning.
+        for (const row of localRows) suggestionOrigins.set(productKey(row.name, row.maker), 'local')
+
+        // Catalog rows go first: rankSuggestions dedupes first-wins, so the
+        // catalog's spelling and popularity win wherever it did return the
+        // product — including over a duplicate of it promoted in the app
+        // database. Which means a catalog answer arriving second can replace a
+        // row already on screen with the same product under its own spelling.
+        suggestions.value = rankSuggestions(candidates, householdProductStats.value, suggestLimit.value)
+        suggestionsLoading.value = false
+      }
+
+      publish(false)
+
+      const catalogLeg = Promise.resolve(
         catalogDb
           ? catalogDb.rpc('search_catalog', {
               p_query: text,
@@ -340,60 +406,30 @@ export function useProductSuggestions(options: {
               ...(langs ? { p_langs: [langs] } : {}),
               ...(shop ? { p_retailers: [shop] } : {}),
             })
-          : Promise.resolve({ data: [], error: null }),
+          : { data: [], error: null },
+      ).then((res) => {
+        if (!owns()) return
+        globalRows = rowsOf(res)
+        publish(false)
+      })
+      const localLeg = Promise.resolve(
         shop
-          ? Promise.resolve({ data: [], error: null })
+          ? { data: [], error: null }
           : db.rpc('search_catalog', {
               p_query: text,
               p_household_id: householdId.value || null,
               p_limit: SUGGEST_POOL,
             }),
-      ])
-      // Stale response: a newer keystroke queried already, and that request owns
-      // the dropdown now — including when its skeleton stops.
-      if (requestId !== suggestRequestId) return
-      // Late response: the input was cleared or a product picked meanwhile, so
-      // these matches must not reopen the list.
-      if (selectedProduct.value || query.value.trim().length < SUGGEST_MIN_CHARS) return
+      ).then((res) => {
+        if (!owns()) return
+        localRows = rowsOf(res)
+        publish(false)
+      })
 
-      const rowsOf = (
-        settled: PromiseSettledResult<{ data: unknown; error: unknown }>,
-      ): ProductSuggestion[] =>
-        settled.status === 'fulfilled' && !settled.value.error
-          ? ((settled.value.data ?? []) as ProductSuggestion[])
-          : []
-
-      const globalRows = rowsOf(globalRes)
-      const localRows = rowsOf(localRes)
-
-      // Which project each product came from, so the popularity bump goes to the
-      // row the user actually saw. Rebuilt per search: it only ever describes
-      // what is on screen now, which also keeps it from growing all session.
-      suggestionOrigins.clear()
-      for (const row of globalRows) suggestionOrigins.set(productKey(row.name, row.maker), 'catalog')
-      // Local second, so a product in both is remembered as local: its row is
-      // the one carrying this household's own add_count, and the app database is
-      // where a promoted row keeps earning.
-      for (const row of localRows) suggestionOrigins.set(productKey(row.name, row.maker), 'local')
-
-      // The pool is capped and ordered globally, so a product this household buys
-      // every week can be crowded out of it entirely by a catalog this large.
-      // householdProductStats is already loaded, so recovering those matches costs
-      // no network. Catalog rows go first: rankSuggestions dedupes first-wins,
-      // so the catalog's spelling and popularity win wherever it did return the
-      // product — including over a duplicate of it promoted in the app database.
-      //
-      // The history fold is silenced by the shop filter for the same reason the
-      // app database is: it is drawn from what this household has bought, which
-      // says nothing at all about which shops carry it.
-      const candidates = [
-        ...globalRows,
-        ...localRows,
-        ...(shop
-          ? []
-          : matchHouseholdStats(text, householdProductStats.value, { limit: suggestLimit.value })),
-      ]
-      suggestions.value = rankSuggestions(candidates, householdProductStats.value, suggestLimit.value)
+      // allSettled, so one source failing costs only that source (see above).
+      await Promise.allSettled([catalogLeg, localLeg])
+      if (!owns()) return
+      publish(true)
 
       // THERE IS NO COLD PATH ANY MORE. This used to fall through to a
       // `discover` edge function that queried Open Food Facts live, on the
@@ -446,8 +482,18 @@ export function useProductSuggestions(options: {
         // has to match either column, and a printed barcode has to beat an
         // absorbed one, which is an ordering across two columns that belongs
         // beside them rather than in a PostgREST filter chain here.
+        // The market, for the same reason search sends it: a scan in Italy must
+        // not find a product only a Romanian shop sells, and should read the
+        // name an Italian shop uses. Spread rather than null, so "no region"
+        // stays "no filter" (PostgREST resolves an RPC by the keys it is sent).
         catalogDb
-          ? catalogDb.rpc('lookup_barcode', { p_codes: candidates })
+          ? (() => {
+              const market = region()
+              return catalogDb.rpc('lookup_barcode', {
+                p_codes: candidates,
+                ...(market ? { p_markets: [market] } : {}),
+              })
+            })()
           : Promise.resolve({ data: [], error: null }),
         (householdId.value
           ? db

@@ -17,7 +17,15 @@ import CustomProductModal from '../src/components/CustomProductModal.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
 import { __setOnlineForTest } from '../src/lib/connectivity'
 
-const mocks = vi.hoisted(() => ({ db: null, nativeAvailable: false, nativeScan: null }))
+const mocks = vi.hoisted(() => ({ db: null, nativeAvailable: false, nativeScan: null, timeZone: undefined }))
+
+// Only the device's timezone is faked, so the market a scan sends comes from the
+// real lookup table -- and the suite does not depend on the clock settings of
+// the machine running it (this developer's says Bucharest, CI says UTC).
+vi.mock('../src/lib/region', async (importOriginal) => ({
+  ...(await importOriginal()),
+  deviceTimeZone: () => mocks.timeZone,
+}))
 
 vi.mock('../src/supabase', () => ({
   useSupabase: () => mocks.db,
@@ -245,6 +253,34 @@ describe('scanning a barcode onto the list', () => {
   // The reference catalog answers through an RPC where the app database is a
   // plain select, because only the catalog has alt_barcodes and only it needs
   // an ordering across two columns to resolve a code.
+  // A scan in Italy must not find a product only a Romanian shop sells, and
+  // should read the name an Italian shop uses -- the rule search already follows.
+  it('sends the market the timezone implies with a scan', async () => {
+    mocks.timeZone = 'Europe/Rome'
+    try {
+      const wrapper = await mountHome({ catalog: true })
+      await openScanner(wrapper)
+      await scan(wrapper, SCANNED)
+      expect(catalogLookups()[0].params.p_markets).toEqual(['IT'])
+    } finally {
+      mocks.timeZone = undefined
+    }
+  })
+
+  // Omitted rather than null: PostgREST resolves an RPC by the keys it is sent,
+  // and no key is what keeps a no-market scan identical to the one before this.
+  it('sends no market with a scan when the timezone names none the catalog covers', async () => {
+    mocks.timeZone = 'Europe/Warsaw'
+    try {
+      const wrapper = await mountHome({ catalog: true })
+      await openScanner(wrapper)
+      await scan(wrapper, SCANNED)
+      expect('p_markets' in catalogLookups()[0].params).toBe(false)
+    } finally {
+      mocks.timeZone = undefined
+    }
+  })
+
   it('asks the reference catalog through lookup_barcode, with every candidate form', async () => {
     const wrapper = await mountHome({ catalog: true })
     await openScanner(wrapper)
