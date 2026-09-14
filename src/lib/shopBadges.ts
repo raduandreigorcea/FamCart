@@ -1,6 +1,7 @@
 import { getCatalogSupabase } from '../supabase'
 import { IS_NIGHTLY } from './appChannel'
 import { productKey } from './productSearch'
+import type { Market } from './region'
 
 // Which shop each product on the list came from, on nightly only.
 //
@@ -37,21 +38,50 @@ const SLUG = /^[a-z0-9-]{1,40}$/
 // readable, and is the right failure for a retailer added before anybody wrote
 // its name down.
 const SHOP_NAMES: Record<string, string> = {
+  aldi: 'Aldi',
   auchan: 'Auchan',
   carrefour: 'Carrefour',
+  delhaize: 'Delhaize',
+  hofer: 'Hofer',
   lidl: 'Lidl',
   'mega-image': 'Mega Image',
+  mpreis: 'MPreis',
+}
+
+/**
+ * The chain a shop belongs to: `lidl-de` is Lidl. One chain in several countries
+ * is one scraper configured per country, each with a slug of its own, and it is
+ * still one name and one logo. Only a suffix that is a market code counts, so
+ * `mega-image` stays itself.
+ */
+export function shopBrand(slug: string): string {
+  return /^(.+)-(ro|md|de|at|ch|es|fr|be|it|gb|ie)$/.exec(slug)?.[1] ?? slug
 }
 
 export function shopLabel(slug: string): string {
-  return SHOP_NAMES[slug] ?? slug
+  return SHOP_NAMES[slug] ?? SHOP_NAMES[shopBrand(slug)] ?? slug
 }
 
-const SHOPS_KEY = 'famcart.shops.v1'
-let shopList: string[] | null = null
+// v2 stores the country with each slug; a v1 list of bare slugs cannot be
+// filtered, so it is simply not read.
+const SHOPS_KEY = 'famcart.shops.v2'
+
+interface ShopEntry {
+  slug: string
+  country: string | null
+}
+
+let shopRows: ShopEntry[] | null = null
+
+// Only the shops of the phone's country. Ten Lidls are one Lidl to a person in
+// one of them, and a chip for Lidl Italy in Romania is a filter that returns
+// nothing. No market means every shop, the same way search reads it.
+function forMarket(rows: ShopEntry[], market: Market | null): string[] {
+  return rows.filter((r) => market === null || r.country === market).map((r) => r.slug)
+}
 
 /**
- * Every enabled shop, for the filters to offer.
+ * Every enabled shop in this market, for the filters to offer.
  *
  * A handful of rows, once a session, and cached across sessions so the filter
  * button is there on the first paint rather than appearing a moment later. On any
@@ -60,48 +90,55 @@ let shopList: string[] | null = null
  * no filter is a working app, and a filter offering shops that do not exist is
  * one that returns nothing and looks broken.
  */
-export async function fetchShopList(): Promise<string[]> {
+export async function fetchShopList(market: Market | null = null): Promise<string[]> {
   if (!IS_NIGHTLY) return []
-  if (shopList) return shopList
+  if (shopRows) return forMarket(shopRows, market)
 
   const cached = readShopCache()
   const catalogDb = getCatalogSupabase()
-  if (!catalogDb) return cached
+  if (!catalogDb) return forMarket(cached, market)
 
   try {
     const { data, error } = await catalogDb
       .from('catalog_retailers')
-      .select('slug')
+      .select('slug, country')
       .eq('enabled', true)
       .order('slug')
-    if (error || !Array.isArray(data)) return cached
+    if (error || !Array.isArray(data)) return forMarket(cached, market)
 
-    const slugs = data
-      .map((row) => (row as { slug?: unknown }).slug)
-      .filter((s): s is string => typeof s === 'string' && SLUG.test(s))
-    if (slugs.length === 0) return cached
+    const rows = cleanEntries(data)
+    if (rows.length === 0) return forMarket(cached, market)
 
-    shopList = slugs
+    shopRows = rows
     try {
-      localStorage.setItem(SHOPS_KEY, JSON.stringify(slugs))
+      localStorage.setItem(SHOPS_KEY, JSON.stringify(rows))
     } catch {
       // Same posture as the badge cache below: a filter's convenience must
       // never be the thing that throws.
     }
-    return slugs
+    return forMarket(rows, market)
   } catch {
-    return cached
+    return forMarket(cached, market)
   }
 }
 
-function readShopCache(): string[] {
+function cleanEntries(raw: unknown[]): ShopEntry[] {
+  return raw
+    .map((row) => row as { slug?: unknown; country?: unknown })
+    .filter((row) => typeof row.slug === 'string' && SLUG.test(row.slug))
+    .map((row) => ({
+      slug: row.slug as string,
+      country: typeof row.country === 'string' ? row.country : null,
+    }))
+}
+
+function readShopCache(): ShopEntry[] {
   if (!IS_NIGHTLY) return []
   try {
     const raw = localStorage.getItem(SHOPS_KEY)
     if (!raw) return []
     const stored = JSON.parse(raw) as unknown
-    if (!Array.isArray(stored)) return []
-    return stored.filter((s): s is string => typeof s === 'string' && SLUG.test(s))
+    return Array.isArray(stored) ? cleanEntries(stored) : []
   } catch {
     return []
   }
@@ -115,7 +152,7 @@ function readShopCache(): string[] {
 // so a switch has nothing to forget here, unlike the suggestions and the filters
 // that resetForHousehold does clear.
 export function resetShopList(): void {
-  shopList = null
+  shopRows = null
 }
 
 interface ShopRow {
@@ -180,7 +217,13 @@ export function saveCachedShops(map: ShopMap, storage: Storage = localStorage): 
   }
 }
 
-export async function fetchShopsFor(names: string[]): Promise<ShopMap> {
+/**
+ * @param market where this phone is. A list in Italy wears Italian shops only,
+ *   and the catalog answers under the name a shop there uses -- the name the
+ *   row carries, since it was picked from a search that sent the same market.
+ *   Null sends no market, which means every shop, as search reads it.
+ */
+export async function fetchShopsFor(names: string[], market: Market | null = null): Promise<ShopMap> {
   const empty: ShopMap = new Map()
   if (!shopsEnabled()) return empty
 
@@ -194,7 +237,11 @@ export async function fetchShopsFor(names: string[]): Promise<ShopMap> {
   if (wanted.length === 0) return empty
 
   try {
-    const { data, error } = await catalogDb.rpc('catalog_shops_for', { p_names: wanted })
+    // Spread rather than null: PostgREST resolves an RPC by the keys it is sent.
+    const { data, error } = await catalogDb.rpc('catalog_shops_for', {
+      p_names: wanted,
+      ...(market ? { p_markets: [market] } : {}),
+    })
     if (error || !Array.isArray(data)) return empty
 
     const map: ShopMap = new Map()
