@@ -70,14 +70,21 @@ $$;
 --
 -- supabase_functions.http_request() bakes its arguments into the trigger
 -- definition, headers included, so writing the secret here would commit it to a
--- public repository. Both values are read from database settings instead, set
--- once per environment and never in git:
+-- public repository. Both values are read from settings instead, and never
+-- committed.
 --
---   alter database postgres set app.push_webhook_url    = 'https://<ref>.supabase.co/functions/v1/push-on-item-insert';
---   alter database postgres set app.push_webhook_secret = '<the PUSH_WEBHOOK_SECRET edge function secret>';
+-- NOT `alter database postgres set ...`, which this note used to recommend:
+-- hosted Postgres refuses it ("permission denied to set parameter"). Set them
+-- for the session, in the SAME run as the push block below, since a trigger
+-- keeps what it was created with and the settings are not needed afterwards:
 --
--- Then re-run this file. Without them it warns and creates nothing, which is what
--- keeps local stacks and the pgTAP suite from firing HTTP requests during tests.
+--   set app.push_webhook_url    = 'https://<ref>.supabase.co/functions/v1/push-on-item-insert';
+--   set app.push_webhook_secret = '<the PUSH_WEBHOOK_SECRET edge function secret>';
+--   -- then the do $$ ... $$ block below, e.g. `npx supabase db query --linked -f`
+--
+-- A plain migration run has neither set, so it warns and creates nothing, which
+-- is what keeps local stacks and the pgTAP suite from firing HTTP requests. On a
+-- hosted project that also means a re-run leaves existing triggers untouched.
 --
 -- Note the secret still ends up readable in the trigger definition to anyone who
 -- can query pg_catalog on a direct connection (pg_get_triggerdef is world

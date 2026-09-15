@@ -27,3 +27,10 @@ port = 54502
 # with the PUSH_WEBHOOK_SECRET header instead.
 [functions.push-on-item-insert]
 verify_jwt = false
+
+# The admin dashboard's Services pages. A Clerk session token is not signed with
+# this project's JWT secret, so the platform's check would refuse every call;
+# the function gates on is_admin() through PostgREST instead, which does verify
+# Clerk tokens (Third-Party Auth). See the header of its index.ts.
+[functions.admin-services]
+verify_jwt = false
