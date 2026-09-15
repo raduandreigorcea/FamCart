@@ -24,6 +24,7 @@ import { whenIdle } from './idle'
 // here: connectivity depends on vue and @capacitor/network only, so this is not
 // a cycle.
 import { isCurrentlyOffline } from './connectivity'
+import { APP_CHANNEL, sentryEnvironment } from './appChannel'
 
 // Only the one function is held, never the module namespace. Keeping the
 // namespace alive (`sentry = module`) forces the bundler to retain every export
@@ -277,7 +278,10 @@ export function startErrorReporting(app: App, router: Router): Promise<void> {
             // ended up in the production issue stream claiming to be production.
             // MODE is the build's own answer: 'production' for a build,
             // 'development' under `npm run dev`, 'test' under vitest.
-            environment: import.meta.env.MODE,
+            // And MODE alone was not enough either: the nightly APK is a
+            // production-mode build, so it filed as production too. See
+            // sentryEnvironment in lib/appChannel.
+            environment: sentryEnvironment(import.meta.env.MODE, APP_CHANNEL),
             integrations: [browserTracingIntegration({ router })],
             tracesSampleRate: 0.1,
             // A fetch/websocket aborted because the user navigated mid-request

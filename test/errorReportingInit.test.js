@@ -17,6 +17,21 @@
 //     one question worth asking of a crash (did this hit one person or all of
 //     them) had no answer.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { sentryEnvironment } from '../src/lib/appChannel'
+
+// The nightly APK is a production-mode build, so MODE filed its crashes as
+// production. The channel is what tells the two apps apart.
+describe('sentryEnvironment', () => {
+  it('files a build under its channel', () => {
+    expect(sentryEnvironment('production', 'production')).toBe('production')
+    expect(sentryEnvironment('production', 'nightly')).toBe('nightly')
+  })
+
+  it('keeps the dev server and the test runner apart from both', () => {
+    expect(sentryEnvironment('development', 'nightly')).toBe('development')
+    expect(sentryEnvironment('test', 'production')).toBe('test')
+  })
+})
 
 // vi.hoisted, not bare consts: vi.mock factories are hoisted above the imports,
 // so anything they close over has to be hoisted with them or it is still in its
@@ -75,10 +90,10 @@ describe('startErrorReporting', () => {
     await startErrorReporting({}, {})
 
     expect(mocks.init).toHaveBeenCalledTimes(1)
-    // MODE is 'production' for a build, 'development' under `npm run dev` and
-    // 'test' right here. Asserting against it rather than a literal is the
-    // point: the value has to track the build, not a string someone typed once.
-    expect(mocks.init.mock.calls[0][0].environment).toBe(import.meta.env.MODE)
+    // 'test' right here, because MODE is. Asserting through the function rather
+    // than a literal is the point: the value has to track the build.
+    expect(mocks.init.mock.calls[0][0].environment).toBe(sentryEnvironment(import.meta.env.MODE, 'production'))
+    expect(mocks.init.mock.calls[0][0].environment).toBe('test')
   })
 
   it('installs a beforeSend that drops the Clerk load failure when offline', async () => {

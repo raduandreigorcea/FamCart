@@ -66,6 +66,23 @@ export const APP_CHANNEL: AppChannel = resolveChannel({
 export const IS_NIGHTLY = APP_CHANNEL === 'nightly'
 
 /**
+ * The environment Sentry files a report under.
+ *
+ * It was the Vite MODE, which cannot tell the two apps apart: the nightly APK is
+ * a production-mode build, so every nightly crash was filed as `production`
+ * beside the real ones. The channel can. A dev server and the test runner keep
+ * their own names, since neither is a build anybody installed.
+ *
+ * The admin dashboard's Sentry page reads by this tag, `production` on the
+ * famcart project and `nightly` plus `development` on famcart-dev
+ * (sentryEnvironments in supabase/functions/_shared/services.ts).
+ */
+export function sentryEnvironment(mode: string, channel: AppChannel): string {
+  if (mode === 'development' || mode === 'test') return mode
+  return channel
+}
+
+/**
  * Stamp the channel on the root element and, on nightly, repaint the browser
  * chrome to match.
  *
