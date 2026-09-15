@@ -70,6 +70,41 @@ describe('environment guards', () => {
   })
 })
 
+// Nightly has its own OneSignal app. A device is keyed by its Clerk id and Clerk
+// is shared by both channels, so a nightly build on the production app would
+// receive that person's real notifications. The dangerous fallback is the easy
+// one: .env carries the production id in every mode.
+describe('which OneSignal app', () => {
+  async function moduleOn(nightly) {
+    vi.resetModules()
+    vi.doMock('../src/lib/appChannel', async (importOriginal) => ({
+      ...(await importOriginal()),
+      IS_NIGHTLY: nightly,
+    }))
+    const push = await import('../src/lib/pushNotifications')
+    vi.doUnmock('../src/lib/appChannel')
+    return push
+  }
+
+  it('gives nightly the nightly app', async () => {
+    vi.stubEnv('VITE_ONESIGNAL_APP_ID', 'prod-app')
+    vi.stubEnv('VITE_ONESIGNAL_NIGHTLY_APP_ID', 'nightly-app')
+    expect((await moduleOn(true)).getOneSignalAppId()).toBe('nightly-app')
+  })
+
+  it('leaves nightly without push rather than on the production app', async () => {
+    vi.stubEnv('VITE_ONESIGNAL_APP_ID', 'prod-app')
+    vi.stubEnv('VITE_ONESIGNAL_NIGHTLY_APP_ID', '')
+    expect((await moduleOn(true)).getOneSignalAppId()).toBe('')
+  })
+
+  it('gives production the production app', async () => {
+    vi.stubEnv('VITE_ONESIGNAL_APP_ID', 'prod-app')
+    vi.stubEnv('VITE_ONESIGNAL_NIGHTLY_APP_ID', 'nightly-app')
+    expect((await moduleOn(false)).getOneSignalAppId()).toBe('prod-app')
+  })
+})
+
 describe('boot cost', () => {
   // Fresh module per test: whether the SDK has been asked for is module state,
   // and these two tests are entirely about that flag's starting value.

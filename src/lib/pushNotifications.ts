@@ -45,17 +45,17 @@ const WORKER_PATH = 'onesignal/OneSignalSDKWorker.js'
 const WORKER_SCOPE = '/onesignal/'
 
 export function getOneSignalAppId(): string {
-  // Nightly has no push, and this is where that is decided rather than in the
-  // build script: the nightly APK is a different Android package than the one
-  // OneSignal knows, and it reads famcart-dev households, so subscribing it to
-  // the production app would both register a device that app cannot recognise
-  // and risk a real household notification landing on a test build. The same
-  // posture famcart-dev takes by leaving its push webhook unset.
+  // Nightly has its OWN OneSignal app, and never the production one. A device
+  // is keyed by its Clerk id, and Clerk is one instance for both channels, so a
+  // nightly phone subscribed to the production app would receive every real
+  // household's notifications for that person, and famcart-dev's test pushes
+  // would reach the phone they shop with.
   //
-  // Returning empty rather than skipping the caller: every path in this module
-  // and in lib/firstRunGreeting already treats an absent app id as push being
-  // switched off, so there is no second way for it to be off.
-  if (IS_NIGHTLY) return ''
+  // Its own variable rather than VITE_ONESIGNAL_APP_ID from another file: .env
+  // holds the production id and Vite loads it in every mode, so a nightly build
+  // missing the nightly id would otherwise fall through to production's. Missing
+  // here means empty, which every caller already treats as push switched off.
+  if (IS_NIGHTLY) return (import.meta.env.VITE_ONESIGNAL_NIGHTLY_APP_ID as string | undefined) ?? ''
   return (import.meta.env.VITE_ONESIGNAL_APP_ID as string | undefined) ?? ''
 }
 

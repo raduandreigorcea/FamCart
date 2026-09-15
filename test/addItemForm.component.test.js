@@ -56,6 +56,38 @@ describe('AddItemForm suggestions', () => {
     expect(wrapper.findAll('.suggestion-maker').map((m) => m.text())).toEqual(['Dorna'])
   })
 
+  // A focused field is a search in progress, so the page behind it is blurred
+  // from the moment of focus, matches or not, and not a moment after.
+  it('blurs the page while the field is focused, matches or not', async () => {
+    const wrapper = await mountForm()
+    expect(wrapper.find('.add-dim').exists()).toBe(true)
+    expect(wrapper.find('.add-slot').classes()).toContain('add-slot--dim')
+
+    await wrapper.setProps({ suggestions: PRODUCTS })
+    expect(wrapper.find('.add-dim').exists()).toBe(true)
+
+    await wrapper.find('input').trigger('blur')
+    expect(wrapper.find('.add-dim').exists()).toBe(false)
+  })
+
+  it('does not blur a field nobody is using', () => {
+    const wrapper = mount(AddItemForm, {
+      props: { name: '', quantity: 1, suggestions: PRODUCTS, canAddCustom: true },
+    })
+    expect(wrapper.find('.add-dim').exists()).toBe(false)
+  })
+
+  // The blur sits inside the lifted slot, so it must come before the form: in
+  // that stacking context, DOM order is what keeps the field above the blur.
+  it('draws the blur underneath the field, not over it', async () => {
+    const wrapper = await mountForm({ suggestions: PRODUCTS })
+    const slot = wrapper.find('.add-slot').element
+    const children = [...slot.children]
+    expect(children.indexOf(slot.querySelector('.add-dim'))).toBeLessThan(
+      children.indexOf(slot.querySelector('.add-form')),
+    )
+  })
+
   it('reports the picked product rather than filling the input', async () => {
     const wrapper = await mountForm({ suggestions: PRODUCTS })
     await wrapper.findAll('.suggestion')[0].trigger('mousedown')
@@ -422,6 +454,13 @@ describe('AddItemForm suggestions', () => {
     const dismissed = (wrapper) =>
       wrapper.emitted('update:expanded').at(-1)[0] === false &&
       wrapper.find('.add-form').classes().includes('add-form--closing')
+
+    // The sheet brings its own opaque cover; the desktop blur must not stack a
+    // second layer under it.
+    it('does not blur behind the sheet', async () => {
+      const wrapper = await mountSheet({ suggestions: PRODUCTS })
+      expect(wrapper.find('.add-dim').exists()).toBe(false)
+    })
 
     it('is a raised sheet covering the list, sized to the viewport', async () => {
       const wrapper = await mountSheet({ suggestions: PRODUCTS })

@@ -223,6 +223,22 @@ const hasResults = computed(
 // again, open only while the field has focus and there is something to show.
 const panelOpen = computed(() => present.value || (inputFocused.value && hasResults.value))
 
+// At the desktop column a focused field is the thing being used, so the page
+// behind it is blurred and the field and its dropdown stay sharp. On focus, not
+// on the dropdown opening: an empty field is already a search in progress, and
+// blurring only once a match arrived made the page flicker as you typed. Not
+// while the sheet is up: below the bar boundary its own cover takes the list.
+const dimmed = computed(() => inputFocused.value && !present.value)
+
+// The slot is lifted above the page for as long as the blur is DRAWN, which
+// outlasts `dimmed` by the length of its fade. The blur lives inside the slot's
+// stacking context; dropping the lift the moment focus left would drop the
+// fading blur beneath the header, which would snap sharp mid-fade.
+const lifted = ref(false)
+watch(dimmed, (on) => {
+  if (on) lifted.value = true
+})
+
 // A household with no history yet gets a line telling them what to do rather than
 // a blank screen. Only on an empty query: telling someone who has typed a
 // character to type a product name is worse than saying nothing, and that
@@ -466,7 +482,14 @@ onBeforeUnmount(() => {
   <!-- The form's place in the flow at the desktop column, and nothing at all
        below it: see the media query on .add-slot. `present` rather than
        `expanded` because the sheet has to stay drawn while it leaves. -->
-  <div class="add-slot" :class="{ 'add-slot--open': present }">
+  <div class="add-slot" :class="{ 'add-slot--open': present, 'add-slot--dim': dimmed || lifted }">
+    <!-- The blur behind the focused desktop field. No handler: pressing it
+         moves focus off the field, and onBlur already closes the dropdown. It
+         comes BEFORE the form on purpose; see .add-dim. -->
+    <Transition name="add-cover" @after-leave="lifted = false">
+      <div v-if="dimmed" class="add-dim" aria-hidden="true"></div>
+    </Transition>
+
     <Transition name="add-cover">
       <!-- mousedown, not click, for the same reason the options use it: the tap
            must not steal focus before we decide what to do with it. -->
@@ -923,6 +946,40 @@ onBeforeUnmount(() => {
   opacity: 0;
 }
 
+/* ─── The desktop blur ───────────────────────────────────────────────────────
+   Everything behind the focused field, header included, goes soft and a shade
+   darker, so the search is the one sharp thing on screen. The same 6px blur
+   AccountActionModal puts behind its dialog. It shares the cover's fade, and
+   so its reduced-motion rule too.
+
+   The layering is the whole trick, and the first version got it wrong. The
+   SLOT lifts to 56, above the header's layers (ribbon 30, bar 40), and that
+   makes it a stacking context; the blur is inside it. So the blur must have NO
+   z-index of its own: with one, it outranked the form in that same context and
+   blurred the field and its matches along with the page. Without one it paints
+   in DOM order, before the form, and still covers the whole viewport because
+   nothing above it sets a transform. Teleported menus stay at 1000. */
+.add-dim {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--backdrop) 35%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.add-slot--dim {
+  z-index: 56;
+}
+
+/* Belt and braces: below the bar boundary `dimmed` is never true, since the
+   field only opens as the sheet there, but a blur must not be the thing that
+   proves it wrong. */
+@media (max-width: 899.98px) {
+  .add-dim {
+    display: none;
+  }
+}
+
 .suggest-enter-active,
 .suggest-leave-active {
   transition: opacity var(--transition-fast) var(--ease-standard);
@@ -942,6 +999,19 @@ onBeforeUnmount(() => {
   right: 0;
   margin-top: 0.35rem;
   z-index: 20;
+  /* The dropdown's surface is the WHOLE panel, not just the list. It used to be
+     on .suggestions, which left everything above the list -- the nightly shop
+     chips and their divider -- floating on the page with no card under it. On
+     the light page nobody noticed; over the page blur the chips' near-white
+     border-bottom read as a stray white line above the results. On the panel,
+     that border is what it was meant to be, a divider inside the card.
+
+     No overflow: hidden to round the corners off: the tap counters are
+     positioned against this box and are thrown past its edge on purpose. */
+  background: var(--bg-surface);
+  border: var(--border-width-base) solid var(--border-main);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--text-primary) 14%, transparent);
 }
 
 /* Lifted, it is not an overlay at all: it is what is left of the screen under
@@ -968,16 +1038,17 @@ onBeforeUnmount(() => {
   width: 100%;
   max-width: calc(480px + 2rem);
   margin-inline: auto;
+  /* The dropdown's card, taken off again: lifted, the screen is the surface. */
+  background: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .suggestions {
   list-style: none;
   margin: 0;
   padding: 0.3rem;
-  background: var(--bg-surface);
-  border: var(--border-width-base) solid var(--border-main);
-  border-radius: var(--radius-xl);
-  box-shadow: 0 10px 28px color-mix(in srgb, var(--text-primary) 14%, transparent);
   max-height: 275px;
   overflow-y: auto;
 }
