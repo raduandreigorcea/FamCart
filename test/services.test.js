@@ -13,6 +13,8 @@ import {
   parseRequest,
   readClerkCount,
   sentryEnvironments,
+  sentryEnvironmentsUrl,
+  knownEnvironments,
   sentryIssuesUrl,
   sentryProjectUrl,
   shapeClerkUser,
@@ -68,6 +70,19 @@ describe('missingSecrets', () => {
 })
 
 describe('upstreamMessage', () => {
+  // "Sentry answered 404" said nothing about WHAT was not found, and a 404
+  // from Sentry means different things on the project and on the issues.
+  it('says what was asked and what the vendor said about it', () => {
+    const message = upstreamMessage('sentry', 404, {
+      path: '/api/0/projects/famcart/javascript-vue/',
+      detail: 'The requested resource does not exist',
+    })
+    expect(message).toContain('/api/0/projects/famcart/javascript-vue/')
+    expect(message).toContain('The requested resource does not exist')
+    // Never the query string, which can carry more than a path should.
+    expect(upstreamMessage('sentry', 404, { path: '/api/0/x/?token=abc' })).not.toContain('token')
+  })
+
   it('points at the key when the vendor refuses it', () => {
     expect(upstreamMessage('clerk', 401)).toMatch(/Clerk refused the key/)
     expect(upstreamMessage('sentry', 403)).toMatch(/missing a scope/)
@@ -89,6 +104,18 @@ describe('Sentry', () => {
   // The famcart organisation lives in Sentry's EU region. A personal token
   // carries no region, and sentry.io answers 404 for an EU organisation's
   // projects and issues -- which is what the Health page showed.
+  // Sentry's issues endpoint answers 404 when a requested environment has never
+  // received an event -- which a new channel's environment ("nightly") has not.
+  // So the environments are checked first, and only real ones are asked for.
+  it('asks only for environments Sentry has actually seen', () => {
+    expect(knownEnvironments(['nightly', 'development'], [{ name: 'production' }, { name: 'development' }])).toEqual([
+      'development',
+    ])
+    expect(knownEnvironments(['nightly'], [{ name: 'production' }])).toEqual([])
+    expect(knownEnvironments(['production'], [{ name: 'production' }, { name: 42 }, null])).toEqual(['production'])
+    expect(new URL(sentryEnvironmentsUrl()).pathname).toBe('/api/0/projects/famcart/javascript-vue/environments/')
+  })
+
   it('asks the EU region, where the organisation lives', () => {
     expect(new URL(sentryProjectUrl()).origin).toBe('https://de.sentry.io')
     expect(new URL(sentryIssuesUrl('42', 'issues', ['production'])).origin).toBe('https://de.sentry.io')
