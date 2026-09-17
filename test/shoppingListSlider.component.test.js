@@ -14,14 +14,14 @@ const items = () => [
 ]
 
 // Bar geometry is 0 in happy-dom; give the track and thumb real sizes so the
-// drag math has travel to work with (maxTravel = 480 - 51 = 429).
+// drag math has travel to work with (maxTravel = 480 - 56 = 424).
 function sizeBar(wrapper) {
   Object.defineProperty(wrapper.find('.buy-bar').element, 'clientWidth', {
     value: 480,
     configurable: true,
   })
   Object.defineProperty(wrapper.find('.buy-bar__thumb').element, 'offsetWidth', {
-    value: 51,
+    value: 56,
     configurable: true,
   })
 }
@@ -56,7 +56,7 @@ describe('slide-to-checkout bar', () => {
     const thumb = wrapper.find('.buy-bar__thumb')
 
     await thumb.trigger('pointerdown', { pointerId: 1, clientX: 10 })
-    await thumb.trigger('pointermove', { pointerId: 1, clientX: 420 }) // 410px of 429 travel
+    await thumb.trigger('pointermove', { pointerId: 1, clientX: 420 }) // 410px of 424 travel
     await thumb.trigger('pointerup', { pointerId: 1, clientX: 420 })
     vi.runAllTimers()
 
@@ -70,7 +70,7 @@ describe('slide-to-checkout bar', () => {
     const thumb = wrapper.find('.buy-bar__thumb')
 
     await thumb.trigger('pointerdown', { pointerId: 1, clientX: 10 })
-    await thumb.trigger('pointermove', { pointerId: 1, clientX: 100 }) // 90px of 429 travel
+    await thumb.trigger('pointermove', { pointerId: 1, clientX: 100 }) // 90px of 424 travel
     await thumb.trigger('pointerup', { pointerId: 1, clientX: 100 })
     vi.runAllTimers()
 
@@ -85,7 +85,7 @@ describe('slide-to-checkout bar', () => {
 
     await thumb.trigger('pointerdown', { pointerId: 1, clientX: 10 })
     await thumb.trigger('pointermove', { pointerId: 1, clientX: 2000 })
-    expect(thumb.attributes('style')).toContain('translateX(429px)')
+    expect(thumb.attributes('style')).toContain('translateX(424px)')
 
     await thumb.trigger('pointermove', { pointerId: 1, clientX: -2000 })
     expect(thumb.attributes('style')).toContain('translateX(0px)')

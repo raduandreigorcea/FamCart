@@ -394,8 +394,8 @@ function settle() {
     >
       <!-- Tap and Enter and Space, all from the browser rather than from three
            handlers of our own. It covers the product and its name, not the whole
-           row: the avatar says who added it and the stepper counts it, and
-           neither was ever a thing to press to tick the item off. -->
+           row: the stepper is a control of its own. The avatar forwards its
+           taps here (see below) rather than being inside this button. -->
       <button
         type="button"
         class="item-toggle"
@@ -429,6 +429,13 @@ function settle() {
            A row of one carries the badge too, quietly: without it there is
            nothing to press on the rows that most need raising, and "press the
            number" stops being a rule you can rely on. -->
+      <!-- The slot holds the CLOSED badge's width in the row, through an
+           invisible copy of it, and the real control is laid over the slot from
+           its right edge. Opening it therefore grows leftward over the name
+           instead of taking width from it: the name used to rewrap every time
+           the stepper opened, which moved the very line you had just read. -->
+      <span class="item-qty-slot">
+      <span class="item-qty-sizer" aria-hidden="true"><span class="item-qty-sizer__face">{{ qty === 1 ? '' : 'x' }}{{ qty }}</span></span>
       <span
         class="item-qty"
         :class="{ 'item-qty--open': qtyOpen, 'item-qty--one': qty === 1 }"
@@ -487,13 +494,25 @@ function settle() {
           <AppIcon class="item-qty__glyph" name="plus" />
         </button>
       </span>
+      </span>
+      <!-- A tap on the face of whoever added it ticks the row too. The avatar
+           means nothing to press, so a tap that lands on it would otherwise do
+           nothing at the one spot on the row where a thumb rests. Not a second
+           button: the toggle above is the one a keyboard and a screen reader
+           reach, and this only forwards a pointer's click to it. -->
       <img
         v-if="avatarUrl"
         :src="avatarUrl"
         :alt="t('common.avatarAlt', { name: avatarLabel })"
         class="item-avatar"
+        @click="onToggleClick"
       />
-      <span v-else class="item-avatar item-avatar--fallback" :title="avatarLabel">
+      <span
+        v-else
+        class="item-avatar item-avatar--fallback"
+        :title="avatarLabel"
+        @click="onToggleClick"
+      >
         {{ avatarLabel.slice(0, 1).toUpperCase() }}
       </span>
     </div>
@@ -503,14 +522,30 @@ function settle() {
 <style scoped>
 .item {
   position: relative;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-row);
+  corner-shape: squircle;
   overflow: hidden;
-  border: var(--border-width-base) solid var(--border-main);
-  transition: opacity var(--transition-base);
+  box-shadow: var(--elevation-soft);
 }
 
-.item--checked {
-  opacity: 0.55;
+/* Ticking a row fades its contents rather than switching them: the same fade
+   the whole row used to make, now on the parts that dim. The strike-through
+   fades in with the colour, since a line cannot transition on and off. */
+.item-emoji,
+.item-sub :deep(.shop-badge),
+.item-qty-slot,
+.item-avatar {
+  transition: opacity var(--transition-base) var(--ease-standard);
+}
+
+/* In the cart. The card itself stays at full strength: fading the whole row
+   let it melt into the tinted page behind it. The name and maker go grey and
+   are struck through (below), and the rest of the row's contents dim. */
+.item--checked .item-emoji,
+.item--checked .item-sub :deep(.shop-badge),
+.item--checked .item-qty-slot,
+.item--checked .item-avatar {
+  opacity: 0.6;
 }
 
 /* ── Swipe action backdrops ── */
@@ -584,7 +619,7 @@ function settle() {
   align-items: center;
   gap: 0.75rem;
   background: var(--bg-surface);
-  padding: 0.875rem 0.875rem 0.875rem 0.9rem;
+  padding: 0.75rem 0.875rem 0.75rem 0.75rem;
   cursor: grab;
   touch-action: pan-y;
   -webkit-tap-highlight-color: transparent;
@@ -611,8 +646,8 @@ function settle() {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin: -0.875rem 0 -0.875rem -0.9rem;
-  padding: 0.875rem 0 0.875rem 0.9rem;
+  margin: -0.75rem 0 -0.75rem -0.75rem;
+  padding: 0.75rem 0 0.75rem 0.75rem;
   border: none;
   background: none;
   font: inherit;
@@ -630,7 +665,7 @@ function settle() {
 }
 
 .item--checked .item-name {
-  text-decoration: line-through;
+  text-decoration-color: currentColor;
   color: var(--text-disabled);
 }
 
@@ -659,6 +694,14 @@ function settle() {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .item-emoji,
+  .item-sub :deep(.shop-badge),
+  .item-qty-slot,
+  .item-avatar,
+  .item-name,
+  .item-maker {
+    transition: none;
+  }
   .item--draining {
     animation: none;
     opacity: 0;
@@ -696,12 +739,13 @@ function settle() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.05rem;
-  height: 2.05rem;
-  border-radius: 0.65rem;
-  background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
-  border: var(--border-width-thin) solid color-mix(in srgb, var(--color-primary) 22%, var(--bg-surface));
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-tile);
+  corner-shape: squircle;
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--bg-surface));
 }
+
 
 .item-avatar {
   width: var(--size-avatar-sm);
@@ -732,7 +776,12 @@ function settle() {
 .item-name {
   font-size: var(--text-md);
   color: var(--text-primary);
-  line-height: 1.4;
+  /* Always struck, invisibly until the row is ticked; see .item--checked. */
+  text-decoration: line-through transparent;
+  transition:
+    color var(--transition-base) var(--ease-standard),
+    text-decoration-color var(--transition-base) var(--ease-standard);
+  line-height: var(--leading-snug);
   word-break: break-word;
 }
 
@@ -755,8 +804,44 @@ function settle() {
   color: var(--text-disabled);
 }
 
-.item-qty {
+.item-maker {
+  transition: color var(--transition-base) var(--ease-standard);
+}
+
+.item-qty-slot {
+  position: relative;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Box-for-box the closed .item-qty below: its border, its padding, and the
+   face's minimum width, padding, height and type. Only its width matters. */
+.item-qty-sizer {
+  visibility: hidden;
+  display: inline-flex;
+  padding: 0.05rem;
+  border: var(--border-width-thin) solid transparent;
+}
+
+.item-qty-sizer__face {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 0.3rem;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.item-qty {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  z-index: 1;
+  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
   border-radius: var(--radius-pill);
@@ -772,6 +857,23 @@ function settle() {
    present enough to press, quiet enough that a full list does not read as
    covered in numbers. Open, it takes the full colour like any other: it is
    being used. */
+/* Open, it lies over the end of the name. A ring in the row's own colour
+   gives it a clean edge there instead of letters running into it.
+
+   Open, the pill gives up its padding and the buttons grow by exactly that
+   much (1.6rem, above: the face's 1.5rem plus the 0.05rem either side), so the
+   pill is the same size but a button's hover circle now meets the border
+   instead of stopping short of it. The face's tighter padding below keeps the
+   number from sitting a long way off from them. */
+.item-qty--open {
+  padding: 0;
+  box-shadow: 0 0 0 4px var(--bg-surface);
+}
+
+.item-qty--open .item-qty__face {
+  padding: 0 0.15rem;
+}
+
 .item-qty--one:not(.item-qty--open) {
   background: transparent;
   border-color: var(--border-main);
@@ -933,7 +1035,8 @@ function settle() {
 }
 
 .item-qty--open .item-qty__step {
-  width: 1.5rem;
+  width: 1.6rem;
+  height: 1.6rem;
   opacity: 1;
   pointer-events: auto;
 }

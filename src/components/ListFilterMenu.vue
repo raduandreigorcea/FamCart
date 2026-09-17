@@ -103,7 +103,7 @@ const isFiltered = computed(() => model.value !== 'all' || shop.value !== null)
              the space so every label starts on the same line. -->
         <AppIcon
           class="menu-check"
-          :name="model === option.value ? 'check-2' : ''"
+          :name="model === option.value ? 'check-bold' : ''"
         />
         <span class="filter-option__text">
           <span class="filter-option__label">{{ option.label }}</span>
@@ -130,7 +130,7 @@ const isFiltered = computed(() => model.value !== 'all' || shop.value !== null)
           :aria-checked="shop === null"
           @click="((shop = null), close())"
         >
-          <AppIcon class="menu-check" :name="shop === null ? 'check-2' : ''" />
+          <AppIcon class="menu-check" :name="shop === null ? 'check-bold' : ''" />
           <span class="filter-option__text">
             <span class="filter-option__label">{{ t('filter.shopAny.label') }}</span>
             <span class="filter-option__hint">{{ t('filter.shopAny.hint') }}</span>
@@ -148,7 +148,7 @@ const isFiltered = computed(() => model.value !== 'all' || shop.value !== null)
           :aria-checked="shop === slug"
           @click="((shop = shop === slug ? null : slug), close())"
         >
-          <AppIcon class="menu-check" :name="shop === slug ? 'check-2' : ''" />
+          <AppIcon class="menu-check" :name="shop === slug ? 'check-bold' : ''" />
           <span class="filter-option__text">
             <!-- No hint under a shop, unlike every other row here. Its name is
                  the whole of what it is, and the line that used to sit here

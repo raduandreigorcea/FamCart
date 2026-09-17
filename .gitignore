@@ -58,3 +58,8 @@ supabase/.temp
 # that wrote them was deleted in 9a4366e along with its products.json. Not
 # committed -- it is data, not code -- but worth keeping off the machine too.
 *.backup.json
+
+# Third-party agent skills (npx skills add), installed per machine
+.agents/
+skills-lock.json
+.superpowers/

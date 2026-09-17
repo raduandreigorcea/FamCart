@@ -150,6 +150,14 @@ describe('ShoppingListItem quantity', () => {
     expect(wrapper.emitted('toggle')).toHaveLength(1)
   })
 
+  // The avatar is not a control of its own, so a tap on it ticks the row.
+  it('toggles on a tap on the avatar', async () => {
+    const wrapper = mountRow()
+    await wrapper.find('.item-avatar').trigger('click')
+
+    expect(wrapper.emitted('toggle')).toHaveLength(1)
+  })
+
   it('carries the count in the row label, where the badge is only a picture', () => {
     const label = mountRow().find('.item-toggle').attributes('aria-label')
     expect(label).toContain('quantity 2')

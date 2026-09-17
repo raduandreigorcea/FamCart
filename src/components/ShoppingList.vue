@@ -6,7 +6,7 @@ import ListFilterMenu from './ListFilterMenu.vue'
 import { getProductEmoji } from '../lib/productEmoji'
 import { memberDisplayName } from '../lib/userIdentity'
 import { productKey } from '../lib/productSearch'
-import { sumActiveQuantities, sumCheckedQuantities } from '../lib/shoppingList'
+import { sumCheckedQuantities } from '../lib/shoppingList'
 import type { ShoppingItemRow, HouseholdMemberProfile } from '../lib/householdRealtime'
 import type { ProductSuggestion } from '../lib/productSearch'
 import { shopLabel, type ShopMap } from '../lib/shopBadges'
@@ -183,12 +183,9 @@ const metaLabel = computed(() =>
 )
 // tn, not a ternary on === 1. Romanian needs three forms here and picks
 // between them by rules English does not have: 19 is 'produse', 20 is
-// 'de produse'.
-const metaCount = computed(() =>
-  viewingChecked.value
-    ? tn('list.meta.itemCount', checkedItems.value.length)
-    : tn('list.meta.leftCount', leftCount.value),
-)
+// 'de produse'. Only the cart is counted here; what is left to buy is counted
+// in the household bar.
+const metaCount = computed(() => tn('list.meta.itemCount', checkedItems.value.length))
 
 // The list has rows, the filter just hides all of them. Distinct from the empty
 // state, which means there is nothing to buy at all.
@@ -196,7 +193,6 @@ const filteredToNothing = computed(
   () => !props.loading && props.items.length > 0 && visibleItems.value.length === 0,
 )
 
-const leftCount = computed(() => sumActiveQuantities(props.items))
 // Units, not rows: "grapes x4" counts as 4 on the buy button.
 const checkedUnitCount = computed(() => sumCheckedQuantities(props.items))
 
@@ -309,7 +305,12 @@ onBeforeUnmount(() => {
 // track to trigger it. Below the completion threshold the thumb snaps back.
 // Keyboard users are not made to simulate a drag: Enter/Space on the focused
 // thumb (a click with detail 0) checks out directly.
-const THUMB_SIZE = 51 // px; bar height minus its borders; keep in sync with .buy-bar__thumb
+const THUMB_SIZE = 56 // px; keep in sync with .buy-bar__thumb
+const TRACK_HEIGHT = 53 // px; keep in sync with .buy-bar__track
+// How far the thumb stands proud of the track, on every side: the track is
+// inset by this much at its two ends as well as being this much shorter above
+// and below. Keep in sync with .buy-bar__track's left and right.
+const TRACK_INSET = (THUMB_SIZE - TRACK_HEIGHT) / 2
 const THUMB_INSET = 0 // px gap between thumb and track edge; the thumb sits flush
 const COMPLETE_AT = 0.85 // fraction of the travel that counts as done
 
@@ -365,10 +366,13 @@ function onThumbClick(e: MouseEvent) {
 }
 
 const thumbStyle = computed(() => ({ transform: `translateX(${dragX.value}px)` }))
-// The green trail ends flush with the thumb's leading edge: the full-height
-// thumb caps the trail like the rounded nose of one pill. At full travel this
-// is exactly the bar's inner width; success pins it there.
-const fillWidth = computed(() => THUMB_INSET * 2 + THUMB_SIZE + dragX.value)
+// The green trail's rounded end sits under the middle of the thumb, which is
+// taller than the track and so covers that end completely: the trail reads as
+// coming out of the knob. Success pins it to the full track.
+// The fill lives inside the track, which starts TRACK_INSET in from the bar.
+const fillWidth = computed(
+  () => THUMB_INSET + THUMB_SIZE / 2 + TRACK_HEIGHT / 2 + dragX.value - TRACK_INSET,
+)
 const fillStyle = computed(() => ({
   width: buttonSuccess.value ? '100%' : `${fillWidth.value}px`,
 }))
@@ -380,7 +384,7 @@ const fillStyle = computed(() => ({
 const inverseLabelStyle = computed(() => ({
   clipPath: buttonSuccess.value
     ? 'inset(0 0 0 0)'
-    : `inset(0 calc(100% - ${THUMB_INSET + THUMB_SIZE / 2 + dragX.value}px) 0 0)`,
+    : `inset(0 calc(100% - ${THUMB_INSET + THUMB_SIZE / 2 + dragX.value - TRACK_INSET}px) 0 0)`,
 }))
 const labelText = computed(() =>
   buttonSuccess.value
@@ -392,7 +396,9 @@ const labelText = computed(() =>
 <template>
   <div class="list-meta" v-if="!loading && items.length">
     <span class="list-meta__label">{{ metaLabel }}</span>
-    <span class="list-meta__count">{{ metaCount }}</span>
+    <!-- Only for the cart: what is left to buy is in the household bar now. -->
+    <span v-if="viewingChecked" class="list-meta__count">{{ metaCount }}</span>
+    <span v-else class="list-meta__spacer"></span>
     <ListFilterMenu
       v-model="filter"
       v-model:shop="shopFilter"
@@ -412,7 +418,7 @@ const labelText = computed(() =>
          in for a checkbox the row has not had since checking became a swipe, so
          it was promising a control that never arrived. -->
     <li v-for="(nameWidth, idx) in skeletonNameWidths" :key="idx" class="skeleton-item">
-      <SkeletonBlock width="2.05rem" height="2.05rem" radius="0.65rem" />
+      <SkeletonBlock class="skeleton-item__tile" width="2.25rem" height="2.25rem" radius="var(--radius-tile)" />
       <SkeletonBlock class="skeleton-item__name" :width="nameWidth" height="0.95rem" />
       <SkeletonBlock width="var(--size-avatar-sm)" height="var(--size-avatar-sm)" radius="var(--radius-pill)" />
     </li>
@@ -511,11 +517,16 @@ const labelText = computed(() =>
         class="buy-bar"
         :class="{ 'buy-bar--success': buttonSuccess, 'buy-bar--dragging': dragging }"
       >
-        <div class="buy-bar__fill" :style="fillStyle" aria-hidden="true"></div>
-        <span class="buy-bar__label">{{ labelText }}</span>
-        <span class="buy-bar__label buy-bar__label--inverse" :style="inverseLabelStyle" aria-hidden="true">
-          {{ labelText }}
-        </span>
+        <!-- The track is thinner than the thumb, so it is its own element: the
+             bar itself cannot clip, or the thumb standing proud of the track
+             would be cut off at the top and bottom. -->
+        <div class="buy-bar__track">
+          <div class="buy-bar__fill" :style="fillStyle" aria-hidden="true"></div>
+          <span class="buy-bar__label">{{ labelText }}</span>
+          <span class="buy-bar__label buy-bar__label--inverse" :style="inverseLabelStyle" aria-hidden="true">
+            {{ labelText }}
+          </span>
+        </div>
         <button
           ref="thumbEl"
           class="buy-bar__thumb"
@@ -553,11 +564,14 @@ const labelText = computed(() =>
 }
 
 .list-meta__label {
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-disabled);
+  font-size: var(--text-md);
+  font-weight: var(--weight-extrabold);
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.list-meta__spacer {
+  margin-left: auto;
 }
 
 /* Pushed right, with the filter button following it — the count reads as the
@@ -580,9 +594,14 @@ const labelText = computed(() =>
   align-items: center;
   gap: 0.75rem;
   background: var(--bg-surface);
-  border-radius: var(--radius-xl);
-  padding: 0.875rem 0.875rem 0.875rem 0.9rem;
-  border: var(--border-width-base) solid var(--border-main);
+  border-radius: var(--radius-row);
+  corner-shape: squircle;
+  padding: 0.75rem 0.875rem 0.75rem 0.75rem;
+  box-shadow: var(--elevation-soft);
+}
+
+.skeleton-item__tile {
+  corner-shape: squircle;
 }
 
 .skeleton-item__name {
@@ -653,7 +672,8 @@ const labelText = computed(() =>
   font-weight: var(--weight-extrabold);
   /* The app's heading tracking. At this size the default spacing reads loose. */
   letter-spacing: -0.02em;
-  line-height: 1.2;
+  line-height: var(--leading-tight);
+  text-wrap: balance;
   color: var(--text-primary);
 }
 
@@ -663,7 +683,8 @@ const labelText = computed(() =>
   max-width: 34ch;
   font-size: var(--text-sm);
   color: var(--text-secondary);
-  line-height: 1.6;
+  line-height: var(--leading-normal);
+  text-wrap: pretty;
 }
 
 /* Deliberately NOT the shape of an item row — these are things that are not on
@@ -803,7 +824,11 @@ const labelText = computed(() =>
   bottom: calc(
     var(--nav-height) + var(--nav-disc-overhang) + var(--safe-bottom) + 0.5rem
   );
-  z-index: 50;
+  /* Just under the action bar (40), so the scrim below can run beneath the
+     bar's rounded corners and the centre disc stays on top of it. The slider
+     itself never overlaps the bar, so being under it costs nothing, and 39 is
+     still above everything in the list, the open quantity pill included. */
+  z-index: 39;
   display: flex;
   justify-content: center;
   padding: 0 1rem;
@@ -811,21 +836,60 @@ const labelText = computed(() =>
   pointer-events: none;
 }
 
+/* A fade of the page's own colour behind the slider, solid at the bottom and
+   gone at the top, so rows scrolling underneath dissolve rather than cutting
+   across the pill. It runs down under the action bar, which paints over it,
+   so there is no seam at the bar's rounded corners and the centre disc stays
+   on top. Slightly see-through even at its densest. */
+.buy-bar-wrap::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: 0;
+  right: 0;
+  top: -3rem;
+  bottom: calc(-1 * (0.5rem + var(--nav-disc-overhang)) - var(--radius-3xl));
+  /* Dense until a little above the slider's top edge (about 66% of this box
+     from the bottom), so there is a band of page colour over the pill before
+     the fade starts. */
+  background: linear-gradient(
+    to top,
+    color-mix(in oklab, var(--color-primary-bg) 92%, transparent) 72%,
+    color-mix(in oklab, var(--color-primary-bg) 0%, transparent)
+  );
+  pointer-events: none;
+}
+
+/* The bar is only the thumb's height and the drag's width. What is drawn is
+   the track inside it, a thinner pill, with the thumb standing a little proud
+   of it above and below, like a switch's knob. */
 .buy-bar {
   pointer-events: auto;
   position: relative;
   width: 100%;
   max-width: 480px;
-  height: 54px;
+  height: 56px; /* THUMB_SIZE */
+  color: var(--color-primary);
+}
+
+.buy-bar__track {
+  position: absolute;
+  /* Inset at the ends by as much as it is shorter than the thumb above and
+     below, so the thumb stands equally proud all round. TRACK_INSET. */
+  left: 1.5px;
+  right: 1.5px;
+  top: 50%;
+  height: 53px; /* keep in sync with TRACK_HEIGHT */
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
   border-radius: var(--radius-pill);
   background: var(--bg-surface);
   border: var(--border-width-base) solid var(--border-main);
-  color: var(--color-primary);
-  box-shadow: var(--elevation-primary);
-  overflow: hidden; /* fill and thumb stay inside the pill */
+  box-shadow: var(--elevation-soft);
+  overflow: hidden; /* the fill and the labels stay inside the pill */
 }
 
 /* Green trail the thumb leaves behind as it crosses the white track. A tint
@@ -872,14 +936,14 @@ const labelText = computed(() =>
    crosses; a transparent one let the letters show through inside the knob. */
 .buy-bar__thumb {
   position: absolute;
-  /* Flush against the track's inner edges: absolute positioning is relative
-     to the padding box (inside the 1.5px border), so 0/0 nests the circle
-     right into the pill's rounded end with no gap. */
+  /* At the bar's left end, covering the track's rounded end entirely: the
+     track is 53px and this is 56px, so it stands 1.5px proud above and below. */
   left: 0;
   top: 0;
   z-index: 2;
-  width: 51px; /* keep in sync with THUMB_SIZE */
-  height: 51px;
+  width: 56px; /* keep in sync with THUMB_SIZE */
+  height: 56px;
+  box-shadow: var(--elevation-primary);
   border: none;
   border-radius: 50%;
   background: var(--color-primary);
@@ -924,9 +988,10 @@ const labelText = computed(() =>
   transition: transform var(--transition-fast) ease;
 }
 
-/* Slight tactile swell while the finger is on it. */
+/* The icon gives under the finger while it is held, the way a pressed button
+   does. It used to swell instead, which read backwards. */
 .buy-bar--dragging .buy-bar__icon {
-  transform: scale(1.12);
+  transform: scale(0.88);
 }
 
 .buy-bar__cart,
@@ -1010,6 +1075,10 @@ const labelText = computed(() =>
 @media (min-width: 900px) {
   .buy-bar-wrap {
     bottom: calc(1rem + var(--safe-bottom));
+  }
+
+  .buy-bar-wrap::before {
+    bottom: calc(-1 * (1rem + var(--safe-bottom)));
   }
 }
 </style>
