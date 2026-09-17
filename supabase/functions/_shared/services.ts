@@ -29,6 +29,15 @@ export type ServiceRequest =
 export const SENTRY_ORG = 'famcart'
 export const SENTRY_PROJECT = 'javascript-vue'
 
+// THE EU REGION, NOT sentry.io. The famcart organisation's data lives in
+// Sentry's EU region (its DSN ingests at ingest.de.sentry.io, and an org token
+// says region_url https://de.sentry.io). An organisation token carries that
+// region and sentry.io routes it; a personal token does not, and sentry.io then
+// answers 404 for the organisation's projects and issues -- which is what the
+// admin Health page showed as "Sentry answered 404". The region host answers
+// both kinds, so it is what is asked.
+export const SENTRY_API = 'https://de.sentry.io/api/0'
+
 const SECRETS: Record<Service, string[]> = {
   // A token with event:read and project:read. The build's SENTRY_AUTH_TOKEN is
   // not it: that one is scoped to uploading source maps and gets 403 here.
@@ -66,25 +75,38 @@ export function missingSecrets(service: Service, read: (name: string) => string 
 }
 
 /** A vendor answered, and not with what was asked for. */
+/** What was asked, and what the vendor said about it, for the message. */
+export interface UpstreamContext {
+  /** The URL's path. The query is dropped: it is not needed and can carry more. */
+  path?: string
+  /** The vendor's own explanation, from the error body when it sends one. */
+  detail?: string
+}
+
 export class UpstreamError extends Error {
   constructor(
     readonly service: Service,
     readonly status: number,
+    context: UpstreamContext = {},
   ) {
-    super(upstreamMessage(service, status))
+    super(upstreamMessage(service, status, context))
   }
 }
 
 const SERVICE_NAMES: Record<Service, string> = { sentry: 'Sentry', onesignal: 'OneSignal', clerk: 'Clerk' }
 
-export function upstreamMessage(service: Service, status: number): string {
+export function upstreamMessage(service: Service, status: number, context: UpstreamContext = {}): string {
   const name = SERVICE_NAMES[service]
+  // "Sentry answered 404" was all a 404 ever said, and it did not say which of
+  // two requests had failed or why. The path and the vendor's words do.
+  const path = context.path?.split('?')[0]
+  const said = [path ? `for ${path}` : '', context.detail ? `: ${context.detail.slice(0, 200)}` : ''].join('')
   if (status === 401 || status === 403) {
     return `${name} refused the key this project holds (${status}). It is wrong, revoked, or missing a scope.`
   }
   if (status === 429) return `${name} is rate limiting this key (429). Try again in a minute.`
   if (status >= 500) return `${name} is failing on its side (${status}).`
-  return `${name} answered ${status}.`
+  return `${name} answered ${status}${said ? ` ${said}` : ''}.`
 }
 
 // ─── Sentry ──────────────────────────────────────────────────────────────────
@@ -109,7 +131,7 @@ export function sentryIssuesUrl(
     query: view === 'issues' ? 'is:unresolved issue.category:error' : 'issue.category:feedback',
   })
   for (const environment of environments) params.append('environment', environment)
-  return `https://sentry.io/api/0/organizations/${SENTRY_ORG}/issues/?${params}`
+  return `${SENTRY_API}/organizations/${SENTRY_ORG}/issues/?${params}`
 }
 
 // The `famcart` project. The same public ref src/lib/appChannel.ts compares
@@ -130,8 +152,32 @@ export function sentryEnvironments(supabaseUrl: string | undefined): string[] {
   return ref === PRODUCTION_PROJECT_REF ? ['production'] : ['nightly', 'development']
 }
 
+/** The environments the project has ever received an event in. */
+export function sentryEnvironmentsUrl(): string {
+  return `${SENTRY_API}/projects/${SENTRY_ORG}/${SENTRY_PROJECT}/environments/`
+}
+
+/**
+ * The wanted environments that Sentry actually knows.
+ *
+ * NOT A FILTER FOR TIDINESS. Sentry's issues endpoint answers 404, "The requested
+ * resource does not exist", when ANY environment it is asked for has never
+ * received an event -- and a new channel's environment has not: `nightly` was
+ * added on 2026-09-15, and famcart-dev's Sentry line on the admin Health page
+ * failed on it until this existed. An empty result means none of them has seen
+ * an event, whose true answer is no issues rather than an error.
+ */
+export function knownEnvironments(wanted: string[], known: unknown[]): string[] {
+  const names = new Set(
+    known
+      .map((row) => (row && typeof row === 'object' ? (row as Raw).name : null))
+      .filter((name): name is string => typeof name === 'string'),
+  )
+  return wanted.filter((name) => names.has(name))
+}
+
 export function sentryProjectUrl(): string {
-  return `https://sentry.io/api/0/projects/${SENTRY_ORG}/${SENTRY_PROJECT}/`
+  return `${SENTRY_API}/projects/${SENTRY_ORG}/${SENTRY_PROJECT}/`
 }
 
 type Raw = Record<string, unknown>

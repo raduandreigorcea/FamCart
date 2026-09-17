@@ -20,8 +20,9 @@ import { deviceTimeZone, resolveRegion } from '../lib/region'
 import type { ProductSuggestion } from '../lib/productSearch'
 import type { HouseholdMemberProfile, ShoppingItemRow } from '../lib/householdRealtime'
 import { useShoppingListActions, type AddedProduct } from '../lib/shoppingListActions'
+import { sumActiveQuantities, sumCheckedQuantities } from '../lib/shoppingList'
 import { useBarcodeScanning } from '../lib/useBarcodeScanning'
-import { upsertOwnProfile } from '../lib/profile'
+import { refreshOwnProfile } from '../lib/profile'
 import { cleanAuthCallbackUrl } from '../lib/authCallbackUrl'
 import {
   clearHouseholdSnapshot,
@@ -78,6 +79,10 @@ interface MembershipRow {
 }
 
 const items = ref<ShoppingItemRow[]>([])
+// For the phone's household bar. Units, not rows, the way the list has always
+// counted what is left and the buy bar counts the cart: "grapes x4" is four.
+const toBuyCount = computed(() => sumActiveQuantities(items.value))
+const inCartCount = computed(() => sumCheckedQuantities(items.value))
 
 // ─── which shop each listed product came from ────────────────────────────────
 // NIGHTLY ONLY, and a development aid rather than a feature: while the catalog
@@ -638,8 +643,9 @@ async function runInitializeHome() {
   identifyUser(userId.value)
   // Keep our profile row (name + Clerk avatar) current, so a changed photo shows
   // up across every household. Best-effort and non-blocking: boot must not wait on
-  // it, and the next load reconciles if it fails.
-  void upsertOwnProfile(db, userId.value, user.value)
+  // it, and the next load reconciles if it fails. Skipped when nothing changed
+  // since this device last wrote it, see refreshOwnProfile.
+  void refreshOwnProfile(db, userId.value, user.value, localStorage)
   // Re-bind this device to the account in OneSignal. Signing out detaches it and
   // nothing used to put it back, so a device could stay subscribed while
   // belonging to nobody and silently receive nothing. No-op unless notifications
@@ -884,6 +890,8 @@ async function reconcileActiveHousehold() {
       :household-name="householdName"
       :households="households"
       :loading="initialLoading"
+      :to-buy-count="toBuyCount"
+      :in-cart-count="inCartCount"
       :members-loading="switchingHousehold"
       :invite-code="householdInviteCode"
       :household-item-limit="householdItemLimit"
@@ -1018,16 +1026,15 @@ async function reconcileActiveHousehold() {
   background: var(--color-primary-bg);
 }
 
-/* On a phone there is no fixed chrome above this, so the content starts at the
-   status bar rather than 72px below it; the bottom is where the room is spent
+/* On a phone the household bar above this already clears the status bar, so
+   the content only needs a gap under it; the bottom is where the room is spent
    instead, clearing the action bar. The desktop block below puts the topbar's
    offset back. */
 .dashboard-main {
   flex: 1;
   display: flex;
   justify-content: center;
-  padding: 1rem 1rem 0;
-  padding-top: calc(1rem + var(--safe-top));
+  padding: var(--space-4) 1rem 0;
   padding-bottom: calc(
     var(--nav-height) + var(--nav-disc-overhang) + var(--safe-bottom) + 0.75rem
   );

@@ -172,7 +172,8 @@ describe('the filtered list', () => {
   it('names whichever list is on screen', () => {
     const toBuy = mountList({ filter: 'all' })
     expect(toBuy.find('.list-meta__label').text()).toBe('To buy')
-    expect(toBuy.find('.list-meta__count').text()).toBe('2 left')
+    // What is left is counted in the household bar, not here.
+    expect(toBuy.find('.list-meta__count').exists()).toBe(false)
 
     const cart = mountList({ filter: 'checked' })
     expect(cart.find('.list-meta__label').text()).toBe('Checked')
@@ -191,7 +192,7 @@ describe('the filtered list', () => {
   it('keeps naming the filter you chose, even when it matches nothing', () => {
     const noneToBuy = mountList({ items: [item('a', true)], filter: 'active' })
     expect(noneToBuy.find('.list-meta__label').text()).toBe('To buy')
-    expect(noneToBuy.find('.list-meta__count').text()).toBe('0 left')
+    expect(noneToBuy.find('.list-meta__count').exists()).toBe(false)
   })
 
   // The header carries the filter button, so hiding it while the cart is on

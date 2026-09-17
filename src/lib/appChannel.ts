@@ -20,11 +20,6 @@ export type AppChannel = 'production' | 'nightly'
 // compared against is exactly the thing that might be wrong.
 export const PRODUCTION_PROJECT_REF = 'qwpyiperbjaeykrvilhf'
 
-// Indigo, as far from the brand green as the palette gets while still looking
-// deliberate. Used for the nightly status bar and PWA chrome; the in-page
-// tokens live in style.css under :root[data-channel='nightly'].
-export const NIGHTLY_THEME_COLOR = '#5b5bd6'
-
 /** The project ref out of a Supabase URL, or '' if it is not one. */
 export function projectRefFromUrl(url: string | undefined): string {
   if (!url) return ''
@@ -83,22 +78,16 @@ export function sentryEnvironment(mode: string, channel: AppChannel): string {
 }
 
 /**
- * Stamp the channel on the root element and, on nightly, repaint the browser
- * chrome to match.
+ * Stamp the channel on the root element.
  *
- * Called from main.ts before mount, alongside the theme, and for the same
- * reason: `[data-channel]` in style.css re-points the brand tokens, so doing
- * this later would show a green frame before the indigo one.
- *
- * The theme-color meta is rewritten rather than duplicated per channel,
- * because index.html is one file serving both builds. It drives the Android
- * status bar and the installed PWA's title bar, which is the difference
- * between a badge inside the app and a phone that looks different from the
- * lock screen on.
+ * Nightly used to repaint the brand tokens and the browser chrome indigo from
+ * here. It was dropped on 2026-09-16: a nightly build that looks different from
+ * production made every design judgement on nightly a judgement about a screen
+ * production never draws. The NIGHTLY badge in the household bar and the
+ * `-nightly` version are how a nightly build announces itself now. The
+ * attribute stays, for devtools and for anything that has to tell the two apart
+ * from CSS.
  */
 export function applyChannel(): void {
   document.documentElement.setAttribute('data-channel', APP_CHANNEL)
-  if (!IS_NIGHTLY) return
-  const meta = document.querySelector('meta[name="theme-color"]')
-  if (meta) meta.setAttribute('content', NIGHTLY_THEME_COLOR)
 }

@@ -6,6 +6,7 @@
 
 import { clearActiveHouseholdId, clearHouseholdSnapshot } from './householdCache'
 import { clearOfflineQueue } from './offlineQueue'
+import { clearProfileWritten } from './profile'
 
 const KEY = 'famcart-last-user'
 
@@ -72,4 +73,5 @@ export function forgetLocalUserState(storage: Storage, userId?: string): void {
   clearHouseholdSnapshot(storage, userId)
   clearActiveHouseholdId(storage, userId)
   clearOfflineQueue(storage, userId)
+  clearProfileWritten(storage, userId)
 }

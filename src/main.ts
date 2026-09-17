@@ -50,10 +50,8 @@ window.addEventListener('vite:preloadError', (event) => {
 // that lets the user change them.
 applyResolvedTheme(loadThemeMode(localStorage))
 
-// And which build this is, in the same breath and for the same reason: the
-// channel re-points the brand tokens the theme has just resolved, so applying
-// it later would paint one frame in production green before going indigo.
-// A no-op on production beyond the attribute itself.
+// And which build this is, as an attribute on the root. Nothing is repainted
+// by it any more; see applyChannel.
 applyChannel()
 
 // Same slot, same reason, one difference. The language has to be settled

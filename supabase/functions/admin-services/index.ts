@@ -39,6 +39,8 @@ import {
   readClerkCount,
   sentryEnvironments,
   sentryIssuesUrl,
+  sentryEnvironmentsUrl,
+  knownEnvironments,
   sentryProjectUrl,
   shapeClerkUser,
   shapeNotification,
@@ -59,7 +61,13 @@ async function getJson(service: Service, url: string, authorization: string): Pr
     headers: { authorization, accept: 'application/json' },
     signal: AbortSignal.timeout(10_000),
   })
-  if (!res.ok) throw new UpstreamError(service, res.status)
+  if (!res.ok) {
+    // Sentry, Clerk and OneSignal all put a sentence in the error body, under
+    // one of these names. It is the most useful thing a failure can say.
+    const body = (await res.json().catch(() => null)) as Record<string, unknown> | null
+    const detail = [body?.detail, body?.message, body?.errors].find((v) => typeof v === 'string') as string | undefined
+    throw new UpstreamError(service, res.status, { path: new URL(url).pathname, detail })
+  }
   return await res.json()
 }
 
@@ -73,7 +81,12 @@ async function sentry(view: 'issues' | 'feedback') {
     const project = (await getJson('sentry', sentryProjectUrl(), auth)) as { id: string }
     sentryProjectId = String(project.id)
   }
-  const url = sentryIssuesUrl(sentryProjectId, view, sentryEnvironments(env('SUPABASE_URL')))
+  // Only the environments Sentry has seen: asking for one it has not is a 404
+  // (see knownEnvironments), and none seen means no issues to list.
+  const seen = (await getJson('sentry', sentryEnvironmentsUrl(), auth)) as unknown[]
+  const environments = knownEnvironments(sentryEnvironments(env('SUPABASE_URL')), Array.isArray(seen) ? seen : [])
+  if (!environments.length) return []
+  const url = sentryIssuesUrl(sentryProjectId, view, environments)
   const rows = (await getJson('sentry', url, auth)) as Record<string, unknown>[]
   return view === 'issues' ? rows.map(shapeSentryIssue) : rows.map(shapeSentryFeedback)
 }

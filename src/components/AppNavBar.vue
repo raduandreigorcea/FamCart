@@ -4,6 +4,7 @@ import { useClerk, useUser } from '@clerk/vue'
 import AccountActionModal from './AccountActionModal.vue'
 import AppIcon from './AppIcon.vue'
 import BackButton from './BackButton.vue'
+import HouseholdBar from './HouseholdBar.vue'
 import HouseholdSwitcherMenu from './HouseholdSwitcherMenu.vue'
 import MemberAvatarStack from './MemberAvatarStack.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
@@ -74,6 +75,9 @@ const props = defineProps({
     default: () => [],
   },
   loading: { type: Boolean, default: false },
+  // The list's two counts, in units, for the phone's household bar.
+  toBuyCount: { type: Number, default: 0 },
+  inCartCount: { type: Number, default: 0 },
   // True mid household-switch: the name is already known, but the roster isn't yet,
   // so the avatar stack under it shows a skeleton rather than a stale set of
   // faces from the household being switched away from.
@@ -268,17 +272,20 @@ const orderedActiveMembers = computed(() =>
        Two of the five marks are the user's own things rather than icons — the
        household's emoji and their avatar — which is also what makes the first
        slot answer "which household" for somebody in more than one. -->
-  <!-- The nightly stamp, at the top of the viewport rather than inside the bar.
-       It lost its old home when the topbar became desktop-only, and a build
-       channel has to be obvious in a screenshot with no chrome in it so that
-       nobody debugs the wrong database for an hour. It costs the layout
-       nothing: it hangs over the list rather than pushing it down, so a nightly
-       build and a production one are the same screen with a stamp on it.
-
-       Untranslated on purpose, like the manifest: it names a build channel, not
-       anything the app does. -->
-  <!-- eslint-disable-next-line vue/no-bare-strings-in-template -- build channel, the same word in every language -->
-  <p v-if="layout === 'bar' && IS_NIGHTLY" class="channel-ribbon">NIGHTLY</p>
+  <!-- The household, on a phone. It also carries the nightly stamp, which used
+       to float over the list on its own. -->
+  <HouseholdBar
+    v-if="layout === 'bar'"
+    :emoji="activeHouseholdEmoji"
+    :name="householdName"
+    :members="orderedActiveMembers"
+    :members-loading="membersLoading"
+    :loading="loading"
+    :to-buy="toBuyCount"
+    :in-cart="inCartCount"
+    @prefetch="prefetch(loadHouseholdSettingsModal)"
+    @open="openHouseholdSettings"
+  />
 
   <nav v-if="layout === 'bar'" class="navbar" :aria-label="t('nav.label')">
     <!-- Every slot here carries an aria-label, for the same reason the centre
@@ -314,7 +321,7 @@ const orderedActiveMembers = computed(() =>
       @click="openHistory"
     >
       <span class="nav-slot__mark">
-        <AppIcon name="history" />
+        <AppIcon name="history-bold" />
       </span>
       <span class="nav-slot__label">{{ t('nav.history') }}</span>
     </button>
@@ -356,7 +363,7 @@ const orderedActiveMembers = computed(() =>
       @click="openSwitcher"
     >
       <span class="nav-slot__mark">
-        <AppIcon name="menu" />
+        <AppIcon name="menu-bold" />
       </span>
       <span class="nav-slot__label">{{ t('nav.switch') }}</span>
     </button>
@@ -552,45 +559,6 @@ const orderedActiveMembers = computed(() =>
 </template>
 
 <style scoped>
-/* The build stamp, at the top of the viewport. Fixed rather than in the flow so
-   it cannot be scrolled away — it answers "which database am I looking at",
-   which is a question you can have at any moment, not only at the top of the
-   list.
-
-   Nothing below it is moved out of its way. The list used to reserve the
-   stamp's height (a --channel-ribbon token in the top padding), which meant
-   nightly and production were laid out differently — so the channel a build was
-   pointed at changed where its content sat, and every judgement about spacing on
-   nightly was being made about a screen production never draws.
-
-   pointer-events: none because it is a label, not a control, and it sits over
-   the one row of the list that has controls in it. */
-.channel-ribbon {
-  position: fixed;
-  top: calc(var(--safe-top) + 0.35rem);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 30;
-  margin: 0;
-  padding: 0.1rem 0.45rem;
-  border: 1px solid color-mix(in srgb, var(--color-primary) 45%, transparent);
-  border-radius: var(--radius-xs);
-  background: var(--color-primary-bg);
-  color: var(--color-primary-text);
-  font-size: 0.5625rem;
-  font-weight: var(--weight-extrabold);
-  letter-spacing: 0.06em;
-  line-height: 1.5;
-  pointer-events: none;
-}
-
-@media (min-width: 900px) {
-  /* The header is back and carries its own badge, next to the household name. */
-  .channel-ribbon {
-    display: none;
-  }
-}
-
 /* The header's switcher: the desktop column's door to the same menu the bar's
    fourth slot opens. Matched to the history icon beside it, which is painted as
    a CSS mask and so can only ever render the hairline the asset ships with --
@@ -632,9 +600,14 @@ const orderedActiveMembers = computed(() =>
      runs up behind the status bar. */
   padding-bottom: var(--safe-bottom);
   background: var(--bg-surface);
-  /* Below the checkout slider (50), which has to stay reachable while the bar
-     is on screen, and above the list. */
-  border-top: var(--border-width-thin) solid var(--border-main);
+  /* Above the list and just above the checkout slider's layer (39), whose
+     fade runs underneath this bar. The slider itself sits clear of the bar, so
+     it stays reachable. */
+  /* A sheet resting on the bottom edge: rounded where it meets the list, and
+     lifted off it by a shadow rather than a hairline, which would stop dead at
+     the start of each curve. */
+  border-radius: var(--radius-3xl) var(--radius-3xl) 0 0;
+  box-shadow: 0 -4px 16px var(--shadow-ink-06);
   /* Load-bearing, and the default, which is exactly why it is written down: the
      centre disc is taller than the bar and hangs over its top edge. Clipping
      here would cut the primary action in half. */
@@ -684,23 +657,15 @@ const orderedActiveMembers = computed(() =>
   display: flex;
 }
 
-/* Exactly the weight the topbar's history button had, which is the icon this
-   slot replaces: 20px at the source's own stroke-width 1, knocked back to 86%.
-   That works out to 0.83px of actual stroke — the faintest icon in the app, and
-   deliberately so. The topbar reached it by a different route, painting the
-   asset as a CSS mask, which cannot override stroke-width and so could only
-   ever render the hairline the file ships with.
-
-   Worth writing down because the number reads alarming next to every other
-   :deep(svg) rule in this codebase, which sit at 2 to 2.4. Actual thickness is
-   stroke-width x rendered / 24 — every asset shares a 24-unit viewBox — so
-   those are 1.25px to 2px, and none of them is a comparison for this. 20px also
-   happens to match the household emoji beside it, which renders at 20px. */
+/* The bold assets (history-bold, menu-bold) carry their own stroke-width of
+   2, which is 1.67px at this size. There is deliberately no stroke-width here:
+   the bar used to force the hairline weight of the old desktop history icon,
+   and next to a filled disc, an emoji and a photo that read as the faintest
+   thing on screen. Change the weight by changing the file. */
 .nav-slot__mark :deep(svg) {
   display: block;
   width: 20px;
   height: 20px;
-  stroke-width: 1;
   opacity: 0.86;
 }
 
@@ -713,7 +678,7 @@ const orderedActiveMembers = computed(() =>
 }
 
 .nav-slot__mark--emoji {
-  font-size: 1.25rem;
+  font-size: var(--text-xl);
   line-height: 1;
 }
 
@@ -773,7 +738,7 @@ const orderedActiveMembers = computed(() =>
 }
 
 /* The one mark in the bar that should be noticed, so it stays the heaviest:
-   2.7px against the small slots' 1.5. add.svg ships at 3, which on a filled
+   2.7px against the small slots' 1.67. add.svg ships at 3, which on a filled
    disc this size reads as a slab rather than a plus. */
 .nav-add__disc :deep(svg) {
   display: block;
@@ -987,9 +952,7 @@ const orderedActiveMembers = computed(() =>
 }
 
 /* A stamp, not a control: no press state and no tap target, because there is
-   nothing to do with it. It is drawn from the brand tokens, which the nightly
-   channel has already re-pointed to indigo, so it matches the bar it marks
-   rather than fighting it. */
+   nothing to do with it. Drawn from the brand tokens, like the rest of the bar. */
 .channel-badge {
   flex-shrink: 0;
   padding: 0.15rem 0.4rem;
@@ -997,7 +960,7 @@ const orderedActiveMembers = computed(() =>
   border-radius: var(--radius-xs);
   background: var(--color-primary-bg);
   color: var(--color-primary-text);
-  font-size: 0.625rem;
+  font-size: var(--text-2xs);
   font-weight: var(--weight-extrabold);
   letter-spacing: 0.08em;
   line-height: 1.5;
@@ -1103,7 +1066,7 @@ const orderedActiveMembers = computed(() =>
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.15rem;
+  font-size: var(--text-lg);
   line-height: 1;
   background: var(--bg-hover);
   border: var(--border-width-thin) solid var(--border-light);

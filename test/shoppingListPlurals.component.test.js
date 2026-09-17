@@ -31,7 +31,8 @@ const rows = (n) =>
 // One checked row holding n units, so rows and units disagree.
 const units = (n) => [{ id: 'u', name: 'Grapes', checked: true, quantity: n }]
 
-// Unchecked units, which is what the "left" count sums.
+// Unchecked units. What is left is counted in the household bar now
+// (test/householdBar.component.test.js); here they only set the label.
 const toBuy = (n) => [{ id: 'a', name: 'Milk', checked: false, quantity: n }]
 
 const wrappers = []
@@ -68,8 +69,6 @@ describe('rows versus units', () => {
 
 describe('English counts', () => {
   it('distinguishes one from many', () => {
-    expect(metaCount(list(toBuy(1)))).toBe('1 left')
-    expect(metaCount(list(toBuy(6)))).toBe('6 left')
     expect(metaCount(list(rows(1)))).toBe('1 item')
     expect(metaCount(list(rows(4)))).toBe('4 items')
   })
@@ -103,10 +102,6 @@ describe('Romanian counts', () => {
     expect(thumbLabel(list(rows(20)))).toBe('Finalizează 20 de produse')
   })
 
-  it('agrees the left-count adjective with the number', () => {
-    expect(metaCount(list(toBuy(1)))).toBe('1 rămas')
-    expect(metaCount(list(toBuy(3)))).toBe('3 rămase')
-  })
 })
 
 describe('the meta label', () => {

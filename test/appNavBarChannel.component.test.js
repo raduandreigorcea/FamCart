@@ -71,31 +71,25 @@ describe('AppNavBar channel badge', () => {
     expect(badge.text()).toBe('NIGHTLY')
   })
 
-  // The header is desktop-only on the list screen, so on a phone the stamp has
-  // nowhere in the chrome to sit. It had the bar's spare slot for a while; the
-  // switcher took that, and it is a ribbon at the top of the viewport now — the
-  // one place that is on screen whatever you are doing. It floats over the list
-  // rather than displacing it, so nightly and production lay out identically.
+  // The header is desktop-only on the list screen, so on a phone the stamp
+  // lives in the household bar at the top of the list. It used to float over the
+  // list as a ribbon of its own; the bar made that a second place for one word.
   describe('on a phone', () => {
-    it('draws no ribbon on a production build', () => {
+    it('stamps nothing on a production build', () => {
+      expect(mountBar().find('.household-bar .channel-badge').exists()).toBe(false)
+    })
+
+    it('stamps the household bar on a nightly build', () => {
+      channel.nightly = true
+      const badge = mountBar().find('.household-bar .channel-badge')
+
+      expect(badge.exists()).toBe(true)
+      expect(badge.text()).toBe('NIGHTLY')
+    })
+
+    it('no longer floats a ribbon over the list', () => {
+      channel.nightly = true
       expect(mountBar().find('.channel-ribbon').exists()).toBe(false)
-    })
-
-    it('draws the ribbon on a nightly build', () => {
-      channel.nightly = true
-      const ribbon = mountBar().find('.channel-ribbon')
-
-      expect(ribbon.exists()).toBe(true)
-      expect(ribbon.text()).toBe('NIGHTLY')
-    })
-
-    // The header carries its own badge at the desktop column, so a ribbon there
-    // as well would be the same word twice on one screen.
-    it('leaves the ribbon to the bar shell alone', () => {
-      channel.nightly = true
-
-      expect(mountHeader().find('.channel-ribbon').exists()).toBe(false)
-      expect(mountHeader().find('.channel-badge').exists()).toBe(true)
     })
   })
 })
