@@ -29,6 +29,15 @@ export type ServiceRequest =
 export const SENTRY_ORG = 'famcart'
 export const SENTRY_PROJECT = 'javascript-vue'
 
+// THE EU REGION, NOT sentry.io. The famcart organisation's data lives in
+// Sentry's EU region (its DSN ingests at ingest.de.sentry.io, and an org token
+// says region_url https://de.sentry.io). An organisation token carries that
+// region and sentry.io routes it; a personal token does not, and sentry.io then
+// answers 404 for the organisation's projects and issues -- which is what the
+// admin Health page showed as "Sentry answered 404". The region host answers
+// both kinds, so it is what is asked.
+export const SENTRY_API = 'https://de.sentry.io/api/0'
+
 const SECRETS: Record<Service, string[]> = {
   // A token with event:read and project:read. The build's SENTRY_AUTH_TOKEN is
   // not it: that one is scoped to uploading source maps and gets 403 here.
@@ -109,7 +118,7 @@ export function sentryIssuesUrl(
     query: view === 'issues' ? 'is:unresolved issue.category:error' : 'issue.category:feedback',
   })
   for (const environment of environments) params.append('environment', environment)
-  return `https://sentry.io/api/0/organizations/${SENTRY_ORG}/issues/?${params}`
+  return `${SENTRY_API}/organizations/${SENTRY_ORG}/issues/?${params}`
 }
 
 // The `famcart` project. The same public ref src/lib/appChannel.ts compares
@@ -131,7 +140,7 @@ export function sentryEnvironments(supabaseUrl: string | undefined): string[] {
 }
 
 export function sentryProjectUrl(): string {
-  return `https://sentry.io/api/0/projects/${SENTRY_ORG}/${SENTRY_PROJECT}/`
+  return `${SENTRY_API}/projects/${SENTRY_ORG}/${SENTRY_PROJECT}/`
 }
 
 type Raw = Record<string, unknown>

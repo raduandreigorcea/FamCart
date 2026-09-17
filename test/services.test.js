@@ -14,6 +14,7 @@ import {
   readClerkCount,
   sentryEnvironments,
   sentryIssuesUrl,
+  sentryProjectUrl,
   shapeClerkUser,
   shapeNotification,
   shapeSentryFeedback,
@@ -83,6 +84,14 @@ describe('Sentry', () => {
     // hide exactly the reports nobody has seen.
     const feedback = new URL(sentryIssuesUrl('42', 'feedback', ['production']))
     expect(feedback.searchParams.get('query')).toBe('issue.category:feedback')
+  })
+
+  // The famcart organisation lives in Sentry's EU region. A personal token
+  // carries no region, and sentry.io answers 404 for an EU organisation's
+  // projects and issues -- which is what the Health page showed.
+  it('asks the EU region, where the organisation lives', () => {
+    expect(new URL(sentryProjectUrl()).origin).toBe('https://de.sentry.io')
+    expect(new URL(sentryIssuesUrl('42', 'issues', ['production'])).origin).toBe('https://de.sentry.io')
   })
 
   it('asks only for the environments of the project it runs on', () => {
