@@ -735,11 +735,14 @@ function sanitizeAuthCallbackUrl() {
 }
 
 async function loadHouseholdHeader() {
+  // Which household this answer will be ABOUT, read before the round trip and
+  // checked against the live one after it. See the note on the guard below.
+  const forHousehold = householdId.value
   const [{ data: household, error: householdErr }, { data: members, error: membersErr }] = await Promise.all([
-    db.from('households').select('name, invite_code, created_by, max_items_per_member, emoji').eq('id', householdId.value).single(),
+    db.from('households').select('name, invite_code, created_by, max_items_per_member, emoji').eq('id', forHousehold).single(),
     // Name/avatar live in profiles now; embed them so the roster keeps the same
     // { user_id, display_name, image_url, role } shape every consumer expects.
-    db.from('household_members').select('user_id, role, profiles(display_name, image_url)').eq('household_id', householdId.value),
+    db.from('household_members').select('user_id, role, profiles(display_name, image_url)').eq('household_id', forHousehold),
   ])
 
   // Neither failure reaches the screen, and that is deliberate: this runs from
@@ -752,6 +755,19 @@ async function loadHouseholdHeader() {
   for (const err of [householdErr, membersErr]) {
     if (err && !isOfflineError(err)) captureException(err)
   }
+
+  // The household moved on while this was in flight, so this answer describes
+  // one the user has left. Reported above regardless — the request was made and
+  // a failure in it is still news — but not applied: the name, invite code,
+  // owner, item cap and roster below would all be the previous household's,
+  // painted over the current household's list.
+  //
+  // Not a contrived double-tap. This function runs from the reconnect handler,
+  // from each realtime subscribe acknowledgement and from the watchdog every 30
+  // seconds while the socket is down, so a read already in flight for the
+  // household being left is the ordinary case. Whichever answer lands last used
+  // to win, which is completion order rather than call order.
+  if (householdId.value !== forHousehold) return
 
   if (!householdErr && household) {
     householdName.value = household.name

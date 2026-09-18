@@ -236,17 +236,21 @@ export function useShoppingListActions(options: {
     // server's version without the user's own pending change.
     await ensureQueueFlushed()
 
+    // Which household these rows will be ABOUT, read before the round trip and
+    // checked against the live one after it. See the guard below.
+    const forHousehold = householdId.value
+
     const [uncheckedRes, checkedRes] = await Promise.all([
       db
         .from('shopping_list_items')
         .select('*')
-        .eq('household_id', householdId.value)
+        .eq('household_id', forHousehold)
         .eq('checked', false)
         .order('created_at', { ascending: true }),
       db
         .from('shopping_list_items')
         .select('*')
-        .eq('household_id', householdId.value)
+        .eq('household_id', forHousehold)
         .eq('checked', true)
         // Most recently checked first, so the 30-row cap keeps the latest ticks.
         // This is a "which rows survive the cap" order, not a display order:
@@ -254,6 +258,21 @@ export function useShoppingListActions(options: {
         .order('checked_at', { ascending: false, nullsFirst: false })
         .limit(30),
     ])
+
+    // The household moved on while these were in flight, so they are somebody
+    // else's rows now — the previous household's, about to be painted under the
+    // current household's name.
+    //
+    // Returned before the error check as well as before the assignment, and
+    // deliberately: a failed read of a household the user has left must not
+    // raise "couldn't load the list" over a list that loaded perfectly well.
+    //
+    // The switch path re-reads householdId after its own awaits, so it is not
+    // what reaches this. A load already on the wire is: the reconnect handler,
+    // each realtime subscribe acknowledgement, and the watchdog every 30
+    // seconds while the socket is down all refetch the household that was
+    // current when they started.
+    if (householdId.value !== forHousehold) return
 
     // Offline: keep the cached list on screen and let the 'online' handler refetch.
     // Genuine server errors get a plain message, never a raw "Failed to fetch".
