@@ -830,6 +830,12 @@ async function switchHousehold(id: string) {
   if (!id || id === householdId.value) return
   if (!households.value.some((f) => f.id === id)) return
   switchingHousehold.value = true
+  // Send the old household's debounced quantity taps before its rows are
+  // cleared below. The flush looks each row up in the list, so run after the
+  // clear (as loadItems used to) it found none and dropped the taps. It picks
+  // its rows up synchronously, so it is not awaited: the switch does not wait
+  // on a round trip.
+  void flushQuantityWrites()
   householdId.value = id
   saveActiveHouseholdId(localStorage, effectiveUserId.value, id)
   cleanupRealtimeSubscriptions()

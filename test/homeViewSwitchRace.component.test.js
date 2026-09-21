@@ -201,3 +201,24 @@ describe('switching household while a load for the previous one is still in flig
     expect(shoppingList.props('items').map((i) => i.name)).toEqual(['Three milk'])
   })
 })
+
+// A stepper tap waits out a short window before it is sent. Switching inside
+// that window cleared the list before the send looked the row up, so the tap
+// found no row and was dropped: the number went back up on the next visit.
+describe('switching household with a quantity tap still waiting to be sent', () => {
+  it('sends the tap for the household being left', async () => {
+    const wrapper = await bootHome()
+    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
+    const shoppingList = wrapper.findComponent({ name: 'ShoppingList' })
+    const row = shoppingList.props('items')[0]
+
+    shoppingList.vm.$emit('set-quantity', { item: row, quantity: 4 })
+    await flushPromises()
+    wrapper.findComponent(AppNavBar).vm.$emit('switch-household', 'fam-2')
+    await flushPromises()
+
+    const update = mocks.db.calls.find((q) => q.op === 'update')
+    expect(update?.filters.id).toBe('item-fam-1')
+    expect(update?.payload).toEqual({ quantity: 4 })
+  })
+})
