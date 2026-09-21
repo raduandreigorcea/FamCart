@@ -53,6 +53,12 @@ export function useHouseholdRealtime({
   hasPendingWrite,
 }: UseHouseholdRealtimeOptions) {
   const realtimeHealthy = ref(false)
+  // Healthy means ALL three channels are up, not any one of them. It used to be
+  // set by whichever acknowledgement came last, so a dead list channel beside a
+  // live members channel read as healthy, and the watchdog below, which only
+  // acts on an unhealthy socket, never came to fetch what it was missing.
+  const CHANNEL_COUNT = 3
+  const subscribedChannels = new Set<string>()
   const reconnectInProgress = ref(false)
   const channelsRefreshing = ref(false)
   const realtimeChannels: RealtimeChannel[] = []
@@ -246,7 +252,8 @@ export function useHouseholdRealtime({
 
   function handleChannelStatus(channelName: string, status: string) {
     if (status === 'SUBSCRIBED') {
-      realtimeHealthy.value = true
+      subscribedChannels.add(channelName)
+      realtimeHealthy.value = subscribedChannels.size === CHANNEL_COUNT
       // A channel that has just (re)subscribed may have missed changes while it
       // was down, so each one asks for whatever it is responsible for — and only
       // that. Three acknowledgements arriving together therefore become one
@@ -263,12 +270,14 @@ export function useHouseholdRealtime({
     if (channelsRefreshing.value) return
 
     if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+      subscribedChannels.delete(channelName)
       realtimeHealthy.value = false
       scheduleRealtimeReconnect(`${channelName}:${status}`, 0)
     }
   }
 
   function cleanupRealtimeSubscriptions() {
+    subscribedChannels.clear()
     realtimeHealthy.value = false
     while (realtimeChannels.length) {
       const channel = realtimeChannels.pop()

@@ -249,4 +249,20 @@ describe('channel health', () => {
 
     wrapper.unmount()
   })
+
+  // One live channel is not a live socket. The list channel dying while the
+  // members channel stayed up used to read as healthy, so the watchdog never
+  // stepped in and the list stopped hearing other people's changes.
+  it('stays unhealthy while any one channel is down', async () => {
+    const { listChannel, membersChannel, api, wrapper } = await mountRealtime()
+
+    listChannel.statusCallback('CHANNEL_ERROR')
+    membersChannel.statusCallback('SUBSCRIBED')
+    expect(api.realtimeHealthy.value).toBe(false)
+
+    listChannel.statusCallback('SUBSCRIBED')
+    expect(api.realtimeHealthy.value).toBe(true)
+
+    wrapper.unmount()
+  })
 })
