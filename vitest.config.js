@@ -33,5 +33,9 @@ export default defineConfig({
     },
     environment: 'node',
     include: ['test/**/*.{test,spec}.{js,ts}'],
+    // A component test that mounts a whole list takes about 2s alone and went
+    // past the 5s default under a full parallel run, failing at random. Room for
+    // load, not for a test that is actually stuck.
+    testTimeout: 15_000,
   },
 })
