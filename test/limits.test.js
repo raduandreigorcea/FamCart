@@ -22,8 +22,10 @@ import {
   ITEM_LIMIT_MAX,
   ITEM_LIMIT_MIN,
   ITEM_NAME_MAX_LENGTH,
+  ITEM_QUANTITY_DB_MAX,
   ITEM_QUANTITY_MAX,
   PRODUCT_MAKER_MAX_LENGTH,
+  sumQuantities,
 } from '../src/lib/limits'
 
 describe('the caps themselves', () => {
@@ -45,7 +47,31 @@ describe('the caps themselves', () => {
   // to delete this line and read why.
   it('keeps the stepper ceiling stricter than the database bound', () => {
     expect(ITEM_QUANTITY_MAX).toBe(99)
-    expect(ITEM_QUANTITY_MAX).toBeLessThan(999)
+    expect(ITEM_QUANTITY_DB_MAX).toBe(999) // 004_shopping_list.sql
+    expect(ITEM_QUANTITY_MAX).toBeLessThan(ITEM_QUANTITY_DB_MAX)
+  })
+})
+
+// The three summing paths (adding a product already listed, folding a lost
+// insert race, merging an unchecked row into its twin) are none of them reachable
+// from the stepper, so none of them was bounded by anything until this existed.
+// Past 999 the UPDATE failed the check constraint, which the user read as
+// "couldn't update item" with the number rolling back under their thumb.
+describe('sumQuantities', () => {
+  it('adds normally while the total fits', () => {
+    expect(sumQuantities(1, 1)).toBe(2)
+    expect(sumQuantities(500, 499)).toBe(ITEM_QUANTITY_DB_MAX)
+  })
+
+  // Deliberately NOT the stepper's 99: a merge legitimately sums past it, which
+  // is the reason the two constants differ at all.
+  it('does not hold a sum down to the stepper ceiling', () => {
+    expect(sumQuantities(60, 60)).toBe(120)
+  })
+
+  it('holds anything over the database bound at it', () => {
+    expect(sumQuantities(998, 5)).toBe(ITEM_QUANTITY_DB_MAX)
+    expect(sumQuantities(ITEM_QUANTITY_DB_MAX, ITEM_QUANTITY_DB_MAX)).toBe(ITEM_QUANTITY_DB_MAX)
   })
 })
 

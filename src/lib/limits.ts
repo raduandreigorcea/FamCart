@@ -46,6 +46,37 @@ export const HOUSEHOLD_MEMBERSHIP_CAP = 3
 export const ITEM_QUANTITY_MAX = 99
 
 /**
+ * The hard ceiling the database puts on one row's quantity. Mirrors
+ * shopping_list_items_quantity_check in 004_shopping_list.sql.
+ *
+ * ITEM_QUANTITY_MAX above is the stepper's cap and the paragraph there says why
+ * the two differ; this is the number a SUM has to respect. Three paths add
+ * quantities together rather than setting one — adding a product already on the
+ * list, folding a lost insert race into the winning row, and merging an
+ * unchecked row into its twin — and none of them is reachable from the stepper,
+ * so none of them is bounded by it.
+ */
+export const ITEM_QUANTITY_DB_MAX = 999
+
+/**
+ * Two quantities folded into one row, held at the bound the database enforces.
+ *
+ * Capping silently is the least bad of the three available outcomes. Sending the
+ * sum unclamped fails the check constraint, which reaches the user as "couldn't
+ * update item" with the number rolling back under their thumb and reaches Sentry
+ * as a fault, for a row doing nothing wrong. Refusing the fold is worse still on
+ * the merge path: a unique index forbids two active rows for one product, so
+ * there is no state to refuse INTO.
+ *
+ * What it costs is the units past 999 on a merge, which is real and is the
+ * reason this is a named function rather than an inline Math.min. Reaching it at
+ * all means two rows that each took hundreds of taps to build.
+ */
+export function sumQuantities(a: number, b: number): number {
+  return Math.min(ITEM_QUANTITY_DB_MAX, a + b)
+}
+
+/**
  * Bounds on a household's per-member active-item cap — the owner-configurable
  * setting itself, not the count it limits. Mirrors 003_households_and_members.sql.
  */

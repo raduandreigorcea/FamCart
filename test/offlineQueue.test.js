@@ -9,6 +9,7 @@ import {
   hasQueuedOfflineMutations,
   clearOfflineQueue,
   flushOfflineQueue,
+  isItemLimitError,
   isRateLimitedError,
 } from '../src/lib/offlineQueue'
 import { createFakeDb } from './support/fakeSupabase.js'
@@ -321,6 +322,21 @@ describe('rate-limited writes', () => {
     expect(isRateLimitedError({ message: 'item_insert_rate_limit_exceeded' })).toBe(true)
     expect(isRateLimitedError({ code: '42501', message: 'permission denied' })).toBe(false)
     expect(isRateLimitedError(null)).toBe(false)
+  })
+
+  // The per-member cap is the other rejection that is a rule rather than a
+  // fault, and it answered with a hand-written sniff in two places. Misreading
+  // it shows a generic error where the friendly popup belongs and files the
+  // trigger in Sentry.
+  it('recognises the active-item cap in either field, and only it', () => {
+    expect(isItemLimitError({ message: 'member_active_item_limit_exceeded' })).toBe(true)
+    // The field neither hand-written copy looked at.
+    expect(isItemLimitError({ code: 'P0001', details: 'member_active_item_limit_exceeded' })).toBe(true)
+    // The trigger's older wording, carried over from both of them.
+    expect(isItemLimitError({ message: 'You have reached the limit of 50 items.' })).toBe(true)
+    expect(isItemLimitError({ code: '23505', message: 'duplicate key value' })).toBe(false)
+    expect(isItemLimitError({ message: 'item_insert_rate_limit_exceeded' })).toBe(false)
+    expect(isItemLimitError(null)).toBe(false)
   })
 
   it('keeps a throttled insert for the next attempt instead of dropping it', async () => {

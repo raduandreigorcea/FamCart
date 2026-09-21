@@ -9,6 +9,7 @@ import {
   enqueueOfflineMutation,
   flushOfflineQueue,
   hasQueuedOfflineMutations,
+  isItemLimitError,
   isOfflineError,
   isRateLimitedError,
   loadOfflineQueue,
@@ -17,7 +18,7 @@ import {
 import { userMessage } from './errorMessages'
 import { t } from './i18n'
 import { captureException } from './errorReporting'
-import { ITEM_NAME_MAX_LENGTH, ITEM_QUANTITY_MAX } from './limits'
+import { ITEM_NAME_MAX_LENGTH, ITEM_QUANTITY_MAX, sumQuantities } from './limits'
 import type { ShoppingItemRow } from './householdRealtime'
 import type { ProductSuggestion } from './productSearch'
 
@@ -421,7 +422,7 @@ export function useShoppingListActions(options: {
     }
 
     const previousQty = Number(target.quantity) || 1
-    target.quantity = previousQty + quantity
+    target.quantity = sumQuantities(previousQty, quantity)
     // Guarded like every other write, and it was the one that was not: this row
     // now holds a number the server has not been told about, and a realtime
     // UPDATE landing in that window (another device, or a previous write of our
@@ -481,7 +482,7 @@ export function useShoppingListActions(options: {
       // put the TYPED words on the list carrying the picked product's maker.
       selectedProduct.value = null
       const previousQty = Number(existing.quantity) || 1
-      existing.quantity = previousQty + quantity // optimistic
+      existing.quantity = sumQuantities(previousQty, quantity) // optimistic
       reportAdded(name, maker)
       if (picked) recordProductAdd(picked)
 
@@ -580,10 +581,7 @@ export function useShoppingListActions(options: {
       // Roll back the optimistic row and surface the reason.
       items.value = items.value.filter((i) => i.id !== id)
       clearLastAdded() // it did not land after all
-      if (
-        error.message?.includes('member_active_item_limit_exceeded') ||
-        error.message?.includes('limit of')
-      ) {
+      if (isItemLimitError(error)) {
         limitReachedPopupOpen.value = true
       } else {
         // The item-insert ceiling (004_shopping_list.sql) gets its own
@@ -641,7 +639,7 @@ export function useShoppingListActions(options: {
     const previousTargetQty = Number(target.quantity) || 1
     const addedQty = Number(source.quantity) || 1
 
-    target.quantity = previousTargetQty + addedQty
+    target.quantity = sumQuantities(previousTargetQty, addedQty)
     const removedSource = sourceIndex !== -1 ? items.value.splice(sourceIndex, 1)[0]! : source
 
     const rollback = (message: string) => {
@@ -780,10 +778,7 @@ export function useShoppingListActions(options: {
         // Unchecking would push the member over the active-item cap
         // (004_shopping_list.sql enforces it on uncheck too): show the same
         // friendly popup as adding.
-        if (
-          error.message?.includes('member_active_item_limit_exceeded') ||
-          error.message?.includes('limit of')
-        ) {
+        if (isItemLimitError(error)) {
           limitReachedPopupOpen.value = true
           return
         }
@@ -830,10 +825,10 @@ export function useShoppingListActions(options: {
     if (!toBuy.length) return
 
     // Optimistic removal covers only rows actually present and checked. Keep
-    // the pre-removal array so a hard failure can restore the exact list, order
-    // included.
+    // the removed rows themselves, rather than the whole pre-removal array, so
+    // a hard failure can put back exactly what this checkout took and nothing
+    // else — see the restore below.
     const boughtIds = new Set(bought.map((i) => i.id))
-    const snapshot = items.value
     items.value = items.value.filter((i) => !boughtIds.has(i.id))
 
     // Offline (or a WebView that lies about connectivity): there is no multi-table
@@ -866,7 +861,24 @@ export function useShoppingListActions(options: {
         onCheckedOut()
         return
       }
-      items.value = snapshot
+      // Put the rows back, rather than putting the whole list back.
+      //
+      // Assigning the pre-removal array was a second, quieter rollback of
+      // everything else that had happened since: the RPC is a round trip, and
+      // realtime delivers other people's adds, ticks and quantity changes
+      // throughout it. Those landed in the array this function had already
+      // replaced, so restoring the old one silently undid them — a co-shopper's
+      // add vanishing because somebody else's checkout failed.
+      //
+      // Merged by id for the same reason deleteItem re-sorts rather than
+      // splicing at a remembered index: the list is not the one this started
+      // with. A row that is already back (its own realtime echo beat us here)
+      // is left alone.
+      const present = new Set(items.value.map((i) => i.id))
+      items.value = sortItemsForDisplay([
+        ...items.value,
+        ...bought.filter((i) => !present.has(i.id)),
+      ])
       loadError.value = userMessage(error, t('error.checkoutFailed'))
       return
     }

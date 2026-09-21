@@ -180,6 +180,10 @@ export function shopsEnabled(): boolean {
 // in user can read anyway. It is keyed by version alone rather than by user, and
 // a household's product NAMES are the only thing about it that came from them --
 // the same names already sitting in the snapshot cache next to it.
+//
+// That comparison only holds because of clearCachedShops below: the snapshot
+// cache is also DROPPED when its account signs out, and for a while this was
+// not, so the names outlived the session on a shared device.
 const CACHE_KEY = 'famcart.shop-badges.v1'
 // Enough for a big list several times over. A cap at all is what stops a cache
 // that is only ever added to from growing until a browser refuses to write it.
@@ -214,6 +218,28 @@ export function saveCachedShops(map: ShopMap, storage: Storage = localStorage): 
     storage.setItem(CACHE_KEY, JSON.stringify([...map.entries()].slice(0, CACHE_MAX)))
   } catch {
     // Writing a decoration's cache must never be the thing that breaks a list.
+  }
+}
+
+/**
+ * Drop the cache on sign-out. Called from lib/session's list, not from here.
+ *
+ * The key above is deliberately device-wide and stays that way: which shops
+ * sell a product belongs to nobody, and sharing one copy across accounts is
+ * what keeps the badges painting in the same frame as the rows. The header
+ * there argues that a household's product NAMES are the only part that came
+ * from a user, and that they already sit in the snapshot cache beside this one.
+ *
+ * True — but that cache is keyed per account AND cleared when its account
+ * leaves, and this one was neither, so the names outlived the session that
+ * produced them on a shared device. Clearing is the half that was missing; the
+ * shared key is the half that was right.
+ */
+export function clearCachedShops(storage: Storage = localStorage): void {
+  try {
+    storage.removeItem(CACHE_KEY)
+  } catch {
+    // Storage disabled — nothing to clear.
   }
 }
 

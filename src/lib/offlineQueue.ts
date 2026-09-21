@@ -280,6 +280,32 @@ export function isRateLimitedError(error: unknown): boolean {
   return `${message ?? ''} ${details ?? ''}`.includes('item_insert_rate_limit_exceeded')
 }
 
+// The per-member active-item cap, rejected by the trigger in
+// 004_shopping_list.sql. Two paths hit it — adding, and unchecking a row back
+// into the active set — and both answer it with the same friendly popup rather
+// than an error, so both need the same question answered the same way.
+//
+// It lives beside isRateLimitedError because it is the same KIND of thing: a
+// server rejection that is a rule doing its job, not a fault, told apart from a
+// real failure by sniffing a raised exception's text. Sniffing is fragile, which
+// is the argument for having exactly one copy of it rather than the two
+// hand-written ones this replaces.
+//
+// `details` is read as well as `message`, which neither copy did: PostgREST
+// surfaces a raised exception's DETAIL there, and the field it lands in has
+// moved between versions — the same reason isRateLimitedError above checks both.
+// A cap misread as a fault shows a generic error where the friendly popup
+// belongs, and reports the trigger to Sentry.
+//
+// The bare `limit of` clause is the trigger's older wording, carried over from
+// both copies.
+export function isItemLimitError(error: unknown): boolean {
+  if (!error) return false
+  const { message, details } = error as { message?: string; details?: string }
+  const text = `${message ?? ''} ${details ?? ''}`
+  return text.includes('member_active_item_limit_exceeded') || text.includes('limit of')
+}
+
 async function applyMutation(
   db: Db,
   mutation: OfflineMutation,

@@ -213,7 +213,11 @@ export function useUpdatePrompt(options: {
     try {
       await Browser.open({ url: RELEASES_PAGE_URL })
     } catch {
-      window.open(RELEASES_PAGE_URL, '_blank')
+      // noopener so the opened tab gets no window.opener handle back into this
+      // one. The URL is a constant pointing at our own releases page, so this is
+      // hygiene rather than a hole being closed — but a fallback path is exactly
+      // where a URL stops being a constant one day.
+      window.open(RELEASES_PAGE_URL, '_blank', 'noopener,noreferrer')
     }
   }
 

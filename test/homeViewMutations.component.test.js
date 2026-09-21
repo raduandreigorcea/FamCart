@@ -840,6 +840,32 @@ describe('toggleItem', () => {
     expect(del.filters.id).toBe('item-a')
   })
 
+  // A merge is the one path that can sum two large numbers, and it was bounded
+  // by nothing: the stepper's cap is unreachable from here, so the sum went out
+  // as-is and 004_shopping_list.sql's `quantity between 1 and 999` rejected it.
+  // The row then rolled back under a generic "couldn't merge those items", and
+  // userMessage reported a constraint doing its job to Sentry as a fault.
+  it('holds a merged quantity at the database bound instead of failing the write', async () => {
+    const checked = makeItem({ id: 'item-a', name: 'Milk', quantity: 600, checked: true })
+    const active = makeItem({ id: 'item-b', name: 'Milk', quantity: 600 })
+    const wrapper = await mountHome({ items: [active, checked] })
+    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
+    mocks.db.handlers['shopping_list_items.delete'] = () => ({ data: null, error: null })
+
+    const source = listedItems(wrapper).find((i) => i.id === 'item-a')
+    wrapper.findComponent(ShoppingList).vm.$emit('toggle', source)
+    await flushPromises()
+
+    const items = listedItems(wrapper)
+    expect(items).toHaveLength(1)
+    expect(items[0].quantity).toBe(999)
+    // And the number on screen is the number sent, rather than a capped display
+    // over an out-of-range write.
+    const update = mocks.db.calls.find((q) => q.op === 'update')
+    expect(update.payload).toEqual({ quantity: 999 })
+    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('')
+  })
+
   // Both halves of a merge are mid-write for the whole of it, and neither was
   // guarded. The target holds a summed quantity the server has not seen; the
   // source has been taken off the list while the server still has it, so an

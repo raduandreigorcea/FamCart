@@ -2,12 +2,19 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { deriveProfileFields, type UserLike } from './userIdentity'
 
 // Write the caller's own profiles row (name + Clerk avatar), the single source
-// of truth every roster and list-item avatar now reads from. Called on the
-// create-household path (the FK target must exist before the membership insert) and
-// once per app load, so a changed Clerk photo propagates everywhere. Best-effort
-// on load: a failure here must never block the dashboard, so callers ignore the
-// returned error there.
-export async function upsertOwnProfile(
+// of truth every roster and list-item avatar now reads from.
+//
+// Internal to this file, and the only caller is refreshOwnProfile below — which
+// is the write everything should be going through, because it is the one that
+// skips a write that would change nothing. Exported, this was the way to make
+// the unconditional write by accident.
+//
+// It used to say it was also called on the create-household path, "the FK target
+// must exist before the membership insert". That is still true of the row and no
+// longer true of this function: both setup paths hand the fields to an RPC that
+// upserts the profile and inserts the membership in one server-side step, so
+// there is no client-side window where the FK target is missing.
+async function upsertOwnProfile(
   db: SupabaseClient,
   userId: string,
   user: UserLike | null | undefined,

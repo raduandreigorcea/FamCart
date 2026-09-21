@@ -7,6 +7,7 @@
 import { clearActiveHouseholdId, clearHouseholdSnapshot } from './householdCache'
 import { clearOfflineQueue } from './offlineQueue'
 import { clearProfileWritten } from './profile'
+import { clearCachedShops } from './shopBadges'
 
 const KEY = 'famcart-last-user'
 
@@ -74,4 +75,9 @@ export function forgetLocalUserState(storage: Storage, userId?: string): void {
   clearActiveHouseholdId(storage, userId)
   clearOfflineQueue(storage, userId)
   clearProfileWritten(storage, userId)
+  // The fifth entry, and the one that proves the paragraph above was worth
+  // writing. It takes no userId because its key carries none: the shop cache is
+  // device-wide on purpose (see clearCachedShops), so there is only ever one to
+  // drop and every sign-out drops it.
+  clearCachedShops(storage)
 }

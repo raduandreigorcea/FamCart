@@ -244,4 +244,31 @@ describe('buyCheckedItems', () => {
       .find((m) => m.props('message') === 'Could not complete the checkout.')
     expect(errorModal).toBeTruthy()
   })
+
+  // The rollback used to assign the whole pre-removal array back, which is a
+  // second rollback of everything else that happened during the round trip. The
+  // RPC is a network call and realtime keeps delivering throughout it, so a
+  // co-shopper's add landing in that window was silently undone by somebody
+  // else's checkout failing.
+  it('restores only the bought rows, keeping what arrived during the round trip', async () => {
+    const items = [
+      makeItem({ id: 'a', name: 'Milk', checked: true }),
+      makeItem({ id: 'c', name: 'Eggs', checked: false }),
+    ]
+    const wrapper = await mountHome({ items })
+    mocks.db.handlers['rpc.buy_items'] = async () => {
+      // Another member's add, arriving while the checkout is on the wire. The
+      // tick is what makes this land in the post-removal array rather than the
+      // one the view was still rendering when the RPC left.
+      await wrapper.vm.$nextTick()
+      listedItems(wrapper).push(makeItem({ id: 'd', name: 'Butter', checked: false }))
+      return { data: null, error: { message: 'nope', code: 'P0001' } }
+    }
+
+    await emitBuy(wrapper, ['a'])
+
+    // 'a' is back because its checkout failed; 'd' is still here because it had
+    // nothing to do with that checkout.
+    expect(listedItems(wrapper).map((i) => i.id).sort()).toEqual(['a', 'c', 'd'])
+  })
 })
