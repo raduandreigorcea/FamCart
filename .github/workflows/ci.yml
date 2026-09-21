@@ -22,10 +22,10 @@ jobs:
       # The catalog submodule is needed here as well: test/catalog/markets.test.js
       # is a cross-repo drift guard and reads the catalog's own market list and
       # migration, which is the whole reason it can catch a drift at all.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: true
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -49,8 +49,8 @@ jobs:
     name: Database RLS tests (pgTAP)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
+      - uses: actions/checkout@v7
+      - uses: supabase/setup-cli@v3
         with:
           version: latest
       - run: supabase db start
@@ -72,10 +72,10 @@ jobs:
       # submodules: true is REQUIRED, not a convenience. The catalog's schema
       # lives in raduandreigorcea/FamCart-catalog, checked out at catalog/, and
       # without it there is no config.toml for --workdir to point at.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: true
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v3
         with:
           version: latest
       # WHY THIS JOB IS IN THE APP'S CI EVEN THOUGH THE SCHEMA IS NOT
