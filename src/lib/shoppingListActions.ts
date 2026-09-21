@@ -644,7 +644,12 @@ export function useShoppingListActions(options: {
 
     const rollback = (message: string) => {
       target.quantity = previousTargetQty
-      if (sourceIndex !== -1) items.value.splice(sourceIndex, 0, removedSource)
+      // Merged back by id and re-sorted, not spliced at sourceIndex: the list
+      // has been live through the round trip, so that index can point anywhere
+      // now (the same reason checkoutItems restores this way).
+      if (sourceIndex !== -1 && !items.value.some((i) => i.id === removedSource.id)) {
+        items.value = sortItemsForDisplay([...items.value, removedSource])
+      }
       loadError.value = message
     }
 

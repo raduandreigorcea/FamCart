@@ -916,6 +916,26 @@ describe('toggleItem', () => {
     expect(wrapper.findComponent(ErrorModal).props('message')).toBe('Could not merge those items.')
   })
 
+  // The source is off the list for the whole round trip while the server still
+  // has it, so a refetch landing in that window puts it back. The rollback used
+  // to splice it in again at its old index regardless: the row twice.
+  it('does not restore the merge source twice when a refetch already put it back', async () => {
+    const checked = makeItem({ id: 'item-a', name: 'Milk', quantity: 2, checked: true })
+    const active = makeItem({ id: 'item-b', name: 'Milk', quantity: 3 })
+    const wrapper = await mountHome({ items: [active, checked] })
+    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
+    mocks.db.handlers['shopping_list_items.delete'] = () => {
+      listedItems(wrapper).push(makeItem({ id: 'item-a', name: 'Milk', quantity: 2, checked: true }))
+      return { data: null, error: { message: 'delete failed' } }
+    }
+
+    const source = listedItems(wrapper).find((i) => i.id === 'item-a')
+    wrapper.findComponent(ShoppingList).vm.$emit('toggle', source)
+    await flushPromises()
+
+    expect(listedItems(wrapper).map((i) => i.id).sort()).toEqual(['item-a', 'item-b'])
+  })
+
   it('moves a newly checked item to the top of the checked section', async () => {
     const older = makeItem({ id: 'older', name: 'Milk', checked: true, checked_at: '2026-01-01T00:00:00.000Z' })
     const active = makeItem({ id: 'active', name: 'Bread', checked: false })
