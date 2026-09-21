@@ -22,7 +22,7 @@
 import { IS_NIGHTLY } from './appChannel'
 
 export const PRODUCTION_SSO_SCHEME = 'famcart'
-export const NIGHTLY_SSO_SCHEME = 'famcartnightly'
+const NIGHTLY_SSO_SCHEME = 'famcartnightly'
 
 // Appended to the bounce URL by the nightly build. Clerk adds its own
 // parameters after it, so this stays a leading '?' and everything else arrives
@@ -32,7 +32,7 @@ export const NIGHTLY_BOUNCE_QUERY = '?app=nightly'
 const BOUNCE_BASE_URL = 'https://famcart-app.vercel.app/sso-native'
 
 /** The scheme this build answers to. */
-export const NATIVE_SSO_SCHEME = IS_NIGHTLY ? NIGHTLY_SSO_SCHEME : PRODUCTION_SSO_SCHEME
+const NATIVE_SSO_SCHEME = IS_NIGHTLY ? NIGHTLY_SSO_SCHEME : PRODUCTION_SSO_SCHEME
 
 /** The deep link this build listens for. */
 export const NATIVE_SSO_CALLBACK_URL = `${NATIVE_SSO_SCHEME}://sso-callback`
