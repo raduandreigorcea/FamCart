@@ -35,13 +35,24 @@ initPushNotifications()
 // the old hashed chunk, which no longer exists and 404s to index.html — hence
 // "'text/html' is not a valid JavaScript MIME type" and "Unable to preload CSS"
 // from Vite's async component/CSS loader. A reload pulls the current manifest.
-// Guard with a one-shot session flag: a second failure means the chunk is
-// genuinely broken, not merely stale, so reloading again would only loop.
-const CHUNK_RELOAD_KEY = 'famcart-chunk-reloaded'
+// Guarded by WHEN the last reload was, not whether there was one: a failure
+// right after reloading means the chunk is genuinely broken, not merely stale,
+// and reloading again would only loop. A plain one-shot flag did that too, but
+// it never reset, so the next deploy in the same tab got no reload at all.
+// preventDefault only when reloading: otherwise Vite rethrows, and a broken
+// chunk surfaces as an error instead of a route that silently never loads.
+const CHUNK_RELOAD_KEY = 'famcart-chunk-reloaded-at'
+const CHUNK_RELOAD_WINDOW_MS = 10_000
 window.addEventListener('vite:preloadError', (event) => {
+  try {
+    const last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY)) || 0
+    if (Date.now() - last < CHUNK_RELOAD_WINDOW_MS) return
+    sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()))
+  } catch {
+    // Storage blocked: no way to tell a loop from a stale deploy, so do not reload.
+    return
+  }
   event.preventDefault()
-  if (sessionStorage.getItem(CHUNK_RELOAD_KEY)) return
-  sessionStorage.setItem(CHUNK_RELOAD_KEY, '1')
   window.location.reload()
 })
 
