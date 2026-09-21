@@ -328,7 +328,10 @@ export function useHouseholdRealtime({
               // record is the authority on created_at.
               items.value = sortItemsForDisplay(items.value)
             } else {
-              void loadItems()
+              // Through the refresh window like every other re-read here, not a
+              // direct loadItems: a burst of these used to start one fetch each,
+              // and they settled in completion order, older over newer.
+              requestRefresh({ items: true })
             }
           },
         )
@@ -353,7 +356,7 @@ export function useHouseholdRealtime({
               items.value = items.value.filter((i) => i.id !== oldRecord.id)
             } else {
               // Fallback for environments where DELETE payloads are minimal.
-              void loadItems()
+              requestRefresh({ items: true })
             }
           },
         )
@@ -376,7 +379,7 @@ export function useHouseholdRealtime({
             // which since the profiles split (003_households_and_members.sql) carries no name or
             // avatar — it could only ever seed a placeholder that the refetch
             // below immediately overwrote a moment later.
-            void loadHouseholdHeader()
+            requestRefresh({ header: true })
           },
         )
         .on(
@@ -404,7 +407,7 @@ export function useHouseholdRealtime({
             filter: `household_id=eq.${householdId.value}`,
           },
           () => {
-            void loadHouseholdHeader()
+            requestRefresh({ header: true })
           },
         )
         .subscribe((status) => {
@@ -427,7 +430,7 @@ export function useHouseholdRealtime({
               onHouseholdDeleted()
               return
             }
-            void loadHouseholdHeader()
+            requestRefresh({ header: true })
           },
         )
         .subscribe((status) => {
