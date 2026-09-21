@@ -40,14 +40,14 @@ jobs:
       # Named explicitly rather than relying on the dispatch ref, so this always
       # builds the tip of master — which by the time we are dispatched includes
       # the version bump.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: master
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 21
@@ -256,7 +256,7 @@ jobs:
         run: gh release delete latest --cleanup-tag --yes || true
 
       - name: Publish "latest" release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: latest
           # The version goes in the NAME, not just the body, because the name is
