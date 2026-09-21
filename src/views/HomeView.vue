@@ -31,7 +31,7 @@ import {
   clearActiveHouseholdId,
 } from '../lib/householdCache'
 import { useHouseholdSnapshot } from '../lib/useHouseholdSnapshot'
-import { flushOfflineQueue, isOfflineError } from '../lib/offlineQueue'
+import { isOfflineError } from '../lib/offlineQueue'
 import { captureException, identifyUser } from '../lib/errorReporting'
 // isCurrentlyOffline is the app's one answer to "are we offline", handed to
 // every composable below that has to choose between writing and queueing. The
@@ -697,7 +697,9 @@ async function runInitializeHome() {
   void loadHouseholdProductStats()
   // Writes queued during a previous offline session land before the first
   // fetch, so the list below already reflects them. No-op when the queue is empty.
-  await flushOfflineQueue(localStorage, effectiveUserId.value, db)
+  // Through the shared single-flight guard, never flushOfflineQueue directly: two
+  // flushes read the same head and send it twice.
+  await ensureQueueFlushed()
   await loadHouseholdHeader()
   await loadItems()
   await setupRealtimeSubscriptions()

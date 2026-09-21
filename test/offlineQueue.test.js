@@ -205,6 +205,50 @@ describe('flushOfflineQueue', () => {
     expect(hasQueuedOfflineMutations(storage, USER)).toBe(false)
   })
 
+  // The primary key answers 23505 too, when this very insert already landed and
+  // only its reply was lost. Folding then found the row itself by name and added
+  // its quantity to itself.
+  it('treats a conflict with its own row as already done, not as a fold', async () => {
+    const storage = makeStorage()
+    enqueueOfflineMutation(storage, USER, insertMutation('a', { name: 'Milk', quantity: 2 }))
+
+    const db = createFakeDb()
+    db.handlers['shopping_list_items.insert'] = () => ({
+      data: null,
+      error: { code: '23505', message: 'duplicate key value' },
+    })
+    db.handlers['shopping_list_items.select'] = () => ({
+      data: [{ id: 'a', name: 'Milk', checked: false, quantity: 2 }],
+      error: null,
+    })
+
+    const result = await flushOfflineQueue(storage, USER, db)
+
+    expect(result).toEqual({ flushed: 1, failed: 0, interrupted: false })
+    expect(db.calls.find((q) => q.op === 'update')).toBeUndefined()
+    expect(hasQueuedOfflineMutations(storage, USER)).toBe(false)
+  })
+
+  it('holds a folded quantity at the database bound', async () => {
+    const storage = makeStorage()
+    enqueueOfflineMutation(storage, USER, insertMutation('a', { name: 'Milk', quantity: 600 }))
+
+    const db = createFakeDb()
+    db.handlers['shopping_list_items.insert'] = () => ({
+      data: null,
+      error: { code: '23505', message: 'duplicate key value' },
+    })
+    db.handlers['shopping_list_items.select'] = () => ({
+      data: [{ id: 'srv-1', name: 'milk', checked: false, quantity: 600 }],
+      error: null,
+    })
+    db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
+
+    await flushOfflineQueue(storage, USER, db)
+
+    expect(db.calls.find((q) => q.op === 'update').payload).toEqual({ quantity: 999 })
+  })
+
   it('stops on a network-level failure and keeps the unsent tail', async () => {
     const storage = makeStorage()
     enqueueOfflineMutation(storage, USER, { kind: 'update', id: 'srv-1', patch: { checked: true } })

@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { findActiveItemByName, type ShoppingItem } from './shoppingList'
 import { captureException } from './errorReporting'
 import { clearUserScopedKeys, userScopedKey } from './perUserStorage'
+import { sumQuantities } from './limits'
 
 // Write queue for shopping-list mutations made while offline. The views apply
 // every mutation optimistically already; when the browser reports no
@@ -318,12 +319,21 @@ async function applyMutation(
     // Someone added the same item while we were offline: fold our quantity into
     // their row, mirroring the insert-race handling in HomeView.
     if (error.code === '23505') {
+      // Every row, ticked ones included, so the first question can be asked of
+      // them all: is the row we collided with OUR OWN? A 23505 is also what the
+      // primary key answers when this insert already landed -- the request
+      // reached the server and only the reply was lost, which queued it as
+      // offline, or two flushes sent the same head. Folding then found the row
+      // itself by name and added its quantity to itself: 2 milk became 4. It is
+      // done, not rejected. Ticked rows count because it may have been ticked
+      // since, and would then be missed by a read of the active ones.
       const { data, error: selectErr } = await db
         .from(TABLE)
         .select('*')
         .eq('household_id', mutation.row.household_id)
-        .eq('checked', false)
       if (selectErr) return { ok: false, transient: isOfflineError(selectErr) }
+      const rows = (data ?? []) as ShoppingItem[]
+      if (rows.some((row) => row.id === mutation.id)) return { ok: true, transient: false }
       // The live equivalent of this lookup is resolveActiveItemByName in
       // shoppingListActions.ts, which the add and uncheck paths share. This one
       // stays separate deliberately: it has no local list to splice a fetched
@@ -340,7 +350,7 @@ async function applyMutation(
       // rejection, and the flush dropped the mutation by design. Every catalog
       // pick and every barcode scan carries a maker, so that was the common
       // path, not an edge one.
-      const target = findActiveItemByName((data ?? []) as ShoppingItem[], String(mutation.row.name), {
+      const target = findActiveItemByName(rows, String(mutation.row.name), {
         maker: (mutation.row.maker as string | null) ?? null,
       })
       // Still nothing to fold into: the server says this product is already
@@ -348,7 +358,7 @@ async function applyMutation(
       // this read, or gone). Dropped rather than kept, because a replay would
       // hit the same 23505 forever and wedge the queue behind it.
       if (!target) return { ok: false, transient: false }
-      const merged = (Number(target.quantity) || 1) + (Number(mutation.row.quantity) || 1)
+      const merged = sumQuantities(Number(target.quantity) || 1, Number(mutation.row.quantity) || 1)
       const { error: updateErr } = await db
         .from(TABLE)
         .update({ quantity: merged })
