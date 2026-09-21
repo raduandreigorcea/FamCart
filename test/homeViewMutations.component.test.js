@@ -825,8 +825,7 @@ describe('toggleItem', () => {
     const checked = makeItem({ id: 'item-a', name: 'Milk', quantity: 2, checked: true })
     const active = makeItem({ id: 'item-b', name: 'Milk', quantity: 3 })
     const wrapper = await mountHome({ items: [active, checked] })
-    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
-    mocks.db.handlers['shopping_list_items.delete'] = () => ({ data: null, error: null })
+    mocks.db.handlers['rpc.merge_items'] = () => ({ data: 5, error: null })
 
     const source = listedItems(wrapper).find((i) => i.id === 'item-a')
     wrapper.findComponent(ShoppingList).vm.$emit('toggle', source)
@@ -836,51 +835,64 @@ describe('toggleItem', () => {
     expect(items).toHaveLength(1)
     expect(items[0].id).toBe('item-b')
     expect(items[0].quantity).toBe(5)
-    const del = mocks.db.calls.find((q) => q.op === 'delete')
-    expect(del.filters.id).toBe('item-a')
+    // One call, not an update and a delete: both halves land or neither does.
+    const merge = mocks.db.calls.find((q) => q.op === 'merge_items')
+    expect(merge.params).toEqual({ p_source: 'item-a', p_target: 'item-b' })
+    expect(mocks.db.calls.some((q) => q.op === 'update' || q.op === 'delete')).toBe(false)
   })
 
-  // A merge is the one path that can sum two large numbers, and it was bounded
-  // by nothing: the stepper's cap is unreachable from here, so the sum went out
-  // as-is and 004_shopping_list.sql's `quantity between 1 and 999` rejected it.
-  // The row then rolled back under a generic "couldn't merge those items", and
-  // userMessage reported a constraint doing its job to Sentry as a fault.
-  it('holds a merged quantity at the database bound instead of failing the write', async () => {
-    const checked = makeItem({ id: 'item-a', name: 'Milk', quantity: 600, checked: true })
-    const active = makeItem({ id: 'item-b', name: 'Milk', quantity: 600 })
+  // The server sums the rows it holds. If another device changed the target in
+  // the meantime, its answer is the truth and replaces the local guess.
+  it('takes the merged quantity the server answers with', async () => {
+    const checked = makeItem({ id: 'item-a', name: 'Milk', quantity: 2, checked: true })
+    const active = makeItem({ id: 'item-b', name: 'Milk', quantity: 3 })
     const wrapper = await mountHome({ items: [active, checked] })
-    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
-    mocks.db.handlers['shopping_list_items.delete'] = () => ({ data: null, error: null })
+    mocks.db.handlers['rpc.merge_items'] = () => ({ data: 7, error: null })
 
     const source = listedItems(wrapper).find((i) => i.id === 'item-a')
     wrapper.findComponent(ShoppingList).vm.$emit('toggle', source)
     await flushPromises()
 
-    const items = listedItems(wrapper)
-    expect(items).toHaveLength(1)
-    expect(items[0].quantity).toBe(999)
-    // And the number on screen is the number sent, rather than a capped display
-    // over an out-of-range write.
-    const update = mocks.db.calls.find((q) => q.op === 'update')
-    expect(update.payload).toEqual({ quantity: 999 })
+    expect(listedItems(wrapper)[0].quantity).toBe(7)
+  })
+
+  // A merge is the one path that can sum two large numbers. The optimistic
+  // number is held at the database bound too, so the screen never shows a
+  // quantity the server would refuse.
+  it('holds a merged quantity at the database bound on screen', async () => {
+    const checked = makeItem({ id: 'item-a', name: 'Milk', quantity: 600, checked: true })
+    const active = makeItem({ id: 'item-b', name: 'Milk', quantity: 600 })
+    const wrapper = await mountHome({ items: [active, checked] })
+    let finish
+    mocks.db.handlers['rpc.merge_items'] = () =>
+      new Promise((resolve) => {
+        finish = () => resolve({ data: 999, error: null })
+      })
+
+    const source = listedItems(wrapper).find((i) => i.id === 'item-a')
+    wrapper.findComponent(ShoppingList).vm.$emit('toggle', source)
+    await flushPromises()
+    expect(listedItems(wrapper)[0].quantity).toBe(999)
+
+    finish()
+    await flushPromises()
+    expect(listedItems(wrapper)[0].quantity).toBe(999)
     expect(wrapper.findComponent(ErrorModal).props('message')).toBe('')
   })
 
-  // Both halves of a merge are mid-write for the whole of it, and neither was
-  // guarded. The target holds a summed quantity the server has not seen; the
-  // source has been taken off the list while the server still has it, so an
-  // echo for it would find no local row and fall through to a refetch that puts
-  // it straight back — undoing the merge in front of the user.
+  // Both rows are mid-write for the whole merge. The target holds a summed
+  // quantity the server has not confirmed; the source has been taken off the
+  // list while the server still has it, so an echo for it would find no local
+  // row and fall through to a refetch that puts it straight back.
   it('guards both rows while the merge is on the wire', async () => {
     const checked = makeItem({ id: 'item-a', name: 'Milk', quantity: 2, checked: true })
     const active = makeItem({ id: 'item-b', name: 'Milk', quantity: 3 })
     const wrapper = await mountHome({ items: [active, checked] })
-    let finishUpdate
-    mocks.db.handlers['shopping_list_items.update'] = () =>
+    let finish
+    mocks.db.handlers['rpc.merge_items'] = () =>
       new Promise((resolve) => {
-        finishUpdate = () => resolve({ data: null, error: null })
+        finish = () => resolve({ data: 5, error: null })
       })
-    mocks.db.handlers['shopping_list_items.delete'] = () => ({ data: null, error: null })
 
     const source = listedItems(wrapper).find((i) => i.id === 'item-a')
     wrapper.findComponent(ShoppingList).vm.$emit('toggle', source)
@@ -889,20 +901,19 @@ describe('toggleItem', () => {
     expect(wrapper.vm.pendingItemWrites.has('item-a')).toBe(true)
     expect(wrapper.vm.pendingItemWrites.has('item-b')).toBe(true)
 
-    finishUpdate()
+    finish()
     await flushPromises()
     expect(wrapper.vm.pendingItemWrites.has('item-a')).toBe(false)
     expect(wrapper.vm.pendingItemWrites.has('item-b')).toBe(false)
   })
 
-  it('restores both rows when the merge delete fails', async () => {
+  it('restores both rows when the merge is refused', async () => {
     const checked = makeItem({ id: 'item-a', name: 'Milk', quantity: 2, checked: true })
     const active = makeItem({ id: 'item-b', name: 'Milk', quantity: 3 })
     const wrapper = await mountHome({ items: [active, checked] })
-    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
-    mocks.db.handlers['shopping_list_items.delete'] = () => ({
+    mocks.db.handlers['rpc.merge_items'] = () => ({
       data: null,
-      error: { message: 'delete failed' },
+      error: { code: 'P0001', message: 'Nothing to merge.', details: 'merge_items_not_found' },
     })
 
     const source = listedItems(wrapper).find((i) => i.id === 'item-a')
@@ -916,6 +927,26 @@ describe('toggleItem', () => {
     expect(wrapper.findComponent(ErrorModal).props('message')).toBe('Could not merge those items.')
   })
 
+  // Never reached the server, or its reply did not. The merge stays on screen
+  // and both halves are queued; replaying a merge that did land is harmless,
+  // because the quantity is absolute and the delete idempotent.
+  it('queues both halves when the merge dies at the network', async () => {
+    const checked = makeItem({ id: 'item-a', name: 'Milk', quantity: 2, checked: true })
+    const active = makeItem({ id: 'item-b', name: 'Milk', quantity: 3 })
+    const wrapper = await mountHome({ items: [active, checked] })
+    mocks.db.handlers['rpc.merge_items'] = () => ({ data: null, error: { message: 'Failed to fetch' } })
+
+    const source = listedItems(wrapper).find((i) => i.id === 'item-a')
+    wrapper.findComponent(ShoppingList).vm.$emit('toggle', source)
+    await flushPromises()
+
+    expect(listedItems(wrapper).map((i) => [i.id, i.quantity])).toEqual([['item-b', 5]])
+    expect(loadOfflineQueue(localStorage, 'user-1')).toEqual([
+      { kind: 'update', id: 'item-b', patch: { quantity: 5 } },
+      { kind: 'delete', id: 'item-a' },
+    ])
+  })
+
   // The source is off the list for the whole round trip while the server still
   // has it, so a refetch landing in that window puts it back. The rollback used
   // to splice it in again at its old index regardless: the row twice.
@@ -923,10 +954,9 @@ describe('toggleItem', () => {
     const checked = makeItem({ id: 'item-a', name: 'Milk', quantity: 2, checked: true })
     const active = makeItem({ id: 'item-b', name: 'Milk', quantity: 3 })
     const wrapper = await mountHome({ items: [active, checked] })
-    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
-    mocks.db.handlers['shopping_list_items.delete'] = () => {
+    mocks.db.handlers['rpc.merge_items'] = () => {
       listedItems(wrapper).push(makeItem({ id: 'item-a', name: 'Milk', quantity: 2, checked: true }))
-      return { data: null, error: { message: 'delete failed' } }
+      return { data: null, error: { code: 'P0001', message: 'Nothing to merge.' } }
     }
 
     const source = listedItems(wrapper).find((i) => i.id === 'item-a')
@@ -956,7 +986,7 @@ describe('toggleItem', () => {
     // The DB trigger (004_shopping_list.sql) now rejects an uncheck that breaks the cap.
     mocks.db.handlers['shopping_list_items.update'] = () => ({
       data: null,
-      error: { message: 'You reached your limit of 50 active items.', detail: 'member_active_item_limit_exceeded' },
+      error: { message: 'You reached your limit of 50 active items.', details: 'member_active_item_limit_exceeded' },
     })
 
     wrapper.findComponent(ShoppingList).vm.$emit('toggle', listedItems(wrapper)[0])

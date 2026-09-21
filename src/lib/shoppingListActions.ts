@@ -17,7 +17,6 @@ import {
 } from './offlineQueue'
 import { userMessage } from './errorMessages'
 import { t } from './i18n'
-import { captureException } from './errorReporting'
 import { ITEM_NAME_MAX_LENGTH, ITEM_QUANTITY_MAX, sumQuantities } from './limits'
 import type { ShoppingItemRow } from './householdRealtime'
 import type { ProductSuggestion } from './productSearch'
@@ -673,13 +672,18 @@ export function useShoppingListActions(options: {
     beginItemWrite(target.id)
     beginItemWrite(source.id)
     try {
-      const { error: updateErr } = await db
-        .from('shopping_list_items')
-        .update({ quantity: target.quantity })
-        .eq('id', target.id)
-      if (updateErr) {
-        // Neither half reached the server: queue both and keep the merged state.
-        if (isOfflineError(updateErr)) {
+      // One call, one transaction (merge_items, 004_shopping_list.sql). It was
+      // two writes, the quantity and then the delete, with an undo for when the
+      // second failed; an undo that failed too left the quantity counted twice.
+      const { data, error } = await db.rpc('merge_items', {
+        p_source: source.id,
+        p_target: target.id,
+      })
+      if (error) {
+        // Never reached the server, or its reply did not: queue both halves and
+        // keep the merged state. The quantity is absolute and the delete
+        // idempotent, so replaying a merge that did land changes nothing.
+        if (isOfflineError(error)) {
           enqueueOfflineMutation(localStorage, userId.value, {
             kind: 'update',
             id: target.id,
@@ -688,40 +692,12 @@ export function useShoppingListActions(options: {
           enqueueOfflineMutation(localStorage, userId.value, { kind: 'delete', id: source.id })
           return
         }
-        rollback(userMessage(updateErr, t('error.mergeItemsFailed')))
+        rollback(userMessage(error, t('error.mergeItemsFailed')))
         return
       }
-
-      const { error: deleteErr } = await db
-        .from('shopping_list_items')
-        .delete()
-        .eq('id', source.id)
-      if (deleteErr) {
-        // The quantity bump already landed; only the delete is outstanding. Queue it
-        // rather than undoing a change the server has committed.
-        if (deferIfOffline(deleteErr, { kind: 'delete', id: source.id })) return
-        // Undo the quantity bump we already committed, then restore the row.
-        //
-        // This is the one write here that has no rollback of its own, so its
-        // result cannot be dropped: if the compensation fails, the server keeps
-        // a target row carrying the summed quantity for a merge that did not
-        // happen, while the screen is put back as though nothing did. Queue it
-        // when the failure is connectivity — the replay is exactly the retry
-        // this needs — and report the rest, because a silent divergence between
-        // the list and the database is the worst of the available outcomes.
-        const { error: undoErr } = await db
-          .from('shopping_list_items')
-          .update({ quantity: previousTargetQty })
-          .eq('id', target.id)
-        if (undoErr && !deferIfOffline(undoErr, {
-          kind: 'update',
-          id: target.id,
-          patch: { quantity: previousTargetQty },
-        })) {
-          captureException(undoErr)
-        }
-        rollback(userMessage(deleteErr, t('error.mergeItemsFailed')))
-      }
+      // The server sums the rows it holds, which is the truth if someone else
+      // changed either one since this list last heard.
+      if (typeof data === 'number') target.quantity = data
     } finally {
       endItemWrite(source.id)
       endItemWrite(target.id)

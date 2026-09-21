@@ -339,3 +339,56 @@ revoke all on public.shopping_list_items from anon, authenticated, service_role;
 
 grant select, insert, update, delete on public.shopping_list_items to authenticated;
 grant select on public.shopping_list_items to service_role;
+
+-- ─── merging a row into its twin ─────────────────────────────────────────────
+-- Unticking a row whose name is already active folds it into that active row
+-- (the unique index above forbids two). The app used to do that as two writes,
+-- the quantity and then the delete, with a hand-written undo when the second
+-- failed; a lost undo left the quantity counted twice. One function, one
+-- transaction: both land or neither does.
+--
+-- SECURITY INVOKER, so the caller's own update and delete policies decide it,
+-- exactly as the two separate writes did. The sum is read from the rows, not
+-- sent by the client, and held at the quantity bound (999) the way
+-- sumQuantities in src/lib/limits.ts holds it. A delete the policies filter out
+-- raises rather than returning quietly, so the summed target rolls back with it.
+create or replace function public.merge_items(p_source uuid, p_target uuid)
+returns integer
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_quantity integer;
+  v_deleted integer;
+begin
+  update public.shopping_list_items t
+     set quantity = least(999, t.quantity + s.quantity)
+    from public.shopping_list_items s
+   where t.id = p_target
+     and s.id = p_source
+     and s.id <> t.id
+     and s.household_id = t.household_id
+     and t.checked = false
+  returning t.quantity into v_quantity;
+
+  if v_quantity is null then
+    raise exception 'Nothing to merge.'
+      using errcode = 'P0001',
+            detail = 'merge_items_not_found';
+  end if;
+
+  delete from public.shopping_list_items where id = p_source;
+  get diagnostics v_deleted = row_count;
+  if v_deleted = 0 then
+    raise exception 'Nothing to merge.'
+      using errcode = 'P0001',
+            detail = 'merge_items_not_found';
+  end if;
+
+  return v_quantity;
+end;
+$$;
+
+revoke all on function public.merge_items(uuid, uuid) from public, anon;
+grant execute on function public.merge_items(uuid, uuid) to authenticated;
