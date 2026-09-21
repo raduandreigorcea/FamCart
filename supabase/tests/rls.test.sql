@@ -57,7 +57,7 @@
 -- Tests run inside a transaction that is rolled back, so they leave no data behind.
 
 begin;
-select plan(129);
+select plan(135);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
 -- Three households, because promoting a contributed product to the global catalog
@@ -1579,6 +1579,22 @@ select is(
   'a member cannot see the roster of a deleted household'
 );
 
+-- Nor can one be checked out of it. buy_items is SECURITY DEFINER, so no policy
+-- stands in its way: it has to ask active_household_ids() itself, and it used to
+-- read household_members, which a soft delete leaves in place. A member whose
+-- phone still holds the ids from before the delete could empty the frozen list.
+reset role;
+insert into public.shopping_list_items (id, household_id, name, added_by, checked) values
+  ('00000000-0000-0000-0000-0000000000a8',
+   '00000000-0000-0000-0000-0000000000a1', 'frozen checked item', 'user_a', true);
+set local role authenticated;
+
+select is(
+  public.buy_items(array['00000000-0000-0000-0000-0000000000a8']::uuid[]),
+  0,
+  'buy_items moves nothing out of a deleted household'
+);
+
 -- Soft, not hard: the rows are still there for an admin to restore.
 reset role;
 select isnt(
@@ -1652,6 +1668,64 @@ select throws_ok(
   'P0001',
   'This account has been suspended.',
   'a banned account cannot join a household either'
+);
+
+reset role;
+
+-- 17. merge_items folds a row into its twin in one step.
+--
+-- It replaced two client writes (the quantity, then the delete) whose undo could
+-- be lost, counting the quantity twice. Household C is used because A is capped
+-- at one active item above.
+insert into public.shopping_list_items (id, household_id, name, added_by, checked, quantity) values
+  ('00000000-0000-0000-0000-0000000000c2',
+   '00000000-0000-0000-0000-0000000000c1', 'merge target', 'user_c', false, 600),
+  ('00000000-0000-0000-0000-0000000000c3',
+   '00000000-0000-0000-0000-0000000000c1', 'merge source', 'user_c', true, 600);
+
+-- A stranger reaches neither row: RLS hides both, so nothing is summed.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"user_a"}';
+
+select throws_ok(
+  $$ select public.merge_items('00000000-0000-0000-0000-0000000000c3',
+                               '00000000-0000-0000-0000-0000000000c2') $$,
+  'P0001',
+  'Nothing to merge.',
+  'merge_items refuses rows in a household the caller is not in'
+);
+
+set local request.jwt.claims = '{"sub":"user_c"}';
+
+-- The sum comes from the rows and is held at the quantity bound.
+select is(
+  public.merge_items('00000000-0000-0000-0000-0000000000c3',
+                     '00000000-0000-0000-0000-0000000000c2'),
+  999,
+  'merge_items sums the two rows, held at 999'
+);
+
+select is(
+  (select count(*)::int from public.shopping_list_items
+   where id = '00000000-0000-0000-0000-0000000000c3'),
+  0,
+  'and the source row is gone'
+);
+
+select is(
+  (select quantity from public.shopping_list_items
+   where id = '00000000-0000-0000-0000-0000000000c2'),
+  999,
+  'and the target holds the sum'
+);
+
+-- A source that no longer exists leaves the target untouched: both or neither.
+select throws_ok(
+  $$ select public.merge_items('00000000-0000-0000-0000-0000000000c3',
+                               '00000000-0000-0000-0000-0000000000c2') $$,
+  'P0001',
+  'Nothing to merge.',
+  'merge_items refuses a source that is already gone'
 );
 
 reset role;
