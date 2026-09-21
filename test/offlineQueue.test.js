@@ -398,8 +398,8 @@ describe('rate-limited writes', () => {
     expect(isItemLimitError({ message: 'member_active_item_limit_exceeded' })).toBe(true)
     // The field neither hand-written copy looked at.
     expect(isItemLimitError({ code: 'P0001', details: 'member_active_item_limit_exceeded' })).toBe(true)
-    // The trigger's older wording, carried over from both of them.
-    expect(isItemLimitError({ message: 'You have reached the limit of 50 items.' })).toBe(true)
+    // The human wording alone is not enough: any error could say "limit of".
+    expect(isItemLimitError({ message: 'You have reached the limit of 50 items.' })).toBe(false)
     expect(isItemLimitError({ code: '23505', message: 'duplicate key value' })).toBe(false)
     expect(isItemLimitError({ message: 'item_insert_rate_limit_exceeded' })).toBe(false)
     expect(isItemLimitError(null)).toBe(false)

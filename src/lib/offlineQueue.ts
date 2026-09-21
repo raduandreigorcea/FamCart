@@ -306,13 +306,13 @@ export function isRateLimitedError(error: unknown): boolean {
 // A cap misread as a fault shows a generic error where the friendly popup
 // belongs, and reports the trigger to Sentry.
 //
-// The bare `limit of` clause is the trigger's older wording, carried over from
-// both copies.
+// Only the machine token, which the trigger raises as its DETAIL. It also used
+// to match the words `limit of` in the human message, the trigger's older
+// wording, which any other error saying "limit of" would have matched too.
 export function isItemLimitError(error: unknown): boolean {
   if (!error) return false
   const { message, details } = error as { message?: string; details?: string }
-  const text = `${message ?? ''} ${details ?? ''}`
-  return text.includes('member_active_item_limit_exceeded') || text.includes('limit of')
+  return `${message ?? ''} ${details ?? ''}`.includes('member_active_item_limit_exceeded')
 }
 
 async function applyMutation(
