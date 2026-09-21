@@ -831,33 +831,38 @@ export function useShoppingListActions(options: {
     const boughtIds = new Set(bought.map((i) => i.id))
     items.value = items.value.filter((i) => !boughtIds.has(i.id))
 
-    // Offline (or a WebView that lies about connectivity): there is no multi-table
-    // transaction to run here, so queue plain deletes. The rows leave the list but
-    // an offline checkout is not recorded in history — it is archived only when the
-    // checkout runs against the server.
+    // Offline (or a WebView that lies about connectivity): queue the checkout
+    // itself, replayed through buy_items once back online, so it still lands in
+    // purchase history. It used to queue plain deletes, and a checkout made in a
+    // shop with no signal (the usual place for one) vanished from history.
     if (isOffline()) {
-      for (const id of toBuy) {
-        enqueueOfflineMutation(localStorage, userId.value, { kind: 'delete', id })
-      }
+      enqueueOfflineMutation(localStorage, userId.value, {
+        kind: 'checkout',
+        id: crypto.randomUUID(),
+        ids: toBuy,
+      })
       // Still a checkout as far as the screen is concerned, so it still counts.
       // Without this the list empties and then reads "Nothing here yet" — the
       // sentence for a household that has never shopped — because the only
-      // other things that answer that question are purchase history (which this
-      // path deliberately does not write) and the cached answer (which a
-      // household on its first-ever checkout does not have yet).
+      // other things that answer that question are purchase history (which
+      // nothing has written yet) and the cached answer (which a household on
+      // its first-ever checkout does not have yet).
       onCheckedOut()
       return
     }
 
     const { error } = await db.rpc('buy_items', { p_item_ids: toBuy })
     if (error) {
-      // Never reached the server: keep them off the list and fall back to queued
-      // deletes, same as the offline path — including counting as a checkout,
-      // for the reason that path gives. The screen said "bought" either way.
+      // Never reached the server (or its reply did not): keep them off the list
+      // and queue the checkout, same as the offline path, including counting
+      // as a checkout. A replay after a lost reply moves nothing, since the rows
+      // are already gone.
       if (isOfflineError(error)) {
-        for (const id of toBuy) {
-          enqueueOfflineMutation(localStorage, userId.value, { kind: 'delete', id })
-        }
+        enqueueOfflineMutation(localStorage, userId.value, {
+          kind: 'checkout',
+          id: crypto.randomUUID(),
+          ids: toBuy,
+        })
         onCheckedOut()
         return
       }

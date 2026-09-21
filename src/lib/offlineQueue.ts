@@ -16,6 +16,14 @@ export type OfflineMutation =
   | { kind: 'insert'; id: string; row: Record<string, unknown> }
   | { kind: 'update'; id: string; patch: Record<string, unknown> }
   | { kind: 'delete'; id: string }
+  // A checkout made offline, replayed through buy_items so it still reaches
+  // purchase history (and the household's push) instead of being queued as bare
+  // deletes, which it used to be. `id` names the checkout, not a row, so the
+  // per-row coalescing below never touches it. Safe to replay late or twice:
+  // buy_items moves only rows that are still ticked and in the caller's
+  // household, so a row already bought, or unticked since by someone else, is
+  // simply not moved. The ticks it relies on are queued before it, in order.
+  | { kind: 'checkout'; id: string; ids: string[] }
 
 export interface FlushResult {
   // Mutations acknowledged by the server (including inserts folded into a
@@ -35,11 +43,11 @@ interface StoredQueue {
   mutations: OfflineMutation[]
 }
 
-// Only the query-builder entry point is used here, and typing it as the real
-// client keeps the `any` out: SupabaseClient['from'] carries PostgREST's own
+// Only the query-builder entry point, and rpc for a checkout, are used here, and
+// typing them as the real client keeps the `any` out: SupabaseClient['from'] carries PostgREST's own
 // builder types, so a typo in a filter or a patch is caught rather than waved
 // through. Structural rather than the whole client so tests can hand in a fake.
-type Db = Pick<SupabaseClient, 'from'>
+type Db = Pick<SupabaseClient, 'from' | 'rpc'>
 
 // One queue per account, rather than one queue with an account stamped on it.
 //
@@ -366,6 +374,12 @@ async function applyMutation(
       if (updateErr) return { ok: false, transient: isOfflineError(updateErr) }
       return { ok: true, transient: false }
     }
+    return { ok: false, transient: isOfflineError(error) }
+  }
+
+  if (mutation.kind === 'checkout') {
+    const { error } = await db.rpc('buy_items', { p_item_ids: mutation.ids })
+    if (!error) return { ok: true, transient: false }
     return { ok: false, transient: isOfflineError(error) }
   }
 

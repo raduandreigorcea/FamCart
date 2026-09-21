@@ -107,6 +107,28 @@ describe('flushOfflineQueue', () => {
     expect(hasQueuedOfflineMutations(storage, USER)).toBe(false)
   })
 
+  // An offline checkout used to be queued as bare deletes, so it never reached
+  // purchase history. A row added, ticked and bought all offline is the hard
+  // case: it has to be inserted (ticked) first, or buy_items has nothing to move.
+  it('replays an offline checkout through buy_items, after the rows it buys', async () => {
+    const storage = makeStorage()
+    enqueueOfflineMutation(storage, USER, insertMutation('a'))
+    enqueueOfflineMutation(storage, USER, { kind: 'update', id: 'a', patch: { checked: true } })
+    enqueueOfflineMutation(storage, USER, { kind: 'checkout', id: 'co-1', ids: ['a'] })
+
+    const db = createFakeDb()
+    db.handlers['shopping_list_items.insert'] = () => ({ data: null, error: null })
+    db.handlers['rpc.buy_items'] = () => ({ data: 1, error: null })
+
+    const result = await flushOfflineQueue(storage, USER, db)
+
+    expect(result).toEqual({ flushed: 2, failed: 0, interrupted: false })
+    expect(db.calls.map((q) => q.op)).toEqual(['insert', 'buy_items'])
+    expect(db.calls[0].payload.checked).toBe(true)
+    expect(db.calls[1].params).toEqual({ p_item_ids: ['a'] })
+    expect(hasQueuedOfflineMutations(storage, USER)).toBe(false)
+  })
+
   it('keeps each account queue separate when a session ends without signing out', () => {
     const storage = makeStorage()
     enqueueOfflineMutation(storage, USER, insertMutation('a'))
