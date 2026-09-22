@@ -178,15 +178,6 @@ const {
 // A checkout that just succeeded is proof this household has shopped, available
 // immediately rather than after the stats refetch lands.
 const boughtThisSession = ref(false)
-// Which household the cached snapshot said had shopped, or '' for none. Offline
-// this is the only answer there is, since purchase history cannot be fetched.
-//
-// The household id rather than a bare boolean, because the snapshot is keyed to the
-// USER: after creating or joining a household, that household is active immediately
-// while the painted snapshot still describes the previous one. A boolean carried
-// the old household's answer straight onto the new household's empty list, which then
-// opened on "All bought" having bought nothing. Storing what the answer is ABOUT
-// makes it self-invalidating — no path can forget to clear it.
 const loadError = ref('')
 const customProductOpen = ref(false)
 // The code the custom-product modal is naming, carried from the scan that missed
@@ -689,9 +680,6 @@ async function runInitializeHome() {
   startFirstRunGreeting()
 }
 
-// First run: teach the gestures with the tour, then (once it's dismissed) fall
-// through to the notifications ask. A returning user who's already seen the tour
-// skips straight to the notifications check.
 // Everything owed to somewhere durable when the app goes away. On a phone that
 // is most of the time, and is exactly when the next cold boot depends on it.
 //

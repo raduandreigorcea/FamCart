@@ -431,5 +431,5 @@ export function formatTime(value: string | number | Date): string {
 
 // Re-exported so a component needs one import for the whole subject rather
 // than remembering which half of it lives where.
-export { LOCALES, LOCALE_ENDONYMS, isLocale } from './locale'
+export { LOCALES, LOCALE_ENDONYMS } from './locale'
 export type { Locale } from './locale'

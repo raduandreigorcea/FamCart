@@ -45,7 +45,7 @@ function clerkImageUrl(raw: string | null | undefined): string | null {
 }
 
 export function deriveProfileFields(user: UserLike | null | undefined): ProfileFields {
-  const name = getUserDisplayName(user) || getUserPrimaryEmail(user) || 'Member'
+  const name = getUserDisplayName(user) || getUserPrimaryEmail(user) || MEMBER_FALLBACK_NAME
   // Clamped to null rather than passed through for the database to reject, and
   // that direction matters: if Clerk ever moves its image host, this degrades to
   // "no avatar" instead of failing the profile upsert — which runs on every app
