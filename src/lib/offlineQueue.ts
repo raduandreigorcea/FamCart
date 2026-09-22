@@ -62,6 +62,11 @@ type Db = Pick<SupabaseClient, 'from' | 'rpc'>
 const STORAGE_PREFIX = 'famcart-offline-queue'
 // What every build before this one wrote: a single key holding whichever
 // account's queue was last saved. Read once and migrated on the next save.
+//
+// This and renameLegacyRowKeys below are the last of the pre-rename shims. The
+// others (snapshot, active household, update and push keys) were removed on
+// 2026-09-22; these stayed because removing them loses writes rather than a
+// cache. Safe to delete from 2026-11-14, three months after the newer of the two.
 const LEGACY_STORAGE_KEY = STORAGE_PREFIX
 const VERSION = 1
 const TABLE = 'shopping_list_items'

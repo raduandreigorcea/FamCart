@@ -291,11 +291,11 @@ describe('notification preference', () => {
 
   // Deliberately not migrated: it carries no account, so adopting it for
   // whoever is signed in now is the same bug narrowed to one device.
-  it('ignores the pre-upgrade device-wide value and clears it on the next write', () => {
+  // A consent has no account recorded beside it, so a device-wide value must
+  // never be adopted by whoever happens to be signed in.
+  it('ignores a device-wide value', () => {
     const storage = fakeStorage({ 'famcart-notifications': 'on' })
     expect(getNotificationPreference(storage, 'user_a')).toBe(null)
-    setNotificationPreference(storage, 'user_a', 'on')
-    expect(storage.read()['famcart-notifications']).toBeUndefined()
   })
 
   it('has nothing to store for a caller with no account', () => {

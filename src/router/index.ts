@@ -26,15 +26,6 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
-    // This route was /family-setup until the households rename. It is the URL a
-    // half-finished signup sits on, so someone who was mid-flow across the
-    // deploy — or who bookmarked it, or has it in a PWA shortcut — would
-    // otherwise return to a dead address. The query string carries `add=1`, so
-    // it is forwarded rather than dropped.
-    path: '/family-setup',
-    redirect: (to) => ({ name: 'household-setup', query: to.query }),
-  },
-  {
     path: '/sso-callback',
     name: 'sso-callback',
     component: () => import('../views/SSOCallbackView.vue'),
@@ -50,6 +41,14 @@ const routes: RouteRecordRaw[] = [
     path: '/offline',
     name: 'offline',
     component: () => import('../views/OfflineView.vue'),
+  },
+  {
+    // Any address the app does not know, which used to render a blank page: an
+    // old bookmark (/family-setup, from before the households rename), a typo,
+    // a link from a build that had a route this one does not. Home is right for
+    // all of them, because the guard sends it on to login or setup as needed.
+    path: '/:pathMatch(.*)*',
+    redirect: '/',
   },
 ]
 
