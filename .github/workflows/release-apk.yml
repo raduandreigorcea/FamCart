@@ -43,8 +43,21 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: master
-          # The test step reads the catalog's market list (test/catalog/).
-          submodules: true
+      # The test step reads the catalog's market list (test/catalog/).
+      # FamCart-catalog is private, which the workflow token cannot read, so it is
+      # fetched on its own with a read-only deploy key (secret CATALOG_DEPLOY_KEY,
+      # deploy key "FamCart CI (read-only)" on that repo), at the exact commit this
+      # repo pins for it. admin/ is private too and nothing here needs it.
+      - name: Find the pinned catalog commit
+        id: catalog
+        run: echo "sha=$(git rev-parse HEAD:catalog)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: raduandreigorcea/FamCart-catalog
+          ref: ${{ steps.catalog.outputs.sha }}
+          path: catalog
+          ssh-key: ${{ secrets.CATALOG_DEPLOY_KEY }}
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
