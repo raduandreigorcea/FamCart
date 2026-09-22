@@ -157,6 +157,12 @@ export function useShoppingListActions(options: {
   // a refetch) can arrive at either end of that window.
   const quantityIntent = new Set<string>()
 
+  // Rows a delete or checkout has taken off the list while the server still
+  // has them. pendingItemWrites cannot cover these: it keeps the LOCAL copy of
+  // a row, and a removed row has none, so a refetch landing mid-request painted
+  // the server's copy back until the realtime DELETE took it away again.
+  const pendingRemovals = new Set<string>()
+
   // Sends every waiting quantity change now. Called before a refetch, which
   // would otherwise read back the server's pre-write number and paint over a
   // change the user can already see.
@@ -296,7 +302,8 @@ export function useShoppingListActions(options: {
     // ordered things differently, rows would visibly swap on the next background
     // sync (focus, reconnect, watchdog) — sorting every rebuild the same way is
     // what keeps the list still.
-    const fresh = [...(uncheckedRes.data ?? []), ...(checkedRes.data ?? [])] as ShoppingItemRow[]
+    const fresh = ([...(uncheckedRes.data ?? []), ...(checkedRes.data ?? [])] as ShoppingItemRow[])
+      .filter((i) => !pendingRemovals.has(i.id))
     if (pendingItemWrites.size) {
       // A write is in flight for some rows: keep the local optimistic version of
       // those, so this refetch can't momentarily revert a just-checked item to the
@@ -840,7 +847,13 @@ export function useShoppingListActions(options: {
       return
     }
 
-    const { error } = await db.rpc('buy_items', { p_item_ids: toBuy })
+    for (const id of boughtIds) pendingRemovals.add(id)
+    let error
+    try {
+      ;({ error } = await db.rpc('buy_items', { p_item_ids: toBuy }))
+    } finally {
+      for (const id of boughtIds) pendingRemovals.delete(id)
+    }
     if (error) {
       // Never reached the server (or its reply did not): keep them off the list
       // and queue the checkout, same as the offline path, including counting
@@ -1014,7 +1027,13 @@ export function useShoppingListActions(options: {
       return
     }
 
-    const { error } = await db.from('shopping_list_items').delete().eq('id', item.id)
+    pendingRemovals.add(item.id)
+    let error
+    try {
+      ;({ error } = await db.from('shopping_list_items').delete().eq('id', item.id))
+    } finally {
+      pendingRemovals.delete(item.id)
+    }
 
     if (error) {
       // Keep the row removed and queue the delete when it's just connectivity.

@@ -1042,6 +1042,41 @@ describe('toggleItem', () => {
     resolveUpdate()
     await flushPromises()
   })
+
+  // The same race for the two writes that REMOVE a row. The refetch reads the
+  // server, which still has it, and the row came back until the realtime echo
+  // took it away again.
+  it.each([
+    ['delete', 'shopping_list_items.delete', false],
+    ['checkout', 'rpc.buy_items', true],
+  ])('keeps a row gone when a refetch races its in-flight %s', async (action, handler, checked) => {
+    const server = [makeItem({ id: 'item-1', name: 'Milk', checked })]
+    const wrapper = await mountHome({ items: server })
+    mocks.db.handlers['shopping_list_items.select'] = (q) => ({
+      data: server.filter((i) => i.checked === q.filters.checked).map((i) => ({ ...i })),
+      error: null,
+    })
+
+    let resolveWrite
+    mocks.db.handlers[handler] = () =>
+      new Promise((resolve) => {
+        resolveWrite = () => resolve({ data: null, error: null })
+      })
+
+    const list = wrapper.findComponent(ShoppingList)
+    if (action === 'delete') list.vm.$emit('delete', listedItems(wrapper)[0])
+    else list.vm.$emit('checkout', ['item-1'])
+    await flushPromises()
+    expect(listedItems(wrapper).some((i) => i.id === 'item-1')).toBe(false)
+
+    __setOnlineForTest(false)
+    __setOnlineForTest(true)
+    await flushPromises()
+    expect(listedItems(wrapper).some((i) => i.id === 'item-1')).toBe(false)
+
+    resolveWrite()
+    await flushPromises()
+  })
 })
 
 describe('list ordering', () => {
