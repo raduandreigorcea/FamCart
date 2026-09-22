@@ -56,10 +56,22 @@ window.addEventListener('vite:preloadError', (event) => {
   window.location.reload()
 })
 
+// Reading window.localStorage itself throws when the browser blocks site data,
+// and a throw up here is a blank page: nothing is mounted yet to say anything.
+// Both boot readers below only ask for saved values, so "nothing saved" is an
+// honest stand-in, and the app boots in the default theme and language.
+const bootStorage: Pick<Storage, 'getItem'> = (() => {
+  try {
+    return window.localStorage
+  } catch {
+    return { getItem: () => null }
+  }
+})()
+
 // Before mount, so the first paint is already the right colour. The key, the
 // modes and the resolver live in lib/theme, shared with the settings dialog
 // that lets the user change them, and so does following the OS from here on.
-startTheme(localStorage)
+startTheme(bootStorage)
 
 // And which build this is, as an attribute on the root. Nothing is repainted
 // by it any more; see applyChannel.
@@ -74,7 +86,7 @@ applyChannel()
 //
 // No user id yet — Clerk has not loaded. lib/locale explains what stands in
 // until HomeView reconciles the account's own choice.
-void initLocale(localStorage, navigator.languages)
+void initLocale(bootStorage, navigator.languages)
 
 const app = createApp(App)
 
