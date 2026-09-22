@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 //
 // Component tests for HomeView's "buy" path: checked items are archived via the
-// buy_items RPC and removed from the list, with an offline fallback to queued
-// deletes and a rollback when the server rejects the purchase.
+// buy_items RPC and removed from the list, with an offline fallback to a queued
+// checkout and a rollback when the server rejects the purchase.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import HomeView from '../src/views/HomeView.vue'
@@ -176,7 +176,7 @@ describe('buyCheckedItems', () => {
     expect(rpcCalls(mocks.db)[0].params.p_item_ids).toEqual(['a'])
   })
 
-  it('offline: removes the items and queues deletes instead of calling the RPC', async () => {
+  it('offline: removes the items and queues the checkout instead of calling the RPC', async () => {
     const items = [makeItem({ id: 'a', name: 'Milk', checked: true })]
     const wrapper = await mountHome({ items })
     vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false)
@@ -186,11 +186,11 @@ describe('buyCheckedItems', () => {
     expect(listedItems(wrapper)).toHaveLength(0)
     expect(rpcCalls(mocks.db)).toHaveLength(0)
     const queued = loadOfflineQueue(localStorage, 'user-1')
-    expect(queued).toEqual([{ kind: 'delete', id: 'a' }])
+    expect(queued).toEqual([{ kind: 'checkout', id: expect.any(String), ids: ['a'] }])
   })
 
-  // An offline checkout writes no purchase history by design, so nothing on the
-  // server will ever confirm it happened. That left the emptied list reading
+  // An offline checkout writes no purchase history until it is replayed, so
+  // nothing on the server confirms it happened yet. That left the emptied list reading
   // "Nothing here yet" — the sentence for a household that has never shopped —
   // to a household that had just shopped in front of us. hasShopped is what
   // picks between the two sentences.
@@ -208,10 +208,10 @@ describe('buyCheckedItems', () => {
 
   // Same situation as the offline test above, reached the other way round: the
   // WebView said online, so the RPC was attempted, and it died at the network
-  // layer. The deletes are queued like the up-front offline path — and the
-  // checkout has to count as shopping for the same reason, or a household's
+  // layer. It is queued like the up-front offline path, and it
+  // has to count as shopping for the same reason, or a household's
   // first-ever checkout on a lying connection reads "Nothing here yet".
-  it('network-failed RPC: queues deletes and still counts as having shopped', async () => {
+  it('network-failed RPC: queues the checkout and still counts as having shopped', async () => {
     const items = [makeItem({ id: 'a', name: 'Milk', checked: true })]
     const wrapper = await mountHome({ items })
     expect(wrapper.findComponent(ShoppingList).props('hasShopped')).toBe(false)
@@ -220,7 +220,9 @@ describe('buyCheckedItems', () => {
     await emitBuy(wrapper, ['a'])
 
     expect(listedItems(wrapper)).toHaveLength(0)
-    expect(loadOfflineQueue(localStorage, 'user-1')).toEqual([{ kind: 'delete', id: 'a' }])
+    expect(loadOfflineQueue(localStorage, 'user-1')).toEqual([
+      { kind: 'checkout', id: expect.any(String), ids: ['a'] },
+    ])
     expect(wrapper.findComponent(ShoppingList).props('hasShopped')).toBe(true)
   })
 
@@ -236,12 +238,39 @@ describe('buyCheckedItems', () => {
 
     // Rolled back: both items are back on the list.
     expect(listedItems(wrapper).map((i) => i.id).sort()).toEqual(['a', 'c'])
-    // No delete was queued for a genuine (non-connectivity) rejection.
+    // Nothing was queued for a genuine (non-connectivity) rejection.
     expect(loadOfflineQueue(localStorage, 'user-1')).toEqual([])
     // The RPC's raw text ('nope') is masked; the user sees the generic message.
     const errorModal = wrapper
       .findAllComponents(ErrorModal)
       .find((m) => m.props('message') === 'Could not complete the checkout.')
     expect(errorModal).toBeTruthy()
+  })
+
+  // The rollback used to assign the whole pre-removal array back, which is a
+  // second rollback of everything else that happened during the round trip. The
+  // RPC is a network call and realtime keeps delivering throughout it, so a
+  // co-shopper's add landing in that window was silently undone by somebody
+  // else's checkout failing.
+  it('restores only the bought rows, keeping what arrived during the round trip', async () => {
+    const items = [
+      makeItem({ id: 'a', name: 'Milk', checked: true }),
+      makeItem({ id: 'c', name: 'Eggs', checked: false }),
+    ]
+    const wrapper = await mountHome({ items })
+    mocks.db.handlers['rpc.buy_items'] = async () => {
+      // Another member's add, arriving while the checkout is on the wire. The
+      // tick is what makes this land in the post-removal array rather than the
+      // one the view was still rendering when the RPC left.
+      await wrapper.vm.$nextTick()
+      listedItems(wrapper).push(makeItem({ id: 'd', name: 'Butter', checked: false }))
+      return { data: null, error: { message: 'nope', code: 'P0001' } }
+    }
+
+    await emitBuy(wrapper, ['a'])
+
+    // 'a' is back because its checkout failed; 'd' is still here because it had
+    // nothing to do with that checkout.
+    expect(listedItems(wrapper).map((i) => i.id).sort()).toEqual(['a', 'c', 'd'])
   })
 })

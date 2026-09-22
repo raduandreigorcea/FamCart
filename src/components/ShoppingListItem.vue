@@ -4,6 +4,7 @@ import { getProductEmoji } from '../lib/productEmoji'
 import { ITEM_QUANTITY_MAX } from '../lib/limits'
 import type { ShoppingItemRow } from '../lib/householdRealtime'
 import { t } from '../lib/i18n'
+import { initialOf } from '../lib/userIdentity'
 import AppIcon from './AppIcon.vue'
 import ShopBadges from './ShopBadges.vue'
 
@@ -53,7 +54,13 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['toggle', 'delete', 'set-quantity', 'open-quantity', 'close-quantity'])
+const emit = defineEmits<{
+  toggle: [item: ShoppingItemRow]
+  delete: [item: ShoppingItemRow]
+  'set-quantity': [change: { item: ShoppingItemRow; quantity: number }]
+  'open-quantity': [id: string]
+  'close-quantity': []
+}>()
 
 const qty = computed(() => Number(props.item.quantity) || 1)
 
@@ -513,7 +520,7 @@ function settle() {
         :title="avatarLabel"
         @click="onToggleClick"
       >
-        {{ avatarLabel.slice(0, 1).toUpperCase() }}
+        {{ initialOf(avatarLabel) }}
       </span>
     </div>
   </li>

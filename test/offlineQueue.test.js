@@ -9,6 +9,7 @@ import {
   hasQueuedOfflineMutations,
   clearOfflineQueue,
   flushOfflineQueue,
+  isItemLimitError,
   isRateLimitedError,
 } from '../src/lib/offlineQueue'
 import { createFakeDb } from './support/fakeSupabase.js'
@@ -103,6 +104,28 @@ describe('flushOfflineQueue', () => {
     expect(db.calls.map((q) => q.op)).toEqual(['insert', 'update', 'delete'])
     expect(db.calls[1].filters.id).toBe('srv-1')
     expect(db.calls[2].filters.id).toBe('srv-2')
+    expect(hasQueuedOfflineMutations(storage, USER)).toBe(false)
+  })
+
+  // An offline checkout used to be queued as bare deletes, so it never reached
+  // purchase history. A row added, ticked and bought all offline is the hard
+  // case: it has to be inserted (ticked) first, or buy_items has nothing to move.
+  it('replays an offline checkout through buy_items, after the rows it buys', async () => {
+    const storage = makeStorage()
+    enqueueOfflineMutation(storage, USER, insertMutation('a'))
+    enqueueOfflineMutation(storage, USER, { kind: 'update', id: 'a', patch: { checked: true } })
+    enqueueOfflineMutation(storage, USER, { kind: 'checkout', id: 'co-1', ids: ['a'] })
+
+    const db = createFakeDb()
+    db.handlers['shopping_list_items.insert'] = () => ({ data: null, error: null })
+    db.handlers['rpc.buy_items'] = () => ({ data: 1, error: null })
+
+    const result = await flushOfflineQueue(storage, USER, db)
+
+    expect(result).toEqual({ flushed: 2, failed: 0, interrupted: false })
+    expect(db.calls.map((q) => q.op)).toEqual(['insert', 'buy_items'])
+    expect(db.calls[0].payload.checked).toBe(true)
+    expect(db.calls[1].params).toEqual({ p_item_ids: ['a'] })
     expect(hasQueuedOfflineMutations(storage, USER)).toBe(false)
   })
 
@@ -202,6 +225,50 @@ describe('flushOfflineQueue', () => {
     expect(update.filters.id).toBe('srv-1')
     expect(update.payload).toEqual({ quantity: 5 })
     expect(hasQueuedOfflineMutations(storage, USER)).toBe(false)
+  })
+
+  // The primary key answers 23505 too, when this very insert already landed and
+  // only its reply was lost. Folding then found the row itself by name and added
+  // its quantity to itself.
+  it('treats a conflict with its own row as already done, not as a fold', async () => {
+    const storage = makeStorage()
+    enqueueOfflineMutation(storage, USER, insertMutation('a', { name: 'Milk', quantity: 2 }))
+
+    const db = createFakeDb()
+    db.handlers['shopping_list_items.insert'] = () => ({
+      data: null,
+      error: { code: '23505', message: 'duplicate key value' },
+    })
+    db.handlers['shopping_list_items.select'] = () => ({
+      data: [{ id: 'a', name: 'Milk', checked: false, quantity: 2 }],
+      error: null,
+    })
+
+    const result = await flushOfflineQueue(storage, USER, db)
+
+    expect(result).toEqual({ flushed: 1, failed: 0, interrupted: false })
+    expect(db.calls.find((q) => q.op === 'update')).toBeUndefined()
+    expect(hasQueuedOfflineMutations(storage, USER)).toBe(false)
+  })
+
+  it('holds a folded quantity at the database bound', async () => {
+    const storage = makeStorage()
+    enqueueOfflineMutation(storage, USER, insertMutation('a', { name: 'Milk', quantity: 600 }))
+
+    const db = createFakeDb()
+    db.handlers['shopping_list_items.insert'] = () => ({
+      data: null,
+      error: { code: '23505', message: 'duplicate key value' },
+    })
+    db.handlers['shopping_list_items.select'] = () => ({
+      data: [{ id: 'srv-1', name: 'milk', checked: false, quantity: 600 }],
+      error: null,
+    })
+    db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
+
+    await flushOfflineQueue(storage, USER, db)
+
+    expect(db.calls.find((q) => q.op === 'update').payload).toEqual({ quantity: 999 })
   })
 
   it('stops on a network-level failure and keeps the unsent tail', async () => {
@@ -321,6 +388,21 @@ describe('rate-limited writes', () => {
     expect(isRateLimitedError({ message: 'item_insert_rate_limit_exceeded' })).toBe(true)
     expect(isRateLimitedError({ code: '42501', message: 'permission denied' })).toBe(false)
     expect(isRateLimitedError(null)).toBe(false)
+  })
+
+  // The per-member cap is the other rejection that is a rule rather than a
+  // fault, and it answered with a hand-written sniff in two places. Misreading
+  // it shows a generic error where the friendly popup belongs and files the
+  // trigger in Sentry.
+  it('recognises the active-item cap in either field, and only it', () => {
+    expect(isItemLimitError({ message: 'member_active_item_limit_exceeded' })).toBe(true)
+    // The field neither hand-written copy looked at.
+    expect(isItemLimitError({ code: 'P0001', details: 'member_active_item_limit_exceeded' })).toBe(true)
+    // The human wording alone is not enough: any error could say "limit of".
+    expect(isItemLimitError({ message: 'You have reached the limit of 50 items.' })).toBe(false)
+    expect(isItemLimitError({ code: '23505', message: 'duplicate key value' })).toBe(false)
+    expect(isItemLimitError({ message: 'item_insert_rate_limit_exceeded' })).toBe(false)
+    expect(isItemLimitError(null)).toBe(false)
   })
 
   it('keeps a throttled insert for the next attempt instead of dropping it', async () => {

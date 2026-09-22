@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { findActiveItemByName, type ShoppingItem } from './shoppingList'
 import { captureException } from './errorReporting'
 import { clearUserScopedKeys, userScopedKey } from './perUserStorage'
+import { sumQuantities } from './limits'
 
 // Write queue for shopping-list mutations made while offline. The views apply
 // every mutation optimistically already; when the browser reports no
@@ -15,6 +16,14 @@ export type OfflineMutation =
   | { kind: 'insert'; id: string; row: Record<string, unknown> }
   | { kind: 'update'; id: string; patch: Record<string, unknown> }
   | { kind: 'delete'; id: string }
+  // A checkout made offline, replayed through buy_items so it still reaches
+  // purchase history (and the household's push) instead of being queued as bare
+  // deletes, which it used to be. `id` names the checkout, not a row, so the
+  // per-row coalescing below never touches it. Safe to replay late or twice:
+  // buy_items moves only rows that are still ticked and in the caller's
+  // household, so a row already bought, or unticked since by someone else, is
+  // simply not moved. The ticks it relies on are queued before it, in order.
+  | { kind: 'checkout'; id: string; ids: string[] }
 
 export interface FlushResult {
   // Mutations acknowledged by the server (including inserts folded into a
@@ -34,11 +43,11 @@ interface StoredQueue {
   mutations: OfflineMutation[]
 }
 
-// Only the query-builder entry point is used here, and typing it as the real
-// client keeps the `any` out: SupabaseClient['from'] carries PostgREST's own
+// Only the query-builder entry point, and rpc for a checkout, are used here, and
+// typing them as the real client keeps the `any` out: SupabaseClient['from'] carries PostgREST's own
 // builder types, so a typo in a filter or a patch is caught rather than waved
 // through. Structural rather than the whole client so tests can hand in a fake.
-type Db = Pick<SupabaseClient, 'from'>
+type Db = Pick<SupabaseClient, 'from' | 'rpc'>
 
 // One queue per account, rather than one queue with an account stamped on it.
 //
@@ -53,6 +62,11 @@ type Db = Pick<SupabaseClient, 'from'>
 const STORAGE_PREFIX = 'famcart-offline-queue'
 // What every build before this one wrote: a single key holding whichever
 // account's queue was last saved. Read once and migrated on the next save.
+//
+// This and renameLegacyRowKeys below are the last of the pre-rename shims. The
+// others (snapshot, active household, update and push keys) were removed on
+// 2026-09-22; these stayed because removing them loses writes rather than a
+// cache. Safe to delete from 2026-11-14, three months after the newer of the two.
 const LEGACY_STORAGE_KEY = STORAGE_PREFIX
 const VERSION = 1
 const TABLE = 'shopping_list_items'
@@ -280,6 +294,32 @@ export function isRateLimitedError(error: unknown): boolean {
   return `${message ?? ''} ${details ?? ''}`.includes('item_insert_rate_limit_exceeded')
 }
 
+// The per-member active-item cap, rejected by the trigger in
+// 004_shopping_list.sql. Two paths hit it — adding, and unchecking a row back
+// into the active set — and both answer it with the same friendly popup rather
+// than an error, so both need the same question answered the same way.
+//
+// It lives beside isRateLimitedError because it is the same KIND of thing: a
+// server rejection that is a rule doing its job, not a fault, told apart from a
+// real failure by sniffing a raised exception's text. Sniffing is fragile, which
+// is the argument for having exactly one copy of it rather than the two
+// hand-written ones this replaces.
+//
+// `details` is read as well as `message`, which neither copy did: PostgREST
+// surfaces a raised exception's DETAIL there, and the field it lands in has
+// moved between versions — the same reason isRateLimitedError above checks both.
+// A cap misread as a fault shows a generic error where the friendly popup
+// belongs, and reports the trigger to Sentry.
+//
+// Only the machine token, which the trigger raises as its DETAIL. It also used
+// to match the words `limit of` in the human message, the trigger's older
+// wording, which any other error saying "limit of" would have matched too.
+export function isItemLimitError(error: unknown): boolean {
+  if (!error) return false
+  const { message, details } = error as { message?: string; details?: string }
+  return `${message ?? ''} ${details ?? ''}`.includes('member_active_item_limit_exceeded')
+}
+
 async function applyMutation(
   db: Db,
   mutation: OfflineMutation,
@@ -292,12 +332,21 @@ async function applyMutation(
     // Someone added the same item while we were offline: fold our quantity into
     // their row, mirroring the insert-race handling in HomeView.
     if (error.code === '23505') {
+      // Every row, ticked ones included, so the first question can be asked of
+      // them all: is the row we collided with OUR OWN? A 23505 is also what the
+      // primary key answers when this insert already landed -- the request
+      // reached the server and only the reply was lost, which queued it as
+      // offline, or two flushes sent the same head. Folding then found the row
+      // itself by name and added its quantity to itself: 2 milk became 4. It is
+      // done, not rejected. Ticked rows count because it may have been ticked
+      // since, and would then be missed by a read of the active ones.
       const { data, error: selectErr } = await db
         .from(TABLE)
         .select('*')
         .eq('household_id', mutation.row.household_id)
-        .eq('checked', false)
       if (selectErr) return { ok: false, transient: isOfflineError(selectErr) }
+      const rows = (data ?? []) as ShoppingItem[]
+      if (rows.some((row) => row.id === mutation.id)) return { ok: true, transient: false }
       // The live equivalent of this lookup is resolveActiveItemByName in
       // shoppingListActions.ts, which the add and uncheck paths share. This one
       // stays separate deliberately: it has no local list to splice a fetched
@@ -314,7 +363,7 @@ async function applyMutation(
       // rejection, and the flush dropped the mutation by design. Every catalog
       // pick and every barcode scan carries a maker, so that was the common
       // path, not an edge one.
-      const target = findActiveItemByName((data ?? []) as ShoppingItem[], String(mutation.row.name), {
+      const target = findActiveItemByName(rows, String(mutation.row.name), {
         maker: (mutation.row.maker as string | null) ?? null,
       })
       // Still nothing to fold into: the server says this product is already
@@ -322,7 +371,7 @@ async function applyMutation(
       // this read, or gone). Dropped rather than kept, because a replay would
       // hit the same 23505 forever and wedge the queue behind it.
       if (!target) return { ok: false, transient: false }
-      const merged = (Number(target.quantity) || 1) + (Number(mutation.row.quantity) || 1)
+      const merged = sumQuantities(Number(target.quantity) || 1, Number(mutation.row.quantity) || 1)
       const { error: updateErr } = await db
         .from(TABLE)
         .update({ quantity: merged })
@@ -330,6 +379,12 @@ async function applyMutation(
       if (updateErr) return { ok: false, transient: isOfflineError(updateErr) }
       return { ok: true, transient: false }
     }
+    return { ok: false, transient: isOfflineError(error) }
+  }
+
+  if (mutation.kind === 'checkout') {
+    const { error } = await db.rpc('buy_items', { p_item_ids: mutation.ids })
+    if (!error) return { ok: true, transient: false }
     return { ok: false, transient: isOfflineError(error) }
   }
 

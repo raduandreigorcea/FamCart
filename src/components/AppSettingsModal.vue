@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, onMounted, ref, watch } from 'vue'
 import { useAuth } from '@clerk/vue'
 import AppButton from './AppButton.vue'
 import AppModal from './AppModal.vue'
@@ -42,7 +42,7 @@ const props = defineProps({
   open: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['close'])
+const emit = defineEmits<{ close: [] }>()
 
 const { userId } = useAuth()
 
@@ -117,7 +117,6 @@ async function checkForUpdates() {
 const themeMode = ref<ThemeMode>('system')
 const notificationMode = ref<NotificationPreference>('on')
 const notificationHint = ref('')
-let mediaQuery: MediaQueryList | null = null
 
 function syncPreferencesFromStorage() {
   // lib/theme owns the key and the fallback-to-system rule; this only mirrors
@@ -130,12 +129,6 @@ function syncPreferencesFromStorage() {
   // subscription that doesn't exist.
   notificationMode.value =
     getNotificationPreference(localStorage, userId.value ?? '') === 'on' ? 'on' : 'off'
-}
-
-function handleSystemThemeChange() {
-  if (themeMode.value === 'system') {
-    applyResolvedTheme('system')
-  }
 }
 
 function applyTheme(mode: ThemeMode) {
@@ -174,16 +167,10 @@ async function applyNotifications(mode: NotificationPreference) {
   // the preference is still saved and the toggle stays on.
 }
 
-// The theme has to be applied on boot, not only while this dialog is open, so
-// this component stays mounted and syncs on mount as well as on each open.
+// Mirrors the stored choices into the controls. Applying the theme and following
+// the OS belong to lib/theme (startTheme, from main.ts), not to this dialog.
 onMounted(() => {
-  mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-  mediaQuery.addEventListener('change', handleSystemThemeChange)
   syncPreferencesFromStorage()
-})
-
-onBeforeUnmount(() => {
-  mediaQuery?.removeEventListener('change', handleSystemThemeChange)
 })
 
 // The preference could have changed since this was last open — the browser's own

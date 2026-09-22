@@ -43,11 +43,6 @@ export const RELEASES_PAGE_URL =
 // grep patterns to enumerate — and the pair was duly missed when auditing what
 // signing out clears.
 const SKIPPED_VERSION_KEY = 'famcart-update-skipped-version'
-// The snake_case name both keys were written under until now. Read as a fallback
-// rather than dropped: this one holds a version somebody already declined, and
-// losing it re-offers that exact update on the next launch — the nagging the key
-// exists to prevent. Retired on the next write.
-const LEGACY_SKIPPED_VERSION_KEY = 'famcart_update_skipped_version'
 
 // The GitHub API allows 60 unauthenticated requests an hour per IP, shared by
 // everyone in the house behind one router. Checking on every single app open
@@ -169,11 +164,7 @@ export async function fetchLatestRelease(
 
 function readSkippedVersion(storage: Storage): string {
   try {
-    return (
-      storage.getItem(SKIPPED_VERSION_KEY)
-      ?? storage.getItem(LEGACY_SKIPPED_VERSION_KEY)
-      ?? ''
-    )
+    return storage.getItem(SKIPPED_VERSION_KEY) ?? ''
   } catch {
     return ''
   }
@@ -183,9 +174,6 @@ function readSkippedVersion(storage: Storage): string {
 export function skipVersion(storage: Storage, version: string): void {
   try {
     storage.setItem(SKIPPED_VERSION_KEY, version)
-    // Superseded by the line above; leaving it would let the fallback read
-    // resurrect an older declined version once the new key moves on.
-    storage.removeItem(LEGACY_SKIPPED_VERSION_KEY)
   } catch {
     // Storage disabled: the prompt reappears next launch. Mildly annoying,
     // never broken.

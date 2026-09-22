@@ -18,7 +18,7 @@ import { useHouseholdRealtime } from '../lib/householdRealtime'
 import { useProductSuggestions } from '../lib/productSuggestions'
 import { deviceTimeZone, resolveRegion } from '../lib/region'
 import type { ProductSuggestion } from '../lib/productSearch'
-import type { HouseholdMemberProfile, ShoppingItemRow } from '../lib/householdRealtime'
+import type { ShoppingItemRow } from '../lib/householdRealtime'
 import { useShoppingListActions, type AddedProduct } from '../lib/shoppingListActions'
 import { sumActiveQuantities, sumCheckedQuantities } from '../lib/shoppingList'
 import { useBarcodeScanning } from '../lib/useBarcodeScanning'
@@ -31,8 +31,9 @@ import {
   clearActiveHouseholdId,
 } from '../lib/householdCache'
 import { useHouseholdSnapshot } from '../lib/useHouseholdSnapshot'
-import { flushOfflineQueue, isOfflineError } from '../lib/offlineQueue'
-import { captureException, identifyUser } from '../lib/errorReporting'
+import { useHousehold } from '../lib/useHousehold'
+import { isOfflineError } from '../lib/offlineQueue'
+import { identifyUser } from '../lib/errorReporting'
 // isCurrentlyOffline is the app's one answer to "are we offline", handed to
 // every composable below that has to choose between writing and queueing. The
 // composite it computes (Capacitor status first, navigator.onLine as the
@@ -43,13 +44,9 @@ import { rememberUser, getRememberedUser } from '../lib/session'
 import { useFirstRunGreeting } from '../lib/firstRunGreeting'
 import { updateCheckKey, useUpdatePrompt } from '../lib/updatePrompt'
 import { syncPushUser } from '../lib/pushNotifications'
-import {
-  clampItemLimit,
-  ITEM_LIMIT_DEFAULT,
-  ITEM_NAME_MAX_LENGTH,
-} from '../lib/limits'
+import { ITEM_NAME_MAX_LENGTH } from '../lib/limits'
 import { applyUserLocale, getLocale, t } from '../lib/i18n'
-import { fetchShopsFor, loadCachedShops, shopsEnabled, type ShopMap } from '../lib/shopBadges'
+import { useShopMap } from '../lib/shopBadges'
 
 const { userId, isLoaded } = useAuth()
 const { user } = useUser()
@@ -63,66 +60,17 @@ const db = useSupabase()
 // finds nothing rather than forcing a null check at each call site.
 const effectiveUserId = computed(() => userId.value || getRememberedUser(localStorage) || '')
 
-// Every household the user belongs to; the account dialog lists them to switch.
-interface HouseholdRow { id: string; name: string; emoji?: string | null }
-
-// PostgREST types an embedded to-one relation as an array, but these selects
-// each return a single joined row; the casts at the two call sites say so once.
-interface MemberRow {
-  user_id: string
-  role?: string | null
-  profiles?: { display_name?: string | null; image_url?: string | null } | null
-}
-interface MembershipRow {
-  household_id: string
-  households?: { name?: string | null; emoji?: string | null } | null
-}
-
 const items = ref<ShoppingItemRow[]>([])
+// Where this person shops, from the device timezone. A getter, read fresh on
+// each use, so a phone that has crossed a border answers differently next time.
+const region = () => resolveRegion(deviceTimeZone())
 // For the phone's household bar. Units, not rows, the way the list has always
 // counted what is left and the buy bar counts the cart: "grapes x4" is four.
 const toBuyCount = computed(() => sumActiveQuantities(items.value))
 const inCartCount = computed(() => sumCheckedQuantities(items.value))
 
-// ─── which shop each listed product came from ────────────────────────────────
-// NIGHTLY ONLY, and a development aid rather than a feature: while the catalog
-// is being filled, a scraped product and one somebody typed in render
-// identically on the list.
-//
-// Resolved for the WHOLE list in one call, because a row is a row in this
-// database and knows nothing about the catalog -- it cannot look itself up, and
-// twenty rows must not mean twenty round trips.
-//
-// Keyed on the set of names rather than on `items` itself, so checking something
-// off, reordering, or a realtime update to a quantity does not re-ask. Only a
-// name arriving or leaving does.
-// Seeded from the cache SYNCHRONOUSLY, so the badges paint in the same frame as
-// the rows the snapshot cache paints. The fetch below still runs and replaces
-// this, which is what stops a shop that dropped a product from showing forever.
-const shopMap = ref<ShopMap>(loadCachedShops())
-
-watch(
-  () => (shopsEnabled() ? JSON.stringify([...new Set(items.value.map((i) => i.name))].sort()) : ''),
-  async (key) => {
-    if (!key) {
-      shopMap.value = new Map()
-      return
-    }
-    // Not guarded by a request id: the answer is a decoration, the calls are
-    // rare, and a stale one resolves to the same map as the fresh one for every
-    // name both of them asked about.
-    //
-    // Assigned only if it found something. An empty answer here means the
-    // catalog was unreachable, not that nothing is sold anywhere, and replacing
-    // a good cache with that would blank every badge on a flaky connection.
-    const fresh = await fetchShopsFor(
-      items.value.map((i) => i.name),
-      resolveRegion(deviceTimeZone()),
-    )
-    if (fresh.size > 0) shopMap.value = fresh
-  },
-  { immediate: true },
-)
+// Which shop each listed product came from. Nightly only; see useShopMap.
+const shopMap = useShopMap(items, region)
 // Which rows the list shows: 'all' | 'active' | 'checked'. A view of `items`,
 // never a filter on what is fetched -- every other path (realtime, offline
 // queue, the item cap) keeps working on the whole list.
@@ -134,21 +82,20 @@ const listFilter = ref<'all' | 'active' | 'checked'>('all')
 // only in practice: shopMap is empty on production, so ShoppingList offers no
 // shops and nothing can set this.
 const listShop = ref<string | null>(null)
-// Every household the user belongs to ({ id, name }), listed in the account
-// dialog. householdId below is whichever one is currently active.
-const households = ref<HouseholdRow[]>([])
-const householdId = ref<string | null>(null)
-const householdName = ref('')
-const householdInviteCode = ref('')
-const householdOwnerId = ref('')
-const householdItemLimit = ref(ITEM_LIMIT_DEFAULT)
-const householdEmoji = ref('')
-const householdMembers = ref<HouseholdMemberProfile[]>([])
-// Roster keyed by user id, so a list row can resolve its author's live avatar
-// from added_by (the row no longer carries a copied name/photo).
-const memberProfileMap = computed(
-  () => new Map(householdMembers.value.map((m) => [m.user_id, m])),
-)
+const {
+  households,
+  householdId,
+  householdName,
+  householdInviteCode,
+  householdOwnerId,
+  householdItemLimit,
+  householdEmoji,
+  householdMembers,
+  memberProfileMap,
+  loadHouseholdHeader,
+  loadHouseholds,
+  refreshHouseholdAfterSettingsChange,
+} = useHousehold({ db, userId })
 const newItem = ref('')
 // What one add puts on the list. No longer picked before the product it counts:
 // the add form got you to name a number before you had named the thing, and then
@@ -191,21 +138,12 @@ const {
   // crossed a border and an app language just switched in Settings each take
   // effect on the next keystroke. Null region is a real answer and means "rank
   // on language and popularity alone".
-  region: () => resolveRegion(deviceTimeZone()),
+  region,
   locale: () => getLocale(),
 })
 // A checkout that just succeeded is proof this household has shopped, available
 // immediately rather than after the stats refetch lands.
 const boughtThisSession = ref(false)
-// Which household the cached snapshot said had shopped, or '' for none. Offline
-// this is the only answer there is, since purchase history cannot be fetched.
-//
-// The household id rather than a bare boolean, because the snapshot is keyed to the
-// USER: after creating or joining a household, that household is active immediately
-// while the painted snapshot still describes the previous one. A boolean carried
-// the old household's answer straight onto the new household's empty list, which then
-// opened on "All bought" having bought nothing. Storing what the answer is ABOUT
-// makes it self-invalidating — no path can forget to clear it.
 const loadError = ref('')
 const customProductOpen = ref(false)
 // The code the custom-product modal is naming, carried from the scan that missed
@@ -451,9 +389,9 @@ const restartProductsLoading = computed(() => hasShopped.value && !productStatsL
 let stopReconnect: (() => void) | null = null
 
 onMounted(() => {
-  // Two reconnect signals: the reliable native one, plus the web 'online' event
-  // for the browser and tests. Both funnel into the same idempotent sync.
-  window.addEventListener('online', handleBackOnline)
+  // The one reconnect signal. lib/connectivity already folds the browser's
+  // 'online' event into it, so listening to that event here as well ran the
+  // whole sync twice per reconnect.
   stopReconnect = onReconnect(handleBackOnline)
   // The snapshot write is deferred to coalesce bursts, so it can still be
   // outstanding when the app goes away — which on a phone is most of the time,
@@ -465,7 +403,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('online', handleBackOnline)
   window.removeEventListener('pagehide', flushPendingWork)
   document.removeEventListener('visibilitychange', flushPendingWorkIfHidden)
   if (stopReconnect) stopReconnect()
@@ -560,8 +497,7 @@ async function handleBackOnline() {
   try {
     do {
       syncAgain = false
-      const { failed } = await ensureQueueFlushed()
-      if (failed) loadError.value = t('error.offlineSyncFailed')
+      await ensureQueueFlushed()
       await loadHouseholdHeader()
       await loadItems()
       await setupRealtimeSubscriptions()
@@ -697,7 +633,9 @@ async function runInitializeHome() {
   void loadHouseholdProductStats()
   // Writes queued during a previous offline session land before the first
   // fetch, so the list below already reflects them. No-op when the queue is empty.
-  await flushOfflineQueue(localStorage, effectiveUserId.value, db)
+  // Through the shared single-flight guard, never flushOfflineQueue directly: two
+  // flushes read the same head and send it twice.
+  await ensureQueueFlushed()
   await loadHouseholdHeader()
   await loadItems()
   await setupRealtimeSubscriptions()
@@ -708,9 +646,6 @@ async function runInitializeHome() {
   startFirstRunGreeting()
 }
 
-// First run: teach the gestures with the tour, then (once it's dismissed) fall
-// through to the notifications ask. A returning user who's already seen the tour
-// skips straight to the notifications check.
 // Everything owed to somewhere durable when the app goes away. On a phone that
 // is most of the time, and is exactly when the next cold boot depends on it.
 //
@@ -734,84 +669,18 @@ function sanitizeAuthCallbackUrl() {
   if (cleanedUrl) window.history.replaceState({}, '', cleanedUrl)
 }
 
-async function loadHouseholdHeader() {
-  const [{ data: household, error: householdErr }, { data: members, error: membersErr }] = await Promise.all([
-    db.from('households').select('name, invite_code, created_by, max_items_per_member, emoji').eq('id', householdId.value).single(),
-    // Name/avatar live in profiles now; embed them so the roster keeps the same
-    // { user_id, display_name, image_url, role } shape every consumer expects.
-    db.from('household_members').select('user_id, role, profiles(display_name, image_url)').eq('household_id', householdId.value),
-  ])
-
-  // Neither failure reaches the screen, and that is deliberate: this runs from
-  // the watchdog every 30 seconds while the socket is down, and a dialog per
-  // tick over a header that is merely stale would be worse than the staleness.
-  // But silence is not the same as ignoring it — dropped entirely, a household
-  // read that has started failing (a revoked membership, a transient 500) leaves
-  // a stale header up indefinitely with no trace anywhere. Offline is the
-  // expected case and is not a fault.
-  for (const err of [householdErr, membersErr]) {
-    if (err && !isOfflineError(err)) captureException(err)
-  }
-
-  if (!householdErr && household) {
-    householdName.value = household.name
-    householdInviteCode.value = household.invite_code || ''
-    householdOwnerId.value = household.created_by || ''
-    householdItemLimit.value = clampItemLimit(household.max_items_per_member)
-    householdEmoji.value = household.emoji || ''
-  }
-
-  if (!membersErr && Array.isArray(members)) {
-    householdMembers.value = (members as unknown as MemberRow[]).map((m) => ({
-      user_id: m.user_id,
-      role: m.role,
-      display_name: m.profiles?.display_name || m.user_id,
-      image_url: m.profiles?.image_url || null,
-    }))
-  }
-}
-
-// A household setting changed (name, item limit, emoji): refresh the active household's
-// header and the household list together, so a new name or emoji shows up
-// everywhere right away rather than only after the next reload.
-async function refreshHouseholdAfterSettingsChange() {
-  await loadHouseholdHeader()
-  await loadHouseholds()
-}
-
-// Every household the user belongs to, with names for the account dialog's list.
-// Only refreshes the roster; the active household is chosen by the caller.
-async function loadHouseholds() {
-  const { data, error } = await db
-    .from('household_members')
-    .select('household_id, households(name, emoji)')
-    .eq('user_id', userId.value)
-  if (error) return { error }
-  // A household row renders an emoji tile, a name and a marker, so that is all it
-  // carries, and the embed brings all of it back in this one query. It used to
-  // fetch every household's full roster here to draw composite member avatars;
-  // those are gone, and so is the extra round trip.
-  const list = ((data ?? []) as unknown as MembershipRow[]).map((row) => ({
-    id: row.household_id,
-    name: row.households?.name ?? '',
-    emoji: row.households?.emoji ?? '',
-  }))
-
-  // Stable, name-ordered so the list never reshuffles between loads.
-  // Pinned to 'en' so the household switcher lists in the same order on
-  // every device, whatever language each member is reading it in.
-  households.value = list.sort(
-    (a, b) => a.name.localeCompare(b.name, 'en') || a.id.localeCompare(b.id, 'en'),
-  )
-  return { error: null }
-}
-
 // Switch which household is active: persist the choice, tear down the old realtime
 // channels, and reload everything scoped to the new household.
 async function switchHousehold(id: string) {
   if (!id || id === householdId.value) return
   if (!households.value.some((f) => f.id === id)) return
   switchingHousehold.value = true
+  // Send the old household's debounced quantity taps before its rows are
+  // cleared below. The flush looks each row up in the list, so run after the
+  // clear (as loadItems used to) it found none and dropped the taps. It picks
+  // its rows up synchronously, so it is not awaited: the switch does not wait
+  // on a round trip.
+  void flushQuantityWrites()
   householdId.value = id
   saveActiveHouseholdId(localStorage, effectiveUserId.value, id)
   cleanupRealtimeSubscriptions()

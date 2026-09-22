@@ -67,6 +67,11 @@ describe('forgetLocalUserState', () => {
     })
     saveActiveHouseholdId(storage, 'user-1', 'fam-1')
     enqueueOfflineMutation(storage, 'user-1', { kind: 'delete', id: 'i1' })
+    // Written raw rather than through saveCachedShops, which is a no-op off
+    // nightly. The key is device-wide by design, so what has to be proved is
+    // that signing out drops it anyway — it holds the product names of the
+    // list that was on screen, and it used to outlive the session that made it.
+    storage.setItem('famcart.shop-badges.v1', JSON.stringify([['milk', ['lidl']]]))
 
     forgetLocalUserState(storage, 'user-1')
 
@@ -74,6 +79,7 @@ describe('forgetLocalUserState', () => {
     expect(loadHouseholdSnapshot(storage, 'user-1')).toBeNull()
     expect(loadActiveHouseholdId(storage, 'user-1')).toBeNull()
     expect(hasQueuedOfflineMutations(storage, 'user-1')).toBe(false)
+    expect(storage.getItem('famcart.shop-badges.v1')).toBeNull()
     // Nothing of this account left anywhere on the device.
     expect(storage.map.size).toBe(0)
   })

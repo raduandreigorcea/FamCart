@@ -50,7 +50,7 @@ const props = defineProps({
   autofocus: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['close'])
+const emit = defineEmits<{ close: [] }>()
 
 const overlay = ref<HTMLElement | null>(null)
 

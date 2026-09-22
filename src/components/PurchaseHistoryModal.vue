@@ -13,6 +13,7 @@ import {
 } from '../lib/purchaseHistory'
 import type { HouseholdMemberProfile } from '../lib/householdRealtime'
 import { formatDate, formatTime, t } from '../lib/i18n'
+import { initialOf } from '../lib/userIdentity'
 import AppIcon from './AppIcon.vue'
 
 const props = defineProps({
@@ -22,7 +23,7 @@ const props = defineProps({
   memberProfiles: { type: Array as PropType<HouseholdMemberProfile[]>, default: () => [] },
 })
 
-const emit = defineEmits(['close'])
+const emit = defineEmits<{ close: [] }>()
 
 const db = useSupabase()
 
@@ -85,7 +86,7 @@ function buyerName(userId: string | null | undefined) {
 }
 
 function buyerInitial(userId: string | null | undefined) {
-  return (buyerName(userId) || '?').slice(0, 1).toUpperCase()
+  return initialOf(buyerName(userId))
 }
 
 // Both of these follow the APP's language now, not the device's. They used to
@@ -198,7 +199,7 @@ function dayLabel(label: DayLabel) {
                       class="history-adder history-adder--fallback"
                       :title="t('history.addedBy', { name: entry.added_by_name || t('common.memberFallback') })"
                     >
-                      {{ (entry.added_by_name || '?').slice(0, 1).toUpperCase() }}
+                      {{ initialOf(entry.added_by_name) }}
                     </span>
                   </li>
                 </ul>

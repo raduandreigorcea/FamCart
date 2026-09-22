@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, type PropType } from 'vue'
 import SkeletonBlock from './SkeletonBlock.vue'
-import { memberDisplayName } from '../lib/userIdentity'
+import { initialOf, memberDisplayName } from '../lib/userIdentity'
 import { t } from '../lib/i18n'
 import type { HouseholdMemberProfile } from '../lib/householdRealtime'
 
@@ -51,7 +51,7 @@ const extraMembers = computed(() => Math.max(0, props.members.length - visibleMe
         class="member-avatar member-avatar--fallback"
         :title="memberDisplayName(member)"
       >
-        {{ (member.display_name || member.user_id || '?').slice(0, 1).toUpperCase() }}
+        {{ initialOf(memberDisplayName(member)) }}
       </span>
     </template>
     <span v-if="extraMembers > 0" class="member-avatar member-avatar--more">+{{ extraMembers }}</span>

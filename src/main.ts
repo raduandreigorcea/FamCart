@@ -8,7 +8,7 @@ import { initPushNotifications } from './lib/pushNotifications'
 import { captureEarlyErrors, startErrorReporting } from './lib/errorReporting'
 import { startNativeBack } from './lib/nativeBack'
 import { startAppUpdates } from './lib/appUpdate'
-import { applyResolvedTheme, loadThemeMode } from './lib/theme'
+import { startTheme } from './lib/theme'
 import { applyChannel } from './lib/appChannel'
 import { getClerkLocalization, initLocale, whenLocaleReady } from './lib/i18n'
 
@@ -35,20 +35,43 @@ initPushNotifications()
 // the old hashed chunk, which no longer exists and 404s to index.html — hence
 // "'text/html' is not a valid JavaScript MIME type" and "Unable to preload CSS"
 // from Vite's async component/CSS loader. A reload pulls the current manifest.
-// Guard with a one-shot session flag: a second failure means the chunk is
-// genuinely broken, not merely stale, so reloading again would only loop.
-const CHUNK_RELOAD_KEY = 'famcart-chunk-reloaded'
+// Guarded by WHEN the last reload was, not whether there was one: a failure
+// right after reloading means the chunk is genuinely broken, not merely stale,
+// and reloading again would only loop. A plain one-shot flag did that too, but
+// it never reset, so the next deploy in the same tab got no reload at all.
+// preventDefault only when reloading: otherwise Vite rethrows, and a broken
+// chunk surfaces as an error instead of a route that silently never loads.
+const CHUNK_RELOAD_KEY = 'famcart-chunk-reloaded-at'
+const CHUNK_RELOAD_WINDOW_MS = 10_000
 window.addEventListener('vite:preloadError', (event) => {
+  try {
+    const last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY)) || 0
+    if (Date.now() - last < CHUNK_RELOAD_WINDOW_MS) return
+    sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()))
+  } catch {
+    // Storage blocked: no way to tell a loop from a stale deploy, so do not reload.
+    return
+  }
   event.preventDefault()
-  if (sessionStorage.getItem(CHUNK_RELOAD_KEY)) return
-  sessionStorage.setItem(CHUNK_RELOAD_KEY, '1')
   window.location.reload()
 })
 
+// Reading window.localStorage itself throws when the browser blocks site data,
+// and a throw up here is a blank page: nothing is mounted yet to say anything.
+// Both boot readers below only ask for saved values, so "nothing saved" is an
+// honest stand-in, and the app boots in the default theme and language.
+const bootStorage: Pick<Storage, 'getItem'> = (() => {
+  try {
+    return window.localStorage
+  } catch {
+    return { getItem: () => null }
+  }
+})()
+
 // Before mount, so the first paint is already the right colour. The key, the
 // modes and the resolver live in lib/theme, shared with the settings dialog
-// that lets the user change them.
-applyResolvedTheme(loadThemeMode(localStorage))
+// that lets the user change them, and so does following the OS from here on.
+startTheme(bootStorage)
 
 // And which build this is, as an attribute on the root. Nothing is repainted
 // by it any more; see applyChannel.
@@ -63,7 +86,7 @@ applyChannel()
 //
 // No user id yet — Clerk has not loaded. lib/locale explains what stands in
 // until HomeView reconciles the account's own choice.
-void initLocale(localStorage, navigator.languages)
+void initLocale(bootStorage, navigator.languages)
 
 const app = createApp(App)
 

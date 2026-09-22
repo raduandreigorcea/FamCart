@@ -14,7 +14,7 @@ const props = defineProps({
   inviteCode: { type: String, default: '' },
 })
 
-const emit = defineEmits(['close'])
+const emit = defineEmits<{ close: [] }>()
 
 const step = ref(0)
 // 1800ms here rather than the 2000ms default, which is what this tour already

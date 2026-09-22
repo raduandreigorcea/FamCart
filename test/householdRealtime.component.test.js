@@ -97,6 +97,11 @@ beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {})
 })
 
+// The coalescing window is 250ms and these tests measure it rather than mock
+// it away, so they wait it out on real timers. Comfortably past the window,
+// still short enough not to be felt in the suite.
+const settle = () => new Promise((resolve) => setTimeout(resolve, 400))
+
 describe('shopping list channel', () => {
   it('adds INSERTed rows sorted by created_at and ignores echoes of known ids', async () => {
     const { listChannel, items, wrapper } = await mountRealtime()
@@ -121,7 +126,12 @@ describe('shopping list channel', () => {
     expect(items.value[0].quantity).toBe(7)
     expect(loadItems).not.toHaveBeenCalled()
 
+    // A burst of rows this list does not hold is one re-read, not one each:
+    // separate reads settled in completion order, so an older one could land last.
     listChannel.emit('UPDATE', { eventType: 'UPDATE', new: row({ id: 'unknown' }) })
+    listChannel.emit('UPDATE', { eventType: 'UPDATE', new: row({ id: 'unknown-2' }) })
+    listChannel.emit('UPDATE', { eventType: 'UPDATE', new: row({ id: 'unknown-3' }) })
+    await settle()
     expect(loadItems).toHaveBeenCalledTimes(1)
 
     wrapper.unmount()
@@ -137,6 +147,7 @@ describe('shopping list channel', () => {
     expect(loadItems).not.toHaveBeenCalled()
 
     listChannel.emit('DELETE', { eventType: 'DELETE', old: {} })
+    await settle()
     expect(loadItems).toHaveBeenCalledTimes(1)
 
     wrapper.unmount()
@@ -172,11 +183,6 @@ describe('household channel', () => {
 })
 
 describe('refresh coalescing', () => {
-  // The coalescing window is 250ms and these tests measure it rather than mock
-  // it away, so they wait it out on real timers. Comfortably past the window,
-  // still short enough not to be felt in the suite.
-  const settle = () => new Promise((resolve) => setTimeout(resolve, 400))
-
   it('collapses three channels resubscribing into one fetch of each half', async () => {
     const { listChannel, membersChannel, householdChannel, loadItems, loadHouseholdHeader, wrapper } =
       await mountRealtime()
@@ -236,6 +242,22 @@ describe('channel health', () => {
     expect(api.realtimeHealthy.value).toBe(true)
 
     listChannel.statusCallback('CLOSED')
+    expect(api.realtimeHealthy.value).toBe(false)
+
+    listChannel.statusCallback('SUBSCRIBED')
+    expect(api.realtimeHealthy.value).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  // One live channel is not a live socket. The list channel dying while the
+  // members channel stayed up used to read as healthy, so the watchdog never
+  // stepped in and the list stopped hearing other people's changes.
+  it('stays unhealthy while any one channel is down', async () => {
+    const { listChannel, membersChannel, api, wrapper } = await mountRealtime()
+
+    listChannel.statusCallback('CHANNEL_ERROR')
+    membersChannel.statusCallback('SUBSCRIBED')
     expect(api.realtimeHealthy.value).toBe(false)
 
     listChannel.statusCallback('SUBSCRIBED')

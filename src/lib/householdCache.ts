@@ -47,52 +47,10 @@ interface StoredSnapshot extends HouseholdSnapshot {
 // to reappear somewhere it does matter — which is why the keying itself now
 // lives in lib/perUserStorage rather than being spelled out a third time here.
 const STORAGE_PREFIX = 'famcart-household-snapshot'
-// What every build up to this one wrote: a single device-wide key. Read as a
-// fallback rather than discarded — it carries the same userId field the check
-// below applies to everything — and removed on the next save.
-const LEGACY_SHARED_KEY = STORAGE_PREFIX
-// And before that, the pre-rename key, with familyId/familyMembers/... field
-// names. Still sitting in the browser of anyone who used the app before that
-// deploy, so it is read once, rewritten under the per-user key, and deleted.
-// Dropping it instead would cost a returning user their instant-paint list for
-// no reason.
-const LEGACY_FAMILY_KEY = 'famcart-family-snapshot'
 const VERSION = 1
 
 function snapshotKey(userId: string): string {
   return userScopedKey(STORAGE_PREFIX, userId)
-}
-
-// The pre-rename snapshot, exactly as it was written.
-interface LegacyStoredSnapshot {
-  version: number
-  userId: string
-  savedAt: number
-  familyId?: string
-  familyName?: string
-  familyInviteCode?: string
-  familyOwnerId?: string
-  familyItemLimit?: number
-  familyEmoji?: string
-  familyMembers?: HouseholdMemberProfile[]
-  items?: ShoppingItemRow[]
-  hasShopped?: boolean
-}
-
-// Both shapes carry the same values under different names, so normalise once
-// here rather than teaching every reader below about the old spelling.
-function normaliseStored(parsed: StoredSnapshot & LegacyStoredSnapshot): StoredSnapshot {
-  return {
-    ...parsed,
-    householdId: parsed.householdId ?? parsed.familyId ?? '',
-    householdName: parsed.householdName ?? parsed.familyName ?? '',
-    householdInviteCode: parsed.householdInviteCode ?? parsed.familyInviteCode ?? '',
-    householdOwnerId: parsed.householdOwnerId ?? parsed.familyOwnerId ?? '',
-    householdItemLimit: parsed.householdItemLimit ?? parsed.familyItemLimit ?? 50,
-    householdEmoji: parsed.householdEmoji ?? parsed.familyEmoji ?? '',
-    householdMembers: parsed.householdMembers ?? parsed.familyMembers ?? [],
-    items: parsed.items ?? [],
-  }
 }
 
 // Older than this and the snapshot is more likely to confuse than help.
@@ -132,14 +90,9 @@ export function loadHouseholdSnapshot(
   now: number = Date.now(),
 ): HouseholdSnapshot | null {
   try {
-    // This account's own key first; the two device-wide predecessors only as
-    // fallbacks, each still subject to the userId check below.
-    const raw =
-      storage.getItem(snapshotKey(userId))
-      ?? storage.getItem(LEGACY_SHARED_KEY)
-      ?? storage.getItem(LEGACY_FAMILY_KEY)
+    const raw = storage.getItem(snapshotKey(userId))
     if (!raw) return null
-    const stored = normaliseStored(JSON.parse(raw))
+    const stored = JSON.parse(raw) as StoredSnapshot
     if (stored.version !== VERSION) return null
     // Never show one account's list to another account on the same browser.
     if (stored.userId !== userId) return null
@@ -174,11 +127,6 @@ export function saveHouseholdSnapshot(
   const stored: StoredSnapshot = { ...snapshot, version: VERSION, userId, savedAt: now }
   try {
     storage.setItem(snapshotKey(userId), JSON.stringify(stored))
-    // Both device-wide copies have been superseded by this write. Removing them
-    // here rather than on read means a browser that only ever reads (a session
-    // that never saves) keeps its fallback instead of being left with neither.
-    storage.removeItem(LEGACY_SHARED_KEY)
-    storage.removeItem(LEGACY_FAMILY_KEY)
   } catch {
     // Quota exceeded or storage disabled — skip; the app works without it.
   }
@@ -189,15 +137,6 @@ export function saveHouseholdSnapshot(
 // the trade on a shared browser. Same signature and same reasoning as
 // clearOfflineQueue, and now the same implementation.
 export function clearHouseholdSnapshot(storage: Storage, userId?: string): void {
-  try {
-    // The two device-wide predecessors, which only this module knows the names
-    // of. Always removed: neither belongs to an account, so there is nothing to
-    // scope them by.
-    storage.removeItem(LEGACY_SHARED_KEY)
-    storage.removeItem(LEGACY_FAMILY_KEY)
-  } catch {
-    // Storage disabled — nothing to clear.
-  }
   clearUserScopedKeys(storage, STORAGE_PREFIX, userId)
 }
 
@@ -219,18 +158,6 @@ export function clearHouseholdSnapshot(storage: Storage, userId?: string): void 
 // because it is the same shape one severity down, and leaving the shape in place
 // is how it comes back somewhere it matters.
 const ACTIVE_HOUSEHOLD_PREFIX = 'famcart-active-household'
-// What every build before this one wrote: one device-wide key, the account
-// stamped inside it. Read as a fallback and retired on the next save, so nobody
-// loses their choice across the deploy.
-//
-// Note it is the SAME string as the prefix, exactly as the snapshot's legacy key
-// is, and as LOCALE_DEVICE_KEY is to LOCALE_PREFIX. Safe, and only just: an
-// unscoped clearUserScopedKeys sweeps keys starting with
-// `famcart-active-household:` — the colon is in the pattern — so it never
-// touches this one, which is why the clear below removes it by name.
-const LEGACY_ACTIVE_KEY = ACTIVE_HOUSEHOLD_PREFIX
-// And before that, the pre-rename spelling, with { userId, familyId }.
-const LEGACY_ACTIVE_FAMILY_KEY = 'famcart-active-family'
 
 function activeHouseholdKey(userId: string): string {
   return userScopedKey(ACTIVE_HOUSEHOLD_PREFIX, userId)
@@ -238,22 +165,15 @@ function activeHouseholdKey(userId: string): string {
 
 export function loadActiveHouseholdId(storage: Storage, userId: string): string | null {
   try {
-    // This account's own key first; the two device-wide predecessors only as
-    // fallbacks, each still subject to the userId check below.
-    const raw =
-      storage.getItem(activeHouseholdKey(userId))
-      ?? storage.getItem(LEGACY_ACTIVE_KEY)
-      ?? storage.getItem(LEGACY_ACTIVE_FAMILY_KEY)
+    const raw = storage.getItem(activeHouseholdKey(userId))
     if (!raw) return null
-    const stored = JSON.parse(raw) as { userId?: string; householdId?: string; familyId?: string }
-    // Still checked despite the key now carrying the user id, because the two
-    // legacy keys read above carry no such guarantee.
+    const stored = JSON.parse(raw) as { userId?: string; householdId?: string }
     if (stored.userId !== userId) return null
     // Same reasoning as the snapshot above. This one is checked against live
     // memberships before it is used, so it is the better-guarded of the two —
     // but both end up in the same place, and only one of them being validated
     // is how the unvalidated one gets forgotten.
-    const active = stored.householdId || stored.familyId || null
+    const active = stored.householdId || null
     return isHouseholdId(active) ? active : null
   } catch {
     return null
@@ -263,11 +183,6 @@ export function loadActiveHouseholdId(storage: Storage, userId: string): string 
 export function saveActiveHouseholdId(storage: Storage, userId: string, householdId: string): void {
   try {
     storage.setItem(activeHouseholdKey(userId), JSON.stringify({ userId, householdId }))
-    // Both device-wide copies have been superseded by this write; leaving one
-    // would let the read above fall back to a stale choice once this account's
-    // own key is cleared.
-    storage.removeItem(LEGACY_ACTIVE_KEY)
-    storage.removeItem(LEGACY_ACTIVE_FAMILY_KEY)
   } catch {
     // Storage disabled — the active household just won't persist across reloads.
   }
@@ -278,13 +193,5 @@ export function saveActiveHouseholdId(storage: Storage, userId: string, househol
 // cleared, which is the safer end of the trade on a shared browser. Same
 // signature and same reasoning as clearHouseholdSnapshot and clearOfflineQueue.
 export function clearActiveHouseholdId(storage: Storage, userId?: string): void {
-  try {
-    // The two device-wide predecessors, which belong to no account, so there is
-    // nothing to scope them by.
-    storage.removeItem(LEGACY_ACTIVE_KEY)
-    storage.removeItem(LEGACY_ACTIVE_FAMILY_KEY)
-  } catch {
-    // Storage disabled — nothing to clear.
-  }
   clearUserScopedKeys(storage, ACTIVE_HOUSEHOLD_PREFIX, userId)
 }

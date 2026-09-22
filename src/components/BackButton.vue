@@ -2,7 +2,7 @@
 import { t } from '../lib/i18n'
 import AppIcon from './AppIcon.vue'
 
-defineEmits(['click'])
+defineEmits<{ click: [] }>()
 </script>
 
 <template>

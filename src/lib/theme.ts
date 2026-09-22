@@ -38,8 +38,7 @@ export function saveThemeMode(storage: Pick<Storage, 'setItem'>, mode: ThemeMode
 /**
  * Resolve `mode` to a concrete light/dark and stamp it on the root element,
  * which is what every `[data-theme]` selector in style.css keys off.
- * 'system' asks the OS; note the caller owns re-applying when the OS answer
- * changes (AppSettingsModal watches prefers-color-scheme for that).
+ * 'system' asks the OS; startTheme re-applies it when the OS answer changes.
  */
 export function applyResolvedTheme(mode: ThemeMode): void {
   const resolved =
@@ -49,4 +48,20 @@ export function applyResolvedTheme(mode: ThemeMode): void {
         : 'light'
       : mode
   document.documentElement.setAttribute('data-theme', resolved)
+}
+
+/**
+ * Paint the saved mode, then keep following the OS while that mode is 'system'.
+ *
+ * Called once from main.ts. The listener used to live in the settings dialog,
+ * so the login, setup and offline screens, which never mount it, stayed on
+ * whatever the OS said at boot. The saved mode is re-read on each change rather
+ * than remembered here, so a choice made in Settings needs no call back into
+ * this module.
+ */
+export function startTheme(storage: Pick<Storage, 'getItem'>): void {
+  applyResolvedTheme(loadThemeMode(storage))
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (loadThemeMode(storage) === 'system') applyResolvedTheme('system')
+  })
 }

@@ -9,6 +9,7 @@ import {
   enqueueOfflineMutation,
   flushOfflineQueue,
   hasQueuedOfflineMutations,
+  isItemLimitError,
   isOfflineError,
   isRateLimitedError,
   loadOfflineQueue,
@@ -16,8 +17,7 @@ import {
 } from './offlineQueue'
 import { userMessage } from './errorMessages'
 import { t } from './i18n'
-import { captureException } from './errorReporting'
-import { ITEM_NAME_MAX_LENGTH, ITEM_QUANTITY_MAX } from './limits'
+import { ITEM_NAME_MAX_LENGTH, ITEM_QUANTITY_MAX, sumQuantities } from './limits'
 import type { ShoppingItemRow } from './householdRealtime'
 import type { ProductSuggestion } from './productSearch'
 
@@ -157,6 +157,12 @@ export function useShoppingListActions(options: {
   // a refetch) can arrive at either end of that window.
   const quantityIntent = new Set<string>()
 
+  // Rows a delete or checkout has taken off the list while the server still
+  // has them. pendingItemWrites cannot cover these: it keeps the LOCAL copy of
+  // a row, and a removed row has none, so a refetch landing mid-request painted
+  // the server's copy back until the realtime DELETE took it away again.
+  const pendingRemovals = new Set<string>()
+
   // Sends every waiting quantity change now. Called before a refetch, which
   // would otherwise read back the server's pre-write number and paint over a
   // change the user can already see.
@@ -219,9 +225,17 @@ export function useShoppingListActions(options: {
       return Promise.resolve({ flushed: 0, failed: 0, interrupted: false })
     }
     if (!flushPromise) {
-      flushPromise = flushOfflineQueue(localStorage, userId.value, db).finally(() => {
-        flushPromise = null
-      })
+      flushPromise = flushOfflineQueue(localStorage, userId.value, db)
+        .then((result) => {
+          // A refused write is dropped by the flush, so this is the only moment
+          // anyone can be told. Said here, where every flush passes (boot, each
+          // refetch, reconnect), not by whichever caller happens to look.
+          if (result.failed) loadError.value = t('error.offlineSyncFailed')
+          return result
+        })
+        .finally(() => {
+          flushPromise = null
+        })
     }
     return flushPromise
   }
@@ -236,17 +250,21 @@ export function useShoppingListActions(options: {
     // server's version without the user's own pending change.
     await ensureQueueFlushed()
 
+    // Which household these rows will be ABOUT, read before the round trip and
+    // checked against the live one after it. See the guard below.
+    const forHousehold = householdId.value
+
     const [uncheckedRes, checkedRes] = await Promise.all([
       db
         .from('shopping_list_items')
         .select('*')
-        .eq('household_id', householdId.value)
+        .eq('household_id', forHousehold)
         .eq('checked', false)
         .order('created_at', { ascending: true }),
       db
         .from('shopping_list_items')
         .select('*')
-        .eq('household_id', householdId.value)
+        .eq('household_id', forHousehold)
         .eq('checked', true)
         // Most recently checked first, so the 30-row cap keeps the latest ticks.
         // This is a "which rows survive the cap" order, not a display order:
@@ -254,6 +272,21 @@ export function useShoppingListActions(options: {
         .order('checked_at', { ascending: false, nullsFirst: false })
         .limit(30),
     ])
+
+    // The household moved on while these were in flight, so they are somebody
+    // else's rows now — the previous household's, about to be painted under the
+    // current household's name.
+    //
+    // Returned before the error check as well as before the assignment, and
+    // deliberately: a failed read of a household the user has left must not
+    // raise "couldn't load the list" over a list that loaded perfectly well.
+    //
+    // The switch path re-reads householdId after its own awaits, so it is not
+    // what reaches this. A load already on the wire is: the reconnect handler,
+    // each realtime subscribe acknowledgement, and the watchdog every 30
+    // seconds while the socket is down all refetch the household that was
+    // current when they started.
+    if (householdId.value !== forHousehold) return
 
     // Offline: keep the cached list on screen and let the 'online' handler refetch.
     // Genuine server errors get a plain message, never a raw "Failed to fetch".
@@ -269,7 +302,8 @@ export function useShoppingListActions(options: {
     // ordered things differently, rows would visibly swap on the next background
     // sync (focus, reconnect, watchdog) — sorting every rebuild the same way is
     // what keeps the list still.
-    const fresh = [...(uncheckedRes.data ?? []), ...(checkedRes.data ?? [])] as ShoppingItemRow[]
+    const fresh = ([...(uncheckedRes.data ?? []), ...(checkedRes.data ?? [])] as ShoppingItemRow[])
+      .filter((i) => !pendingRemovals.has(i.id))
     if (pendingItemWrites.size) {
       // A write is in flight for some rows: keep the local optimistic version of
       // those, so this refetch can't momentarily revert a just-checked item to the
@@ -402,7 +436,7 @@ export function useShoppingListActions(options: {
     }
 
     const previousQty = Number(target.quantity) || 1
-    target.quantity = previousQty + quantity
+    target.quantity = sumQuantities(previousQty, quantity)
     // Guarded like every other write, and it was the one that was not: this row
     // now holds a number the server has not been told about, and a realtime
     // UPDATE landing in that window (another device, or a previous write of our
@@ -462,7 +496,7 @@ export function useShoppingListActions(options: {
       // put the TYPED words on the list carrying the picked product's maker.
       selectedProduct.value = null
       const previousQty = Number(existing.quantity) || 1
-      existing.quantity = previousQty + quantity // optimistic
+      existing.quantity = sumQuantities(previousQty, quantity) // optimistic
       reportAdded(name, maker)
       if (picked) recordProductAdd(picked)
 
@@ -561,10 +595,7 @@ export function useShoppingListActions(options: {
       // Roll back the optimistic row and surface the reason.
       items.value = items.value.filter((i) => i.id !== id)
       clearLastAdded() // it did not land after all
-      if (
-        error.message?.includes('member_active_item_limit_exceeded') ||
-        error.message?.includes('limit of')
-      ) {
+      if (isItemLimitError(error)) {
         limitReachedPopupOpen.value = true
       } else {
         // The item-insert ceiling (004_shopping_list.sql) gets its own
@@ -622,12 +653,17 @@ export function useShoppingListActions(options: {
     const previousTargetQty = Number(target.quantity) || 1
     const addedQty = Number(source.quantity) || 1
 
-    target.quantity = previousTargetQty + addedQty
+    target.quantity = sumQuantities(previousTargetQty, addedQty)
     const removedSource = sourceIndex !== -1 ? items.value.splice(sourceIndex, 1)[0]! : source
 
     const rollback = (message: string) => {
       target.quantity = previousTargetQty
-      if (sourceIndex !== -1) items.value.splice(sourceIndex, 0, removedSource)
+      // Merged back by id and re-sorted, not spliced at sourceIndex: the list
+      // has been live through the round trip, so that index can point anywhere
+      // now (the same reason checkoutItems restores this way).
+      if (sourceIndex !== -1 && !items.value.some((i) => i.id === removedSource.id)) {
+        items.value = sortItemsForDisplay([...items.value, removedSource])
+      }
       loadError.value = message
     }
 
@@ -651,13 +687,18 @@ export function useShoppingListActions(options: {
     beginItemWrite(target.id)
     beginItemWrite(source.id)
     try {
-      const { error: updateErr } = await db
-        .from('shopping_list_items')
-        .update({ quantity: target.quantity })
-        .eq('id', target.id)
-      if (updateErr) {
-        // Neither half reached the server: queue both and keep the merged state.
-        if (isOfflineError(updateErr)) {
+      // One call, one transaction (merge_items, 004_shopping_list.sql). It was
+      // two writes, the quantity and then the delete, with an undo for when the
+      // second failed; an undo that failed too left the quantity counted twice.
+      const { data, error } = await db.rpc('merge_items', {
+        p_source: source.id,
+        p_target: target.id,
+      })
+      if (error) {
+        // Never reached the server, or its reply did not: queue both halves and
+        // keep the merged state. The quantity is absolute and the delete
+        // idempotent, so replaying a merge that did land changes nothing.
+        if (isOfflineError(error)) {
           enqueueOfflineMutation(localStorage, userId.value, {
             kind: 'update',
             id: target.id,
@@ -666,40 +707,12 @@ export function useShoppingListActions(options: {
           enqueueOfflineMutation(localStorage, userId.value, { kind: 'delete', id: source.id })
           return
         }
-        rollback(userMessage(updateErr, t('error.mergeItemsFailed')))
+        rollback(userMessage(error, t('error.mergeItemsFailed')))
         return
       }
-
-      const { error: deleteErr } = await db
-        .from('shopping_list_items')
-        .delete()
-        .eq('id', source.id)
-      if (deleteErr) {
-        // The quantity bump already landed; only the delete is outstanding. Queue it
-        // rather than undoing a change the server has committed.
-        if (deferIfOffline(deleteErr, { kind: 'delete', id: source.id })) return
-        // Undo the quantity bump we already committed, then restore the row.
-        //
-        // This is the one write here that has no rollback of its own, so its
-        // result cannot be dropped: if the compensation fails, the server keeps
-        // a target row carrying the summed quantity for a merge that did not
-        // happen, while the screen is put back as though nothing did. Queue it
-        // when the failure is connectivity — the replay is exactly the retry
-        // this needs — and report the rest, because a silent divergence between
-        // the list and the database is the worst of the available outcomes.
-        const { error: undoErr } = await db
-          .from('shopping_list_items')
-          .update({ quantity: previousTargetQty })
-          .eq('id', target.id)
-        if (undoErr && !deferIfOffline(undoErr, {
-          kind: 'update',
-          id: target.id,
-          patch: { quantity: previousTargetQty },
-        })) {
-          captureException(undoErr)
-        }
-        rollback(userMessage(deleteErr, t('error.mergeItemsFailed')))
-      }
+      // The server sums the rows it holds, which is the truth if someone else
+      // changed either one since this list last heard.
+      if (typeof data === 'number') target.quantity = data
     } finally {
       endItemWrite(source.id)
       endItemWrite(target.id)
@@ -761,10 +774,7 @@ export function useShoppingListActions(options: {
         // Unchecking would push the member over the active-item cap
         // (004_shopping_list.sql enforces it on uncheck too): show the same
         // friendly popup as adding.
-        if (
-          error.message?.includes('member_active_item_limit_exceeded') ||
-          error.message?.includes('limit of')
-        ) {
+        if (isItemLimitError(error)) {
           limitReachedPopupOpen.value = true
           return
         }
@@ -811,43 +821,71 @@ export function useShoppingListActions(options: {
     if (!toBuy.length) return
 
     // Optimistic removal covers only rows actually present and checked. Keep
-    // the pre-removal array so a hard failure can restore the exact list, order
-    // included.
+    // the removed rows themselves, rather than the whole pre-removal array, so
+    // a hard failure can put back exactly what this checkout took and nothing
+    // else — see the restore below.
     const boughtIds = new Set(bought.map((i) => i.id))
-    const snapshot = items.value
     items.value = items.value.filter((i) => !boughtIds.has(i.id))
 
-    // Offline (or a WebView that lies about connectivity): there is no multi-table
-    // transaction to run here, so queue plain deletes. The rows leave the list but
-    // an offline checkout is not recorded in history — it is archived only when the
-    // checkout runs against the server.
+    // Offline (or a WebView that lies about connectivity): queue the checkout
+    // itself, replayed through buy_items once back online, so it still lands in
+    // purchase history. It used to queue plain deletes, and a checkout made in a
+    // shop with no signal (the usual place for one) vanished from history.
     if (isOffline()) {
-      for (const id of toBuy) {
-        enqueueOfflineMutation(localStorage, userId.value, { kind: 'delete', id })
-      }
+      enqueueOfflineMutation(localStorage, userId.value, {
+        kind: 'checkout',
+        id: crypto.randomUUID(),
+        ids: toBuy,
+      })
       // Still a checkout as far as the screen is concerned, so it still counts.
       // Without this the list empties and then reads "Nothing here yet" — the
       // sentence for a household that has never shopped — because the only
-      // other things that answer that question are purchase history (which this
-      // path deliberately does not write) and the cached answer (which a
-      // household on its first-ever checkout does not have yet).
+      // other things that answer that question are purchase history (which
+      // nothing has written yet) and the cached answer (which a household on
+      // its first-ever checkout does not have yet).
       onCheckedOut()
       return
     }
 
-    const { error } = await db.rpc('buy_items', { p_item_ids: toBuy })
+    for (const id of boughtIds) pendingRemovals.add(id)
+    let error
+    try {
+      ;({ error } = await db.rpc('buy_items', { p_item_ids: toBuy }))
+    } finally {
+      for (const id of boughtIds) pendingRemovals.delete(id)
+    }
     if (error) {
-      // Never reached the server: keep them off the list and fall back to queued
-      // deletes, same as the offline path — including counting as a checkout,
-      // for the reason that path gives. The screen said "bought" either way.
+      // Never reached the server (or its reply did not): keep them off the list
+      // and queue the checkout, same as the offline path, including counting
+      // as a checkout. A replay after a lost reply moves nothing, since the rows
+      // are already gone.
       if (isOfflineError(error)) {
-        for (const id of toBuy) {
-          enqueueOfflineMutation(localStorage, userId.value, { kind: 'delete', id })
-        }
+        enqueueOfflineMutation(localStorage, userId.value, {
+          kind: 'checkout',
+          id: crypto.randomUUID(),
+          ids: toBuy,
+        })
         onCheckedOut()
         return
       }
-      items.value = snapshot
+      // Put the rows back, rather than putting the whole list back.
+      //
+      // Assigning the pre-removal array was a second, quieter rollback of
+      // everything else that had happened since: the RPC is a round trip, and
+      // realtime delivers other people's adds, ticks and quantity changes
+      // throughout it. Those landed in the array this function had already
+      // replaced, so restoring the old one silently undid them — a co-shopper's
+      // add vanishing because somebody else's checkout failed.
+      //
+      // Merged by id for the same reason deleteItem re-sorts rather than
+      // splicing at a remembered index: the list is not the one this started
+      // with. A row that is already back (its own realtime echo beat us here)
+      // is left alone.
+      const present = new Set(items.value.map((i) => i.id))
+      items.value = sortItemsForDisplay([
+        ...items.value,
+        ...bought.filter((i) => !present.has(i.id)),
+      ])
       loadError.value = userMessage(error, t('error.checkoutFailed'))
       return
     }
@@ -989,7 +1027,13 @@ export function useShoppingListActions(options: {
       return
     }
 
-    const { error } = await db.from('shopping_list_items').delete().eq('id', item.id)
+    pendingRemovals.add(item.id)
+    let error
+    try {
+      ;({ error } = await db.from('shopping_list_items').delete().eq('id', item.id))
+    } finally {
+      pendingRemovals.delete(item.id)
+    }
 
     if (error) {
       // Keep the row removed and queue the delete when it's just connectivity.

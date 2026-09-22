@@ -11,7 +11,7 @@ const props = defineProps({
 
 const resolvedAriaLabel = computed(() => props.ariaLabel || t('common.closeModal'))
 
-const emit = defineEmits(['click'])
+const emit = defineEmits<{ click: [] }>()
 </script>
 
 <template>

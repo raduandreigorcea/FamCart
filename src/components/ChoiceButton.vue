@@ -5,7 +5,7 @@ defineProps({
   description: { type: String, default: '' },
 })
 
-defineEmits(['click'])
+defineEmits<{ click: [] }>()
 </script>
 
 <template>

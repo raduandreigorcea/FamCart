@@ -105,10 +105,11 @@ begin
     delete from public.shopping_list_items
     where id = any(p_item_ids)
       and checked = true
-      and household_id in (
-        select fm.household_id from public.household_members fm
-        where fm.user_id = v_user
-      )
+      -- active_household_ids(), not household_members: a household an admin
+      -- soft-deleted keeps its member rows, and this function is SECURITY
+      -- DEFINER, so reading membership directly let a member with cached ids
+      -- still check out of a household that every policy already hides.
+      and household_id in (select public.active_household_ids())
     returning household_id, id, name, maker, quantity, added_by
   )
   insert into public.purchase_history

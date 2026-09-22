@@ -45,7 +45,7 @@ function clerkImageUrl(raw: string | null | undefined): string | null {
 }
 
 export function deriveProfileFields(user: UserLike | null | undefined): ProfileFields {
-  const name = getUserDisplayName(user) || getUserPrimaryEmail(user) || 'Member'
+  const name = getUserDisplayName(user) || getUserPrimaryEmail(user) || MEMBER_FALLBACK_NAME
   // Clamped to null rather than passed through for the database to reject, and
   // that direction matters: if Clerk ever moves its image host, this degrades to
   // "no avatar" instead of failing the profile upsert — which runs on every app
@@ -98,7 +98,11 @@ export function memberDisplayName(
   return member?.display_name || t('common.memberFallback')
 }
 
+/** The letter an avatar shows when there is no photo, or '?' for no name. */
+export function initialOf(name: string | null | undefined): string {
+  return (name || '?').slice(0, 1).toUpperCase()
+}
+
 export function getUserInitial(user: UserLike | null | undefined): string {
-  const name = getUserDisplayName(user) || getUserPrimaryEmail(user) || '?'
-  return name.slice(0, 1).toUpperCase()
+  return initialOf(getUserDisplayName(user) || getUserPrimaryEmail(user))
 }

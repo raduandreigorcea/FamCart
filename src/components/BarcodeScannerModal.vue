@@ -37,7 +37,7 @@ const props = defineProps({
   unknownCode: { type: String, default: '' },
 })
 
-const emit = defineEmits(['detected', 'name-unknown', 'close'])
+const emit = defineEmits<{ detected: [code: string]; 'name-unknown': [code: string]; close: [] }>()
 
 // How long the frame stays lit after a read. Long enough to see, short enough to
 // be over before the lookup usually is.

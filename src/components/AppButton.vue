@@ -20,7 +20,7 @@ defineProps({
   disabled: { type: Boolean, default: false },
 })
 
-defineEmits(['click'])
+defineEmits<{ click: [event: MouseEvent] }>()
 </script>
 
 <template>

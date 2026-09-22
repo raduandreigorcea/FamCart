@@ -74,7 +74,13 @@ const props = defineProps({
 // Uneven widths so the placeholder reads as products rather than a bar chart.
 const skeletonWidths = ['58%', '41%', '66%']
 
-const emit = defineEmits(['submit', 'select', 'add-custom', 'scan', 'select-shop'])
+const emit = defineEmits<{
+  submit: []
+  select: [product: ProductSuggestion]
+  'add-custom': []
+  scan: []
+  'select-shop': [shop: string | null]
+}>()
 
 // ─── The button at the end of the row ────────────────────────────────────────
 // With nothing typed there is nothing to add, so the add button spends most of

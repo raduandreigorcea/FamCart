@@ -77,25 +77,11 @@ export type NotificationPreference = 'on' | 'off'
 // Keyed by user, that whole sequence is correct without anything else changing:
 // B has no preference and gets asked, and A's survives for when A comes back.
 const PREFERENCE_PREFIX = 'famcart-notifications'
-// The device-wide key every build before this one wrote.
-const LEGACY_PREFERENCE_KEY = PREFERENCE_PREFIX
 
 function preferenceKey(userId: string): string {
   return userScopedKey(PREFERENCE_PREFIX, userId)
 }
 
-// The legacy value is deliberately NOT migrated onto the first account to read
-// it, which is what householdCache and offlineQueue do with theirs.
-//
-// Those two carry a cached list and unsent writes: adopting them for the wrong
-// account is caught by their own userId checks, and dropping them costs a
-// returning user something for nothing. This carries a consent, there is no
-// account recorded alongside it to check against, and adopting it for whoever
-// happens to be signed in now is precisely the bug above — narrowed to one
-// device rather than fixed. So it is ignored, and removed on the next write.
-//
-// The cost is one notification prompt for everyone who had already answered.
-// They answer it in one tap, and it is the honest question to ask.
 export function getNotificationPreference(
   storage: Pick<Storage, 'getItem'>,
   userId: string,
@@ -106,16 +92,12 @@ export function getNotificationPreference(
 }
 
 export function setNotificationPreference(
-  storage: Pick<Storage, 'setItem'> & Partial<Pick<Storage, 'removeItem'>>,
+  storage: Pick<Storage, 'setItem'>,
   userId: string,
   mode: NotificationPreference,
 ): void {
   if (!userId) return
   storage.setItem(preferenceKey(userId), mode)
-  // Superseded by the line above: this account has now answered under its own
-  // key, so the unattributed one has nothing left to say. Optional on the type
-  // because the unit tests hand in a two-accessor stub.
-  storage.removeItem?.(LEGACY_PREFERENCE_KEY)
 }
 
 export function isPushSupported(): boolean {

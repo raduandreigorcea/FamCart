@@ -39,7 +39,12 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['close', 'refresh-household', 'household-deleted', 'household-left'])
+const emit = defineEmits<{
+  close: []
+  'refresh-household': []
+  'household-deleted': []
+  'household-left': []
+}>()
 
 const { userId } = useAuth()
 

@@ -29,7 +29,10 @@ const props = defineProps({
   initialBarcode: { type: String, default: '' },
 })
 
-const emit = defineEmits(['submit', 'cancel'])
+const emit = defineEmits<{
+  submit: [product: { name: string; maker: string | null; barcode: string | null }]
+  cancel: []
+}>()
 
 // What product_catalog_barcode_format accepts (006_product_catalog.sql). The
 // server drops anything else silently, which is right for a fire-and-forget RPC

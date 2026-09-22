@@ -157,8 +157,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  // Unmount so each HomeView's window 'online' listener is removed; a leaked
-  // listener from an earlier test would flush the offline queue against that
+  // Unmount so each HomeView's reconnect handler is removed; a leaked
+  // handler from an earlier test would flush the offline queue against that
   // test's stale fake db.
   while (mountedWrappers.length) mountedWrappers.pop().unmount()
   // Reset the connectivity singleton to online (after unmount, so no detached
@@ -174,7 +174,10 @@ function goOffline() {
 
 function goOnline() {
   vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(true)
-  window.dispatchEvent(new Event('online'))
+  // The offline-to-online edge, which is what lib/connectivity reports as a
+  // reconnect (it folds the browser's own 'online' event into the same signal).
+  __setOnlineForTest(false)
+  __setOnlineForTest(true)
 }
 
 describe('cached snapshot', () => {
@@ -825,8 +828,7 @@ describe('toggleItem', () => {
     const checked = makeItem({ id: 'item-a', name: 'Milk', quantity: 2, checked: true })
     const active = makeItem({ id: 'item-b', name: 'Milk', quantity: 3 })
     const wrapper = await mountHome({ items: [active, checked] })
-    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
-    mocks.db.handlers['shopping_list_items.delete'] = () => ({ data: null, error: null })
+    mocks.db.handlers['rpc.merge_items'] = () => ({ data: 5, error: null })
 
     const source = listedItems(wrapper).find((i) => i.id === 'item-a')
     wrapper.findComponent(ShoppingList).vm.$emit('toggle', source)
@@ -836,25 +838,64 @@ describe('toggleItem', () => {
     expect(items).toHaveLength(1)
     expect(items[0].id).toBe('item-b')
     expect(items[0].quantity).toBe(5)
-    const del = mocks.db.calls.find((q) => q.op === 'delete')
-    expect(del.filters.id).toBe('item-a')
+    // One call, not an update and a delete: both halves land or neither does.
+    const merge = mocks.db.calls.find((q) => q.op === 'merge_items')
+    expect(merge.params).toEqual({ p_source: 'item-a', p_target: 'item-b' })
+    expect(mocks.db.calls.some((q) => q.op === 'update' || q.op === 'delete')).toBe(false)
   })
 
-  // Both halves of a merge are mid-write for the whole of it, and neither was
-  // guarded. The target holds a summed quantity the server has not seen; the
-  // source has been taken off the list while the server still has it, so an
-  // echo for it would find no local row and fall through to a refetch that puts
-  // it straight back — undoing the merge in front of the user.
+  // The server sums the rows it holds. If another device changed the target in
+  // the meantime, its answer is the truth and replaces the local guess.
+  it('takes the merged quantity the server answers with', async () => {
+    const checked = makeItem({ id: 'item-a', name: 'Milk', quantity: 2, checked: true })
+    const active = makeItem({ id: 'item-b', name: 'Milk', quantity: 3 })
+    const wrapper = await mountHome({ items: [active, checked] })
+    mocks.db.handlers['rpc.merge_items'] = () => ({ data: 7, error: null })
+
+    const source = listedItems(wrapper).find((i) => i.id === 'item-a')
+    wrapper.findComponent(ShoppingList).vm.$emit('toggle', source)
+    await flushPromises()
+
+    expect(listedItems(wrapper)[0].quantity).toBe(7)
+  })
+
+  // A merge is the one path that can sum two large numbers. The optimistic
+  // number is held at the database bound too, so the screen never shows a
+  // quantity the server would refuse.
+  it('holds a merged quantity at the database bound on screen', async () => {
+    const checked = makeItem({ id: 'item-a', name: 'Milk', quantity: 600, checked: true })
+    const active = makeItem({ id: 'item-b', name: 'Milk', quantity: 600 })
+    const wrapper = await mountHome({ items: [active, checked] })
+    let finish
+    mocks.db.handlers['rpc.merge_items'] = () =>
+      new Promise((resolve) => {
+        finish = () => resolve({ data: 999, error: null })
+      })
+
+    const source = listedItems(wrapper).find((i) => i.id === 'item-a')
+    wrapper.findComponent(ShoppingList).vm.$emit('toggle', source)
+    await flushPromises()
+    expect(listedItems(wrapper)[0].quantity).toBe(999)
+
+    finish()
+    await flushPromises()
+    expect(listedItems(wrapper)[0].quantity).toBe(999)
+    expect(wrapper.findComponent(ErrorModal).props('message')).toBe('')
+  })
+
+  // Both rows are mid-write for the whole merge. The target holds a summed
+  // quantity the server has not confirmed; the source has been taken off the
+  // list while the server still has it, so an echo for it would find no local
+  // row and fall through to a refetch that puts it straight back.
   it('guards both rows while the merge is on the wire', async () => {
     const checked = makeItem({ id: 'item-a', name: 'Milk', quantity: 2, checked: true })
     const active = makeItem({ id: 'item-b', name: 'Milk', quantity: 3 })
     const wrapper = await mountHome({ items: [active, checked] })
-    let finishUpdate
-    mocks.db.handlers['shopping_list_items.update'] = () =>
+    let finish
+    mocks.db.handlers['rpc.merge_items'] = () =>
       new Promise((resolve) => {
-        finishUpdate = () => resolve({ data: null, error: null })
+        finish = () => resolve({ data: 5, error: null })
       })
-    mocks.db.handlers['shopping_list_items.delete'] = () => ({ data: null, error: null })
 
     const source = listedItems(wrapper).find((i) => i.id === 'item-a')
     wrapper.findComponent(ShoppingList).vm.$emit('toggle', source)
@@ -863,20 +904,19 @@ describe('toggleItem', () => {
     expect(wrapper.vm.pendingItemWrites.has('item-a')).toBe(true)
     expect(wrapper.vm.pendingItemWrites.has('item-b')).toBe(true)
 
-    finishUpdate()
+    finish()
     await flushPromises()
     expect(wrapper.vm.pendingItemWrites.has('item-a')).toBe(false)
     expect(wrapper.vm.pendingItemWrites.has('item-b')).toBe(false)
   })
 
-  it('restores both rows when the merge delete fails', async () => {
+  it('restores both rows when the merge is refused', async () => {
     const checked = makeItem({ id: 'item-a', name: 'Milk', quantity: 2, checked: true })
     const active = makeItem({ id: 'item-b', name: 'Milk', quantity: 3 })
     const wrapper = await mountHome({ items: [active, checked] })
-    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
-    mocks.db.handlers['shopping_list_items.delete'] = () => ({
+    mocks.db.handlers['rpc.merge_items'] = () => ({
       data: null,
-      error: { message: 'delete failed' },
+      error: { code: 'P0001', message: 'Nothing to merge.', details: 'merge_items_not_found' },
     })
 
     const source = listedItems(wrapper).find((i) => i.id === 'item-a')
@@ -888,6 +928,45 @@ describe('toggleItem', () => {
     expect(items.find((i) => i.id === 'item-b').quantity).toBe(3)
     expect(items.find((i) => i.id === 'item-a')).toBeTruthy()
     expect(wrapper.findComponent(ErrorModal).props('message')).toBe('Could not merge those items.')
+  })
+
+  // Never reached the server, or its reply did not. The merge stays on screen
+  // and both halves are queued; replaying a merge that did land is harmless,
+  // because the quantity is absolute and the delete idempotent.
+  it('queues both halves when the merge dies at the network', async () => {
+    const checked = makeItem({ id: 'item-a', name: 'Milk', quantity: 2, checked: true })
+    const active = makeItem({ id: 'item-b', name: 'Milk', quantity: 3 })
+    const wrapper = await mountHome({ items: [active, checked] })
+    mocks.db.handlers['rpc.merge_items'] = () => ({ data: null, error: { message: 'Failed to fetch' } })
+
+    const source = listedItems(wrapper).find((i) => i.id === 'item-a')
+    wrapper.findComponent(ShoppingList).vm.$emit('toggle', source)
+    await flushPromises()
+
+    expect(listedItems(wrapper).map((i) => [i.id, i.quantity])).toEqual([['item-b', 5]])
+    expect(loadOfflineQueue(localStorage, 'user-1')).toEqual([
+      { kind: 'update', id: 'item-b', patch: { quantity: 5 } },
+      { kind: 'delete', id: 'item-a' },
+    ])
+  })
+
+  // The source is off the list for the whole round trip while the server still
+  // has it, so a refetch landing in that window puts it back. The rollback used
+  // to splice it in again at its old index regardless: the row twice.
+  it('does not restore the merge source twice when a refetch already put it back', async () => {
+    const checked = makeItem({ id: 'item-a', name: 'Milk', quantity: 2, checked: true })
+    const active = makeItem({ id: 'item-b', name: 'Milk', quantity: 3 })
+    const wrapper = await mountHome({ items: [active, checked] })
+    mocks.db.handlers['rpc.merge_items'] = () => {
+      listedItems(wrapper).push(makeItem({ id: 'item-a', name: 'Milk', quantity: 2, checked: true }))
+      return { data: null, error: { code: 'P0001', message: 'Nothing to merge.' } }
+    }
+
+    const source = listedItems(wrapper).find((i) => i.id === 'item-a')
+    wrapper.findComponent(ShoppingList).vm.$emit('toggle', source)
+    await flushPromises()
+
+    expect(listedItems(wrapper).map((i) => i.id).sort()).toEqual(['item-a', 'item-b'])
   })
 
   it('moves a newly checked item to the top of the checked section', async () => {
@@ -910,7 +989,7 @@ describe('toggleItem', () => {
     // The DB trigger (004_shopping_list.sql) now rejects an uncheck that breaks the cap.
     mocks.db.handlers['shopping_list_items.update'] = () => ({
       data: null,
-      error: { message: 'You reached your limit of 50 active items.', detail: 'member_active_item_limit_exceeded' },
+      error: { message: 'You reached your limit of 50 active items.', details: 'member_active_item_limit_exceeded' },
     })
 
     wrapper.findComponent(ShoppingList).vm.$emit('toggle', listedItems(wrapper)[0])
@@ -955,11 +1034,47 @@ describe('toggleItem', () => {
 
     // A background refetch fires mid-write, as a reconnect/focus/watchdog would.
     // Without the guard this reverts the item to the server's unchecked row.
-    window.dispatchEvent(new Event('online'))
+    __setOnlineForTest(false)
+    __setOnlineForTest(true)
     await flushPromises()
     expect(listedItems(wrapper).find((i) => i.id === 'item-1').checked).toBe(true)
 
     resolveUpdate()
+    await flushPromises()
+  })
+
+  // The same race for the two writes that REMOVE a row. The refetch reads the
+  // server, which still has it, and the row came back until the realtime echo
+  // took it away again.
+  it.each([
+    ['delete', 'shopping_list_items.delete', false],
+    ['checkout', 'rpc.buy_items', true],
+  ])('keeps a row gone when a refetch races its in-flight %s', async (action, handler, checked) => {
+    const server = [makeItem({ id: 'item-1', name: 'Milk', checked })]
+    const wrapper = await mountHome({ items: server })
+    mocks.db.handlers['shopping_list_items.select'] = (q) => ({
+      data: server.filter((i) => i.checked === q.filters.checked).map((i) => ({ ...i })),
+      error: null,
+    })
+
+    let resolveWrite
+    mocks.db.handlers[handler] = () =>
+      new Promise((resolve) => {
+        resolveWrite = () => resolve({ data: null, error: null })
+      })
+
+    const list = wrapper.findComponent(ShoppingList)
+    if (action === 'delete') list.vm.$emit('delete', listedItems(wrapper)[0])
+    else list.vm.$emit('checkout', ['item-1'])
+    await flushPromises()
+    expect(listedItems(wrapper).some((i) => i.id === 'item-1')).toBe(false)
+
+    __setOnlineForTest(false)
+    __setOnlineForTest(true)
+    await flushPromises()
+    expect(listedItems(wrapper).some((i) => i.id === 'item-1')).toBe(false)
+
+    resolveWrite()
     await flushPromises()
   })
 })
@@ -1382,7 +1497,7 @@ describe('offline queue', () => {
 // "TypeError: Failed to fetch"; these must be treated exactly like offline —
 // keep the optimistic state, queue the write, show no error modal. These tests
 // deliberately stay in the default online state (no goOnline(): that dispatches
-// an 'online' event whose handleBackOnline reload would clobber the optimistic
+// a reconnect whose handleBackOnline reload would clobber the optimistic
 // row we are asserting on) — only the DB handler fails.
 describe('network failure while reported online', () => {
   const fetchError = () => ({ data: null, error: { message: 'TypeError: Failed to fetch' } })
