@@ -95,7 +95,9 @@ export function useHousehold(options: {
       householdMembers.value = (members as unknown as MemberRow[]).map((m) => ({
         user_id: m.user_id,
         role: m.role,
-        display_name: m.profiles?.display_name || m.user_id,
+        // Null, not the user id: memberDisplayName() turns a missing name into
+        // "Member" in the reader's language, which a raw Clerk id never reached.
+        display_name: m.profiles?.display_name || null,
         image_url: m.profiles?.image_url || null,
       }))
     }
