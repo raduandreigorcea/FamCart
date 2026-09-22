@@ -36,6 +36,11 @@ function installServiceWorkerStub({ controller = null, registrations = [] } = {}
   return container
 }
 
+function setVisibility(state) {
+  Object.defineProperty(document, 'visibilityState', { value: state, configurable: true })
+  document.dispatchEvent(new Event('visibilitychange'))
+}
+
 async function start({ dev }) {
   vi.stubEnv('DEV', dev)
   vi.resetModules()
@@ -63,21 +68,41 @@ afterEach(() => {
 })
 
 describe('appUpdate', () => {
-  it('reloads when a new worker takes over a page an older one was serving', async () => {
+  it('reloads straight away when a new build takes over a page nobody is looking at', async () => {
     installServiceWorkerStub({ controller: { scriptURL: 'https://app.test/sw.js' } })
     await start({ dev: false })
+    setVisibility('hidden')
 
     listeners.get('controllerchange')()
 
     expect(reload).toHaveBeenCalledTimes(1)
   })
 
+  // The update check runs as the app comes to the foreground, so the takeover
+  // usually lands while someone is using it. Reloading then threw away a half
+  // typed search; the reload waits for the page to be hidden instead.
+  it('waits until the page is hidden when the takeover happens on screen', async () => {
+    installServiceWorkerStub({ controller: { scriptURL: 'https://app.test/sw.js' } })
+    await start({ dev: false })
+    setVisibility('visible')
+
+    listeners.get('controllerchange')()
+    expect(reload).not.toHaveBeenCalled()
+
+    setVisibility('hidden')
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
   it('reloads only once, however many controller changes arrive', async () => {
     installServiceWorkerStub({ controller: { scriptURL: 'https://app.test/sw.js' } })
     await start({ dev: false })
+    setVisibility('visible')
 
     listeners.get('controllerchange')()
     listeners.get('controllerchange')()
+    setVisibility('hidden')
+    setVisibility('visible')
+    setVisibility('hidden')
 
     expect(reload).toHaveBeenCalledTimes(1)
   })

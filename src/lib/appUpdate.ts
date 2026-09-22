@@ -82,10 +82,24 @@ export function startAppUpdates(): void {
   // flash. Controlled means a new build has just replaced the one on screen.
   const wasControlled = !!navigator.serviceWorker.controller
 
+  // The reload waits for the page to be hidden. The update check runs as the app
+  // comes back to the foreground, so the takeover usually lands while someone is
+  // mid-search, and reloading then threw away what they were typing. The old
+  // page keeps working meanwhile; a lazy chunk it no longer finds reloads it
+  // through vite:preloadError in main.ts, which is the same reload, only sooner.
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!wasControlled || reloading) return
     reloading = true
-    window.location.reload()
+    if (document.visibilityState === 'hidden') {
+      window.location.reload()
+      return
+    }
+    const reloadWhenHidden = () => {
+      if (document.visibilityState !== 'hidden') return
+      document.removeEventListener('visibilitychange', reloadWhenHidden)
+      window.location.reload()
+    }
+    document.addEventListener('visibilitychange', reloadWhenHidden)
   })
 
   if (document.readyState === 'complete') {
