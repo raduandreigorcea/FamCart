@@ -12,7 +12,7 @@ import {
   canPromoteToModerator as canPromoteRule,
   canDemoteFromModerator as canDemoteRule,
 } from '../../lib/memberRoles'
-import { memberDisplayName } from '../../lib/userIdentity'
+import { initialOf, memberDisplayName } from '../../lib/userIdentity'
 import { t } from '../../lib/i18n'
 import AppIcon from '../AppIcon.vue'
 
@@ -182,7 +182,7 @@ async function removeMember(memberUserId: string) {
                 class="member-custom-avatar"
               />
               <span v-else class="member-custom-avatar member-custom-avatar--fallback">
-                {{ (member.display_name || '?').slice(0,1).toUpperCase() }}
+                {{ initialOf(member.display_name) }}
               </span>
               <div class="member-custom-details">
                 <span class="member-custom-name">
@@ -282,7 +282,7 @@ async function removeMember(memberUserId: string) {
                 class="member-sheet__avatar"
               />
               <span v-else class="member-sheet__avatar member-sheet__avatar--fallback">
-                {{ (activeMenuMember.display_name || '?').slice(0, 1).toUpperCase() }}
+                {{ initialOf(activeMenuMember.display_name) }}
               </span>
               <div class="member-sheet__meta">
                 <span class="member-sheet__name">{{ memberDisplayName(activeMenuMember) }}</span>

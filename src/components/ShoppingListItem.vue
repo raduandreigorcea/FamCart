@@ -4,6 +4,7 @@ import { getProductEmoji } from '../lib/productEmoji'
 import { ITEM_QUANTITY_MAX } from '../lib/limits'
 import type { ShoppingItemRow } from '../lib/householdRealtime'
 import { t } from '../lib/i18n'
+import { initialOf } from '../lib/userIdentity'
 import AppIcon from './AppIcon.vue'
 import ShopBadges from './ShopBadges.vue'
 
@@ -519,7 +520,7 @@ function settle() {
         :title="avatarLabel"
         @click="onToggleClick"
       >
-        {{ avatarLabel.slice(0, 1).toUpperCase() }}
+        {{ initialOf(avatarLabel) }}
       </span>
     </div>
   </li>

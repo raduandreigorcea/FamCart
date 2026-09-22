@@ -12,7 +12,7 @@ import { sortMembersSelfFirst } from '../lib/memberRoles'
 import type { HouseholdMemberProfile } from '../lib/householdRealtime'
 import { DEFAULT_HOUSEHOLD_EMOJI } from '../lib/householdEmoji'
 import { ITEM_LIMIT_DEFAULT } from '../lib/limits'
-import { getUserDisplayName, getUserInitial, getUserPrimaryEmail } from '../lib/userIdentity'
+import { getUserDisplayName, getUserInitial, getUserPrimaryEmail, initialOf } from '../lib/userIdentity'
 import { useSignOut } from '../lib/useSignOut'
 import { shareInvite } from '../lib/inviteShare'
 
@@ -244,8 +244,7 @@ const userEmail = computed(() => getUserPrimaryEmail(user.value))
 const userInitial = computed(() => {
   const clerkInitial = user.value ? getUserInitial(user.value) : ''
   if (clerkInitial && clerkInitial !== '?') return clerkInitial
-  const name = cachedProfile.value?.display_name
-  return name ? name.slice(0, 1).toUpperCase() : '?'
+  return initialOf(cachedProfile.value?.display_name)
 })
 
 const memberCount = computed(() => props.memberProfiles.length)
