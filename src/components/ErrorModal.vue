@@ -18,7 +18,7 @@ const props = defineProps({
 
 const resolvedTitle = computed(() => props.title || t('error.genericTitle'))
 
-const emit = defineEmits(['dismiss'])
+const emit = defineEmits<{ dismiss: [] }>()
 </script>
 
 <template>

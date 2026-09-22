@@ -93,20 +93,20 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits([
-  'refresh-household',
-  'household-deleted',
-  'household-left',
-  'switch-household',
-  'add-household',
+const emit = defineEmits<{
+  'refresh-household': []
+  'household-deleted': []
+  'household-left': []
+  'switch-household': [id: string]
+  'add-household': []
   // The bar's centre button. The search itself belongs to AddItemForm and its
   // open state is HomeView's `searchExpanded`, so the bar only says it was
   // pressed rather than owning anything.
-  'add',
+  add: []
   // The back control above `back` draws. Where it leads is the parent's, because
   // only the parent knows which step it is on.
-  'back',
-])
+  back: []
+}>()
 
 const clerk = useClerk()
 const { user } = useUser()

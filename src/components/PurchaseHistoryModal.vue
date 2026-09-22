@@ -22,7 +22,7 @@ const props = defineProps({
   memberProfiles: { type: Array as PropType<HouseholdMemberProfile[]>, default: () => [] },
 })
 
-const emit = defineEmits(['close'])
+const emit = defineEmits<{ close: [] }>()
 
 const db = useSupabase()
 

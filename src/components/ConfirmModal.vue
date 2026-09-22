@@ -60,7 +60,7 @@ const confirmVariant = computed(() => {
   return 'primary'
 })
 
-const emit = defineEmits(['confirm', 'cancel'])
+const emit = defineEmits<{ confirm: []; cancel: [] }>()
 </script>
 
 <template>

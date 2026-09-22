@@ -33,7 +33,7 @@ defineProps({
   uppercase: { type: Boolean, default: false },
 })
 
-defineEmits(['update:modelValue'])
+defineEmits<{ 'update:modelValue': [value: string] }>()
 </script>
 
 <template>

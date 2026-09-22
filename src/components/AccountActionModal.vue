@@ -40,15 +40,15 @@ const props = defineProps({
   householdMemberCount: { type: Number, default: 0 },
 })
 
-const emit = defineEmits([
-  'close',
-  'edit-account',
-  'report-issue',
-  'sign-out',
-  'manage-household',
-  'invite-members',
-  'app-settings',
-])
+const emit = defineEmits<{
+  close: []
+  'edit-account': []
+  'report-issue': []
+  'sign-out': []
+  'manage-household': []
+  'invite-members': []
+  'app-settings': []
+}>()
 
 const resolvedDisplayName = computed(() => props.displayName || t('account.fallbackName'))
 

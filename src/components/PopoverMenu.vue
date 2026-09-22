@@ -64,7 +64,7 @@ const props = defineProps({
   width: { type: String, default: '264px' },
 })
 
-const emit = defineEmits(['close'])
+const emit = defineEmits<{ close: [] }>()
 
 // Null on a phone: there the stylesheet owns the sheet's position entirely, and
 // an inline top/left measured from the button would beat the media query and

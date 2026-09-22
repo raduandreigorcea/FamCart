@@ -38,7 +38,7 @@ const props = defineProps({
   userId: { type: String, default: '' },
 })
 
-const emit = defineEmits(['close'])
+const emit = defineEmits<{ close: [] }>()
 
 const kind = ref<ReportKind>('bug')
 const surface = ref('')

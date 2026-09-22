@@ -36,7 +36,7 @@ const props = defineProps({
   householdId: { type: String, default: '' },
 })
 
-const emit = defineEmits(['switch-household', 'add-household'])
+const emit = defineEmits<{ 'switch-household': [id: string]; 'add-household': [] }>()
 
 // The cap is the app's, not this menu's: at three households there is nowhere
 // left to go and the row would open a screen that can only refuse.

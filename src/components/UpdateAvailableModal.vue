@@ -24,7 +24,13 @@ const props = defineProps({
   progress: { type: Number, default: -1 },
 })
 
-const emit = defineEmits(['install', 'later', 'open-settings', 'open-releases', 'close'])
+const emit = defineEmits<{
+  install: []
+  later: []
+  'open-settings': []
+  'open-releases': []
+  close: []
+}>()
 
 // Nothing to cancel into once the APK is on its way, and a stray backdrop tap
 // during a 30 MB download should not look like it stopped anything.

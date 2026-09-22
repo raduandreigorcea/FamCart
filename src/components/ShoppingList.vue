@@ -74,7 +74,13 @@ const filter = defineModel('filter', { type: String, default: 'all' })
 // this never renders.
 const shopFilter = defineModel<string | null>('shopFilter', { default: null })
 
-const emit = defineEmits(['toggle', 'delete', 'checkout', 'add', 'set-quantity'])
+const emit = defineEmits<{
+  toggle: [item: ShoppingItemRow]
+  delete: [item: ShoppingItemRow]
+  checkout: [ids: string[]]
+  add: [product: ProductSuggestion]
+  'set-quantity': [change: { item: ShoppingItemRow; quantity: number }]
+}>()
 
 // Which row has its quantity stepper open, if any. One at a time: two open
 // steppers would be two rows claiming the same "this is the one you are editing"

@@ -42,7 +42,7 @@ const props = defineProps({
   open: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['close'])
+const emit = defineEmits<{ close: [] }>()
 
 const { userId } = useAuth()
 

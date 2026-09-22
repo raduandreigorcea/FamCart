@@ -11,7 +11,7 @@ defineProps({
   open: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['accept', 'decline'])
+const emit = defineEmits<{ accept: []; decline: [] }>()
 </script>
 
 <template>

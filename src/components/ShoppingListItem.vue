@@ -53,7 +53,13 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['toggle', 'delete', 'set-quantity', 'open-quantity', 'close-quantity'])
+const emit = defineEmits<{
+  toggle: [item: ShoppingItemRow]
+  delete: [item: ShoppingItemRow]
+  'set-quantity': [change: { item: ShoppingItemRow; quantity: number }]
+  'open-quantity': [id: string]
+  'close-quantity': []
+}>()
 
 const qty = computed(() => Number(props.item.quantity) || 1)
 
