@@ -1,3 +1,4 @@
+import { ref, watch, type Ref } from 'vue'
 import { getCatalogSupabase } from '../supabase'
 import { IS_NIGHTLY } from './appChannel'
 import { productKey } from './productSearch'
@@ -293,4 +294,51 @@ export async function fetchShopsFor(names: string[], market: Market | null = nul
   } catch {
     return empty
   }
+}
+
+/**
+ * Which shop each product on the list came from, for the list's badges.
+ *
+ * NIGHTLY ONLY, and a development aid rather than a feature: while the catalog
+ * is being filled, a scraped product and one somebody typed in render
+ * identically on the list.
+ *
+ * Resolved for the WHOLE list in one call, because a row is a row in this
+ * database and knows nothing about the catalog -- it cannot look itself up, and
+ * twenty rows must not mean twenty round trips.
+ *
+ * Keyed on the set of names rather than on `items` itself, so checking something
+ * off, reordering, or a realtime update to a quantity does not re-ask. Only a
+ * name arriving or leaving does.
+ * Seeded from the cache SYNCHRONOUSLY, so the badges paint in the same frame as
+ * the rows the snapshot cache paints. The fetch below still runs and replaces
+ * this, which is what stops a shop that dropped a product from showing forever.
+ */
+export function useShopMap(
+  items: Ref<{ name: string }[]>,
+  region: () => Market | null,
+): Ref<ShopMap> {
+  const shopMap = ref<ShopMap>(loadCachedShops())
+
+  watch(
+    () => (shopsEnabled() ? JSON.stringify([...new Set(items.value.map((i) => i.name))].sort()) : ''),
+    async (key) => {
+      if (!key) {
+        shopMap.value = new Map()
+        return
+      }
+      // Not guarded by a request id: the answer is a decoration, the calls are
+      // rare, and a stale one resolves to the same map as the fresh one for every
+      // name both of them asked about.
+      //
+      // Assigned only if it found something. An empty answer here means the
+      // catalog was unreachable, not that nothing is sold anywhere, and replacing
+      // a good cache with that would blank every badge on a flaky connection.
+      const fresh = await fetchShopsFor(items.value.map((i) => i.name), region())
+      if (fresh.size > 0) shopMap.value = fresh
+    },
+    { immediate: true },
+  )
+
+  return shopMap
 }
