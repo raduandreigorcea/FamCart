@@ -5,8 +5,8 @@
 // the single authority; these tests pin the storage contract both callers rely
 // on, most importantly that anything unrecognised means 'system' rather than a
 // crash or a stuck theme.
-import { describe, it, expect } from 'vitest'
-import { THEME_STORAGE_KEY, loadThemeMode, saveThemeMode } from '../src/lib/theme'
+import { describe, it, expect, vi } from 'vitest'
+import { THEME_STORAGE_KEY, loadThemeMode, saveThemeMode, startTheme } from '../src/lib/theme'
 import { makeStorage } from './support/fakeStorage.js'
 
 describe('loadThemeMode', () => {
@@ -51,5 +51,37 @@ describe('saveThemeMode', () => {
       },
     }
     expect(() => saveThemeMode(storage, 'light')).not.toThrow()
+  })
+})
+
+// The OS listener used to live in the settings dialog, so screens that never
+// mount it (login, setup, offline) ignored a dark-mode switch until reload.
+describe('startTheme', () => {
+  it('follows the OS while the saved mode is system, and only then', () => {
+    let onChange = () => {}
+    let osDark = false
+    const root = { attr: '', setAttribute(_name, value) { this.attr = value } }
+    vi.stubGlobal('document', { documentElement: root })
+    vi.stubGlobal('window', {
+      matchMedia: () => ({
+        get matches() { return osDark },
+        addEventListener: (_event, handler) => { onChange = handler },
+      }),
+    })
+    const storage = makeStorage()
+
+    startTheme(storage)
+    expect(root.attr).toBe('light')
+
+    osDark = true
+    onChange()
+    expect(root.attr).toBe('dark')
+
+    saveThemeMode(storage, 'light')
+    root.attr = 'light'
+    onChange()
+    expect(root.attr).toBe('light')
+
+    vi.unstubAllGlobals()
   })
 })

@@ -8,7 +8,7 @@ import { initPushNotifications } from './lib/pushNotifications'
 import { captureEarlyErrors, startErrorReporting } from './lib/errorReporting'
 import { startNativeBack } from './lib/nativeBack'
 import { startAppUpdates } from './lib/appUpdate'
-import { applyResolvedTheme, loadThemeMode } from './lib/theme'
+import { startTheme } from './lib/theme'
 import { applyChannel } from './lib/appChannel'
 import { getClerkLocalization, initLocale, whenLocaleReady } from './lib/i18n'
 
@@ -58,8 +58,8 @@ window.addEventListener('vite:preloadError', (event) => {
 
 // Before mount, so the first paint is already the right colour. The key, the
 // modes and the resolver live in lib/theme, shared with the settings dialog
-// that lets the user change them.
-applyResolvedTheme(loadThemeMode(localStorage))
+// that lets the user change them, and so does following the OS from here on.
+startTheme(localStorage)
 
 // And which build this is, as an attribute on the root. Nothing is repainted
 // by it any more; see applyChannel.
