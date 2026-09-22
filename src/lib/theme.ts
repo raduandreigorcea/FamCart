@@ -9,6 +9,8 @@
 // when auditing what reads or clears it. Same argument as lib/inviteCode and
 // lib/clipboard, both of which exist because a behaviour written twice drifts.
 
+import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core'
+
 export type ThemeMode = 'light' | 'dark' | 'system'
 
 export const THEME_STORAGE_KEY = 'famcart-theme'
@@ -48,6 +50,17 @@ export function applyResolvedTheme(mode: ThemeMode): void {
         : 'light'
       : mode
   document.documentElement.setAttribute('data-theme', resolved)
+
+  // Android colours the status bar icons and the navigation buttons from the
+  // PHONE's dark mode, never the app's. A phone in dark mode with the app set
+  // to Light drew white buttons over the app's near-white background, and they
+  // vanished. Telling it which theme is actually on screen keeps them visible
+  // in every combination. Dark style means light icons, for a dark background.
+  if (Capacitor.isNativePlatform()) {
+    void SystemBars.setStyle({
+      style: resolved === 'dark' ? SystemBarsStyle.Dark : SystemBarsStyle.Light,
+    }).catch(() => {})
+  }
 }
 
 /**
