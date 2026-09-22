@@ -41,10 +41,11 @@ const ReportIssueModal = defineAsyncComponent(() => import('./ReportIssueModal.v
 function prefetch(load: () => Promise<unknown>) {
   void load().catch(() => {})
 }
-// App settings is NOT lazy. It owns the theme, which has to be applied on boot
-// rather than the first time someone opens the dialog — deferring the chunk
-// would leave the app in the wrong theme until then.
-import AppSettingsModal from './AppSettingsModal.vue'
+// App settings used to load with the bar because it owned the theme, which had
+// to be applied on boot. lib/theme (startTheme) owns that now, so it loads on
+// demand like the others, warmed when the account menu that leads to it opens.
+const loadAppSettingsModal = () => import('./AppSettingsModal.vue')
+const AppSettingsModal = defineAsyncComponent(loadAppSettingsModal)
 import { t } from '../lib/i18n'
 import { IS_NIGHTLY } from '../lib/appChannel'
 
@@ -149,6 +150,7 @@ const settingsOpen = ref(false)
 const settingsEverOpened = ref(false)
 
 const appSettingsOpen = ref(false)
+const appSettingsEverOpened = ref(false)
 
 const historyOpen = ref(false)
 const historyEverOpened = ref(false)
@@ -158,6 +160,7 @@ const reportEverOpened = ref(false)
 
 function openAppSettings() {
   accountMenuOpen.value = false
+  appSettingsEverOpened.value = true
   appSettingsOpen.value = true
 }
 
@@ -167,6 +170,7 @@ function openHistory() {
 }
 
 function openAccountMenu() {
+  prefetch(loadAppSettingsModal)
   accountMenuOpen.value = true
 }
 
@@ -554,7 +558,11 @@ const orderedActiveMembers = computed(() =>
     @close="reportOpen = false"
   />
 
-  <AppSettingsModal :open="appSettingsOpen" @close="appSettingsOpen = false" />
+  <AppSettingsModal
+    v-if="appSettingsEverOpened"
+    :open="appSettingsOpen"
+    @close="appSettingsOpen = false"
+  />
 </template>
 
 <style scoped>
