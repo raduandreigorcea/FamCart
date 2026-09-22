@@ -23,12 +23,24 @@ jobs:
     name: Typecheck, unit tests, build
     runs-on: ubuntu-latest
     steps:
-      # The catalog submodule is needed here as well: test/catalog/markets.test.js
-      # is a cross-repo drift guard and reads the catalog's own market list and
+      # The catalog is needed here as well: test/catalog/markets.test.js is a
+      # cross-repo drift guard and reads the catalog's own market list and
       # migration, which is the whole reason it can catch a drift at all.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # FamCart-catalog is private, which the workflow token cannot read, so it is
+      # fetched on its own with a read-only deploy key (secret CATALOG_DEPLOY_KEY,
+      # deploy key "FamCart CI (read-only)" on that repo), at the exact commit this
+      # repo pins for it. admin/ is private too and nothing here needs it.
+      - name: Find the pinned catalog commit
+        id: catalog
+        run: echo "sha=$(git rev-parse HEAD:catalog)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          submodules: true
+          repository: raduandreigorcea/FamCart-catalog
+          ref: ${{ steps.catalog.outputs.sha }}
+          path: catalog
+          ssh-key: ${{ secrets.CATALOG_DEPLOY_KEY }}
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
@@ -73,12 +85,24 @@ jobs:
     name: Catalog schema tests (pgTAP)
     runs-on: ubuntu-latest
     steps:
-      # submodules: true is REQUIRED, not a convenience. The catalog's schema
+      # The catalog checkout is REQUIRED, not a convenience. The catalog's schema
       # lives in raduandreigorcea/FamCart-catalog, checked out at catalog/, and
       # without it there is no config.toml for --workdir to point at.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # FamCart-catalog is private, which the workflow token cannot read, so it is
+      # fetched on its own with a read-only deploy key (secret CATALOG_DEPLOY_KEY,
+      # deploy key "FamCart CI (read-only)" on that repo), at the exact commit this
+      # repo pins for it. admin/ is private too and nothing here needs it.
+      - name: Find the pinned catalog commit
+        id: catalog
+        run: echo "sha=$(git rev-parse HEAD:catalog)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          submodules: true
+          repository: raduandreigorcea/FamCart-catalog
+          ref: ${{ steps.catalog.outputs.sha }}
+          path: catalog
+          ssh-key: ${{ secrets.CATALOG_DEPLOY_KEY }}
+          persist-credentials: false
       - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1
         with:
           version: 2.109.1
