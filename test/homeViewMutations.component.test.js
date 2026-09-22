@@ -157,8 +157,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  // Unmount so each HomeView's window 'online' listener is removed; a leaked
-  // listener from an earlier test would flush the offline queue against that
+  // Unmount so each HomeView's reconnect handler is removed; a leaked
+  // handler from an earlier test would flush the offline queue against that
   // test's stale fake db.
   while (mountedWrappers.length) mountedWrappers.pop().unmount()
   // Reset the connectivity singleton to online (after unmount, so no detached
@@ -174,7 +174,10 @@ function goOffline() {
 
 function goOnline() {
   vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(true)
-  window.dispatchEvent(new Event('online'))
+  // The offline-to-online edge, which is what lib/connectivity reports as a
+  // reconnect (it folds the browser's own 'online' event into the same signal).
+  __setOnlineForTest(false)
+  __setOnlineForTest(true)
 }
 
 describe('cached snapshot', () => {
@@ -1031,7 +1034,8 @@ describe('toggleItem', () => {
 
     // A background refetch fires mid-write, as a reconnect/focus/watchdog would.
     // Without the guard this reverts the item to the server's unchecked row.
-    window.dispatchEvent(new Event('online'))
+    __setOnlineForTest(false)
+    __setOnlineForTest(true)
     await flushPromises()
     expect(listedItems(wrapper).find((i) => i.id === 'item-1').checked).toBe(true)
 
@@ -1458,7 +1462,7 @@ describe('offline queue', () => {
 // "TypeError: Failed to fetch"; these must be treated exactly like offline —
 // keep the optimistic state, queue the write, show no error modal. These tests
 // deliberately stay in the default online state (no goOnline(): that dispatches
-// an 'online' event whose handleBackOnline reload would clobber the optimistic
+// a reconnect whose handleBackOnline reload would clobber the optimistic
 // row we are asserting on) — only the DB handler fails.
 describe('network failure while reported online', () => {
   const fetchError = () => ({ data: null, error: { message: 'TypeError: Failed to fetch' } })

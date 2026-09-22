@@ -432,9 +432,9 @@ const restartProductsLoading = computed(() => hasShopped.value && !productStatsL
 let stopReconnect: (() => void) | null = null
 
 onMounted(() => {
-  // Two reconnect signals: the reliable native one, plus the web 'online' event
-  // for the browser and tests. Both funnel into the same idempotent sync.
-  window.addEventListener('online', handleBackOnline)
+  // The one reconnect signal. lib/connectivity already folds the browser's
+  // 'online' event into it, so listening to that event here as well ran the
+  // whole sync twice per reconnect.
   stopReconnect = onReconnect(handleBackOnline)
   // The snapshot write is deferred to coalesce bursts, so it can still be
   // outstanding when the app goes away — which on a phone is most of the time,
@@ -446,7 +446,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('online', handleBackOnline)
   window.removeEventListener('pagehide', flushPendingWork)
   document.removeEventListener('visibilitychange', flushPendingWorkIfHidden)
   if (stopReconnect) stopReconnect()
@@ -541,8 +540,7 @@ async function handleBackOnline() {
   try {
     do {
       syncAgain = false
-      const { failed } = await ensureQueueFlushed()
-      if (failed) loadError.value = t('error.offlineSyncFailed')
+      await ensureQueueFlushed()
       await loadHouseholdHeader()
       await loadItems()
       await setupRealtimeSubscriptions()

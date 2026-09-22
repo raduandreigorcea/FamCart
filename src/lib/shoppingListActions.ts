@@ -219,9 +219,17 @@ export function useShoppingListActions(options: {
       return Promise.resolve({ flushed: 0, failed: 0, interrupted: false })
     }
     if (!flushPromise) {
-      flushPromise = flushOfflineQueue(localStorage, userId.value, db).finally(() => {
-        flushPromise = null
-      })
+      flushPromise = flushOfflineQueue(localStorage, userId.value, db)
+        .then((result) => {
+          // A refused write is dropped by the flush, so this is the only moment
+          // anyone can be told. Said here, where every flush passes (boot, each
+          // refetch, reconnect), not by whichever caller happens to look.
+          if (result.failed) loadError.value = t('error.offlineSyncFailed')
+          return result
+        })
+        .finally(() => {
+          flushPromise = null
+        })
     }
     return flushPromise
   }
