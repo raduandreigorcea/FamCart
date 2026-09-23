@@ -1,29 +1,26 @@
 <script setup lang="ts">
 import { computed, ref, type PropType } from 'vue'
 import type { ShoppingItem } from '../lib/shoppingList'
+import type { ListSort } from '../lib/listSections'
 import PopoverMenu from './PopoverMenu.vue'
 import { t } from '../lib/i18n'
 import AppIcon from './AppIcon.vue'
 import ShopBadges from './ShopBadges.vue'
 
-// The button that filters the list, and the rows it offers. PopoverMenu owns
-// the panel itself — where it lands, how it dismisses, what a row looks like.
+// The button in the list header: how the list is ordered, and (nightly) which
+// shop it is narrowed to. PopoverMenu owns the panel itself.
 //
-// Ticking a row leaves it where it sits (see sortItemsForDisplay) so a list you
-// are working down never reshuffles under you. The cost is that a long list
-// mixes what you still need with what is already in the cart; this is the way
-// back out of that.
-const model = defineModel({ type: String, default: 'all' })
+// This used to be a filter -- All / To buy / Checked -- because ticked rows
+// stayed where they were and a long list mixed the two. Ticked rows now move
+// into their own "In cart" section, so that question answers itself, and the
+// one worth asking in a shop is "in what order do I walk this".
+const model = defineModel<ListSort>({ default: 'added' })
 
-// The second dimension, and independent of the first: "to buy, at Lidl" is a
-// question, so these are two filters in one panel rather than one list of five
-// options. NIGHTLY ONLY -- the caller passes no shops on production and the
-// section does not render.
+// Independent of the order: "by aisle, at Lidl" is a fair question. NIGHTLY
+// ONLY -- the caller passes no shops on production and the section is absent.
 const shop = defineModel<string | null>('shop', { default: null })
 
 const props = defineProps({
-  // Every item, checked and unchecked. Counts are derived here rather than
-  // passed in, so a row's number can never disagree with what picking it shows.
   items: { type: Array as PropType<ShoppingItem[]>, default: () => [] },
   // Only the shops something on THIS list is actually sold at. Derived by the
   // caller, which is the one that holds the lookup -- and derived rather than
@@ -36,32 +33,16 @@ const props = defineProps({
 const open = ref(false)
 const btnEl = ref<HTMLElement | null>(null)
 
-const counts = computed(() => {
-  const checked = props.items.filter((i) => i.checked).length
-  return { all: props.items.length, active: props.items.length - checked, checked }
-})
-
-// A ticked row is not bought until the buy bar checks it out, which is what
-// moves it into purchase history -- so this view is the middle of those two,
-// and the hint has to place it there.
-//
-// It says what the rows ARE rather than what has not happened to them yet.
-// "Ticked, not checked out" made the reader hold "checked" and "checked out"
-// side by side and work out the difference; naming the next step tells them
-// where they are in the same breath, and matches the buy bar's own wording.
-// A computed, not a plain const. The array is built once when this component
-// sets up, so plain t() calls in it would freeze the three labels in whatever
-// language was current at that moment and never follow a change made from
-// settings afterwards.
+// A computed, so the labels follow a language change made while the app is open.
 const OPTIONS = computed(() => [
-  { value: 'all', label: t('filter.all.label'), hint: t('filter.all.hint') },
-  { value: 'active', label: t('filter.active.label'), hint: t('filter.active.hint') },
-  { value: 'checked', label: t('filter.checked.label'), hint: t('filter.checked.hint') },
+  { value: 'added' as const, label: t('sort.added.label'), hint: t('sort.added.hint') },
+  { value: 'aisle' as const, label: t('sort.aisle.label'), hint: t('sort.aisle.hint') },
 ])
 
-// A filtered list that looks unfiltered is how items get declared missing, so
-// the button carries a mark whenever it is hiding something.
-const isFiltered = computed(() => model.value !== 'all' || shop.value !== null)
+// A shop filter hides rows, and a list that hides rows without saying so is how
+// items get declared missing, so the button carries a mark while one is set.
+// The order hides nothing, so it earns no mark.
+const isFiltered = computed(() => shop.value !== null)
 </script>
 
 <template>
@@ -72,7 +53,7 @@ const isFiltered = computed(() => model.value !== 'all' || shop.value !== null)
     :class="{ 'filter-btn--on': isFiltered }"
     aria-haspopup="menu"
     :aria-expanded="open"
-    :aria-label="isFiltered ? t('filter.buttonLabelFiltered') : t('filter.buttonLabel')"
+    :aria-label="isFiltered ? t('sort.buttonLabelFiltered') : t('sort.buttonLabel')"
     @click="open = !open"
   >
     <AppIcon class="filter-btn__icon" name="sliders-horizontal" />
@@ -83,9 +64,8 @@ const isFiltered = computed(() => model.value !== 'all' || shop.value !== null)
     v-model="open"
     :trigger="btnEl"
     align="right"
-    :label="t('filter.buttonLabel')"
-    :heading="t('filter.heading')"
-    :hint="t('filter.hint')"
+    :label="t('sort.buttonLabel')"
+    :heading="t('sort.heading')"
     icon-name="sliders-horizontal"
   >
     <template #default="{ close }">
@@ -109,7 +89,6 @@ const isFiltered = computed(() => model.value !== 'all' || shop.value !== null)
           <span class="filter-option__label">{{ option.label }}</span>
           <span class="filter-option__hint">{{ option.hint }}</span>
         </span>
-        <span class="filter-option__count">{{ counts[option.value as keyof typeof counts] }}</span>
       </button>
 
       <!-- The second dimension. Only what this list is actually sold at, so a
@@ -192,11 +171,8 @@ const isFiltered = computed(() => model.value !== 'all' || shop.value !== null)
 .filter-btn {
   position: relative;
   flex-shrink: 0;
-  width: var(--size-control-sm);
-  height: var(--size-control-sm);
-  /* The meta line is short, so the button is allowed to overhang it slightly
-     rather than push the header taller. */
-  margin: -0.35rem -0.15rem -0.35rem 0;
+  width: var(--size-control-md);
+  height: var(--size-control-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;

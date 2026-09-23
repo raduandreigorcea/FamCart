@@ -32,14 +32,28 @@ const emit = defineEmits<{ click: [] }>()
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all var(--transition-base) var(--ease-standard);
+  transition:
+    background-color var(--transition-base) var(--ease-standard),
+    color var(--transition-base) var(--ease-standard);
   padding: 0;
+  position: relative;
+}
+
+/* 32px drawn, 44px hit: the circle stays small in a dialog header while the
+   finger gets the target it needs. */
+.modal-close::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+}
+
+.modal-close:active {
+  background: var(--bg-press);
 }
 
 .modal-close:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
-  transform: rotate(90deg);
 }
 
 .modal-close__icon {

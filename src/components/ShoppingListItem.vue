@@ -46,6 +46,12 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  // Another member added this a moment ago; the row glows briefly as it lands,
+  // so a list changing under you reads as a person, not a glitch.
+  fresh: {
+    type: Boolean,
+    default: false,
+  },
   // Whether this row's quantity stepper is the open one. Held by the parent so
   // that opening one closes the last.
   qtyOpen: {
@@ -199,7 +205,7 @@ function closeQtyForGesture() {
 // you pull, then snaps to full colour, resists, and buzzes the moment letting
 // go would actually do something.
 const TRIGGER_CHECK = 72 // px of travel that commits a check/uncheck
-const TRIGGER_DELETE = 104 // deliberately further: deleting is not reversible
+const TRIGGER_DELETE = 104 // further: a wrong delete costs a trip to the Undo button
 const MAX_PULL = 150 // hard stop the row bottoms out against
 const AXIS_LOCK = 10 // px of travel before we decide swipe vs. scroll
 const AXIS_BIAS = 1.4 // how decisively sideways a swipe has to be
@@ -358,7 +364,7 @@ function settle() {
 <template>
   <li
     class="item"
-    :class="{ 'item--checked': item.checked, 'item--draining': draining }"
+    :class="{ 'item--checked': item.checked, 'item--draining': draining, 'item--fresh': fresh }"
     :style="draining ? { '--drain-index': drainIndex } : null"
   >
     <!-- Action revealed under a rightward swipe -->
@@ -409,8 +415,12 @@ function settle() {
         :aria-pressed="item.checked"
         :aria-label="toggleLabel"
         @click="onToggleClick"
+        @keydown.delete.prevent="emit('delete', item)"
       >
-        <span class="item-emoji" aria-hidden="true">{{ getProductEmoji(item.name, item.maker || '') }}</span>
+        <span class="item-emoji" aria-hidden="true">
+          {{ getProductEmoji(item.name, item.maker || '') }}
+          <span v-if="item.checked" class="item-emoji__check"><AppIcon name="check-bold" /></span>
+        </span>
         <span class="item-text">
           <span class="item-name">{{ item.name }}</span>
           <span v-if="item.maker || shops.length" class="item-sub">
@@ -529,10 +539,35 @@ function settle() {
 <style scoped>
 .item {
   position: relative;
-  border-radius: var(--radius-row);
-  corner-shape: squircle;
   overflow: hidden;
-  box-shadow: var(--elevation-soft);
+}
+
+/* Rows sit straight on the page, divided by a full-width hairline, the way a
+   paper list is ruled edge to edge. */
+.item::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--border-main);
+  pointer-events: none;
+}
+
+/* A row somebody else just added. The tint fades out on its own; nothing to
+   dismiss, nothing that stays. */
+.item--fresh .item-face {
+  animation: item-fresh 1.6s var(--ease-standard);
+}
+
+@keyframes item-fresh {
+  0%, 30% {
+    background: color-mix(in srgb, var(--color-primary) 14%, var(--bg-main));
+  }
+  100% {
+    background: var(--bg-main);
+  }
 }
 
 /* Ticking a row fades its contents rather than switching them: the same fade
@@ -625,8 +660,9 @@ function settle() {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  background: var(--bg-surface);
-  padding: 0.75rem 0.875rem 0.75rem 0.75rem;
+  min-height: 60px;
+  background: var(--bg-main);
+  padding: 0.5rem 0.25rem;
   cursor: grab;
   touch-action: pan-y;
   -webkit-tap-highlight-color: transparent;
@@ -653,8 +689,8 @@ function settle() {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin: -0.75rem 0 -0.75rem -0.75rem;
-  padding: 0.75rem 0 0.75rem 0.75rem;
+  margin: -0.5rem 0 -0.5rem -0.25rem;
+  padding: 0.5rem 0 0.5rem 0.25rem;
   border: none;
   background: none;
   font: inherit;
@@ -713,6 +749,10 @@ function settle() {
     animation: none;
     opacity: 0;
   }
+  .item--fresh .item-face,
+  .item--checked .item-emoji__check {
+    animation: none;
+  }
   .item-face:not(.item-face--dragging) {
     transition: none;
   }
@@ -740,23 +780,79 @@ function settle() {
 }
 
 .item-emoji {
+  position: relative;
   flex-shrink: 0;
-  font-size: var(--text-lg);
+  font-size: 1.25rem;
   line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  border-radius: var(--radius-tile);
-  corner-shape: squircle;
-  background: color-mix(in srgb, var(--color-primary) 12%, var(--bg-surface));
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: inset 0 0 0 1px var(--border-light);
+}
+
+/* The tick, on the tile's corner: the thing you just did, said with the one
+   mark everybody reads. It pops in because the moment of ticking is the one
+   worth feeling; after that it just sits there. */
+.item-emoji__check {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  color: var(--text-inverse);
+  box-shadow: 0 0 0 2px var(--bg-main);
+  animation: check-pop var(--transition-base) var(--ease-rise);
+}
+
+/* AppIcon wraps the SVG in an inline span, and inside a tile set at emoji size
+   that span sits on a 20px text line, which pushed the tick off the circle's
+   centre. As a flex box of its own it is exactly the icon's size. */
+.item-emoji__check :deep(span) {
+  display: flex;
+}
+
+.item-emoji__check :deep(svg) {
+  width: 11px;
+  height: 11px;
+  /* Optical, not geometric. The tick's box is centred on the dot, but a tick
+     is lopsided: its long arm climbs to the top right, so at 11px on an 18px
+     dot it reads as sitting high and to the right. Moved back by eye. */
+  transform: translate(-0.75px, 0.75px);
+  /* Optical, not geometric: the tick's box is centred, but its ink sits a
+     touch high in the file's 24-unit grid (its long arm reaches the top at 6,
+     its low point stops at 17), and at 11px on a round 18px dot that reads as
+     floating. Measured, then nudged until it sits. */
+  transform: translateY(0.75px);
+  display: block;
+  stroke: currentColor;
+  stroke-width: 3;
+  fill: none;
+}
+
+@keyframes check-pop {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 
 .item-avatar {
-  width: var(--size-avatar-sm);
-  height: var(--size-avatar-sm);
+  width: 22px;
+  height: 22px;
   border-radius: var(--radius-pill);
   object-fit: cover;
   flex-shrink: 0;
@@ -769,7 +865,7 @@ function settle() {
   justify-content: center;
   background: var(--bg-hover);
   color: var(--text-secondary);
-  font-size: var(--text-sm);
+  font-size: var(--text-2xs);
   font-weight: var(--weight-bold);
 }
 
@@ -781,7 +877,8 @@ function settle() {
 }
 
 .item-name {
-  font-size: var(--text-md);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-medium);
   color: var(--text-primary);
   /* Always struck, invisibly until the row is ticked; see .item--checked. */
   text-decoration: line-through transparent;
@@ -874,7 +971,7 @@ function settle() {
    number from sitting a long way off from them. */
 .item-qty--open {
   padding: 0;
-  box-shadow: 0 0 0 4px var(--bg-surface);
+  box-shadow: 0 0 0 4px var(--bg-main);
 }
 
 .item-qty--open .item-qty__face {

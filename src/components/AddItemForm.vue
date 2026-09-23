@@ -28,8 +28,8 @@ import ShopBadges from './ShopBadges.vue'
 const name = defineModel('name', { type: String, default: '' })
 // Whether the search is open as a sheet.
 //
-// Two-way, and below the bar boundary the parent WRITES it first: the bar's
-// centre button raises the sheet by setting this, and the component answers by
+// Two-way, and below the bar boundary the parent WRITES it first: the
+// bar's centre button raises the sheet by setting this, and the component answers by
 // focusing the field. It reads it back for two reasons -- to widen the query
 // while the sheet is up, since a screen has room for twice the rows a dropdown
 // does, and to learn that the sheet dismissed itself.
@@ -65,6 +65,9 @@ const props = defineProps({
   // Whether to offer the "add your own" escape hatch. Owned by the parent,
   // which knows when the query is long enough to have been searched for.
   canAddCustom: { type: Boolean, default: false },
+  // Why the matches may be partial -- 'offline' or 'degraded' -- so a search
+  // that could not reach the catalog does not pass for one that found nothing.
+  searchNote: { type: String as PropType<'offline' | 'degraded' | null>, default: null },
   // Whether this device can scan at all — a camera it can reach, and something
   // that can decode. Asked once by the parent; a browser that cannot scan is
   // never offered the button rather than being offered one that fails.
@@ -104,6 +107,10 @@ const showScan = computed(() => props.canScan && !name.value.trim())
 // during the tick adds again.
 const ADD_CONFIRMED_MS = 1100
 const addConfirmed = ref(false)
+// A typed add clears the field (so Enter cannot add the same words twice), which
+// turns this button back into the scanner in the same moment the add lands. The
+// tick still belongs to it: it is the button that was just pressed.
+let submittedTyped = false
 let addConfirmedTimer: ReturnType<typeof setTimeout> | null = null
 
 function clearAddConfirmed() {
@@ -118,11 +125,14 @@ watch(
     clearAddConfirmed()
     // Null is the parent taking an add back -- see clearLastAdded, "it did not
     // land". A tick for a write that failed is worse than no tick at all.
+    const typed = submittedTyped
+    submittedTyped = false
     if (!product) return
-    // Only while this button IS the add button. With an empty field it is the
-    // scanner, and a tick flashing over the camera glyph would be a different
-    // control answering for something it did not do.
-    if (showScan.value) return
+    // Only while this button IS the add button, or was the one just pressed.
+    // With an empty field it is the scanner, and a tick flashing over the camera
+    // glyph for a tapped suggestion would be a different control answering for
+    // something it did not do.
+    if (showScan.value && !typed) return
     addConfirmed.value = true
     addConfirmedTimer = setTimeout(() => {
       addConfirmed.value = false
@@ -131,9 +141,17 @@ watch(
   },
 )
 
-// The next keystroke is the next item; the tick was about the last one. The text
-// is not cleared by an add, so this only fires on real typing.
-watch(name, clearAddConfirmed)
+// The next keystroke is the next item; the tick was about the last one. A typed
+// add empties the field itself, which is not a keystroke and must not take the
+// tick straight back down.
+watch(name, (value) => {
+  if (value) clearAddConfirmed()
+})
+
+function onSubmit() {
+  submittedTyped = true
+  emit('submit')
+}
 
 onBeforeUnmount(clearAddConfirmed)
 
@@ -208,8 +226,10 @@ function onAddCustomClick(event: MouseEvent) {
 // Before anything is typed the screen shows what this household buys, so the
 // common case — the same bread as last week — is one tap and no typing. Once
 // there is a query it is the matches' screen, and these step aside.
+// On the desktop column too: an empty field there is the same "what do we
+// usually get" moment as the phone sheet, and it used to show nothing at all.
 const showingRecents = computed(
-  () => present.value && !name.value.trim() && props.recents.length > 0,
+  () => (present.value || inputFocused.value) && !name.value.trim() && props.recents.length > 0,
 )
 
 const rows = computed(() => (showingRecents.value ? props.recents : props.suggestions))
@@ -285,6 +305,19 @@ const activeIndex = ref(-1)
 // roles are lying in the other direction. It sits one past the last row.
 const optionCount = computed(() => rows.value.length + (props.canAddCustom ? 1 : 0))
 
+// "Add 'oat milk'" goes FIRST unless something on screen already is exactly
+// that. Somebody who typed a whole name and sees no row carrying it wants that
+// name, and it used to sit under twelve near misses at the bottom of the list.
+// When a row does match exactly, that row is the better answer (it has a maker,
+// and it ranks) and the typed version drops to the end.
+const hatchFirst = computed(() => {
+  if (!props.canAddCustom || props.suggestionsLoading) return false
+  const typed = name.value.trim().toLocaleLowerCase()
+  return !rows.value.some((r) => r.name.trim().toLocaleLowerCase() === typed)
+})
+const rowOffset = computed(() => (hatchFirst.value ? 1 : 0))
+const hatchIndex = computed(() => (hatchFirst.value ? 0 : rows.value.length))
+
 function optionId(index: number): string {
   return `${listboxId}-option-${index}`
 }
@@ -320,13 +353,12 @@ function moveActive(delta: number) {
 function onEnter(event: KeyboardEvent) {
   if (activeIndex.value < 0) return
   event.preventDefault()
-  const product = rows.value[activeIndex.value]
-  if (product) {
-    selectSuggestion(product)
+  if (props.canAddCustom && activeIndex.value === hatchIndex.value) {
+    emit('add-custom')
     return
   }
-  // Past the last row is the hatch.
-  if (props.canAddCustom) emit('add-custom')
+  const product = rows.value[activeIndex.value - rowOffset.value]
+  if (product) selectSuggestion(product)
 }
 
 // A fresh set of matches is a fresh list to choose from. Watching the rendered
@@ -385,7 +417,7 @@ watch(panelOpen, (open) => {
 
 // ─── Phone search mode ───────────────────────────────────────────────────────
 // Below 900px this form has no place in the flow: the list screen's shell is a
-// bottom bar and the search is a sheet its centre button raises. So the sheet is
+// bottom action bar and the search is a sheet its centre button raises. So the sheet is
 // opened from OUTSIDE, by whoever owns the `expanded` model, and this component
 // answers by putting the keyboard where the user is already looking.
 //
@@ -475,7 +507,21 @@ watch(
   { immediate: true },
 )
 
+// "/" puts the cursor in the add field from anywhere on the desktop column, the
+// shortcut search boxes have taught people. Ignored while typing somewhere else,
+// and on a phone, where the field lives in a sheet the bar's Add button raises.
+function onSlash(event: KeyboardEvent) {
+  if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return
+  if (isSheetWidth()) return
+  const target = event.target as HTMLElement | null
+  if (target?.closest('input, textarea, [contenteditable="true"]')) return
+  event.preventDefault()
+  inputRef.value?.focus()
+}
+if (typeof document !== 'undefined') document.addEventListener('keydown', onSlash)
+
 onBeforeUnmount(() => {
+  if (typeof document !== 'undefined') document.removeEventListener('keydown', onSlash)
   // The slide timer, the viewport listeners and the transitionend handler are
   // useSearchSheet's own teardown, and the confirmation timer is
   // useAddedConfirmation's. Only the layer registration is this component's.
@@ -510,7 +556,7 @@ onBeforeUnmount(() => {
       class="add-form"
       :class="{ 'add-form--expanded': present, 'add-form--closing': closing }"
       :style="screenBox"
-      @submit.prevent="emit('submit')"
+      @submit.prevent="onSubmit"
     >
       <!-- Lifted, this is the header band: the field, and the one way out that
            the keyboard can never cover. Collapsed it draws nothing at all. -->
@@ -635,6 +681,14 @@ onBeforeUnmount(() => {
                Out here it is ordinary text, and aria-label carries the name. -->
           <p v-if="showingRecents" class="suggestions-label">{{ t('list.buyAgain') }}</p>
 
+          <!-- Said once, above the matches, when they are not the whole answer:
+               a catalog that could not be reached must not read as a product
+               nobody sells. -->
+          <p v-if="searchNote && name.trim() && !suggestionsLoading" class="search-note">
+            <AppIcon class="search-note__icon" :name="searchNote === 'offline' ? 'wifi-off' : 'triangle-alert'" />
+            {{ searchNote === 'offline' ? t('add.noteOffline') : t('add.noteDegraded') }}
+          </p>
+
           <!-- NIGHTLY ONLY, above the listbox rather than inside it: a listbox
                exposes its options and nothing else, so controls placed in it are
                dropped on the way to a screen reader.
@@ -701,6 +755,31 @@ onBeforeUnmount(() => {
             </template>
 
             <template v-else>
+              <li v-if="canAddCustom && hatchFirst" class="suggestions-hatch" role="presentation">
+                <!-- An option like the products above it, not a stray button:
+                     it is one of the choices this list is offering, and a
+                     non-option child would be dropped from the listbox. -->
+                <button
+                  type="button"
+                  role="option"
+                  class="suggestion suggestion--custom"
+                  :class="{ 'suggestion--active': activeIndex === hatchIndex }"
+                  :id="optionId(hatchIndex)"
+                  :aria-selected="activeIndex === hatchIndex"
+                  @mousedown.prevent="emit('add-custom')"
+                  @click="onAddCustomClick($event)"
+                >
+                  <span class="suggestion-emoji suggestion-emoji--custom" aria-hidden="true">
+                    <span class="suggestion-icon"></span>
+                  </span>
+                  <span class="suggestion-text">
+                    <span class="suggestion-name suggestion-name--custom">{{
+                      t('add.addTyped', { name: name.trim() })
+                    }}</span>
+                    <span class="suggestion-maker suggestion-maker--custom">{{ t('add.addTypedHint') }}</span>
+                  </span>
+                </button>
+              </li>
               <!-- The li is presentational so the listbox owns the options
                    directly: a listbox may only contain options, and a plain
                    list item between the two breaks that ownership and takes the
@@ -715,15 +794,15 @@ onBeforeUnmount(() => {
                   class="suggestion"
                   :class="{
                     'suggestion--added': isAdded(product),
-                    'suggestion--active': activeIndex === index,
+                    'suggestion--active': activeIndex === index + rowOffset,
                     'suggestion--lit-a':
                       litPhase === 0 && productKey(product.name, product.maker) === justAddedKey,
                     'suggestion--lit-b':
                       litPhase === 1 && productKey(product.name, product.maker) === justAddedKey,
                   }"
                   role="option"
-                  :id="optionId(index)"
-                  :aria-selected="activeIndex === index"
+                  :id="optionId(index + rowOffset)"
+                  :aria-selected="activeIndex === index + rowOffset"
                   @mousedown.prevent="selectSuggestion(product, $event)"
                   @click="onSuggestionClick(product, $event)"
                 >
@@ -751,7 +830,7 @@ onBeforeUnmount(() => {
                 </button>
               </li>
 
-              <li v-if="canAddCustom" class="suggestions-hatch" role="presentation">
+              <li v-if="canAddCustom && !hatchFirst" class="suggestions-hatch" role="presentation">
                 <!-- An option like the products above it, not a stray button:
                      it is one of the choices this list is offering, and a
                      non-option child would be dropped from the listbox. -->
@@ -759,9 +838,9 @@ onBeforeUnmount(() => {
                   type="button"
                   role="option"
                   class="suggestion suggestion--custom"
-                  :class="{ 'suggestion--active': activeIndex === rows.length }"
-                  :id="optionId(rows.length)"
-                  :aria-selected="activeIndex === rows.length"
+                  :class="{ 'suggestion--active': activeIndex === hatchIndex }"
+                  :id="optionId(hatchIndex)"
+                  :aria-selected="activeIndex === hatchIndex"
                   @mousedown.prevent="emit('add-custom')"
                   @click="onAddCustomClick($event)"
                 >
@@ -770,9 +849,9 @@ onBeforeUnmount(() => {
                   </span>
                   <span class="suggestion-text">
                     <span class="suggestion-name suggestion-name--custom">{{
-                      t('add.cantFind')
+                      t('add.addTyped', { name: name.trim() })
                     }}</span>
-                    <span class="suggestion-maker suggestion-maker--custom">{{ t('add.addYourOwn') }}</span>
+                    <span class="suggestion-maker suggestion-maker--custom">{{ t('add.addTypedHint') }}</span>
                   </span>
                 </button>
               </li>
@@ -808,6 +887,33 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* Why the matches below may be partial. Quiet, one line, not an error: the
+   search still worked, it just could not ask everyone. */
+.search-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.search-note__icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.search-note__icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+}
+
 /* At the desktop column this still holds the form's place in the flow, and the
    margin below is the form's own. Below 900px it holds nothing: see the block
    at the foot of this file. */
@@ -817,8 +923,8 @@ onBeforeUnmount(() => {
 }
 
 /* ─── Below the bar boundary the form is not in the flow at all ──────────────
-   The list screen's shell is a bottom bar and the field lives in the sheet its
-   centre button raises, so there is nothing here to lay out until it does.
+   The field lives in the sheet the bar's Add button raises, so there is
+   nothing here to lay out until it does.
 
    Hidden rather than unmounted, because the parent owns one instance and its
    state — the query, the shop filter, the added-confirmation record — has to
@@ -927,8 +1033,8 @@ onBeforeUnmount(() => {
 
    It is not a dismissal target: a full-screen tap-to-close under a search you
    raised on purpose is the largest misclick in the app, so it only swallows
-   touchmove. The stack it has to clear is the action bar (40) and the checkout
-   slider (50); teleported menus stay above it at 1000. */
+   touchmove. The stack it has to clear is the header (--z-header), the action bar
+   and the checkout slider; teleported menus stay above it at 1000. */
 .add-cover {
   position: fixed;
   inset: 0;
@@ -1399,6 +1505,18 @@ onBeforeUnmount(() => {
   border-top: var(--border-width-thin) solid var(--border-light);
   margin-top: 0.3rem;
   padding-top: 0.3rem;
+}
+
+/* First in the list (see hatchFirst), the rule goes under it instead: on top it
+   sat right against the shop filter's own divider and drew a second line, and
+   what it separates from now is the matches below. */
+.suggestions-hatch:not(:only-child):first-child {
+  border-top: none;
+  margin-top: 0;
+  padding-top: 0;
+  border-bottom: var(--border-width-thin) solid var(--border-light);
+  margin-bottom: 0.3rem;
+  padding-bottom: 0.3rem;
 }
 
 /* Edge to edge with the rows it sits under, rather than inset by a card's

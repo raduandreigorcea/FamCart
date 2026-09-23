@@ -259,3 +259,64 @@ export function getProductEmoji(productName: string, brand = '') {
   cache.set(haystack, emoji)
   return emoji
 }
+
+// ─── Aisles ──────────────────────────────────────────────────────────────────
+// Which part of a shop a product lives in, for sorting the list the way you walk
+// a supermarket. Derived from the emoji rather than a second keyword table: the
+// emoji IS the category decision, already made with all the care above (brands
+// first, longest keyword wins, whole words only), and a second table would drift
+// from it. The rows carry no category of their own and nothing on the server
+// needs one; this is only an ordering.
+//
+// Listed in the order a typical Romanian supermarket is laid out: fresh produce
+// at the door, bakery and chilled along the walls, dry goods in the middle,
+// drinks and household at the back. It will not match every shop and does not
+// have to -- the point is that the things you pick up together sit together.
+export const AISLES = [
+  'produce',
+  'bakery',
+  'dairy',
+  'meat',
+  'prepared',
+  'pantry',
+  'sweets',
+  'drinks',
+  'household',
+  'personal',
+  'other',
+] as const
+
+export type Aisle = (typeof AISLES)[number]
+
+const AISLE_EMOJI: Record<Exclude<Aisle, 'other'>, string[]> = {
+  produce: ['🍎', '🍐', '🍌', '🍊', '🍋', '🍉', '🍈', '🍍', '🥝', '🥭', '🍑', '🍒', '🍓', '🫐', '🍇', '🥥', '🥑',
+    '🥔', '🧅', '🧄', '🥕', '🍅', '🥒', '🥬', '🥦', '🌽', '🍄', '🫑', '🎃', '🥗', '🌿'],
+  bakery: ['🍞', '🥖', '🥐', '🥨', '🍰', '🧁', '🍩', '🥧'],
+  dairy: ['🥚', '🥛', '🧀', '🧈'],
+  meat: ['🥓', '🍗', '🥩', '🌭', '🍖', '🍢', '🍔', '🥪', '🐟', '🦐'],
+  prepared: ['🍦', '🧊', '🍕', '🌮', '🥟', '🍲', '🍳'],
+  pantry: ['🍝', '🍜', '🍚', '🫓', '🥣', '🫘', '🥫', '🫒', '🌻', '🫗', '🧂', '🍯', '🥜'],
+  sweets: ['🍟', '🍪', '🍫', '🍬', '🍿'],
+  drinks: ['💧', '🧃', '🥤', '⚡', '☕', '🍵', '🍺', '🍷', '🥂', '🍾', '🥃'],
+  household: ['🧻', '🧼', '🧺', '🍽️', '🧽', '🪟', '🧹', '🗑️', '📦', '🕯️', '🦟', '🔥', '🔋', '💡'],
+  personal: ['🤧', '🧴', '🪥', '🪒', '🩹', '💊', '🌸', '☀️', '🍼', '🐶', '🐱'],
+}
+
+const AISLE_BY_EMOJI = new Map<string, Aisle>(
+  Object.entries(AISLE_EMOJI).flatMap(([aisle, emojis]) =>
+    emojis.map((emoji) => [emoji, aisle as Aisle] as const),
+  ),
+)
+
+export function aisleForEmoji(emoji: string): Aisle {
+  return AISLE_BY_EMOJI.get(emoji) ?? 'other'
+}
+
+export function getProductAisle(productName: string, brand = ''): Aisle {
+  return aisleForEmoji(getProductEmoji(productName, brand))
+}
+
+// Every emoji the rules can produce, for the test that keeps the two tables
+// above in step: an emoji added to a rule without an aisle would quietly sort
+// its products under "Other".
+export const RULE_EMOJIS: string[] = [...new Set([...EMOJI_RULES, ...BRAND_RULES].map((r) => r.emoji))]

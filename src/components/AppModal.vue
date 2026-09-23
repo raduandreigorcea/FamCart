@@ -48,6 +48,15 @@ const props = defineProps({
   // the trap already pulls focus in from outside on the first Tab, so the
   // keyboard still cannot walk into the page behind.
   autofocus: { type: Boolean, default: false },
+  // 'sheet' brings the app's one sheet shape (bottom sheet on a phone, centred
+  // panel from 600px) from style.css, so a new dialog does not copy the overlay
+  // and media queries yet again. The caller wraps its content in `.app-sheet`.
+  // 'custom' is everything that predates it and styles its own overlay.
+  variant: {
+    type: String,
+    default: 'custom',
+    validator: (v: string) => ['custom', 'sheet'].includes(v),
+  },
 })
 
 const emit = defineEmits<{ close: [] }>()
@@ -163,12 +172,12 @@ onBeforeUnmount(deactivate)
        animation. Dialogs that are always mounted (AccountActionModal) never hit
        this, and `appear` is inert for them: their initial render has no
        element to animate. -->
-  <Transition :name="transition" appear>
+  <Transition :name="variant === 'sheet' ? 'app-sheet' : transition" appear>
     <div
       v-if="open"
       ref="overlay"
       class="app-modal-overlay"
-      :class="overlayClass"
+      :class="[overlayClass, { 'app-sheet-overlay': variant === 'sheet' }]"
       @click.self="closeOnBackdrop && emit('close')"
     >
       <slot />

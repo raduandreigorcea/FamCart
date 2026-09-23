@@ -156,3 +156,30 @@ describe('panel routing', () => {
     }
   })
 })
+
+// Only the active tab is in the Tab order, which is the pattern, so the arrow
+// keys are the only way to the others. They used to do nothing: a keyboard
+// could never leave the first tab.
+describe('moving between tabs from the keyboard', () => {
+  it('walks the tabs with the arrow keys, wrapping at the ends', async () => {
+    const wrapper = mountSettings()
+    const first = current(wrapper).text()
+
+    await current(wrapper).trigger('keydown', { key: 'ArrowDown' })
+    expect(current(wrapper).text()).not.toBe(first)
+
+    await current(wrapper).trigger('keydown', { key: 'ArrowUp' })
+    expect(current(wrapper).text()).toBe(first)
+
+    await current(wrapper).trigger('keydown', { key: 'ArrowUp' })
+    expect(current(wrapper).attributes('id')).toBe(tabs(wrapper).at(-1).attributes('id'))
+  })
+
+  it('jumps to the first and last with Home and End', async () => {
+    const wrapper = mountSettings()
+    await current(wrapper).trigger('keydown', { key: 'End' })
+    expect(current(wrapper).attributes('id')).toBe(tabs(wrapper).at(-1).attributes('id'))
+    await current(wrapper).trigger('keydown', { key: 'Home' })
+    expect(current(wrapper).attributes('id')).toBe(tabs(wrapper)[0].attributes('id'))
+  })
+})

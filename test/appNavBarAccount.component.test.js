@@ -120,45 +120,6 @@ describe('AppNavBar household block', () => {
     { id: 'fam-2', name: 'Parents' },
   ]
 
-  // The block used to open a popover listing households. A user may belong to at
-  // most three and own only one, so nearly every account has exactly one -- which
-  // made the bar's best position a menu whose only content was a single ticked
-  // row. It goes straight to that household's settings now, and switching moved
-  // into the account dialog where it only appears once there is a choice.
-  it('opens household settings directly, with no menu in between', async () => {
-    const wrapper = mountBar({
-      householdId: 'fam-1',
-      householdName: 'Home',
-      households,
-      memberProfiles: profiles,
-      currentUserId: 'u_self',
-    })
-
-    const block = wrapper.find('.household-btn')
-    expect(block.attributes('aria-label')).toBe('Home settings')
-    // Nothing announcing a popup: this is a link to one place.
-    expect(block.attributes('aria-haspopup')).toBeUndefined()
-
-    await block.trigger('click')
-    expect(document.body.querySelector('.popover-panel')).toBeNull()
-  })
-
-  it('keeps a standalone settings gear out of the bar', () => {
-    const wrapper = mountBar({
-      householdId: 'fam-1',
-      householdName: 'Home',
-      households,
-      memberProfiles: profiles,
-      currentUserId: 'u_self',
-    })
-
-    expect(wrapper.find('.household-settings-btn').exists()).toBe(false)
-    // Four targets: the household block, the switcher, history, and the account
-    // avatar. Still no standalone gear -- the block itself is the way into
-    // settings.
-    expect(wrapper.findAll('.topbar button')).toHaveLength(4)
-  })
-
   // The household's own emoji anchors the block, the same square it wears on its
   // row in the account dialog.
   it('leads the household block with its emoji', () => {
@@ -191,19 +152,6 @@ describe('AppNavBar household block', () => {
     expect(modal.props('householdId')).toBeUndefined()
   })
 
-  it('offers the same destination from the account dialog', () => {
-    const wrapper = mountBar({
-      householdId: 'fam-1',
-      householdName: 'Home',
-      households,
-      memberProfiles: profiles,
-      currentUserId: 'u_self',
-    })
-
-    const modal = wrapper.findComponent(AccountActionModal)
-    expect(modal.props('householdName')).toBe('Home')
-    expect(modal.props('householdMemberCount')).toBe(2)
-  })
 
 })
 

@@ -96,7 +96,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('HomeView and the action bar', () => {
+describe('HomeView, its header and its composer', () => {
   // The bar shell, not the header one. HouseholdSetupView renders the same
   // component with the default and must not get a bar; this is the other half
   // of that contract.

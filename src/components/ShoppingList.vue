@@ -2,11 +2,11 @@
 import { computed, onBeforeUnmount, ref, watch, type PropType } from 'vue'
 import ShoppingListItem from './ShoppingListItem.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
-import ListFilterMenu from './ListFilterMenu.vue'
+import ListSortMenu from './ListSortMenu.vue'
 import { getProductEmoji } from '../lib/productEmoji'
 import { memberDisplayName } from '../lib/userIdentity'
 import { productKey } from '../lib/productSearch'
-import { sumCheckedQuantities } from '../lib/shoppingList'
+import { buildListEntries, type ListSort } from '../lib/listSections'
 import type { ShoppingItemRow, HouseholdMemberProfile } from '../lib/householdRealtime'
 import type { ProductSuggestion } from '../lib/productSearch'
 import { shopLabel, type ShopMap } from '../lib/shopBadges'
@@ -16,6 +16,11 @@ import AppIcon from './AppIcon.vue'
 // Presentational: renders the list with its move animations, the initial-load
 // skeleton, and the empty state. All mutations stay with the parent, which owns
 // the items.
+//
+// The list is two sections read top to bottom: what is still to pick up, then
+// what is already in the cart. A ticked row travels down into the cart, so what
+// you still have to find is always the top of the screen and it only ever gets
+// shorter. See lib/listSections for how the entries are laid out.
 
 // Which shops sell a row's product, on nightly.
 //
@@ -46,6 +51,8 @@ const props = defineProps({
     type: Map as PropType<Map<string, HouseholdMemberProfile>>,
     default: () => new Map(),
   },
+  // Rows another member just added, for a brief highlight as they arrive.
+  freshIds: { type: Object as PropType<ReadonlySet<string>>, default: () => new Set() },
   loading: { type: Boolean, default: false },
   showEmpty: { type: Boolean, default: false },
   // Whether this household has ever bought anything. An empty list means two
@@ -61,14 +68,10 @@ const props = defineProps({
   suggestedProductsLoading: { type: Boolean, default: false },
 })
 
-// 'all' | 'active' | 'checked'. Applied to what is RENDERED only -- the counts
-// and the buy bar below stay on the whole list, because a filter hides rows
-// rather than removing them. Filtering to "To buy" while three things sit in
-// the cart must not strand them behind a bar that vanished.
-//
-// A model rather than a prop: the control that changes it lives in this
-// component's header, but the value belongs to the view that owns the list.
-const filter = defineModel('filter', { type: String, default: 'all' })
+// 'added' | 'aisle': how the rows to buy are ordered. A model because the
+// control lives in this component's header but the choice belongs to the view,
+// which remembers it.
+const sort = defineModel<ListSort>('sort', { default: 'added' })
 // The shop filter, independent of the one above it. NIGHTLY ONLY: shopMap is
 // empty on production, so availableShops is empty, so the section that sets
 // this never renders.
@@ -119,15 +122,48 @@ function keptByShop(item: ShoppingItemRow): boolean {
   return shops.length === 0 || shops.includes(shopFilter.value)
 }
 
-const visibleItems = computed(() => {
-  const byState =
-    filter.value === 'active'
-      ? uncheckedItems.value
-      : filter.value === 'checked'
-        ? checkedItems.value
-        : props.items
-  return shopFilter.value ? byState.filter(keptByShop) : byState
-})
+const visibleItems = computed(() =>
+  shopFilter.value ? props.items.filter(keptByShop) : props.items,
+)
+
+// The cart folds away to its heading, remembered on this device. Someone
+// working down a long list in a shop wants the rows left to find and nothing
+// else; someone checking what they already have taps it open.
+const CART_COLLAPSED_KEY = 'famcart-cart-collapsed'
+function readCartCollapsed(): boolean {
+  try {
+    return localStorage.getItem(CART_COLLAPSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+const cartCollapsed = ref(readCartCollapsed())
+
+// Folding the cart is not the rows going anywhere, so it must not borrow the
+// list's leave animation: that takes each leaving row out of flow, and a whole
+// cart of them stacked up onto one spot on their way out, which read as the
+// products flying up. Folding removes them at once; unfolding fades them in
+// where they belong. Cleared once the list has settled.
+const foldMode = ref<'' | 'fold' | 'unfold'>('')
+let foldTimer: ReturnType<typeof setTimeout> | null = null
+
+function toggleCart() {
+  foldMode.value = cartCollapsed.value ? 'unfold' : 'fold'
+  if (foldTimer) clearTimeout(foldTimer)
+  foldTimer = setTimeout(() => {
+    foldMode.value = ''
+  }, 400)
+  cartCollapsed.value = !cartCollapsed.value
+  try {
+    localStorage.setItem(CART_COLLAPSED_KEY, cartCollapsed.value ? '1' : '0')
+  } catch {
+    // Storage off: the choice holds for this session and is simply not kept.
+  }
+}
+
+const entries = computed(() =>
+  buildListEntries(visibleItems.value, { sort: sort.value, cartCollapsed: cartCollapsed.value }),
+)
 
 // Only shops something on this list is actually sold at, so the menu can never
 // offer one that would empty the list, and the counts beside them are what
@@ -149,58 +185,40 @@ const shopCounts = computed(() => {
   return counts
 })
 
-// Everything each row needs, worked out once per render instead of four times
-// per row inside the v-for. The drain lookups were the reason: indexOf() per row
-// over the draining list is quadratic in the row count. Harmless at the 50-item
-// cap, but a map costs nothing and the template reads as data rather than calls.
-const visibleRows = computed(() => {
+// Everything each row needs, worked out once per render instead of per row
+// inside the v-for. The drain lookups were the reason: indexOf() per row over
+// the draining list is quadratic in the row count.
+const rowMeta = computed(() => {
   const drainOrder = new Map(drainingIds.value.map((id, index) => [id, index]))
-  return visibleItems.value.map((item) => {
+  const meta = new Map<string, {
+    avatarUrl: string | undefined
+    avatarName: string
+    draining: boolean
+    drainIndex: number
+  }>()
+  for (const item of visibleItems.value) {
     const profile = props.memberProfiles.get(item.added_by ?? '')
-    return {
-      item,
+    meta.set(item.id, {
       avatarUrl: profile?.image_url || undefined,
       avatarName: memberDisplayName(profile),
       draining: drainOrder.has(item.id),
-      // Position among the draining rows, so they fall into the bar in a
-      // stagger. Checked rows sit wherever they were added, so the order comes
-      // from the drain list rather than from a contiguous checked section.
       drainIndex: drainOrder.get(item.id) ?? 0,
-    }
-  })
+    })
+  }
+  return meta
 })
 
-// The header names whichever list is on screen. It stays put in every filter
-// state, because it is also where the filter button lives -- hiding it while
-// viewing the cart would take away the only way back.
-//
-// Which is why the unfiltered case has to check what is actually there: this
-// header used to disappear once the last row was ticked, and now that it
-// cannot, "To buy - 0 left" would sit over a list that is entirely cart. Under
-// an explicit filter the label follows the filter, even when it comes up empty,
-// because there the count is the answer to a question you asked.
-const viewingChecked = computed(
-  () =>
-    filter.value === 'checked' ||
-    (filter.value === 'all' && props.items.length > 0 && uncheckedItems.value.length === 0),
-)
-const metaLabel = computed(() =>
-  viewingChecked.value ? t('list.meta.checked') : t('list.meta.toBuy'),
-)
-// tn, not a ternary on === 1. Romanian needs three forms here and picks
-// between them by rules English does not have: 19 is 'produse', 20 is
-// 'de produse'. Only the cart is counted here; what is left to buy is counted
-// in the household bar.
-const metaCount = computed(() => tn('list.meta.itemCount', checkedItems.value.length))
+// Rows, not units, everywhere a count is shown: "Grapes x4" is one thing to
+// find. The quantity is on the row itself.
+const toBuyCount = computed(() => uncheckedItems.value.length)
 
-// The list has rows, the filter just hides all of them. Distinct from the empty
-// state, which means there is nothing to buy at all.
+// The list has rows, the shop filter just hides all of them. Distinct from the
+// empty state, which means there is nothing to buy at all.
 const filteredToNothing = computed(
   () => !props.loading && props.items.length > 0 && visibleItems.value.length === 0,
 )
 
-// Units, not rows: "grapes x4" counts as 4 on the buy button.
-const checkedUnitCount = computed(() => sumCheckedQuantities(props.items))
+const checkedCount = computed(() => checkedItems.value.length)
 
 const skeletonNameWidths = ['55%', '38%', '62%', '30%']
 
@@ -303,6 +321,8 @@ onBeforeUnmount(() => {
   if (pendingCheckout) finishCheckout(pendingCheckout)
   if (drainTimer) clearTimeout(drainTimer)
   if (successTimer) clearTimeout(successTimer)
+  clearNudge()
+  if (foldTimer) clearTimeout(foldTimer)
 })
 
 // ─── Slide to confirm ─────────────────────────────────────────────────────────
@@ -335,6 +355,8 @@ function measureTravel() {
 
 function onThumbDown(e: PointerEvent) {
   if (buying.value) return
+  clearNudge()
+  nudging.value = false
   maxTravel = measureTravel()
   if (!maxTravel) return
   dragging.value = true
@@ -355,6 +377,10 @@ function onThumbUp(e: PointerEvent) {
   if (dragX.value >= maxTravel * COMPLETE_AT) {
     startCheckout()
   } else {
+    // A slide that stopped short glides home. The release is also a click,
+    // which starts the helper; note when the glide ends so the helper waits for
+    // it rather than grabbing the knob halfway back.
+    if (dragX.value > 0) snapBackEndsAt = performance.now() + SNAP_BACK_MS
     dragX.value = 0
   }
 }
@@ -367,8 +393,73 @@ function onThumbCancel() {
 
 // A pointer click must not check out — requiring the slide is the point. A
 // keyboard activation of the button arrives as a click with detail === 0.
+//
+// But a tap is somebody trying, and answering it with nothing reads as broken.
+// So the thumb leans along the track twice, the way you would show somebody the
+// gesture, and the label says it in words.
+//
+// The lean is dragX itself, stepped through a few positions, not an animation
+// on the thumb. The thumb, the green trail and the white copy of the label all
+// follow dragX on the same transition, so they travel together; a keyframe on
+// the thumb alone left the trail and the label behind, and fought the thumb's
+// own inline transform besides.
+const NUDGE_STEPS: [number, number][] = [
+  [28, 0],
+  [0, 240],
+  [14, 480],
+  [0, 680],
+]
+// How long a short slide takes to glide back (the thumb's --transition-slow),
+// and the pause after it before the helper starts, so the knob is seen to come
+// to rest first.
+const SNAP_BACK_MS = 280
+const AFTER_SNAP_BACK_MS = 150
+let snapBackEndsAt = 0
+// The words arrive with the lean, so the knob showing the gesture and the label
+// naming it are one moment, and stay a little past the knob coming home (the
+// last step lands at 680ms and travels 280ms).
+const NUDGE_HINT_MS = 1600
+const nudging = ref(false)
+let nudgeTimers: ReturnType<typeof setTimeout>[] = []
+
+function clearNudge() {
+  for (const timer of nudgeTimers) clearTimeout(timer)
+  nudgeTimers = []
+}
+
 function onThumbClick(e: MouseEvent) {
-  if (e.detail === 0) startCheckout()
+  if (e.detail === 0) {
+    startCheckout()
+    return
+  }
+  if (buying.value || dragX.value > 0) return
+  clearNudge()
+  // After a slide that stopped short the knob is still gliding home; everything
+  // below starts once it is there and has sat still for a beat.
+  const remaining = snapBackEndsAt - performance.now()
+  const start = remaining > 0 && !prefersReducedMotion ? remaining + AFTER_SNAP_BACK_MS : 0
+  snapBackEndsAt = 0
+  if (!prefersReducedMotion) {
+    for (const [x, at] of NUDGE_STEPS) {
+      nudgeTimers.push(
+        setTimeout(() => {
+          if (!dragging.value && !buying.value) dragX.value = x
+        }, start + at),
+      )
+    }
+  }
+  // Without the lean there is nothing to wait for, so the words come at once.
+  const hintAt = start
+  nudgeTimers.push(
+    setTimeout(() => {
+      if (!dragging.value && !buying.value) nudging.value = true
+    }, hintAt),
+  )
+  nudgeTimers.push(
+    setTimeout(() => {
+      nudging.value = false
+    }, hintAt + NUDGE_HINT_MS),
+  )
 }
 
 const thumbStyle = computed(() => ({ transform: `translateX(${dragX.value}px)` }))
@@ -392,21 +483,32 @@ const inverseLabelStyle = computed(() => ({
     ? 'inset(0 0 0 0)'
     : `inset(0 calc(100% - ${THUMB_INSET + THUMB_SIZE / 2 + dragX.value - TRACK_INSET}px) 0 0)`,
 }))
+// Which message the label is showing, as a key for its transition, and which
+// way the words travel: the hint arrives from above and leaves the way it came,
+// so a tap reads as the hint dropping in and lifting back out.
+const labelKey = computed(() => (buttonSuccess.value ? 'done' : nudging.value ? 'hint' : 'count'))
+const labelMotion = ref<'down' | 'up'>('down')
+watch(nudging, (on) => {
+  labelMotion.value = on ? 'down' : 'up'
+})
+
 const labelText = computed(() =>
   buttonSuccess.value
     ? t('list.buyBar.checkedOut')
-    : tn('list.buyBar.slide', checkedUnitCount.value),
+    : nudging.value
+      ? t('list.buyBar.slideHint')
+      : tn('list.buyBar.slide', checkedCount.value),
 )
 </script>
 
 <template>
   <div class="list-meta" v-if="!loading && items.length">
-    <span class="list-meta__label">{{ metaLabel }}</span>
-    <!-- Only for the cart: what is left to buy is in the household bar now. -->
-    <span v-if="viewingChecked" class="list-meta__count">{{ metaCount }}</span>
-    <span v-else class="list-meta__spacer"></span>
-    <ListFilterMenu
-      v-model="filter"
+    <span class="list-meta__label">
+      {{ toBuyCount ? t('list.meta.toBuy') : t('list.meta.allPicked') }}
+    </span>
+    <span class="list-meta__spacer"></span>
+    <ListSortMenu
+      v-model="sort"
       v-model:shop="shopFilter"
       :items="items"
       :shops="availableShops"
@@ -430,37 +532,59 @@ const labelText = computed(() =>
     </li>
   </ul>
 
-  <!-- One list, in one order. Ticking a row restyles it in place instead of
-       moving it to a section at the bottom. -->
-  <TransitionGroup v-else tag="ul" name="row" class="item-list">
-    <ShoppingListItem
-      v-for="row in visibleRows"
-      :key="row.item.id"
-      :item="row.item"
-      :avatar-url="row.avatarUrl"
-      :avatar-name="row.avatarName"
-      :draining="row.draining"
-      :drain-index="row.drainIndex"
-      :shops="shopsFor(row.item)"
-      :qty-open="row.item.id === openQtyId"
-      @toggle="$emit('toggle', $event)"
-      @delete="$emit('delete', $event)"
-      @set-quantity="$emit('set-quantity', $event)"
-      @open-quantity="openQtyId = $event"
-      @close-quantity="openQtyId = ''"
-    />
+  <!-- One TransitionGroup for headings and rows alike, so a ticked row is seen
+       travelling down into the cart rather than blinking from one list into
+       another. The headings are list items so the list's own semantics stay a
+       plain list; each one names the rows under it. -->
+  <TransitionGroup
+    v-else
+    tag="ul"
+    name="row"
+    class="item-list"
+    :class="{ 'item-list--fold': foldMode === 'fold', 'item-list--unfold': foldMode === 'unfold' }"
+  >
+    <template v-for="entry in entries" :key="entry.key">
+      <li v-if="entry.kind === 'aisle'" class="list-heading">
+        {{ t(`aisle.${entry.aisle}`) }}
+      </li>
+      <li v-else-if="entry.kind === 'cart'" class="list-heading list-heading--cart">
+        <button
+          type="button"
+          class="cart-toggle"
+          :aria-expanded="!cartCollapsed"
+          @click="toggleCart"
+        >
+          <AppIcon class="cart-toggle__icon" name="shopping-cart" />
+          <span class="cart-toggle__label">{{ t('list.cart.heading') }}</span>
+          <span class="cart-toggle__count">{{ entry.count }}</span>
+          <AppIcon
+            class="cart-toggle__chevron"
+            :class="{ 'cart-toggle__chevron--open': !cartCollapsed }"
+            name="chevron-right"
+          />
+        </button>
+      </li>
+      <ShoppingListItem
+        v-else
+        :item="entry.item"
+        :avatar-url="rowMeta.get(entry.item.id)?.avatarUrl"
+        :avatar-name="rowMeta.get(entry.item.id)?.avatarName ?? ''"
+        :draining="rowMeta.get(entry.item.id)?.draining ?? false"
+        :drain-index="rowMeta.get(entry.item.id)?.drainIndex ?? 0"
+        :fresh="freshIds.has(entry.item.id)"
+        :shops="shopsFor(entry.item)"
+        :qty-open="entry.item.id === openQtyId"
+        @toggle="$emit('toggle', $event)"
+        @delete="$emit('delete', $event)"
+        @set-quantity="$emit('set-quantity', $event)"
+        @open-quantity="openQtyId = $event"
+        @close-quantity="openQtyId = ''"
+      />
+    </template>
   </TransitionGroup>
 
-  <p v-if="filteredToNothing" class="filter-empty">
-    <!-- The shop filter is named first when it is on, because it is the one
-         that can empty a list nobody expected to be empty. -->
-    {{
-      shopFilter
-        ? t('list.filteredEmpty.shop', { shop: shopLabel(shopFilter) })
-        : filter === 'checked'
-          ? t('list.filteredEmpty.checked')
-          : t('list.filteredEmpty.active')
-    }}
+  <p v-if="filteredToNothing && shopFilter" class="filter-empty">
+    {{ t('list.filteredEmpty.shop', { shop: shopLabel(shopFilter) }) }}
   </p>
 
   <!-- Keeps the last checked row clear of the fixed buy bar. -->
@@ -521,16 +645,34 @@ const labelText = computed(() =>
       <div
         ref="barEl"
         class="buy-bar"
-        :class="{ 'buy-bar--success': buttonSuccess, 'buy-bar--dragging': dragging }"
+        :class="{
+          'buy-bar--success': buttonSuccess,
+          'buy-bar--dragging': dragging,
+        }"
       >
         <!-- The track is thinner than the thumb, so it is its own element: the
              bar itself cannot clip, or the thumb standing proud of the track
              would be cut off at the top and bottom. -->
         <div class="buy-bar__track">
           <div class="buy-bar__fill" :style="fillStyle" aria-hidden="true"></div>
-          <span class="buy-bar__label">{{ labelText }}</span>
+          <!-- Each label is a clipped slot the words slide through: a new
+               message drops in from above as the old one leaves below, and
+               the hint going away plays that backwards. The white copy runs
+               the same transition in the same slot, so the two stay one line
+               of text wherever the green trail cuts it. -->
+          <span class="buy-bar__label">
+            <span class="buy-bar__slot">
+              <Transition :name="`label-${labelMotion}`">
+                <span :key="labelKey" class="buy-bar__text">{{ labelText }}</span>
+              </Transition>
+            </span>
+          </span>
           <span class="buy-bar__label buy-bar__label--inverse" :style="inverseLabelStyle" aria-hidden="true">
-            {{ labelText }}
+            <span class="buy-bar__slot">
+              <Transition :name="`label-${labelMotion}`">
+                <span :key="labelKey" class="buy-bar__text">{{ labelText }}</span>
+              </Transition>
+            </span>
           </span>
         </div>
         <button
@@ -539,7 +681,7 @@ const labelText = computed(() =>
           type="button"
           :style="thumbStyle"
           :disabled="buying"
-          :aria-label="tn('list.buyBar.checkOut', checkedUnitCount)"
+          :aria-label="tn('list.buyBar.checkOut', checkedCount)"
           @pointerdown="onThumbDown"
           @pointermove="onThumbMove"
           @pointerup="onThumbUp"
@@ -580,15 +722,6 @@ const labelText = computed(() =>
   margin-left: auto;
 }
 
-/* Pushed right, with the filter button following it — the count reads as the
-   label's answer, and the button as the thing that changes both. */
-.list-meta__count {
-  margin-left: auto;
-  font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
-  color: var(--text-disabled);
-  font-variant-numeric: tabular-nums;
-}
 
 /* Mirrors ShoppingListItem's .item card so rows swap in without layout shift */
 /* Box-for-box .item plus .item-face: same border, radius, gap and padding, so
@@ -599,15 +732,8 @@ const labelText = computed(() =>
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  background: var(--bg-surface);
-  border-radius: var(--radius-row);
-  corner-shape: squircle;
-  padding: 0.75rem 0.875rem 0.75rem 0.75rem;
-  box-shadow: var(--elevation-soft);
-}
-
-.skeleton-item__tile {
-  corner-shape: squircle;
+  min-height: 60px;
+  padding: 0.5rem 0.25rem;
 }
 
 .skeleton-item__name {
@@ -620,19 +746,129 @@ const labelText = computed(() =>
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
   position: relative;
+}
+
+/* An aisle's name, or the cart's. Quiet: it groups the rows under it, and the
+   rows are what you read. */
+.list-heading {
+  padding: var(--space-5) 0.25rem var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.list-heading:first-child {
+  padding-top: var(--space-1);
+}
+
+.list-heading--cart {
+  padding: var(--space-6) 0 var(--space-1);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* The cart's heading is also its switch, so it is built like a row: the same
+   inline padding, the icon centred in a slot as wide as the emoji tile, and the
+   same gap after it, so "In cart" starts exactly where the item names do and
+   the cart reads as part of the list's grid rather than something laid over it. */
+.cart-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 0.25rem;
+  border: none;
+  border-radius: var(--radius-lg);
+  background: none;
+  color: var(--text-primary);
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Filled at rest, not only on hover: it is the one control in the list that
+   is a bar rather than a row, and on a phone (where there is no hover) it
+   read as a plain heading. Hover and press each go a step further. */
+.cart-toggle {
+  background: var(--bg-hover);
+}
+
+@media (hover: hover) {
+  .cart-toggle:hover {
+    background: var(--bg-press);
+  }
+}
+
+.cart-toggle:active {
+  background: color-mix(in srgb, var(--bg-press), var(--text-primary) 6%);
+}
+
+.cart-toggle__icon {
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 18px;
+  display: flex;
+  justify-content: center;
+  color: var(--color-primary);
+}
+
+.cart-toggle__icon :deep(svg) {
+  width: 18px;
+  height: 18px;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+}
+
+.cart-toggle__chevron :deep(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+}
+
+.cart-toggle__count {
+  min-width: 1.5rem;
+  padding: 0 0.4rem;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  color: var(--color-primary-text);
+  font-size: var(--text-xs);
+  line-height: 1.5rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.cart-toggle__chevron {
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
+  margin-right: var(--space-2);
+  color: var(--text-secondary);
+  transition: transform var(--transition-base) var(--ease-standard);
+}
+
+.cart-toggle__chevron--open {
+  transform: rotate(90deg);
 }
 
 /* Rows still animate for the things that genuinely move them: something added,
    removed, or checked out. Ticking is no longer one of those. */
 .row-move {
-  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform var(--transition-slow) var(--ease-rise);
   will-change: transform;
 }
 
 .row-enter-active {
-  transition: opacity 0.32s ease, transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity var(--transition-slow) var(--ease-rise), transform var(--transition-slow) var(--ease-rise);
 }
 
 .row-leave-active {
@@ -641,6 +877,24 @@ const labelText = computed(() =>
   width: 100%;
   pointer-events: none;
   z-index: 2;
+}
+
+/* Gone on the spot, not for one frame out of flow and stacked on its
+   neighbours, which is what an unanimated leave still costs. */
+.item-list--fold > .row-leave-active {
+  display: none;
+}
+
+.item-list--fold > .row-move {
+  transition: none;
+}
+
+.item-list--unfold > .row-enter-active {
+  transition: opacity var(--transition-slow) var(--ease-rise);
+}
+
+.item-list--unfold > .row-enter-from {
+  transform: none;
 }
 
 .row-enter-from {
@@ -802,39 +1056,26 @@ const labelText = computed(() =>
 }
 
 /* Buy bar */
-/* Keeps the last checked row clear of the slider. The dashboard already pads for
-   the action bar itself, so this only has to cover the slider and the gap above
-   it — about 58px on a phone, less on desktop.
-
-   84px is what it has always been, and it is left alone deliberately: it
-   over-covers by a comfortable margin at both widths, and the cost of being
-   generous here is a little dead space under the last row, where the cost of
-   being exact is a checked row hiding behind the slider that checks it out.
-   It is NOT derived from --nav-height the way .buy-bar-wrap below is, so do not
-   read it as tracking the bar. */
+/* Keeps the last checked row clear of the slider, which floats over the end of
+   the list. Generous rather than exact: the cost of too much is a little air
+   under the last row, the cost of too little is a checked row hiding behind the
+   slider that checks it out. */
 .buy-bar-spacer {
   height: 84px;
 }
 
-/* Just clear of the action bar rather than on the screen's own bottom edge,
-   which the bar now owns. The two are one assembly read from the bottom up:
-   the bar, then the thing this trip is actually for.
-
-   --nav-height is a token in style.css precisely so this number and the bar's
-   own height cannot drift apart; the bar is display:none above 900px, which is
-   why the desktop block at the foot of this file puts the old offset back. */
+/* Just above the action bar on a phone: the two are one assembly read from the
+   bottom up, the way to add and then the thing this trip is for. From the
+   desktop column up there is no bar and it sits on the bottom edge. */
 .buy-bar-wrap {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: calc(
-    var(--nav-height) + var(--nav-disc-overhang) + var(--safe-bottom) + 0.5rem
-  );
-  /* Just under the action bar (40), so the scrim below can run beneath the
-     bar's rounded corners and the centre disc stays on top of it. The slider
-     itself never overlaps the bar, so being under it costs nothing, and 39 is
-     still above everything in the list, the open quantity pill included. */
-  z-index: 39;
+  /* A few pixels of air over the bar's disc, so the two do not read as touching. */
+  bottom: calc(var(--bottom-clearance) + var(--safe-bottom) + 4px);
+  /* Over the list, under the composer's fade (--z-composer), which never
+     reaches this high. */
+  z-index: calc(var(--z-composer) - 1);
   display: flex;
   justify-content: center;
   padding: 0 1rem;
@@ -842,26 +1083,20 @@ const labelText = computed(() =>
   pointer-events: none;
 }
 
-/* A fade of the page's own colour behind the slider, solid at the bottom and
-   gone at the top, so rows scrolling underneath dissolve rather than cutting
-   across the pill. It runs down under the action bar, which paints over it,
-   so there is no seam at the bar's rounded corners and the centre disc stays
-   on top. Slightly see-through even at its densest. */
+/* A fade of the page's own colour behind the slider, so rows scrolling
+   underneath dissolve rather than cutting across the pill. */
 .buy-bar-wrap::before {
   content: '';
   position: absolute;
   z-index: -1;
   left: 0;
   right: 0;
-  top: -3rem;
-  bottom: calc(-1 * (0.5rem + var(--nav-disc-overhang)) - var(--radius-3xl));
-  /* Dense until a little above the slider's top edge (about 66% of this box
-     from the bottom), so there is a band of page colour over the pill before
-     the fade starts. */
+  top: -2rem;
+  bottom: -0.5rem;
   background: linear-gradient(
     to top,
-    color-mix(in oklab, var(--color-primary-bg) 92%, transparent) 72%,
-    color-mix(in oklab, var(--color-primary-bg) 0%, transparent)
+    color-mix(in oklab, var(--bg-main) 92%, transparent) 60%,
+    color-mix(in oklab, var(--bg-main) 0%, transparent)
   );
   pointer-events: none;
 }
@@ -922,6 +1157,43 @@ const labelText = computed(() =>
   font-weight: var(--weight-extrabold);
   letter-spacing: -0.01em;
   pointer-events: none;
+}
+
+/* One line tall and clipped, so a message sliding in or out is cut off at the
+   line rather than drifting over the thumb or the pill's edge. Both messages
+   share one grid cell while they cross. */
+.buy-bar__slot {
+  display: inline-grid;
+  overflow: hidden;
+  line-height: 1.4;
+  vertical-align: middle;
+}
+
+.buy-bar__text {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.label-down-enter-active,
+.label-down-leave-active,
+.label-up-enter-active,
+.label-up-leave-active {
+  transition:
+    transform var(--transition-slow) var(--ease-rise),
+    opacity var(--transition-slow) var(--ease-rise);
+}
+
+.label-down-enter-from,
+.label-up-leave-to {
+  transform: translateY(-100%);
+  opacity: 0;
+}
+
+.label-down-leave-to,
+.label-up-enter-from {
+  transform: translateY(100%);
+  opacity: 0;
 }
 
 /* White copy of the label, clipped to the green fill: the text reads white
@@ -1065,6 +1337,18 @@ const labelText = computed(() =>
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .label-down-enter-from,
+  .label-down-leave-to,
+  .label-up-enter-from,
+  .label-up-leave-to {
+    transform: none;
+  }
+
+  .row-move,
+  .cart-toggle__chevron {
+    transition: none;
+  }
+
   .buy-bar__fill,
   .buy-bar__thumb,
   .buy-bar__label,
@@ -1076,8 +1360,6 @@ const labelText = computed(() =>
   }
 }
 
-/* The action bar is the phone shell only, so above the desktop column there is
-   nothing under the slider and it goes back to the screen's own bottom edge. */
 @media (min-width: 900px) {
   .buy-bar-wrap {
     bottom: calc(1rem + var(--safe-bottom));

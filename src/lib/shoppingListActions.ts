@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   countActiveItemsByMember,
   findActiveItemByName,
+  findCheckedItemByName,
   sortItemsForDisplay,
 } from './shoppingList'
 import {
@@ -72,6 +73,10 @@ export interface ShoppingListActions {
   toggleItem: (item: ShoppingItemRow) => Promise<void>
   setItemQuantity: (item: ShoppingItemRow, next: number) => Promise<void>
   deleteItem: (item: ShoppingItemRow) => Promise<void>
+  /** Remove now, write later: commit() sends the delete, undo() puts the row back. */
+  removeItemDeferred: (
+    item: ShoppingItemRow,
+  ) => { commit: () => Promise<void>; undo: () => void } | null
   checkoutItems: (ids: string[]) => Promise<void>
 }
 
@@ -738,6 +743,20 @@ export function useShoppingListActions(options: {
       }
     }
 
+    // Checking: if the same product is already in the cart, fold that row into
+    // this one first, then tick this one. That way round because merge_items
+    // (004_shopping_list.sql) only accepts a target still to buy -- which this
+    // row is, until the tick below. Each step is its own transaction; a tick
+    // that fails after the merge leaves one summed row still to buy, which is a
+    // correct list, just not ticked yet.
+    if (nextChecked) {
+      const twin = findCheckedItemByName(items.value, item.name, {
+        excludeId: item.id,
+        maker: item.maker as string | null,
+      })
+      if (twin) await mergeItemInto(twin, item)
+    }
+
     // Optimistic: flip immediately, roll back if the write fails. checked_at is
     // mirrored because the refetch's 30-row cap is taken on it, not because it
     // affects position: display order is creation time, so a tick never moves the
@@ -1016,36 +1035,66 @@ export function useShoppingListActions(options: {
     scheduleQuantityWrite(item, previous)
   }
 
-  async function deleteItem(item: ShoppingItemRow): Promise<void> {
-    // Optimistic: remove immediately, restore at its original position on failure.
+  // Delete in two halves, so the list can offer Undo: the row leaves the screen
+  // now, and the server hears about it only when commit() runs -- which the
+  // caller defers until its Undo toast has gone (see lib/useToast).
+  //
+  // While the row is held back its id sits in pendingRemovals, which loadItems
+  // already filters. That covers every way the server's copy could sneak back
+  // in during the window: a refetch, a reconnect, and a realtime UPDATE from
+  // another member, which for a row not on screen goes through a refetch too.
+  function removeItemDeferred(
+    item: ShoppingItemRow,
+  ): { commit: () => Promise<void>; undo: () => void } | null {
     const index = items.value.findIndex((i) => i.id === item.id)
-    if (index === -1) return
+    if (index === -1) return null
     const [removed] = items.value.splice(index, 1) as [ShoppingItemRow]
-
-    if (isOffline()) {
-      enqueueOfflineMutation(localStorage, userId.value, { kind: 'delete', id: item.id })
-      return
-    }
-
     pendingRemovals.add(item.id)
-    let error
-    try {
-      ;({ error } = await db.from('shopping_list_items').delete().eq('id', item.id))
-    } finally {
-      pendingRemovals.delete(item.id)
+    let settled = false
+
+    function restore() {
+      if (!items.value.some((i) => i.id === removed.id)) {
+        items.value = sortItemsForDisplay([...items.value, removed])
+      }
     }
 
-    if (error) {
-      // Keep the row removed and queue the delete when it's just connectivity.
-      if (deferIfOffline(error, { kind: 'delete', id: item.id })) return
-      // `index` was read before the round trip, and realtime can insert or
-      // remove rows during it — so it is a position in an array that may no
-      // longer exist. Put the row back and let the canonical order decide where
-      // it actually belongs, which is what every other restore here does.
-      items.value.splice(index, 0, removed)
-      items.value = sortItemsForDisplay(items.value)
-      loadError.value = userMessage(error, t('error.deleteItemFailed'))
+    async function commit() {
+      if (settled) return
+      settled = true
+      if (isOffline()) {
+        pendingRemovals.delete(item.id)
+        enqueueOfflineMutation(localStorage, userId.value, { kind: 'delete', id: item.id })
+        return
+      }
+      let error
+      try {
+        ;({ error } = await db.from('shopping_list_items').delete().eq('id', item.id))
+      } finally {
+        pendingRemovals.delete(item.id)
+      }
+      if (error) {
+        // Keep the row removed and queue the delete when it's just connectivity.
+        if (deferIfOffline(error, { kind: 'delete', id: item.id })) return
+        // Back in canonical order rather than at the index it was taken from:
+        // realtime can insert or remove rows during the round trip, so that
+        // index may point into an array that no longer exists.
+        restore()
+        loadError.value = userMessage(error, t('error.deleteItemFailed'))
+      }
     }
+
+    function undo() {
+      if (settled) return
+      settled = true
+      pendingRemovals.delete(item.id)
+      restore()
+    }
+
+    return { commit, undo }
+  }
+
+  async function deleteItem(item: ShoppingItemRow): Promise<void> {
+    await removeItemDeferred(item)?.commit()
   }
 
   // A quantity change spends its debounce as a number on screen that the server
@@ -1074,6 +1123,7 @@ export function useShoppingListActions(options: {
     toggleItem,
     setItemQuantity,
     deleteItem,
+    removeItemDeferred,
     checkoutItems,
   }
 }

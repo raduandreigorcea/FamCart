@@ -183,6 +183,14 @@ onBeforeUnmount(() => {
   80% { transform: translateX(4px); }
 }
 
+/* The shake says "still offline"; the message beneath it says the same thing,
+   so without motion nothing is lost. */
+@media (prefers-reduced-motion: reduce) {
+  .is-shaking {
+    animation: none;
+  }
+}
+
 .offline-retry-spinner {
   width: 18px;
   height: 18px;

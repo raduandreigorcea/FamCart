@@ -1,16 +1,20 @@
 // @vitest-environment happy-dom
 //
-// The bottom action bar: the list screen's shell on a phone.
+// The list screen's header: one header on every width, meaning the same thing
+// on a phone and a desktop. It replaced a five-slot bottom bar on the phone and
+// a different desktop header, where the household name opened a different
+// dialog on each.
 //
-// Its own file rather than a block in appNavBarAccount, because that one mounts
-// the same component in its other shell — layout="header", which is what
-// HouseholdSetupView renders and what comes back at the desktop column. Keeping
-// the two apart is what stops a `.topbar` assertion from quietly passing
-// against a bar, or the reverse.
+// What it must do: say whose list this is and how much is left, open the
+// household sheet from the name (the one door to members, invite, switching and
+// settings), and keep history and the account one tap away.
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import AppNavBar from '../src/components/AppNavBar.vue'
+import { setLocale } from '../src/lib/i18n'
+import HouseholdSheet from '../src/components/HouseholdSheet.vue'
+import AccountActionModal from '../src/components/AccountActionModal.vue'
 
 vi.mock('@clerk/vue', () => ({
   useUser: () => ({ user: ref(null) }),
@@ -18,8 +22,6 @@ vi.mock('@clerk/vue', () => ({
   useAuth: () => ({ userId: ref(null), getToken: ref(async () => null) }),
 }))
 
-// AccountActionModal is always mounted inside the bar and asks Supabase for
-// notification preferences; stub it so the bar can mount on its own.
 vi.mock('../src/supabase', () => ({
   useSupabase: () => ({
     from: () => ({
@@ -29,10 +31,24 @@ vi.mock('../src/supabase', () => ({
   getCatalogSupabase: () => null,
 }))
 
+const MEMBERS = [
+  { user_id: 'u_self', display_name: 'Radu', image_url: null, role: 'member' },
+  { user_id: 'u_ana', display_name: 'Ana', image_url: null, role: 'moderator' },
+]
+
 const wrappers = []
 function mountBar(props = {}) {
   const w = mount(AppNavBar, {
-    props: { layout: 'bar', householdName: 'Gorcea', currentUserId: 'u_self', ...props },
+    props: {
+      layout: 'bar',
+      householdId: 'hh-1',
+      householdName: 'Gorcea',
+      households: [{ id: 'hh-1', name: 'Gorcea' }, { id: 'hh-2', name: 'Bunica' }],
+      currentUserId: 'u_self',
+      ownerUserId: 'u_ana',
+      memberProfiles: MEMBERS,
+      ...props,
+    },
   })
   wrappers.push(w)
   return w
@@ -42,155 +58,230 @@ afterEach(() => {
   while (wrappers.length) wrappers.pop().unmount()
 })
 
-describe('AppNavBar as the bottom bar', () => {
-  it('draws five cells, four of which are buttons', () => {
-    const wrapper = mountBar()
-
-    expect(wrapper.findAll('.nav-slot')).toHaveLength(5)
-    // All five do something now: the fourth held its width as an empty cell
-    // until the switcher claimed it.
-    expect(wrapper.findAll('.navbar button')).toHaveLength(5)
-    expect(wrapper.find('.nav-slot--empty').exists()).toBe(false)
+describe('the list header', () => {
+  // The phone's bottom bar: five slots, the add disc in the middle. Switch is
+  // the household sheet, Household its settings, Add only reports the press.
+  // Green is the list's; the setup screen draws the same header plain.
+  it('wears the brand green only on the list', () => {
+    expect(mountBar().find('.topbar--list').exists()).toBe(true)
+    expect(mountBar({ layout: 'header' }).find('.topbar--list').exists()).toBe(false)
   })
 
-  // Not a generic house icon. The emoji is the one the owner picked, already on
-  // the household's row inside the settings dialog, so the thing you press and
-  // the row you land on are the same object — and it is what answers "which
-  // household" for somebody who belongs to more than one.
-  it('marks the household slot with that household own emoji', () => {
-    const wrapper = mountBar({ householdEmoji: '🏡' })
-
-    expect(wrapper.find('.nav-slot__mark--emoji').text()).toBe('🏡')
+  it('draws the five-slot bar with Add in the middle', () => {
+    const labels = mountBar().findAll('.nav-slot__label').map((l) => l.text())
+    expect(labels).toEqual(['Household', 'History', 'Add', 'Switch', 'You'])
   })
 
-  it('falls back to the default emoji rather than an empty square', () => {
-    const wrapper = mountBar({ householdEmoji: '' })
-
-    expect(wrapper.find('.nav-slot__mark--emoji').text()).not.toBe('')
-  })
-
-  // The centre button owns nothing: the search is AddItemForm's and its open
-  // state is HomeView's, so pressing this only says it was pressed.
   it('reports the add press rather than opening anything itself', async () => {
     const wrapper = mountBar()
-
     await wrapper.find('.nav-slot--add').trigger('click')
-
     expect(wrapper.emitted('add')).toHaveLength(1)
   })
 
-  // The visible label is only the verb, because it has to fit under a 44px disc
-  // in six languages. The full sentence has to reach a screen reader anyway.
-  it('names the add button more fully than it labels it', () => {
-    const add = mountBar().find('.nav-slot--add')
-
-    expect(add.text()).toBe('Add')
-    expect(add.attributes('aria-label')).toBe('Add an item')
-  })
-
-  // The visible labels are single words because they sit under a 24px mark in
-  // six languages. A single word is not always a name, so every slot carries the
-  // fuller one for a screen reader — the pattern the centre disc established.
-  describe('accessible names', () => {
-    it('names the household the slot is actually about', () => {
-      const household = mountBar({ householdName: 'Gorcea' }).findAll('.navbar button')[0]
-
-      // Not "Household": somebody in three of them would hear the same word for
-      // all three, and the emoji that tells them apart is decoration.
-      expect(household.attributes('aria-label')).toBe('Gorcea settings')
-      expect(household.find('.nav-slot__label').text()).toBe('Household')
-    })
-
-    it('falls back to the plain label before a household is known', () => {
-      const household = mountBar({ householdName: '' }).findAll('.navbar button')[0]
-
-      // Rather than " settings" with the name interpolated as empty.
-      expect(household.attributes('aria-label')).toBe('Household')
-    })
-
-    it('keeps the descriptive names the topbar used', () => {
-      const buttons = mountBar().findAll('.navbar button')
-
-      expect(buttons[1].attributes('aria-label')).toBe('Checkout history')
-      expect(buttons[1].find('.nav-slot__label').text()).toBe('History')
-      expect(buttons[4].attributes('aria-label')).toBe('Your account')
-      expect(buttons[4].find('.nav-slot__label').text()).toBe('You')
-    })
-
-    // The avatar used to be announced alongside the label, so the same control
-    // said "Your avatar You" with a photo and "You" without.
-    it('does not let the avatar into the account button name', () => {
-      const wrapper = mountBar()
-      const avatar = wrapper.find('.nav-slot__mark--avatar')
-
-      expect(avatar.attributes('aria-hidden')).toBe('true')
-    })
-  })
-
-  // There is one route behind all of this, so no slot is ever the current page.
-  // aria-current would be pointing at the page you are already on.
-  it('marks nothing as current, because it is an action bar', () => {
+  it('opens the household sheet from Switch', async () => {
     const wrapper = mountBar()
-
-    expect(wrapper.find('[aria-current]').exists()).toBe(false)
-    expect(wrapper.find('nav').attributes('aria-label')).toBe('Main actions')
-    // Every slot but the centre one summons a layer, and says which kind: the
-    // three dialogs say "dialog", the switcher says "menu".
-    const popups = wrapper
-      .findAll('.navbar button')
-      .map((b) => b.attributes('aria-haspopup') ?? null)
-    expect(popups).toEqual(['dialog', 'dialog', null, 'menu', 'dialog'])
+    await wrapper.findAll('.nav-slot')[3].trigger('click')
+    expect(wrapper.findComponent(HouseholdSheet).props('open')).toBe(true)
   })
 
-  it('opens the household settings from the first slot', async () => {
+  // The name, who is in the household, and how far this trip has got. No
+  // count in words: the list's own header already has it.
+  it('names the household, with its faces and the trip progress under it', () => {
+    // Four rows, one of them "x10" and ticked: 10 of 13 things picked up.
+    const wrapper = mountBar({
+      householdEmoji: '🏡',
+      totalCount: 4,
+      checkedCount: 1,
+      totalUnits: 13,
+      checkedUnits: 10,
+    })
+    expect(wrapper.find('.household-name').text()).toContain('Gorcea')
+    expect(wrapper.find('.household-emoji').text()).toBe('🏡')
+    expect(wrapper.findAll('.household-subrow .member-avatar')).toHaveLength(2)
+
+    const bar = wrapper.find('[role="progressbar"]')
+    expect(bar.attributes('aria-valuenow')).toBe('10')
+    expect(bar.attributes('aria-valuemax')).toBe('13')
+    // The fill goes by quantity; the words above it still count rows left.
+    expect(wrapper.find('.household-progress__fill').attributes('style')).toContain('width: 77%')
+    expect(wrapper.find('.household-progress__label').text()).toBe('3 items')
+  })
+
+  // What is left, over the bar that shows it going; rows, not units.
+  it('says how many products are left above the bar', () => {
+    const label = (props) => mountBar(props).find('.household-progress__label').text()
+    expect(label({ totalCount: 5, checkedCount: 3 })).toBe('2 items')
+    expect(label({ totalCount: 5, checkedCount: 4 })).toBe('1 item')
+
+    const done = mountBar({ totalCount: 5, checkedCount: 5 })
+    expect(done.find('.household-progress__label').text()).toBe("Everything's in the cart")
+    expect(done.find('.household-progress--done').exists()).toBe(true)
+  })
+
+  // Romanian has three plural forms and "de" from 20 up; the boundary is what
+  // a naive ternary gets wrong.
+  it('uses all three Romanian forms, including the 20 boundary', async () => {
+    await setLocale('ro')
+    try {
+      const label = (left) =>
+        mountBar({ totalCount: left + 1, checkedCount: 1 }).find('.household-progress__label').text()
+      expect(label(1)).toBe('1 produs')
+      expect(label(2)).toBe('2 produse')
+      expect(label(19)).toBe('19 produse')
+      expect(label(20)).toBe('20 de produse')
+      expect(label(101)).toBe('101 produse')
+    } finally {
+      await setLocale('en')
+    }
+  })
+
+  // The glint means "one more in", so it plays when the cart grows and not when
+  // something is unticked.
+  it('plays the glint when the cart grows, not when it shrinks', async () => {
+    const wrapper = mountBar({ totalCount: 5, checkedCount: 1, totalUnits: 5, checkedUnits: 1 })
+    expect(wrapper.find('.household-progress__shine').exists()).toBe(false)
+
+    await wrapper.setProps({ checkedCount: 2, checkedUnits: 2 })
+    const first = wrapper.find('.household-progress__shine')
+    expect(first.exists()).toBe(true)
+
+    await wrapper.setProps({ checkedCount: 1, checkedUnits: 1 })
+    expect(wrapper.find('.household-progress__shine').element).toBe(first.element)
+  })
+
+  it('draws no progress bar over an empty list', () => {
+    expect(mountBar({ totalCount: 0 }).find('[role="progressbar"]').exists()).toBe(false)
+  })
+
+  // On a phone the bottom bar's Household and Switch are the ways in, so the
+  // name is a label. Where there is no bar it is still the door.
+  it('makes the name a label on a phone and a button on a desktop', () => {
+    const realMatchMedia = window.matchMedia
+    const stub = (desktop) => {
+      window.matchMedia = () => ({
+        matches: desktop,
+        addEventListener() {},
+        removeEventListener() {},
+      })
+    }
+    try {
+      stub(false)
+      const phone = mountBar()
+      expect(phone.find('button.household-btn').exists()).toBe(false)
+      expect(phone.find('.household-btn--static').text()).toContain('Gorcea')
+
+      stub(true)
+      expect(mountBar().find('button.household-btn').exists()).toBe(true)
+    } finally {
+      window.matchMedia = realMatchMedia
+    }
+  })
+
+  it('opens the household sheet from the name', async () => {
     const wrapper = mountBar()
-    const household = wrapper.findAll('.navbar button')[0]
+    const button = wrapper.find('.household-btn')
+    expect(button.attributes('aria-haspopup')).toBe('dialog')
 
-    expect(household.attributes('aria-expanded')).toBe('false')
-    await household.trigger('click')
-
-    expect(household.attributes('aria-expanded')).toBe('true')
+    await button.trigger('click')
+    expect(wrapper.findComponent(HouseholdSheet).props('open')).toBe(true)
   })
 
-  it('opens the account dialog from the last slot', async () => {
+  it('switches household from the sheet and closes it', async () => {
     const wrapper = mountBar()
-    const you = wrapper.findAll('.navbar button')[4]
+    await wrapper.find('.household-btn').trigger('click')
+    wrapper.findComponent(HouseholdSheet).vm.$emit('switch-household', 'hh-2')
+    await wrapper.vm.$nextTick()
 
-    await you.trigger('click')
-
-    expect(you.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.emitted('switch-household')).toEqual([['hh-2']])
+    expect(wrapper.findComponent(HouseholdSheet).props('open')).toBe(false)
   })
 
-  // Slot four. The trigger lives here because it has to look like the four
-  // buttons beside it; the menu itself is HouseholdSwitcherMenu's.
-  it('opens the household switcher from the fourth slot', async () => {
-    const wrapper = mountBar({ households: [{ id: 'a', name: 'A' }] })
-    const switcher = wrapper.findAll('.navbar button')[3]
-
-    expect(switcher.attributes('aria-label')).toBe('Switch household')
-    expect(switcher.find('.nav-slot__label').text()).toBe('Switch')
-    expect(switcher.attributes('aria-expanded')).toBe('false')
-
-    await switcher.trigger('click')
-
-    expect(switcher.attributes('aria-expanded')).toBe('true')
-  })
-
-  // The header shell and the bar are mutually exclusive by media query, but both
-  // are in the DOM: one component, one set of dialogs. What must not happen is
-  // the bar appearing on the setup screen, which has no household for three of
-  // its five slots to be about.
-  it('draws no bar in the header layout', () => {
-    const wrapper = mount(AppNavBar, { props: { layout: 'header' } })
-    wrappers.push(wrapper)
-
-    expect(wrapper.find('.navbar').exists()).toBe(false)
-    expect(wrapper.find('.topbar').exists()).toBe(true)
-  })
-
-  it('keeps the header alongside the bar, for the desktop column', () => {
+  it('keeps history and the account one tap away', async () => {
     const wrapper = mountBar()
+    expect(wrapper.find('[aria-label="Checkout history"]').exists()).toBe(true)
 
-    expect(wrapper.find('.topbar').classes()).toContain('topbar--desktop-only')
+    await wrapper.find('.user-avatar-btn').trigger('click')
+    expect(wrapper.findComponent(AccountActionModal).props('open')).toBe(true)
+  })
+})
+
+describe('the household sheet', () => {
+  function mountSheet(props = {}) {
+    const w = mount(HouseholdSheet, {
+      props: {
+        open: true,
+        householdId: 'hh-1',
+        householdName: 'Gorcea',
+        households: [{ id: 'hh-1', name: 'Gorcea' }],
+        members: MEMBERS,
+        ownerUserId: 'u_ana',
+        currentUserId: 'u_self',
+        ...props,
+      },
+    })
+    wrappers.push(w)
+    return w
+  }
+
+  it('shows who is in it, you first by name', () => {
+    const names = mountSheet().findAll('.member__name:not(.member__name--invite)').map((n) => n.text())
+    expect(names).toEqual(['You', 'Ana'])
+  })
+
+  it('marks the owner', () => {
+    const roles = mountSheet().findAll('.member__role').map((n) => n.text())
+    expect(roles).toEqual(['Owner'])
+  })
+
+  it('offers the invite as the next face in the row', async () => {
+    const wrapper = mountSheet()
+    const members = wrapper.findAll('.household-sheet__members > li')
+    const invite = members.at(-1).find('.member__invite')
+    expect(invite.text()).toBe('Invite')
+
+    await invite.trigger('click')
+    expect(wrapper.emitted('invite')).toHaveLength(1)
+  })
+
+  it('nudges a household of one toward inviting someone', () => {
+    expect(mountSheet({ members: [MEMBERS[0]] }).find('.household-sheet__alone').exists()).toBe(true)
+    expect(mountSheet().find('.household-sheet__alone').exists()).toBe(false)
+  })
+
+  it('does not report picking the household you are already on as a switch', async () => {
+    const wrapper = mountSheet()
+    await wrapper.find('[role="radio"]').trigger('click')
+    expect(wrapper.emitted('switch-household')).toBeUndefined()
+    expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+})
+
+// On a desktop a wheel only scrolls vertically, and this row has no scrollbar,
+// so a big household's later faces were reachable by trackpad alone.
+describe('scrolling a large household', () => {
+  it('turns a vertical wheel into sideways travel while the row can move', async () => {
+    const many = Array.from({ length: 10 }, (_, i) => ({ user_id: `u${i}`, display_name: `M${i}` }))
+    const w = mount(HouseholdSheet, { props: { open: true, members: many, households: [] } })
+    wrappers.push(w)
+    const row = w.find('.household-sheet__members').element
+    Object.defineProperty(row, 'scrollWidth', { value: 800 })
+    Object.defineProperty(row, 'clientWidth', { value: 300 })
+
+    const event = new WheelEvent('wheel', { deltaY: 120, cancelable: true })
+    row.dispatchEvent(event)
+    expect(row.scrollLeft).toBe(120)
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  it('lets the wheel through when everyone fits', () => {
+    const w = mount(HouseholdSheet, { props: { open: true, members: MEMBERS, households: [] } })
+    wrappers.push(w)
+    const row = w.find('.household-sheet__members').element
+    Object.defineProperty(row, 'scrollWidth', { value: 300 })
+    Object.defineProperty(row, 'clientWidth', { value: 300 })
+
+    const event = new WheelEvent('wheel', { deltaY: 120, cancelable: true })
+    row.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
   })
 })

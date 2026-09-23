@@ -48,10 +48,24 @@ defineEmits<{ click: [event: MouseEvent] }>()
   font-weight: var(--weight-bold);
   cursor: pointer;
   border: var(--border-width-thin) solid transparent;
-  transition: all var(--transition-base) ease;
+  /* 44px is the smallest target a thumb hits reliably; sm trades 4px of it for
+     density where buttons sit in a row. */
+  min-height: 44px;
+  transition:
+    background-color var(--transition-base) var(--ease-standard),
+    color var(--transition-base) var(--ease-standard),
+    transform var(--transition-fast) var(--ease-standard);
+}
+
+/* A press has to answer the finger immediately, so it drops the transition
+   rather than easing into a state the finger has already left. */
+.app-btn:active:not(:disabled) {
+  transform: scale(0.97);
+  transition-duration: 0s;
 }
 
 .app-btn--sm {
+  min-height: var(--size-control-md);
   padding: 0.5rem var(--space-3);
   font-size: var(--text-sm);
 }
@@ -74,7 +88,6 @@ defineEmits<{ click: [event: MouseEvent] }>()
 
 .app-btn--primary:hover:not(:disabled) {
   background: color-mix(in srgb, var(--color-primary) 85%, var(--text-primary));
-  transform: translateY(-1px);
 }
 
 .app-btn--secondary {
@@ -84,7 +97,7 @@ defineEmits<{ click: [event: MouseEvent] }>()
 }
 
 .app-btn--secondary:hover:not(:disabled) {
-  background: var(--border-light);
+  background: var(--bg-press);
 }
 
 .app-btn--danger {
@@ -95,7 +108,6 @@ defineEmits<{ click: [event: MouseEvent] }>()
 
 .app-btn--danger:hover:not(:disabled) {
   background: var(--danger-solid-hover);
-  transform: translateY(-1px);
 }
 
 .app-btn--warning {
@@ -106,7 +118,6 @@ defineEmits<{ click: [event: MouseEvent] }>()
 
 .app-btn--warning:hover:not(:disabled) {
   background: color-mix(in srgb, var(--warning-bg) 82%, var(--warning-border));
-  transform: translateY(-1px);
 }
 
 .app-btn--ghost {

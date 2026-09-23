@@ -463,6 +463,11 @@ async function saveItemLimit() {
   outline: none;
 }
 
+.pref-range:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 4px;
+}
+
 .pref-range::-webkit-slider-thumb {
   appearance: none;
   width: 16px;

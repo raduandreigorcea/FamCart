@@ -158,6 +158,19 @@ describe('ShoppingListItem quantity', () => {
     expect(wrapper.emitted('toggle')).toHaveLength(1)
   })
 
+  // A keyboard can remove a row as well as tick it; the list's Undo toast
+  // covers a slip either way.
+  it('asks to be removed on the Delete key', async () => {
+    const wrapper = mountRow()
+    await wrapper.find('.item-toggle').trigger('keydown', { key: 'Delete' })
+    expect(wrapper.emitted('delete')).toHaveLength(1)
+  })
+
+  // Every row says who added it, yours included.
+  it('shows the face of whoever added it', () => {
+    expect(mountRow().find('.item-avatar').exists()).toBe(true)
+  })
+
   it('carries the count in the row label, where the badge is only a picture', () => {
     const label = mountRow().find('.item-toggle').attributes('aria-label')
     expect(label).toContain('quantity 2')

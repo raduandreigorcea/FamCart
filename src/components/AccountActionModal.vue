@@ -10,7 +10,7 @@ import ModalCloseButton from './ModalCloseButton.vue'
 // The identity card's affordance. It is the only control here that leads
 // somewhere without a hint on the right saying what it holds, because what it
 // holds is the face and name already printed on it.
-import { t, tn } from '../lib/i18n'
+import { t } from '../lib/i18n'
 import AppIcon from './AppIcon.vue'
 
 // Who is signed in, and the ways out of here. Appearance and notifications used
@@ -18,14 +18,9 @@ import AppIcon from './AppIcon.vue'
 // than for the person, so they moved to AppSettingsModal and this now offers a
 // row leading there.
 //
-// Switching households is NOT here, and was, twice. It was the topbar's own
-// popover first, hung off the household name, which spent the app's most
-// prominent control on a menu whose only content is usually one already-ticked
-// row. Then it was a section in this dialog, which is the place you open to act
-// on YOURSELF -- and which household's list is on screen is a fact about the
-// screen, not about you. It is the action bar's fourth slot now, one press from
-// the list, in HouseholdSwitcherMenu. What stays here is the row that manages
-// the household you are already in.
+// Nothing about the household is here. This is the place you open to act on
+// YOURSELF; the household -- its members, the invite, switching, its settings --
+// is the sheet the household name at the top of the list opens.
 const props = defineProps({
   open: { type: Boolean, default: false },
   loadingSignOut: { type: Boolean, default: false },
@@ -36,8 +31,6 @@ const props = defineProps({
   displayName: { type: String, default: '' },
   email: { type: String, default: '' },
   initial: { type: String, default: '?' },
-  householdName: { type: String, default: '' },
-  householdMemberCount: { type: Number, default: 0 },
 })
 
 const emit = defineEmits<{
@@ -45,23 +38,10 @@ const emit = defineEmits<{
   'edit-account': []
   'report-issue': []
   'sign-out': []
-  'manage-household': []
-  'invite-members': []
   'app-settings': []
 }>()
 
 const resolvedDisplayName = computed(() => props.displayName || t('account.fallbackName'))
-
-// Both household rows are drawn only once there IS a household. AppNavBar also
-// renders on HouseholdSetupView, where it is given no household props at all --
-// and there "Manage household" and "Invite people" both landed on
-// HouseholdSettingsModal wired to an empty id: an untitled dialog with no
-// members, no code to send, and a danger tab offering to leave or delete
-// nothing. An empty name is what the rest of the bar already reads as "no
-// household yet" (the topbar's own household block and its switcher and history
-// buttons are gated on the same thing), so this stays on that one signal rather
-// than adding a flag the two could disagree about.
-const hasHousehold = computed(() => Boolean(props.householdName))
 
 </script>
 
@@ -112,32 +92,6 @@ const hasHousehold = computed(() => Boolean(props.householdName))
           </button>
 
           <div class="account-section">
-            <button
-              v-if="hasHousehold"
-              class="account-menu-item"
-              type="button"
-              @click="emit('manage-household')"
-            >
-              <span class="account-menu-item__label">
-                <AppIcon class="account-item-icon" name="house" />
-                <span>{{ t('account.manageHousehold') }}</span>
-              </span>
-              <span class="account-menu-item__hint">{{ householdName }}</span>
-            </button>
-            <button
-              v-if="hasHousehold"
-              class="account-menu-item"
-              type="button"
-              @click="emit('invite-members')"
-            >
-              <span class="account-menu-item__label">
-                <AppIcon class="account-item-icon" name="user-round-plus" />
-                <span>{{ t('account.invitePeople') }}</span>
-              </span>
-              <span class="account-menu-item__hint">
-                {{ tn('account.memberCount', householdMemberCount) }}
-              </span>
-            </button>
 
             <button class="account-menu-item" type="button" @click="emit('app-settings')">
               <span class="account-menu-item__label">

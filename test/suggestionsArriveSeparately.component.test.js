@@ -143,3 +143,26 @@ describe('each database answers on its own', () => {
     expect(api.suggestionsLoading.value).toBe(false)
   })
 })
+
+// A catalog that errored answers with nothing, and "nothing" is also what a
+// product no shop sells looks like. The note is what tells the two apart.
+describe('saying when the answer is partial', () => {
+  it('flags a search whose catalog leg errored', async () => {
+    const { api, query } = mountSuggestions()
+    await type(query, 'lapte')
+    pending[0].resolve({ data: null, error: { message: 'timeout' } })
+    await flushPromises()
+
+    expect(api.searchNote.value).toBe('degraded')
+    expect(api.suggestions.value.map((s) => s.name)).toEqual(['Lapte de casa'])
+  })
+
+  it('carries no note when every source answered', async () => {
+    const { api, query } = mountSuggestions()
+    await type(query, 'lapte')
+    pending[0].resolve({ data: [CATALOG_ROW], error: null })
+    await flushPromises()
+
+    expect(api.searchNote.value).toBeNull()
+  })
+})

@@ -20,7 +20,6 @@ import { deviceTimeZone, resolveRegion } from '../lib/region'
 import type { ProductSuggestion } from '../lib/productSearch'
 import type { ShoppingItemRow } from '../lib/householdRealtime'
 import { useShoppingListActions, type AddedProduct } from '../lib/shoppingListActions'
-import { sumActiveQuantities, sumCheckedQuantities } from '../lib/shoppingList'
 import { useBarcodeScanning } from '../lib/useBarcodeScanning'
 import { refreshOwnProfile } from '../lib/profile'
 import { cleanAuthCallbackUrl } from '../lib/authCallbackUrl'
@@ -39,14 +38,19 @@ import { identifyUser } from '../lib/errorReporting'
 // composite it computes (Capacitor status first, navigator.onLine as the
 // definite-offline backstop) used to be re-derived here, which left realtime
 // reading navigator directly — see the note in lib/connectivity.
-import { isCurrentlyOffline, onReconnect } from '../lib/connectivity'
+import { isCurrentlyOffline, onReconnect, onlineStatus } from '../lib/connectivity'
+import { useRemoteChanges } from '../lib/useRemoteChanges'
 import { rememberUser, getRememberedUser } from '../lib/session'
 import { useFirstRunGreeting } from '../lib/firstRunGreeting'
 import { updateCheckKey, useUpdatePrompt } from '../lib/updatePrompt'
 import { syncPushUser } from '../lib/pushNotifications'
-import { ITEM_NAME_MAX_LENGTH } from '../lib/limits'
-import { applyUserLocale, getLocale, t } from '../lib/i18n'
+import { ITEM_NAME_MAX_LENGTH, ITEM_QUANTITY_MAX } from '../lib/limits'
+import { parseQuantity } from '../lib/productSearch'
+import { applyUserLocale, getLocale, t, tn } from '../lib/i18n'
 import { useShopMap } from '../lib/shopBadges'
+import { sumActiveQuantities, sumCheckedQuantities } from '../lib/shoppingList'
+import { showToast } from '../lib/useToast'
+import type { ListSort } from '../lib/listSections'
 
 const { userId, isLoaded } = useAuth()
 const { user } = useUser()
@@ -64,20 +68,29 @@ const items = ref<ShoppingItemRow[]>([])
 // Where this person shops, from the device timezone. A getter, read fresh on
 // each use, so a phone that has crossed a border answers differently next time.
 const region = () => resolveRegion(deviceTimeZone())
-// For the phone's household bar. Units, not rows, the way the list has always
-// counted what is left and the buy bar counts the cart: "grapes x4" is four.
-const toBuyCount = computed(() => sumActiveQuantities(items.value))
-const inCartCount = computed(() => sumCheckedQuantities(items.value))
 
 // Which shop each listed product came from. Nightly only; see useShopMap.
 const shopMap = useShopMap(items, region)
-// Which rows the list shows: 'all' | 'active' | 'checked'. A view of `items`,
-// never a filter on what is fetched -- every other path (realtime, offline
-// queue, the item cap) keeps working on the whole list.
-//
-// Deliberately not persisted. Opening the app to a filtered list, with no memory
-// of having set one, is how items get declared missing.
-const listFilter = ref<'all' | 'active' | 'checked'>('all')
+// How the rows to buy are ordered: as added, or grouped by aisle. Remembered on
+// this device, because it is a habit ("I always shop by aisle") rather than a
+// passing view -- unlike the shop filter below, it hides nothing, so opening
+// the app to it can never make an item look missing.
+const LIST_SORT_KEY = 'famcart-list-sort'
+function readListSort(): ListSort {
+  try {
+    return localStorage.getItem(LIST_SORT_KEY) === 'aisle' ? 'aisle' : 'added'
+  } catch {
+    return 'added'
+  }
+}
+const listSort = ref<ListSort>(readListSort())
+watch(listSort, (value) => {
+  try {
+    localStorage.setItem(LIST_SORT_KEY, value)
+  } catch {
+    // Storage off: the order holds for this session.
+  }
+})
 // Which shop the list is narrowed to, independent of the filter above. Nightly
 // only in practice: shopMap is empty on production, so ShoppingList offers no
 // shops and nothing can set this.
@@ -110,6 +123,7 @@ const newQty = ref(1)
 const {
   suggestions,
   suggestionsLoading,
+  searchNote,
   selectedProduct,
   searchExpanded,
   canAddCustomProduct,
@@ -202,7 +216,7 @@ const {
   addItem,
   toggleItem,
   setItemQuantity,
-  deleteItem,
+  removeItemDeferred,
   checkoutItems,
 } = useShoppingListActions({
   db,
@@ -229,7 +243,7 @@ const {
 
 // Realtime sync (channels, reconnects, watchdog) lives in the composable; it
 // registers its own lifecycle listeners and calls back into the loaders below.
-const { setupRealtimeSubscriptions, cleanupRealtimeSubscriptions } = useHouseholdRealtime({
+const { realtimeHealthy, setupRealtimeSubscriptions, cleanupRealtimeSubscriptions } = useHouseholdRealtime({
   db,
   householdId,
   hasInitialized,
@@ -246,6 +260,51 @@ const { setupRealtimeSubscriptions, cleanupRealtimeSubscriptions } = useHousehol
   // (its authoritative echo is still coming) — same guard as loadItems.
   hasPendingWrite: (id) => pendingItemWrites.has(id),
 })
+
+const checkedCount = computed(() => items.value.filter((i) => i.checked).length)
+// The bar under the household name fills by quantity, not rows; see AppNavBar.
+const checkedUnits = computed(() => sumCheckedQuantities(items.value))
+const totalUnits = computed(() => checkedUnits.value + sumActiveQuantities(items.value))
+
+// Other members' changes, as much as the screen should say about them: a glow on
+// rows they add, and a toast when their checkout empties the cart. See
+// lib/useRemoteChanges for why it is only those two.
+const { freshIds, markLocal } = useRemoteChanges({
+  items,
+  userId: () => effectiveUserId.value,
+  active: () => hasInitialized.value && !switchingHousehold.value,
+  onRemoteCheckout: (count) => showToast({ message: tn('realtime.checkedOut', count) }),
+})
+
+function checkout(ids: string[]) {
+  markLocal(ids)
+  void checkoutItems(ids)
+}
+
+// The header's sync pill. Offline is said at once, because it changes what the
+// app can do (writes queue, the catalog is out of reach). A dropped realtime
+// socket is only said after a grace period: it drops and recovers on its own
+// all the time, and a pill flickering on every blip is noise.
+const RECONNECT_GRACE_MS = 3000
+const realtimeLagging = ref(false)
+let realtimeGraceTimer: ReturnType<typeof setTimeout> | null = null
+watch(
+  () => hasInitialized.value && !realtimeHealthy.value,
+  (down) => {
+    if (realtimeGraceTimer) clearTimeout(realtimeGraceTimer)
+    realtimeGraceTimer = null
+    if (!down) {
+      realtimeLagging.value = false
+      return
+    }
+    realtimeGraceTimer = setTimeout(() => {
+      realtimeLagging.value = true
+    }, RECONNECT_GRACE_MS)
+  },
+)
+const syncState = computed<'offline' | 'reconnecting' | ''>(() =>
+  !onlineStatus.value ? 'offline' : realtimeLagging.value ? 'reconnecting' : '',
+)
 
 // The painted cache: what was on screen last time, read back so a returning user
 // sees their list rather than skeletons. Owns the paint, the discard and the
@@ -403,6 +462,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  if (realtimeGraceTimer) clearTimeout(realtimeGraceTimer)
   window.removeEventListener('pagehide', flushPendingWork)
   document.removeEventListener('visibilitychange', flushPendingWorkIfHidden)
   if (stopReconnect) stopReconnect()
@@ -426,9 +486,44 @@ function selectSuggestion(product: ProductSuggestion) {
   void addItem(product)
 }
 
-function openCustomProduct() {
-  clearSuggestions()
-  customProductOpen.value = true
+// Deleting is one gesture and undoing it is one tap. The row leaves now; the
+// server is told when the toast goes away without Undo being pressed, which
+// useToast guarantees for every other way it can go (timeout, pushed out of a
+// full stack, the app being backgrounded). Several deletes stack up, each with
+// its own Undo.
+function deleteItem(item: ShoppingItemRow) {
+  markLocal([item.id])
+  const pending = removeItemDeferred(item)
+  if (!pending) return
+  showToast({
+    message: t('item.removedToast', { name: item.name }),
+    actionLabel: t('common.undo'),
+    onAction: pending.undo,
+    onExpire: () => void pending.commit(),
+  })
+}
+
+// What was typed, added. "6 ouă" is six eggs (see parseQuantity), and once the
+// row has landed the field empties, ready for the next thing: Enter used to add
+// the same words again, and the next item started with deleting the last one.
+//
+// Emptied only if the add actually landed, which lastAdded changing says (it is
+// set synchronously by both the insert and the merge path). A refused add -- the
+// item cap, a name too long -- leaves the text where it was, and a failed insert
+// puts it back itself.
+function addTyped(asCustom: boolean) {
+  const { name, quantity } = parseQuantity(newItem.value, ITEM_QUANTITY_MAX)
+  if (!name) return
+  newQty.value = quantity
+  const before = lastAdded.value
+  if (asCustom) {
+    void addItem({ name, maker: null, custom: true } as AddedProduct)
+  } else {
+    if (name !== newItem.value.trim()) newItem.value = name
+    void addItem()
+  }
+  newQty.value = 1
+  if (lastAdded.value !== before) newItem.value = ''
 }
 
 // A custom product joins the list through exactly the same path as a catalog
@@ -686,11 +781,8 @@ async function switchHousehold(id: string) {
   cleanupRealtimeSubscriptions()
   // Drop the old household's data so none of it flashes under the new name.
   items.value = []
-  // A filter belongs to the list it was chosen for. Carrying "Checked" into a
-  // household whose cart is empty opens it on a blank list.
-  listFilter.value = 'all'
-  // Same reason, and more so: the shops come from the previous household's
-  // products, so the filter could name one nothing in the new list is sold at.
+  // The shops come from the previous household's products, so the filter could
+  // name one nothing in the new list is sold at.
   listShop.value = null
   householdMembers.value = []
   // Everything the suggestions composable holds about the household being left,
@@ -759,8 +851,11 @@ async function reconcileActiveHousehold() {
       :household-name="householdName"
       :households="households"
       :loading="initialLoading"
-      :to-buy-count="toBuyCount"
-      :in-cart-count="inCartCount"
+      :sync-state="syncState"
+      :total-count="items.length"
+      :checked-count="checkedCount"
+      :total-units="totalUnits"
+      :checked-units="checkedUnits"
       :members-loading="switchingHousehold"
       :invite-code="householdInviteCode"
       :household-item-limit="householdItemLimit"
@@ -773,6 +868,7 @@ async function reconcileActiveHousehold() {
       @add-household="openAddHousehold"
       @household-deleted="reconcileActiveHousehold"
       @household-left="reconcileActiveHousehold"
+      @add-product="selectSuggestion"
       @add="searchExpanded = true"
     />
 
@@ -791,23 +887,25 @@ async function reconcileActiveHousehold() {
           :recents="recentProducts"
           :last-added="lastAdded"
           :suggestions-loading="suggestionsLoading"
+          :search-note="searchNote"
           :can-add-custom="canAddCustomProduct"
           :can-scan="canScan"
           :shop-options="shopOptions"
           :search-shop="searchShop"
           @select-shop="setSearchShop"
-          @submit="addItem"
+          @submit="addTyped(false)"
           @select="selectSuggestion"
-          @add-custom="openCustomProduct"
+          @add-custom="addTyped(true)"
           @scan="openScanner"
         />
 
         <ShoppingList
           :items="items"
           :shop-map="shopMap"
-          v-model:filter="listFilter"
+          v-model:sort="listSort"
           v-model:shop-filter="listShop"
           :member-profiles="memberProfileMap"
+          :fresh-ids="freshIds"
           :loading="listLoading"
           :show-empty="showEmptyState"
           :has-shopped="hasShopped"
@@ -817,7 +915,7 @@ async function reconcileActiveHousehold() {
           @toggle="toggleItem"
           @delete="deleteItem"
           @set-quantity="setItemQuantity($event.item, $event.quantity)"
-          @checkout="checkoutItems"
+          @checkout="checkout"
         />
 
       </div>
@@ -892,21 +990,17 @@ async function reconcileActiveHousehold() {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  background: var(--color-primary-bg);
+  background: var(--bg-main);
 }
 
-/* On a phone the household bar above this already clears the status bar, so
-   the content only needs a gap under it; the bottom is where the room is spent
-   instead, clearing the action bar. The desktop block below puts the topbar's
-   offset back. */
+/* Clears the fixed header above and the action bar below, so the first row
+   starts under the header and the last can scroll clear of the bar. */
 .dashboard-main {
   flex: 1;
   display: flex;
   justify-content: center;
-  padding: var(--space-4) 1rem 0;
-  padding-bottom: calc(
-    var(--nav-height) + var(--nav-disc-overhang) + var(--safe-bottom) + 0.75rem
-  );
+  padding: calc(var(--header-height) + var(--safe-top) + var(--space-3)) 1rem 0;
+  padding-bottom: calc(var(--bottom-clearance) + var(--safe-bottom) + var(--space-6));
 }
 
 .dashboard-content {
@@ -916,11 +1010,10 @@ async function reconcileActiveHousehold() {
 
 /* Desktop: a phone-width strip looks lost on a big screen. Widen to the shared
    column and add air under the bar; past that, item rows get too long to scan.
-   The action bar is gone at this width and the topbar is back, so the padding
-   goes back to what it was. */
+   There is no action bar at this width, so the bottom needs only air. */
 @media (min-width: 900px) {
   .dashboard-main {
-    padding-top: calc(72px + 2.5rem + var(--safe-top));
+    padding-top: calc(var(--header-height) + 2.5rem + var(--safe-top));
     padding-bottom: calc(2rem + var(--safe-bottom));
   }
 

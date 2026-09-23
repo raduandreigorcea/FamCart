@@ -132,3 +132,71 @@ describe('PurchaseHistoryModal', () => {
     expect(wrapper.text()).toContain('Could not load history')
   })
 })
+
+// History answers "did we buy X?" and "put it back". Both were missing: it was a
+// read-only archive.
+describe('using history', () => {
+  async function openWith(rows) {
+    mocks.db = createFakeDb()
+    mocks.db.handlers['purchase_history.select'] = () => ({ data: rows, error: null })
+    const wrapper = mount(PurchaseHistoryModal, {
+      props: { open: true, householdId: 'fam-1', currentUserId: 'user-1', memberProfiles: [] },
+    })
+    await flushPromises()
+    return wrapper
+  }
+
+  const now = new Date().toISOString()
+  const ROWS = [
+    { id: 'p1', name: 'Lapte', maker: 'Zuzu', quantity: 1, checkout_id: 'co-1', purchased_by: 'user-1', purchased_at: now },
+    { id: 'p2', name: 'Pâine', maker: null, quantity: 1, checkout_id: 'co-1', purchased_by: 'user-1', purchased_at: now },
+  ]
+
+  it('narrows to the trips that bought what was searched, accents ignored', async () => {
+    const wrapper = await openWith(ROWS)
+    await wrapper.find('.history-search').setValue('paine')
+    const names = wrapper.findAll('.history-name').map((n) => n.text())
+    expect(names).toEqual(['Pâine'])
+  })
+
+  it('says so when nothing matches', async () => {
+    const wrapper = await openWith(ROWS)
+    await wrapper.find('.history-search').setValue('ciocolata')
+    expect(wrapper.find('.history-empty').text()).toContain('ciocolata')
+  })
+
+  it('puts a product back on the list, once', async () => {
+    const wrapper = await openWith(ROWS)
+    const button = wrapper.findAll('.history-readd')[0]
+    await button.trigger('click')
+    await button.trigger('click')
+
+    expect(wrapper.emitted('add-again')).toEqual([[{ name: 'Lapte', maker: 'Zuzu' }]])
+    expect(button.attributes('disabled')).toBeDefined()
+  })
+})
+
+describe('putting a whole trip back', () => {
+  it('adds every item from the trip, skipping ones already put back', async () => {
+    const now = new Date().toISOString()
+    mocks.db = createFakeDb()
+    mocks.db.handlers['purchase_history.select'] = () => ({
+      data: [
+        { id: 'p1', name: 'Lapte', maker: 'Zuzu', quantity: 1, checkout_id: 'co-1', purchased_by: 'user-1', purchased_at: now },
+        { id: 'p2', name: 'Paine', maker: null, quantity: 1, checkout_id: 'co-1', purchased_by: 'user-1', purchased_at: now },
+      ],
+      error: null,
+    })
+    const wrapper = mount(PurchaseHistoryModal, {
+      props: { open: true, householdId: 'fam-1', currentUserId: 'user-1', memberProfiles: [] },
+    })
+    await flushPromises()
+
+    // Lapte by hand first, then the trip: Lapte must not go on twice.
+    await wrapper.findAll('.history-readd')[0].trigger('click')
+    await wrapper.find('.checkout__readd').trigger('click')
+
+    expect(wrapper.emitted('add-again').map(([p]) => p.name)).toEqual(['Lapte', 'Paine'])
+    expect(wrapper.find('.checkout__readd').attributes('disabled')).toBeDefined()
+  })
+})

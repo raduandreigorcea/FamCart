@@ -269,3 +269,24 @@ export function rankSuggestions(
     .slice(0, limit)
     .map((entry) => entry.candidate)
 }
+
+// "6 ouă", "6x ouă", "ouă x6": a count typed in with the name, split off so the
+// row says Ouă ×6 rather than a product called "6 ouă".
+//
+// Deliberately narrow. A leading number is how people write a count; a trailing
+// one usually is not ("Cola 2", "Vitamina B12", "Pampers 4" is a nappy size),
+// so a trailing count needs its x. Anything that does not match is the name as
+// typed, quantity 1 -- a missed count costs a tap on the row's stepper, while a
+// wrong one would silently rename a product.
+const LEADING_QTY = /^(\d{1,3})\s*[x×]?\s+(\S.*)$/iu
+const TRAILING_QTY = /^(.*\S)\s+[x×]\s?(\d{1,3})$/iu
+
+export function parseQuantity(text: string, max = 999): { name: string; quantity: number } {
+  const trimmed = text.trim()
+  const lead = LEADING_QTY.exec(trimmed)
+  const trail = lead ? null : TRAILING_QTY.exec(trimmed)
+  const count = lead ? Number(lead[1]) : trail ? Number(trail[2]) : NaN
+  const name = lead ? lead[2]! : trail ? trail[1]! : trimmed
+  if (!Number.isInteger(count) || count < 1 || count > max) return { name: trimmed, quantity: 1 }
+  return { name: name.trim(), quantity: count }
+}

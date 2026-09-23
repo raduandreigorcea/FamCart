@@ -9,7 +9,7 @@
 // when auditing what reads or clears it. Same argument as lib/inviteCode and
 // lib/clipboard, both of which exist because a behaviour written twice drifts.
 
-import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core'
+import { Capacitor, SystemBars, SystemBarsStyle, SystemBarType } from '@capacitor/core'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 
@@ -51,16 +51,40 @@ export function applyResolvedTheme(mode: ThemeMode): void {
       : mode
   document.documentElement.setAttribute('data-theme', resolved)
 
-  // Android colours the status bar icons and the navigation buttons from the
-  // PHONE's dark mode, never the app's. A phone in dark mode with the app set
-  // to Light drew white buttons over the app's near-white background, and they
-  // vanished. Telling it which theme is actually on screen keeps them visible
-  // in every combination. Dark style means light icons, for a dark background.
-  if (Capacitor.isNativePlatform()) {
-    void SystemBars.setStyle({
-      style: resolved === 'dark' ? SystemBarsStyle.Dark : SystemBarsStyle.Light,
-    }).catch(() => {})
-  }
+  currentResolved = resolved
+  applyNativeBars()
+}
+
+// Which theme is on screen, and whether the status bar is sitting over the
+// brand green rather than the page. Remembered so that either one changing can
+// restyle the bars without knowing about the other.
+let currentResolved: 'light' | 'dark' = 'light'
+let statusBarOnBrand = false
+
+/**
+ * The list screen's header is brand green and runs up behind the status bar,
+ * so the clock and battery need light icons there whatever the theme. Screens
+ * that draw it say so on mount and take it back on unmount; everywhere else the
+ * status bar follows the theme like the navigation bar does.
+ */
+export function setStatusBarOnBrand(on: boolean): void {
+  statusBarOnBrand = on
+  applyNativeBars()
+}
+
+// Android colours the status bar icons and the navigation buttons from the
+// PHONE's dark mode, never the app's. A phone in dark mode with the app set to
+// Light drew white buttons over the app's near-white background, and they
+// vanished. Telling it which theme is actually on screen keeps them visible in
+// every combination. Dark style means light icons, for a dark background.
+function applyNativeBars(): void {
+  if (!Capacitor.isNativePlatform()) return
+  const themed = currentResolved === 'dark' ? SystemBarsStyle.Dark : SystemBarsStyle.Light
+  void SystemBars.setStyle({
+    style: statusBarOnBrand ? SystemBarsStyle.Dark : themed,
+    bar: SystemBarType.StatusBar,
+  }).catch(() => {})
+  void SystemBars.setStyle({ style: themed, bar: SystemBarType.NavigationBar }).catch(() => {})
 }
 
 /**

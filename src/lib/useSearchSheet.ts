@@ -13,8 +13,7 @@ import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 // had touched was the one thing that did not blink out and reappear somewhere
 // else. That was the right answer for a field with a place in the flow.
 //
-// The field no longer has one. The list screen's shell is a bottom bar now and
-// adding starts from its centre button, so there is no origin to fly from and
+// The field no longer has one. Adding starts from the action bar's centre button, so there is no origin to fly from and
 // the measurement, the inversion and the transitionend plumbing all had nothing
 // left to measure. What replaced them is the motion the app already owns for
 // anything anchored to the bottom edge (--modal-rise: 100% with the shared

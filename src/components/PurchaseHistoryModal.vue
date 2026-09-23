@@ -5,6 +5,7 @@ import AppModal from './AppModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { getProductEmoji } from '../lib/productEmoji'
+import { normalizeSearchText, type ProductSuggestion } from '../lib/productSearch'
 import {
   groupCheckouts,
   trimPartialTail,
@@ -12,7 +13,7 @@ import {
   type DayLabel,
 } from '../lib/purchaseHistory'
 import type { HouseholdMemberProfile } from '../lib/householdRealtime'
-import { formatDate, formatTime, t } from '../lib/i18n'
+import { formatDate, formatTime, t, tn } from '../lib/i18n'
 import { initialOf } from '../lib/userIdentity'
 import AppIcon from './AppIcon.vue'
 
@@ -23,7 +24,43 @@ const props = defineProps({
   memberProfiles: { type: Array as PropType<HouseholdMemberProfile[]>, default: () => [] },
 })
 
-const emit = defineEmits<{ close: [] }>()
+// History is for two things people actually ask it: "did we buy X?" (the
+// search) and "put that back on the list" (Add again). It used to be read-only,
+// so the answer to the second was to go and type it.
+const emit = defineEmits<{ close: []; 'add-again': [product: ProductSuggestion] }>()
+
+const query = ref('')
+
+// Which products this visit has put back, so the button can say so instead of
+// inviting a second tap that would only raise the quantity.
+const readded = ref(new Set<string>())
+
+function addAgain(entry: CheckoutEntry) {
+  const name = entry.name ?? ''
+  if (!name) return
+  emit('add-again', { name, maker: entry.maker ?? null })
+  readded.value = new Set(readded.value).add(readdKey(entry))
+}
+
+// The whole trip back on the list: "the same as last Saturday" is the common
+// case for groceries, and it used to be one tap per item. Items this visit has
+// already put back are skipped, so pressing it after a few single adds does not
+// double them up.
+function addTripAgain(items: CheckoutEntry[]) {
+  for (const entry of items) {
+    if (!readded.value.has(readdKey(entry))) addAgain(entry)
+  }
+}
+
+function tripReadded(items: CheckoutEntry[]): boolean {
+  return items.every((entry) => readded.value.has(readdKey(entry)))
+}
+
+// History rows always carry an id from the database; the fallback only keeps the
+// type honest for a row that somehow does not.
+function readdKey(entry: CheckoutEntry): string {
+  return entry.id ?? `${entry.name ?? ''}|${entry.maker ?? ''}`
+}
 
 const db = useSupabase()
 
@@ -41,7 +78,11 @@ const error = ref('')
 watch(
   () => props.open,
   (open) => {
-    if (open) loadHistory()
+    if (open) {
+      query.value = ''
+      readded.value = new Set()
+      loadHistory()
+    }
   },
   { immediate: true },
 )
@@ -74,7 +115,18 @@ async function loadHistory() {
   loading.value = false
 }
 
-const days = computed(() => groupCheckouts(entries.value))
+// Filtered before grouping, so a trip with no match drops out whole and a day
+// with no trip drops out with it: what is left reads as "these are the times
+// we bought it".
+const visibleEntries = computed(() => {
+  const needle = normalizeSearchText(query.value.trim())
+  if (!needle) return entries.value
+  return entries.value.filter((e) =>
+    normalizeSearchText(`${e.name ?? ''} ${e.maker ?? ''}`).includes(needle),
+  )
+})
+
+const days = computed(() => groupCheckouts(visibleEntries.value))
 
 function buyerProfile(userId: string | null | undefined) {
   return props.memberProfiles.find((m) => m.user_id === userId) || null
@@ -140,6 +192,9 @@ function dayLabel(label: DayLabel) {
                 <div class="checkout__head">
                   <SkeletonBlock width="24px" height="24px" radius="50%" />
                   <SkeletonBlock width="34%" height="0.85rem" />
+                  <!-- The trip button's box, so the head is as tall loading as
+                       loaded and nothing below it moves when the rows land. -->
+                  <SkeletonBlock class="checkout__readd-skeleton" width="4.5rem" height="2.05rem" radius="0.65rem" />
                 </div>
                 <ul class="history-list">
                   <li v-for="n in rows" :key="n" class="history-row history-row--skeleton">
@@ -155,6 +210,19 @@ function dayLabel(label: DayLabel) {
           <p v-else-if="error" class="history-empty">{{ error }}</p>
           <p v-else-if="!entries.length" class="history-empty">
             {{ t('history.empty') }}
+          </p>
+
+          <template v-else>
+          <input
+            v-model="query"
+            class="history-search"
+            type="search"
+            :placeholder="t('history.searchPlaceholder')"
+            :aria-label="t('history.searchPlaceholder')"
+            autocomplete="off"
+          />
+          <p v-if="!days.length" class="history-empty">
+            {{ t('history.noMatch', { query: query.trim() }) }}
           </p>
 
           <!-- Day -> checkout -> items. A description list so the day labels
@@ -177,6 +245,21 @@ function dayLabel(label: DayLabel) {
                   </span>
                   <span class="checkout__buyer">{{ buyerName(checkout.purchasedBy) }}</span>
                   <span class="checkout__time">{{ checkoutTime(checkout.purchasedAt) }}</span>
+                  <button
+                    type="button"
+                    class="checkout__readd"
+                    :class="{ 'checkout__readd--done': tripReadded(checkout.items) }"
+                    :disabled="tripReadded(checkout.items)"
+                    :aria-label="
+                      tripReadded(checkout.items)
+                        ? t('history.tripReadded')
+                        : tn('history.addTripLabel', checkout.items.length)
+                    "
+                    @click="addTripAgain(checkout.items)"
+                  >
+                    <AppIcon :name="tripReadded(checkout.items) ? 'check-bold' : 'plus'" />
+                    <span>{{ tripReadded(checkout.items) ? t('history.tripReaddedShort') : t('history.addTrip') }}</span>
+                  </button>
                 </div>
 
                 <ul class="history-list">
@@ -201,17 +284,160 @@ function dayLabel(label: DayLabel) {
                     >
                       {{ initialOf(entry.added_by_name) }}
                     </span>
+                    <button
+                      type="button"
+                      class="history-readd"
+                      :class="{ 'history-readd--done': readded.has(readdKey(entry)) }"
+                      :disabled="readded.has(readdKey(entry))"
+                      :aria-label="
+                        readded.has(readdKey(entry))
+                          ? t('history.readded', { name: entry.name ?? '' })
+                          : t('history.addAgain', { name: entry.name ?? '' })
+                      "
+                      @click="addAgain(entry)"
+                    >
+                      <AppIcon :name="readded.has(readdKey(entry)) ? 'check-bold' : 'plus'" />
+                    </button>
                   </li>
                 </ul>
               </dd>
             </template>
           </dl>
+          </template>
         </div>
       </div>
   </AppModal>
 </template>
 
 <style scoped>
+.history-search {
+  width: 100%;
+  min-height: 44px;
+  /* The body has no top padding of its own (see .history-modal__body), so
+     the field brings the gap under the header with it. */
+  margin: var(--space-4) 0 var(--space-3);
+  padding: 0 var(--space-4);
+  border: var(--border-width-thin) solid var(--border-main);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface-alt);
+  font-size: var(--text-md);
+  color: var(--text-primary);
+}
+
+.history-search:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: var(--focus-ring-primary);
+}
+
+/* A plus, because it does what the plus does everywhere else in the app: puts
+   the thing on the list. Once pressed it becomes a tick and stops, since a
+   second tap would only raise the quantity of something already there. */
+.history-readd {
+  flex-shrink: 0;
+  /* The emoji tile's box exactly, so a row reads as two matching squares
+     with the name between them. */
+  width: 2.05rem;
+  height: 2.05rem;
+  margin-left: var(--space-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  border: var(--border-width-thin) solid var(--border-main);
+  border-radius: 0.65rem;
+  background: var(--bg-surface);
+  color: var(--color-primary);
+  cursor: pointer;
+  position: relative;
+}
+
+/* Drawn at the tile's 33px, hit at 44px. */
+.history-readd::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+}
+
+/* The trip's button, in the head beside the time. Same height, corner and
+   colours as the per-item ones below it, with a word, because "all of this"
+   is not something a lone plus can say. */
+.checkout__readd {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 2.05rem;
+  padding: 0 0.6rem 0 0.5rem;
+  border: var(--border-width-thin) solid var(--border-main);
+  border-radius: 0.65rem;
+  background: var(--bg-surface);
+  color: var(--color-primary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  white-space: nowrap;
+  cursor: pointer;
+  position: relative;
+}
+
+.checkout__readd-skeleton {
+  margin-left: auto;
+}
+
+.checkout__readd::after {
+  content: '';
+  position: absolute;
+  inset: -6px 0;
+}
+
+.checkout__readd:hover:not(:disabled) {
+  background: var(--color-primary-bg);
+}
+
+.checkout__readd:active:not(:disabled) {
+  background: var(--bg-press);
+}
+
+.checkout__readd--done {
+  border-color: transparent;
+  background: var(--color-primary);
+  color: var(--text-inverse);
+  cursor: default;
+}
+
+.checkout__readd :deep(svg) {
+  width: 0.95rem;
+  height: 0.95rem;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  fill: none;
+}
+
+.history-readd:hover:not(:disabled) {
+  background: var(--color-primary-bg);
+}
+
+.history-readd:active:not(:disabled) {
+  background: var(--bg-press);
+}
+
+.history-readd--done {
+  border-color: transparent;
+  background: var(--color-primary);
+  color: var(--text-inverse);
+  cursor: default;
+}
+
+.history-readd :deep(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  fill: none;
+}
+
 .history-overlay {
   position: fixed;
   inset: 0;
@@ -361,7 +587,9 @@ function dayLabel(label: DayLabel) {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.1rem 0.25rem 0.55rem;
+  /* Inline padding matches .history-row's, so the trip's button sits right
+     above the column of per-item ones. */
+  padding: 0.1rem 0.4rem 0.55rem;
 }
 
 .checkout__avatar {
@@ -415,7 +643,7 @@ function dayLabel(label: DayLabel) {
   display: flex;
   align-items: center;
   gap: 0.65rem;
-  padding: 0.4rem 0.25rem;
+  padding: 0.4rem;
   border-radius: var(--radius-md);
   background: var(--bg-surface-alt);
 }

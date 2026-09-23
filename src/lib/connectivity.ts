@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { readonly, ref } from 'vue'
 import { Network } from '@capacitor/network'
 
 // Single source of truth for connectivity. On Android, @capacitor/network reads
@@ -31,6 +31,10 @@ function applyStatus(connected: boolean): void {
 // Begin tracking connectivity. Idempotent; safe to call from multiple mounts.
 // Returns a promise that resolves once the first real status has been read, so
 // the router can await a trustworthy offline/online answer on cold start.
+// The same answer as a ref, for UI that has to change when it does (the
+// header's offline pill). Read-only: applyStatus is the only writer.
+export const onlineStatus = readonly(online)
+
 export function startConnectivity(): Promise<void> {
   if (started) return statusReady ?? Promise.resolve()
   started = true
