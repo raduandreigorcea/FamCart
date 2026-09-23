@@ -4,6 +4,7 @@
 // first, and every DB failure mode must either roll back or fold into the
 // surviving row. These flows (insert races, 23505 handling, merge-on-uncheck)
 // are the riskiest code in the app and regress silently without coverage.
+import { dismissToast, triggerToastAction } from '../src/lib/useToast'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import HomeView from '../src/views/HomeView.vue'
@@ -385,18 +386,27 @@ describe('adding a custom product', () => {
     expect(form.props('canAddCustom')).toBe(true)
   })
 
-  it('opens the modal prefilled with what was typed', async () => {
+  // "Add 'x'" is one tap: the typed name goes on the list as it is, no dialog
+  // in between, and the field empties for the next thing.
+  it('adds what was typed in one tap, without a dialog', async () => {
     const wrapper = await mountHome()
+    const inserted = []
+    mocks.db.handlers['shopping_list_items.insert'] = (q) => {
+      inserted.push(q.payload)
+      return { data: { ...q.payload, checked: false, created_at: '2026-02-02T00:00:00.000Z' }, error: null }
+    }
+    mocks.db.handlers['rpc.add_custom_product'] = () => ({ data: null, error: null })
+
     const form = wrapper.findComponent(AddItemForm)
-    form.vm.$emit('update:name', 'Branza de burduf')
+    form.vm.$emit('update:name', '2 Branza de burduf')
     await wrapper.vm.$nextTick()
-
     form.vm.$emit('add-custom')
-    await wrapper.vm.$nextTick()
+    await flushPromises()
 
-    const modal = wrapper.findComponent(CustomProductModal)
-    expect(modal.props('open')).toBe(true)
-    expect(modal.props('initialName')).toBe('Branza de burduf')
+    expect(wrapper.findComponent(CustomProductModal).props('open')).toBe(false)
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0]).toMatchObject({ name: 'Branza de burduf', quantity: 2, maker: null })
+    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('')
   })
 
   it('adds the described product with its maker attached', async () => {
@@ -407,12 +417,8 @@ describe('adding a custom product', () => {
       return { data: { ...q.payload, checked: false, created_at: '2026-02-02T00:00:00.000Z' }, error: null }
     }
 
-    const form = wrapper.findComponent(AddItemForm)
-    form.vm.$emit('update:name', 'Branza')
-    await wrapper.vm.$nextTick()
-    form.vm.$emit('add-custom')
-    await wrapper.vm.$nextTick()
-
+    // The dialog is reached from a barcode the catalog could not name; its
+    // submit is the same whichever way it was opened.
     wrapper.findComponent(CustomProductModal).vm.$emit('submit', {
       name: 'Branza de burduf',
       maker: 'Piata Obor',
@@ -427,9 +433,7 @@ describe('adding a custom product', () => {
     const items = listedItems(wrapper)
     expect(items).toHaveLength(1)
     expect(items[0].maker).toBe('Piata Obor')
-    // The modal closed and the half-typed text is gone.
     expect(wrapper.findComponent(CustomProductModal).props('open')).toBe(false)
-    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('Branza')
   })
 
   it('reaches the catalog only through the RPC, never the table directly', async () => {
@@ -497,8 +501,8 @@ describe('addItem', () => {
     expect(items).toHaveLength(1)
     expect(items[0].name).toBe('Milk')
     expect(items[0].quantity).toBe(1)
-    // Left in the field: adding does not take the query away any more.
-    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('Milk')
+    // The field empties once the row has landed, so Enter cannot add it twice.
+    expect(wrapper.findComponent(AddItemForm).props('name')).toBe('')
 
     resolveInsert()
     await flushPromises()
@@ -557,6 +561,7 @@ describe('addItem', () => {
     mocks.db.handlers['shopping_list_items.delete'] = () => ({ data: null, error: null })
 
     wrapper.findComponent(ShoppingList).vm.$emit('delete', listedItems(wrapper)[0])
+    dismissToast()
     await flushPromises()
     expect(listedItems(wrapper)).toHaveLength(0)
 
@@ -1064,7 +1069,10 @@ describe('toggleItem', () => {
       })
 
     const list = wrapper.findComponent(ShoppingList)
-    if (action === 'delete') list.vm.$emit('delete', listedItems(wrapper)[0])
+    if (action === 'delete') {
+      list.vm.$emit('delete', listedItems(wrapper)[0])
+      dismissToast()
+    }
     else list.vm.$emit('checkout', ['item-1'])
     await flushPromises()
     expect(listedItems(wrapper).some((i) => i.id === 'item-1')).toBe(false)
@@ -1322,6 +1330,7 @@ describe('deleteItem', () => {
     })
 
     wrapper.findComponent(ShoppingList).vm.$emit('delete', listedItems(wrapper)[0])
+    dismissToast()
     await flushPromises()
 
     const items = listedItems(wrapper)
@@ -1335,9 +1344,70 @@ describe('deleteItem', () => {
     mocks.db.handlers['shopping_list_items.delete'] = () => ({ data: null, error: null })
 
     wrapper.findComponent(ShoppingList).vm.$emit('delete', listedItems(wrapper)[0])
+    dismissToast()
     await flushPromises()
 
     expect(listedItems(wrapper)).toHaveLength(0)
+  })
+})
+
+// Ticking a product that is already in the cart. The cart used to end up with
+// two rows of the same thing, side by side, because only rows still to buy were
+// ever merged.
+describe('ticking a product already in the cart', () => {
+  it('folds the cart row into the one being ticked, quantities summed', async () => {
+    const wrapper = await mountHome({
+      items: [makeItem({ id: 'a', checked: true, quantity: 2, checked_at: '2026-01-02T00:00:00.000Z' })],
+    })
+    mocks.db.handlers['shopping_list_items.insert'] = (q) => ({
+      data: { ...q.payload, checked: false, created_at: '2026-02-02T00:00:00.000Z' },
+      error: null,
+    })
+    mocks.db.handlers['shopping_list_items.update'] = () => ({ data: null, error: null })
+    mocks.db.handlers['rpc.merge_items'] = () => ({ data: 3, error: null })
+
+    await submitAdd(wrapper, 'Milk')
+    const fresh = listedItems(wrapper).find((i) => i.id !== 'a')
+    wrapper.findComponent(ShoppingList).vm.$emit('toggle', fresh)
+    await flushPromises()
+
+    const rows = listedItems(wrapper)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ id: fresh.id, checked: true, quantity: 3 })
+    // The cart row goes INTO the new one: merge_items only accepts a target that
+    // is still to buy, and at that moment the new row is.
+    const merge = mocks.db.calls.find((c) => c.table === 'rpc' && c.op === 'merge_items')
+    expect(merge.params).toEqual({ p_source: 'a', p_target: fresh.id })
+  })
+})
+
+describe('undoing a delete', () => {
+  // The delete waits for its toast. Undo inside that window must put the row
+  // back and never reach the server; a delete that went out anyway would take
+  // the item off every other member's list while this one shows it restored.
+  it('restores the row and sends nothing when Undo is pressed', async () => {
+    const wrapper = await mountHome({ items: [makeItem({ id: 'item-1', name: 'Milk' })] })
+    mocks.db.handlers['shopping_list_items.delete'] = () => ({ data: null, error: null })
+
+    wrapper.findComponent(ShoppingList).vm.$emit('delete', listedItems(wrapper)[0])
+    await flushPromises()
+    expect(listedItems(wrapper)).toHaveLength(0)
+
+    triggerToastAction()
+    await flushPromises()
+    expect(listedItems(wrapper).map((i) => i.id)).toEqual(['item-1'])
+    expect(mocks.db.calls.some((q) => q.op === 'delete')).toBe(false)
+  })
+
+  it('keeps a held-back row off the list when a refetch lands during the window', async () => {
+    const server = [makeItem({ id: 'item-1', name: 'Milk' })]
+    const wrapper = await mountHome({ items: server })
+
+    wrapper.findComponent(ShoppingList).vm.$emit('delete', listedItems(wrapper)[0])
+    await flushPromises()
+    await wrapper.vm.loadItems()
+    expect(listedItems(wrapper)).toHaveLength(0)
+    triggerToastAction()
   })
 })
 
@@ -1364,6 +1434,7 @@ describe('offline queue', () => {
 
     await submitAdd(wrapper, 'Milk')
     wrapper.findComponent(ShoppingList).vm.$emit('delete', listedItems(wrapper)[0])
+    dismissToast()
     await flushPromises()
 
     expect(listedItems(wrapper)).toHaveLength(0)
@@ -1539,6 +1610,7 @@ describe('network failure while reported online', () => {
     mocks.db.handlers['shopping_list_items.delete'] = fetchError
 
     wrapper.findComponent(ShoppingList).vm.$emit('delete', listedItems(wrapper)[0])
+    dismissToast()
     await flushPromises()
 
     expect(listedItems(wrapper)).toHaveLength(0)

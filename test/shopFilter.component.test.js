@@ -16,7 +16,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ShoppingList from '../src/components/ShoppingList.vue'
-import ListFilterMenu from '../src/components/ListFilterMenu.vue'
+import ListSortMenu from '../src/components/ListSortMenu.vue'
 import { productKey } from '../src/lib/productSearch'
 
 const channel = vi.hoisted(() => ({ nightly: true }))
@@ -105,14 +105,6 @@ describe('filtering the list by shop', () => {
     expect(shown).not.toContain('Lapte Zuzu 1L')
   })
 
-  it('combines with the state filter rather than replacing it', () => {
-    // "To buy, at Carrefour" is one question. Two filters in one panel is the
-    // whole reason they live together.
-    const shown = names(mountList({ shopFilter: 'carrefour', filter: 'active' }))
-    expect(shown).toEqual(['Apa plata Dorna 2L', 'Paine de casa'])
-    expect(shown).not.toContain('Oua de tara')
-  })
-
   it('says which shop emptied the list, not which state did', () => {
     // A shop filter can empty a list nobody expected to be empty, so it is the
     // one named. "Everything here is checked" would be a lie and a dead end.
@@ -124,7 +116,7 @@ describe('filtering the list by shop', () => {
 describe('which shops the menu offers', () => {
   const shopsOffered = (wrapper) =>
     wrapper
-      .findComponent(ListFilterMenu)
+      .findComponent(ListSortMenu)
       .props('shops')
 
   it('offers only shops something on this list is sold at', () => {
@@ -140,14 +132,14 @@ describe('which shops the menu offers', () => {
   it('counts what picking a shop would really leave, unknowns included', () => {
     // The count has to agree with the filter or the menu is lying about its own
     // rows. Lidl: milk, plus the two we know nothing about.
-    const counts = mountList().findComponent(ListFilterMenu).props('shopCounts')
+    const counts = mountList().findComponent(ListSortMenu).props('shopCounts')
     expect(counts).toEqual({ lidl: 3, auchan: 3, carrefour: 3 })
   })
 
   it('counts differently once a row is known somewhere else', () => {
     // With only the water and the bread, Lidl leaves the bread alone.
     const counts = mountList({ items: [ITEMS[1], ITEMS[2]] })
-      .findComponent(ListFilterMenu)
+      .findComponent(ListSortMenu)
       .props('shopCounts')
     expect(counts.lidl).toBeUndefined()
     expect(counts.auchan).toBe(2)
@@ -158,8 +150,8 @@ describe('the menu itself', () => {
   const menuItems = () => [...document.querySelectorAll('.menu-item')]
 
   function openMenu(props = {}) {
-    const wrapper = mount(ListFilterMenu, {
-      props: { items: ITEMS, modelValue: 'all', ...props },
+    const wrapper = mount(ListSortMenu, {
+      props: { items: ITEMS, modelValue: 'added', ...props },
       attachTo: document.body,
     })
     mounted.push(wrapper)
@@ -169,15 +161,15 @@ describe('the menu itself', () => {
   it('shows no shop section when there are no shops', async () => {
     const wrapper = openMenu()
     await wrapper.find('.filter-btn').trigger('click')
-    expect(menuItems()).toHaveLength(3)
+    expect(menuItems()).toHaveLength(2)
     expect(document.querySelector('.filter-group')).toBeNull()
   })
 
-  it('adds the shops below the state filter, under their own heading', async () => {
+  it('adds the shops below the order, under their own heading', async () => {
     const wrapper = openMenu({ shops: ['auchan', 'lidl'], shopCounts: { auchan: 2, lidl: 3 } })
     await wrapper.find('.filter-btn').trigger('click')
-    // Three states, "Any shop", and the two shops.
-    expect(menuItems()).toHaveLength(6)
+    // Two orders, "Any shop", and the two shops.
+    expect(menuItems()).toHaveLength(5)
     expect(document.querySelector('.filter-group').textContent.trim()).toBe('Shop')
   })
 
@@ -192,7 +184,7 @@ describe('the menu itself', () => {
   it('picks a shop and closes', async () => {
     const wrapper = openMenu({ shops: ['auchan', 'lidl'] })
     await wrapper.find('.filter-btn').trigger('click')
-    await menuItems()[5].click()
+    await menuItems()[4].click()
     expect(wrapper.emitted('update:shop').at(-1)).toEqual(['lidl'])
   })
 
@@ -207,10 +199,9 @@ describe('the menu itself', () => {
   })
 
   it('marks the button as filtering when only a shop is set', async () => {
-    // The dot is what stops a filtered list reading as the whole list. It used
-    // to watch the state filter alone, which would have made a shop filter
-    // invisible -- and an invisible filter is how items get declared missing.
-    const wrapper = openMenu({ shops: ['lidl'], shop: 'lidl', modelValue: 'all' })
+    // The dot is what stops a filtered list reading as the whole list. An
+    // invisible filter is how items get declared missing.
+    const wrapper = openMenu({ shops: ['lidl'], shop: 'lidl', modelValue: 'added' })
     expect(wrapper.find('.filter-btn--on').exists()).toBe(true)
     expect(wrapper.find('.filter-btn__dot').exists()).toBe(true)
   })
@@ -223,7 +214,7 @@ describe('production', () => {
     // consequence rather than the mechanism.
     channel.nightly = false
     const wrapper = mountList({ shopMap: new Map() })
-    expect(wrapper.findComponent(ListFilterMenu).props('shops')).toEqual([])
+    expect(wrapper.findComponent(ListSortMenu).props('shops')).toEqual([])
     expect(document.querySelector('.filter-group')).toBeNull()
   })
 })

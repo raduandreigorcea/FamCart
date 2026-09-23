@@ -74,7 +74,9 @@ const extraMembers = computed(() => Math.max(0, props.members.length - visibleMe
   height: var(--member-avatar-size);
   border-radius: var(--radius-pill);
   object-fit: cover;
-  border: var(--border-width-base) solid var(--bg-surface);
+  /* The gap that separates overlapping faces is drawn in whatever the stack
+     sits on; a caller on a coloured surface sets --member-avatar-ring to it. */
+  border: var(--border-width-base) solid var(--member-avatar-ring, var(--bg-surface));
   /* Just under a third of a circle, which is enough to read as a stack without
      hiding the faces behind it. */
   margin-left: calc(var(--member-avatar-size) * -0.3);

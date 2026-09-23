@@ -58,6 +58,25 @@ export function findActiveItemByName<T extends ShoppingItem>(
   )
 }
 
+// The same product already in the cart: same match rule as above, but among
+// the checked rows. Ticking a row whose twin is already there folds the two
+// together instead of leaving two of one thing side by side.
+export function findCheckedItemByName<T extends ShoppingItem>(
+  items: T[],
+  name: string,
+  { excludeId, maker }: { excludeId?: string; maker?: string | null } = {},
+): T | undefined {
+  const key = normalizeItemName(name)
+  const makerKey = normalizeItemName(maker)
+  return items.find(
+    (i) =>
+      i.checked &&
+      i.id !== excludeId &&
+      normalizeItemName(i.name) === key &&
+      normalizeItemName(i.maker) === makerKey,
+  )
+}
+
 // How many active (unchecked) items a given member currently owns — the client
 // side of the per-member cap (the DB trigger is the authoritative backstop).
 export function countActiveItemsByMember(items: ShoppingItem[], userId: string): number {

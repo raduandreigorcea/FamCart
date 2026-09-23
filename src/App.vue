@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { captureException } from './lib/errorReporting'
 import AppSplash from './components/AppSplash.vue'
 import AppButton from './components/AppButton.vue'
+import AppToast from './components/AppToast.vue'
 import { t } from './lib/i18n'
 
 // The first navigation is async (connectivity check, then Clerk). Show a branded
@@ -44,6 +45,7 @@ function reload() {
   </div>
   <RouterView v-else-if="ready" />
   <AppSplash v-else />
+  <AppToast />
 </template>
 
 <style scoped>

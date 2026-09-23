@@ -32,6 +32,8 @@ import type { ShoppingItemRow } from './householdRealtime'
 export interface ProductSuggestions {
   suggestions: Ref<ProductSuggestion[]>
   suggestionsLoading: Ref<boolean>
+  /** Why the matches may be partial: offline, or a source errored. */
+  searchNote: Ref<'offline' | 'degraded' | null>
   /** The catalog row the user picked, whose maker rides along with the item. */
   selectedProduct: Ref<ProductSuggestion | null>
   /** True while the phone's full-screen search is up, which earns more rows. */
@@ -140,6 +142,10 @@ export function useProductSuggestions(options: {
 
   const suggestions = ref<ProductSuggestion[]>([])
   const suggestionsLoading = ref(false)
+  // Why the matches on screen may be incomplete: 'offline' (only this
+  // household's own history was searched) or 'degraded' (a source errored).
+  // Null when the answer is the whole answer.
+  const searchNote = ref<'offline' | 'degraded' | null>(null)
   const searchShop = ref<string | null>(null)
   const shopOptions = ref<string[]>([])
   // Set on the way out, and checked by every async path that resolves into a
@@ -271,7 +277,17 @@ export function useProductSuggestions(options: {
   }
 
   async function fetchSuggestions(text: string): Promise<void> {
+    searchNote.value = null
     if (isOffline()) {
+      // No network is not no answer: what this household has bought before is
+      // already on the device, and in a basement supermarket it is most of what
+      // anyone types. The note says why the catalog is missing from it.
+      suggestions.value = rankSuggestions(
+        matchHouseholdStats(text, householdProductStats.value, { limit: suggestLimit.value }),
+        householdProductStats.value,
+        suggestLimit.value,
+      )
+      searchNote.value = 'offline'
       suggestionsLoading.value = false
       return
     }
@@ -343,8 +359,16 @@ export function useProductSuggestions(options: {
       const owns = () =>
         !stale() && !selectedProduct.value && query.value.trim().length >= SUGGEST_MIN_CHARS
 
-      const rowsOf = (res: { data: unknown; error: unknown }): ProductSuggestion[] =>
-        res.error ? [] : ((res.data ?? []) as ProductSuggestion[])
+      // A source that errored answers with nothing, and says so: without the
+      // flag, a catalog outage looks exactly like "no shop sells this".
+      let degraded = false
+      const rowsOf = (res: { data: unknown; error: unknown }): ProductSuggestion[] => {
+        if (res.error) {
+          degraded = true
+          return []
+        }
+        return (res.data ?? []) as ProductSuggestion[]
+      }
 
       // The pool is capped and ordered globally, so a product this household buys
       // every week can be crowded out of it entirely by a catalog this large.
@@ -427,8 +451,9 @@ export function useProductSuggestions(options: {
       })
 
       // allSettled, so one source failing costs only that source (see above).
-      await Promise.allSettled([catalogLeg, localLeg])
+      const settled = await Promise.allSettled([catalogLeg, localLeg])
       if (!owns()) return
+      if (degraded || settled.some((r) => r.status === 'rejected')) searchNote.value = 'degraded'
       publish(true)
 
       // THERE IS NO COLD PATH ANY MORE. This used to fall through to a
@@ -586,6 +611,8 @@ export function useProductSuggestions(options: {
     if (selectedProduct.value && text !== selectedProduct.value.name) {
       selectedProduct.value = null
     }
+    // The note describes the answer on screen, and a new question has none yet.
+    searchNote.value = null
     startSearch(text, { debounce: true })
   })
 
@@ -733,6 +760,7 @@ export function useProductSuggestions(options: {
   return {
     suggestions,
     suggestionsLoading,
+    searchNote,
     selectedProduct,
     searchExpanded,
     canAddCustomProduct,

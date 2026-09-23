@@ -102,15 +102,23 @@ describe('AddItemForm suggestions', () => {
 
     expect(wrapper.find('.suggestions-wrap').exists()).toBe(true)
     expect(wrapper.findAll('.suggestion')).toHaveLength(1)
-    expect(hatch(wrapper).text()).toContain("Can't find it?")
+    expect(hatch(wrapper).text()).toContain('Add “apa”')
   })
 
-  it('offers the escape hatch below the matches when there are some', async () => {
+  // Somebody who typed a whole name nothing on screen carries wants that name,
+  // so it leads. It used to sit under every near miss at the bottom.
+  it('leads with the typed name when no match is exactly it', async () => {
     const wrapper = await mountForm({ suggestions: PRODUCTS, canAddCustom: true })
 
     const rows = wrapper.findAll('.suggestion')
     expect(rows).toHaveLength(3)
-    // Last, so it never displaces a real product.
+    expect(rows[0].classes()).toContain('suggestion--custom')
+  })
+
+  it('puts the typed name last when a match is exactly it', async () => {
+    const wrapper = await mountForm({ name: 'banane 1kg', suggestions: PRODUCTS, canAddCustom: true })
+
+    const rows = wrapper.findAll('.suggestion')
     expect(rows[2].classes()).toContain('suggestion--custom')
   })
 
@@ -229,9 +237,9 @@ describe('AddItemForm suggestions', () => {
 
       expect(wrapper.findAll('.suggestion-skeleton')).toHaveLength(0)
       expect(wrapper.findAll('.suggestion-name').map((n) => n.text())).toEqual([
+        'Add “apa”',
         'Apa Plata 2L',
         'Banane 1kg',
-        "Can't find it?",
       ])
       expect(wrapper.find('.suggestions').attributes('aria-busy')).toBe('false')
     })
@@ -781,14 +789,13 @@ describe('AddItemForm suggestions', () => {
       expect(wrapper.find('.suggestions-label').exists()).toBe(false)
     })
 
-    // mountForm rather than mountSheet: above the bar boundary nothing raises a
-    // sheet, so the form is the inline field it has always been there and the
-    // usuals have nowhere to go.
-    it('never shows the usuals on a wider screen, which has no room for them', async () => {
+    // An empty focused field on the desktop column is the same "what do we
+    // usually get" moment as the phone sheet; it used to show nothing at all.
+    it('offers the usuals under the desktop field too', async () => {
       stubViewport(false)
       const wrapper = await mountForm({ name: '', suggestions: [], recents: RECENTS })
 
-      expect(wrapper.find('.suggestions-wrap').exists()).toBe(false)
+      expect(wrapper.find('.suggestions-label').exists()).toBe(true)
     })
 
     // The slot froze its own height while the form was lifted out of it, so the
@@ -896,8 +903,9 @@ describe('AddItemForm keyboard navigation', () => {
 
   it('walks onto the add-your-own hatch, which is an option like any other', async () => {
     const wrapper = await mountForm({ suggestions: PRODUCTS, canAddCustom: true })
-    await input(wrapper).trigger('keydown', { key: 'ArrowUp' })
-    // Up from nothing lands on the LAST option, which is now the hatch.
+    await input(wrapper).trigger('keydown', { key: 'ArrowDown' })
+    // Down from nothing lands on the FIRST option, which is the hatch while
+    // nothing matches the typed text exactly.
     expect(hatch(wrapper).classes()).toContain('suggestion--active')
 
     await input(wrapper).trigger('keydown', { key: 'Enter' })

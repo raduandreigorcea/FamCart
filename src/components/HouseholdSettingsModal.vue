@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, type PropType } from 'vue'
+import { computed, nextTick, ref, watch, type PropType } from 'vue'
 import { useAuth } from '@clerk/vue'
 import AppModal from './AppModal.vue'
 import ConfirmModal from './ConfirmModal.vue'
@@ -128,6 +128,24 @@ interface SettingsTab {
 // The tabs this viewer can reach, in sidebar order. Built as data so the
 // tablist below is one v-for rather than five near-identical buttons carrying
 // their own v-ifs — which is how the Danger tab came to be written out twice.
+// The tablist pattern: only the active tab is in the Tab order (tabindex -1 on
+// the rest), so the arrow keys have to be how the others are reached. Without
+// this handler a keyboard could never leave the first tab.
+function onTabKeydown(event: KeyboardEvent) {
+  const list = tabs.value
+  const index = list.findIndex((tab) => tab.id === activeTab.value)
+  let next = -1
+  if (event.key === 'ArrowDown' || event.key === 'ArrowRight') next = (index + 1) % list.length
+  else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') next = (index - 1 + list.length) % list.length
+  else if (event.key === 'Home') next = 0
+  else if (event.key === 'End') next = list.length - 1
+  if (next < 0) return
+  event.preventDefault()
+  const id = list[next]!.id
+  activeTab.value = id
+  void nextTick(() => document.getElementById(`settings-tab-${id}`)?.focus())
+}
+
 const tabs = computed<SettingsTab[]>(() => {
   const list: SettingsTab[] = [
     { id: 'overview', label: t('household.tab.overview'), icon: 'layout-grid' },
@@ -226,6 +244,7 @@ function onHouseholdDeleted() {
               :aria-controls="`settings-panel-${tab.id}`"
               :tabindex="activeTab === tab.id ? 0 : -1"
               @click="activeTab = tab.id"
+              @keydown="onTabKeydown"
             >
               <AppIcon class="tab-icon" :name="tab.icon" />
               <span>{{ tab.label }}</span>

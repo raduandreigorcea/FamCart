@@ -71,25 +71,12 @@ describe('AppNavBar channel badge', () => {
     expect(badge.text()).toBe('NIGHTLY')
   })
 
-  // The header is desktop-only on the list screen, so on a phone the stamp
-  // lives in the household bar at the top of the list. It used to float over the
-  // list as a ribbon of its own; the bar made that a second place for one word.
-  describe('on a phone', () => {
-    it('stamps nothing on a production build', () => {
-      expect(mountBar().find('.household-bar .channel-badge').exists()).toBe(false)
-    })
-
-    it('stamps the household bar on a nightly build', () => {
-      channel.nightly = true
-      const badge = mountBar().find('.household-bar .channel-badge')
-
-      expect(badge.exists()).toBe(true)
-      expect(badge.text()).toBe('NIGHTLY')
-    })
-
-    it('no longer floats a ribbon over the list', () => {
-      channel.nightly = true
-      expect(mountBar().find('.channel-ribbon').exists()).toBe(false)
-    })
+  // One header on every width now, so the stamp lives in it everywhere; a
+  // media query hides it on a phone, where the header's width belongs to the
+  // household name (CLAUDE.md: the phone carries none). What must not come back
+  // is the ribbon floating over the list.
+  it('no longer floats a ribbon over the list', () => {
+    channel.nightly = true
+    expect(mountBar().find('.channel-ribbon').exists()).toBe(false)
   })
 })

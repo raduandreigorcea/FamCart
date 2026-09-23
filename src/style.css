@@ -69,38 +69,42 @@
   --color-primary: #4d8c65;         /* The main green */
   --color-primary-bg: #f0f4f1;      /* Light green for backgrounds/badges */
   --color-primary-text: #065f46;    /* Dark green for text in badges */
-  /* A brand surface carrying white text: the household bar on a phone. In light
-     mode it IS the brand green, the same as the add button and the checkout
+  /* A brand surface carrying white text: the list screen's header. In light
+     mode it IS the brand green, the same as the add disc and the checkout
      slider. Dark mode lifts --color-primary for use as text and borders, which
      is too light under white type, so it re-points this one a step down. */
   --color-primary-strong: var(--color-primary);
   --color-on-strong: #ffffff;
   --color-on-strong-muted: rgba(255, 255, 255, 0.85);
-  --color-on-strong-track: rgba(255, 255, 255, 0.25);
-  /* The warm half of the sparks when the household bar's ring fills. */
-  --color-celebrate: #ffd66b;
+  /* A control sitting on the green: a white wash, stepped for hover and press. */
+  --color-on-strong-fill: rgba(255, 255, 255, 0.16);
+  --color-on-strong-fill-strong: rgba(255, 255, 255, 0.26);
 
   /* Surface & Backgrounds */
-  --bg-main: #f5f5f7;               /* The main body background */
+  /* Warm neutrals: a grocery list should feel like paper on a kitchen
+     counter, not a settings panel. The shift is small on purpose (a few units
+     toward red/yellow); the surface stays pure white so rows and sheets read
+     clean against it. */
+  --bg-main: #f7f5f2;               /* The main body background */
   --bg-surface: #ffffff;            /* Card/Modal backgrounds */
-  --bg-surface-alt: #f9fafb;        /* Slight contrast surface (headers, etc.) */
-  --bg-hover: #f3f4f6;              /* Hover state for items */
+  --bg-surface-alt: #faf8f6;        /* Slight contrast surface (headers, etc.) */
+  --bg-hover: #f2efeb;              /* Hover state for items */
   /* Pressed state, one clear step further from the surface than --bg-hover.
      Controls used to reach for --border-light for this, which in light mode is
      the same #f3f4f6 as --bg-hover (and in dark is lighter than it) -- so a
      press either painted nothing or moved the wrong way. A press has to be
      visibly more than a hover or the control reads as not having answered. */
-  --bg-press: #e6e8ec;
+  --bg-press: #e7e3dd;
 
   /* Text */
-  --text-primary: #1a1a1a;          /* Main readable text */
-  --text-secondary: #6b7280;        /* Secondary/muted text */
-  --text-disabled: #9ca3af;         /* Disabled or tertiary text */
+  --text-primary: #1c1917;          /* Main readable text */
+  --text-secondary: #6b645d;        /* Secondary/muted text, 5.4:1 on --bg-main */
+  --text-disabled: #a19a92;         /* Disabled or tertiary text */
 
   /* Borders */
-  --border-light: #f3f4f6;          /* Very subtle dividers */
-  --border-main: #e5e7eb;           /* Standard borders */
-  --border-dark: #d1d5db;           /* Stronger borders/active inputs */
+  --border-light: #efebe6;          /* Very subtle dividers */
+  --border-main: #e5e0d9;           /* Standard borders */
+  --border-dark: #d4cec6;           /* Stronger borders/active inputs */
 
   /* Danger / Destructive */
   --danger-main: #ef4444;           /* Red buttons/icons */
@@ -117,6 +121,12 @@
 
   /* Text on colored surfaces */
   --text-inverse: #ffffff;
+
+  /* The toast is the one inverted surface: dark on a light app, so it reads as
+     a message about the screen rather than part of it. */
+  --toast-bg: #292524;
+  --toast-text: #fafaf9;
+  --toast-action: #9fd4b3;
 
   /* Overlay */
   --backdrop: rgba(0, 0, 0, 0.4);
@@ -185,26 +195,17 @@
      edges line up on wide screens. Applied behind identical 900px media
      queries (media queries can't read custom properties). */
   --desktop-column: 720px;
-  /* The bottom action bar's own height, without the phone's safe area, which
-     the bar adds as padding underneath. A token because three files have to
-     agree on it and none of them can see the others: AppNavBar draws it,
-     HomeView pads the scroll container for it, and ShoppingList floats the
-     checkout slider above it.
-
-     The number is what a SMALL slot needs and nothing more: 8px, a 26px mark,
-     a 3px gap, a 13px label, 8px. That is 58px; the extra pixel is where a 1px
-     top border used to be, kept so nothing that clears the bar moved when the
-     border became a shadow. The bar used to be sized by the centre disc
-     instead, which bought the disc its room by giving the other four 22px of
-     dead space above them. */
+  /* The phone's bottom action bar, without the safe area under it. AppNavBar
+     draws it; the list pads its end by it (via --bottom-clearance) and the
+     checkout slider and toasts float above it. The centre disc stands proud of
+     its top edge by --nav-disc-overhang, which everything clearing the bar
+     clears too. */
   --nav-height: 59px;
-  /* How far the centre disc stands proud of the bar's top edge: 8.64px in
-     practice, rounded up. It is 44px in a slot with 42px to give, so it hangs
-     out rather than being sized down -- deliberately, since a bar tall enough
-     to contain it is a bar built around its largest element. Everything that
-     has to stay clear of the bar clears this too: the list's bottom padding and
-     the checkout slider. */
   --nav-disc-overhang: 9px;
+  /* The list screen's header strip, without the status bar above it. AppNavBar
+     draws it and HomeView pads the list by it; the desktop column's is taller,
+     set at the foot of this block. */
+  --header-height: 64px;
   --size-control-sm: 32px;
   --size-control-md: 40px;
   --size-control-lg: 52px;
@@ -276,6 +277,23 @@
   --ease-rise: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-fall: cubic-bezier(0.4, 0, 1, 1);
 
+  /* Stacking, as one scale. Layers used to pick numbers independently (999,
+     1100, 1200, then 6000-7500 for one teleported sheet), so which one won was
+     an accident of who typed the bigger number. Higher always means "more
+     interrupting": a toast has to stay visible over an open sheet because its
+     Undo is about something the sheet just did. */
+  /* What the phone's bottom action bar takes, disc included, without the safe
+     area. Toasts and the checkout slider sit above it, and the list pads its
+     end by it so the last row can scroll clear. 0 from the desktop column up. */
+  --bottom-clearance: calc(var(--nav-height) + var(--nav-disc-overhang));
+
+  --z-header: 30;
+  --z-composer: 20;
+  --z-sheet: 1000;
+  --z-popover: 1100;
+  --z-dialog: 1200;
+  --z-toast: 1300;
+
   /* How far a dialog travels on its way in. Centred dialogs nudge up; a dialog
      anchored to the bottom edge overrides this to 100% so it comes in from off
      screen entirely. See the modal-rise keyframes at the foot of this file. */
@@ -327,6 +345,10 @@
   /* Text on colored surfaces */
   --text-inverse: #f7fbff;
 
+  --toast-bg: #e6edf5;
+  --toast-text: #151c25;
+  --toast-action: #2f6b48;
+
   /* Overlay */
   --backdrop: rgba(0, 0, 0, 0.56);
   --overlay-dark: rgba(6, 11, 19, 0.66);
@@ -361,6 +383,14 @@
   }
 }
 
+@media (min-width: 900px) {
+  :root {
+    --header-height: 72px;
+    /* No bottom bar on the desktop column. */
+    --bottom-clearance: 0px;
+  }
+}
+
 :root {
   /* Phone safe areas (status bar on top, home/back bar on the bottom).
      The Android shell injects --safe-area-inset-*; env() covers iOS and
@@ -374,6 +404,22 @@
 *::after {
   box-sizing: border-box;
   user-select: none;
+}
+
+/* The blanket user-select above keeps a long press on a row from starting a
+   text selection mid-swipe. Fields are the exception: someone editing a name
+   has to be able to select what they typed. */
+input,
+textarea {
+  user-select: text;
+}
+
+/* One focus ring for every interactive element, shown only for keyboard focus.
+   :where() keeps its specificity at zero, so a component that draws its own
+   ring (the inputs do, with a soft box-shadow) still wins without a fight. */
+:where(a, button, [role='button'], [role='menuitem'], [role='menuitemradio'], [role='tab'], [tabindex]):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 body {
@@ -457,4 +503,74 @@ select {
       opacity: 0;
     }
   }
+}
+/* ── The sheet ────────────────────────────────────────────────────────────────
+   AppModal variant="sheet". Global because the panel is the caller's element
+   (AppModal owns the overlay only) and a scoped rule in AppModal cannot reach
+   slotted content's transition states.
+
+   The same shell the older dialogs draw for themselves (AccountActionModal,
+   AppSettingsModal): the same dimmed, blurred backdrop, the same corners and
+   width, a centred panel that becomes a bottom sheet under 520px. A sheet that
+   looked different from the menus beside it read as a different app. */
+.app-sheet-overlay {
+  z-index: var(--z-sheet);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--space-4) + var(--safe-top)) var(--space-4) calc(var(--space-4) + var(--safe-bottom));
+  background: var(--overlay-dark);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.app-sheet {
+  --modal-rise: 16px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 420px;
+  max-height: min(720px, 85dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--bg-surface);
+  border-radius: var(--radius-dialog);
+  box-shadow: var(--elevation-modal);
+}
+
+@media (max-width: 520px) {
+  .app-sheet-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .app-sheet {
+    --modal-rise: 100%;
+    max-width: none;
+    max-height: calc(100dvh - var(--safe-top) - var(--space-6));
+    border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+    padding-bottom: calc(1rem + var(--safe-bottom));
+  }
+}
+
+.app-sheet-enter-active {
+  transition: opacity var(--transition-slow) var(--ease-rise);
+}
+
+.app-sheet-leave-active {
+  transition: opacity var(--transition-base) var(--ease-fall);
+}
+
+.app-sheet-enter-from,
+.app-sheet-leave-to {
+  opacity: 0;
+}
+
+.app-sheet-enter-active .app-sheet {
+  animation: modal-rise-in var(--transition-slow) var(--ease-rise);
+}
+
+.app-sheet-leave-active .app-sheet {
+  animation: modal-rise-out var(--transition-base) var(--ease-fall);
 }
