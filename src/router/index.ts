@@ -100,7 +100,7 @@ async function fetchMembershipCount(
     // installs one from the Clerk instance it already holds. The plain session
     // token, matching useSupabase() -- see the comment there for why the
     // `supabase` JWT template is not used.
-    setSupabaseTokenResolver(async () => getToken.value())
+    setSupabaseTokenResolver(async (options) => getToken.value(options))
     // Count only THIS user's memberships. RLS lets a member see every co-member
     // of their households, so without the user_id filter this would count other
     // people too and falsely report the cap once your households hold 3+ members.

@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { onErrorCaptured, ref } from 'vue'
+import { onErrorCaptured, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAuth } from '@clerk/vue'
+import { isCurrentlyOffline } from './lib/connectivity'
 import { captureException } from './lib/errorReporting'
 import AppSplash from './components/AppSplash.vue'
 import AppButton from './components/AppButton.vue'
@@ -13,6 +15,18 @@ import { t } from './lib/i18n'
 const router = useRouter()
 const ready = ref(false)
 router.isReady().finally(() => { ready.value = true })
+
+// The router guard checks the session only when the user navigates. A session
+// that Clerk ends while the app sits open (Sentry saw it after a token refresh
+// came back 401) left the list on screen with every request going out as the
+// anonymous role, each one refused, for half an hour. So a sign-out that
+// happens here goes to login. Offline is excluded: Clerk cannot verify a
+// session without the network, and the offline list must survive that.
+const { isLoaded, isSignedIn } = useAuth()
+watch([isLoaded, isSignedIn], ([loaded, signedIn]) => {
+  if (!loaded || signedIn || isCurrentlyOffline()) return
+  if (router.currentRoute.value.meta.requiresAuth) router.replace({ name: 'login' })
+})
 
 // A throw during render unmounts the tree, which without this leaves a white
 // page: the one failure mode where the app tells the user nothing at all. Vue

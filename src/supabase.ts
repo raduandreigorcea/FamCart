@@ -46,7 +46,8 @@ const catalogAnonKey = import.meta.env.VITE_CATALOG_SUPABASE_ANON_KEY
 
 let authClient: SupabaseClient | null = null
 let catalogClient: SupabaseClient | null = null
-let getTokenFn: (() => Promise<string | null>) | null = null
+type TokenResolver = (options?: { skipCache?: boolean }) => Promise<string | null>
+let getTokenFn: TokenResolver | null = null
 
 // Reads that die at the network layer are retried with a short backoff: after
 // the machine sleeps, the first request often goes out on a dead keep-alive
@@ -74,6 +75,39 @@ export async function fetchWithRetry(
   }
 }
 
+// A request whose token PostgREST refused on time grounds (PGRST303: "JWT
+// expired", "JWT not yet valid", "JWT issued at future") is sent once more with
+// a token minted fresh, skipping Clerk's cache. Sentry showed these clustered
+// right after the phone wakes: Clerk judges its cached token's age from the
+// token's `iat` against the device clock, so a phone clock running behind, or a
+// WebView whose timers froze in the background, hands out a token the server
+// already considers dead. The wait covers the other direction, a token that is
+// a few seconds younger than the server's clock allows.
+//
+// Retrying a mutation is safe here, unlike in fetchWithRetry: the JWT is
+// checked before any SQL runs, so a 401 PGRST303 means nothing was applied.
+const JWT_TIME_REJECTED = 'PGRST303'
+const NOT_YET_VALID_WAIT_MS = 2000
+
+export async function fetchWithFreshToken(
+  url: RequestInfo | URL,
+  options: RequestInit = {},
+): Promise<Response> {
+  const response = await fetchWithRetry(url, options)
+  if (response.status !== 401 || !getTokenFn) return response
+  const body = await response.clone().json().catch(() => null)
+  if (body?.code !== JWT_TIME_REJECTED) return response
+
+  if (!/expired/i.test(body.message ?? '')) {
+    await new Promise((resolve) => setTimeout(resolve, NOT_YET_VALID_WAIT_MS))
+  }
+  const token = await getTokenFn({ skipCache: true })
+  if (!token) return response
+  const headers = new Headers(options.headers)
+  headers.set('Authorization', `Bearer ${token}`)
+  return fetchWithRetry(url, { ...options, headers })
+}
+
 // There was an unauthenticated `supabase` client exported here for
 // "public/unauthenticated queries". Nothing ever imported it — every table is
 // behind RLS and every read needs a Clerk token — but being at module scope it
@@ -94,7 +128,7 @@ export function getSupabase(): SupabaseClient {
       // header itself — no custom header wiring, no second token fetch.
       accessToken: async () => (getTokenFn ? await getTokenFn() : null),
       global: {
-        fetch: fetchWithRetry,
+        fetch: fetchWithFreshToken,
       },
     })
   }
@@ -121,7 +155,7 @@ export function getCatalogSupabase(): SupabaseClient | null {
       // both name the same issuer in their Third-Party Auth settings.
       accessToken: async () => (getTokenFn ? await getTokenFn() : null),
       global: {
-        fetch: fetchWithRetry,
+        fetch: fetchWithFreshToken,
       },
     })
   }
@@ -134,7 +168,7 @@ export function getCatalogSupabase(): SupabaseClient | null {
 // the router guard in particular, which used to hand-roll its own fetch with
 // its own apikey/Authorization headers (and no fetchWithRetry) purely to work
 // around that.
-export function setSupabaseTokenResolver(resolve: () => Promise<string | null>): void {
+export function setSupabaseTokenResolver(resolve: TokenResolver): void {
   getTokenFn = resolve
 }
 
@@ -154,6 +188,6 @@ export function useSupabase(): SupabaseClient {
   //
   // Verified against all three projects before the change: each one accepts the
   // session token and answers is_admin()/catalog_is_admin() with it.
-  setSupabaseTokenResolver(async () => getToken.value())
+  setSupabaseTokenResolver(async (options) => getToken.value(options))
   return getSupabase()
 }

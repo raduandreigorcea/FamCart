@@ -218,6 +218,10 @@ jobs:
           VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
           VITE_ONESIGNAL_APP_ID: ${{ secrets.VITE_ONESIGNAL_APP_ID }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          # Uploads source maps and stamps the release (vite.config.js). Without
+          # it production APK errors reach Sentry with no release and minified
+          # frames only; empty is allowed and just skips the upload.
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           # Declared rather than inferred. lib/appChannel would work this out
           # from the Supabase URL anyway, but this is the file that defines what
           # a production build IS, so it says so: anything that reaches a phone
