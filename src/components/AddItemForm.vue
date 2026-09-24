@@ -1075,8 +1075,8 @@ onBeforeUnmount(() => {
   position: fixed;
   inset: 0;
   background: color-mix(in srgb, var(--backdrop) 35%, transparent);
-  backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 
 .add-slot--dim {

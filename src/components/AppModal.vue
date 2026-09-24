@@ -59,6 +59,21 @@ const props = defineProps({
   },
 })
 
+// `appear` is what makes a dialog animate the FIRST time it opens.
+// The heavy dialogs are lazy: the topbar renders them under a
+// `v-if="everOpened"` that flips true in the same tick as `open`, so on the
+// first open this component mounts with `open` already true and the overlay
+// is present on the Transition's initial render — which Vue does not
+// animate unless asked. Every later open toggles `open` on a component that
+// is already mounted, which is why only the first one was missing its
+// animation. Dialogs that are always mounted (AccountActionModal) never hit
+// this, and `appear` is inert for them: their initial render has no
+// element to animate.
+//
+// This note lives here, not above the <Transition>: a template comment there
+// makes the root a fragment in dev builds, and the caller's scoped overlay
+// class (its blur, its layout) then silently never applies on `npm run dev`.
+
 const emit = defineEmits<{ close: [] }>()
 
 const overlay = ref<HTMLElement | null>(null)
@@ -162,16 +177,6 @@ onBeforeUnmount(deactivate)
 </script>
 
 <template>
-  <!-- `appear` is what makes a dialog animate the FIRST time it opens.
-       The heavy dialogs are lazy: the topbar renders them under a
-       `v-if="everOpened"` that flips true in the same tick as `open`, so on the
-       first open this component mounts with `open` already true and the overlay
-       is present on the Transition's initial render — which Vue does not
-       animate unless asked. Every later open toggles `open` on a component that
-       is already mounted, which is why only the first one was missing its
-       animation. Dialogs that are always mounted (AccountActionModal) never hit
-       this, and `appear` is inert for them: their initial render has no
-       element to animate. -->
   <Transition :name="variant === 'sheet' ? 'app-sheet' : transition" appear>
     <div
       v-if="open"
