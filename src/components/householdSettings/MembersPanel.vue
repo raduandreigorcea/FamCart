@@ -781,8 +781,8 @@ async function removeMember(memberUserId: string) {
     display: flex;
     align-items: flex-end;
     background: var(--overlay-dark);
-    backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
   }
 
   .member-sheet {

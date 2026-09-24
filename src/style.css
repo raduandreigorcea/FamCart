@@ -520,6 +520,9 @@ select {
   justify-content: center;
   padding: calc(var(--space-4) + var(--safe-top)) var(--space-4) calc(var(--space-4) + var(--safe-bottom));
   background: var(--overlay-dark);
+  /* Prefixed first, always. The other way round the production minifier keeps
+     only the -webkit- line, which Chrome ignores: every Android menu lost its
+     blur that way while this one, written in this order, kept it. */
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
 }

@@ -343,8 +343,8 @@ watch(
   position: fixed;
   inset: 0;
   background: var(--overlay-dark);
-  backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -561,8 +561,8 @@ watch(
   position: fixed;
   inset: 0;
   background: var(--overlay-dark);
-  backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;

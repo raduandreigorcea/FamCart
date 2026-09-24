@@ -133,8 +133,11 @@ async function signInWithOAuth(providerId: string) {
       // Native OAuth failures are unexpected by definition (user
       // cancellation resolves null instead) — worth a Sentry event
       // (no-op without a DSN). The dialog shows the diagnosis the
-      // error carries: which state the attempt got stuck in.
-      captureException(e)
+      // error carries: which state the attempt got stuck in. A session that
+      // already exists is expected (a second tap, a sign-in in another tab)
+      // and gets its own dialog, so it is not reported.
+      const codes = (e as ClerkErrorLike | null)?.errors?.map((err) => err.code)
+      if (!codes?.includes('session_exists')) captureException(e)
       handleSignInError(e, (e as Error)?.message || t('error.oauthFailed'))
     }
     loadingProvider.value = null

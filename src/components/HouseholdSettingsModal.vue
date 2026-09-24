@@ -347,8 +347,8 @@ function onHouseholdDeleted() {
   position: fixed;
   inset: 0;
   background: var(--overlay-dark);
-  backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;

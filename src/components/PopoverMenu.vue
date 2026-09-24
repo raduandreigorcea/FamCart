@@ -209,6 +209,8 @@ onBeforeUnmount(() => {
   /* Dimmed for the sheet; the popover below turns this transparent, matching
      how these menus have always behaved on desktop. */
   background: var(--backdrop);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 
 .popover-panel {
@@ -415,6 +417,8 @@ onBeforeUnmount(() => {
 @media (min-width: 600px) {
   .popover-overlay {
     background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 
   .popover-panel {

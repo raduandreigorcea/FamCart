@@ -24,6 +24,12 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ isReady: () => Promise.resolve() }),
 }))
 
+// App sends a signed-out user to login; signed in here, so it stays put.
+vi.mock('@clerk/vue', async () => {
+  const { ref } = await import('vue')
+  return { useAuth: () => ({ isLoaded: ref(true), isSignedIn: ref(true) }) }
+})
+
 function mountApp(view) {
   return mount(App, {
     global: { stubs: { RouterView: view, AppSplash: true } },

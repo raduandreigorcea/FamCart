@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({}) }))
 vi.mock('@clerk/vue', () => ({ useAuth: () => ({}) }))
 
-import { fetchWithRetry } from '../src/supabase'
+import { fetchWithRetry, fetchWithFreshToken, setSupabaseTokenResolver } from '../src/supabase'
 
 const networkError = () => Object.assign(new TypeError('Failed to fetch'), {})
 
@@ -55,6 +55,35 @@ describe('fetchWithRetry', () => {
     fetch.mockRejectedValue(Object.assign(new Error('aborted'), { name: 'AbortError' }))
 
     await expect(fetchWithRetry('https://x/rest')).rejects.toThrow('aborted')
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('fetchWithFreshToken', () => {
+  const jwtRejected = (message) =>
+    new Response(JSON.stringify({ code: 'PGRST303', message }), { status: 401 })
+
+  it('resends a request whose token expired with a token that skips the cache', async () => {
+    const resolve = vi.fn().mockResolvedValue('fresh')
+    setSupabaseTokenResolver(resolve)
+    fetch.mockResolvedValueOnce(jwtRejected('JWT expired')).mockResolvedValueOnce(new Response('ok'))
+
+    const res = await fetchWithFreshToken('https://x/rest', {
+      method: 'PATCH',
+      headers: { Authorization: 'Bearer stale' },
+    })
+
+    expect(await res.text()).toBe('ok')
+    expect(resolve).toHaveBeenCalledWith({ skipCache: true })
+    expect(fetch.mock.calls[1][1].headers.get('Authorization')).toBe('Bearer fresh')
+  })
+
+  it('leaves other 401s alone', async () => {
+    setSupabaseTokenResolver(vi.fn().mockResolvedValue('fresh'))
+    const denied = new Response(JSON.stringify({ code: '42501' }), { status: 401 })
+    fetch.mockResolvedValue(denied)
+
+    await expect(fetchWithFreshToken('https://x/rest')).resolves.toBe(denied)
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 })

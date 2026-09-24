@@ -191,8 +191,8 @@ function copyCode() {
   inset: 0;
   z-index: 1200;
   background: var(--overlay-dark-strong);
-  backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
   display: flex;
   align-items: flex-end;
   justify-content: center;
