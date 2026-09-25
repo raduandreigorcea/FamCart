@@ -11,13 +11,13 @@
 // a range input, so the browser has already constrained the value and the clamp
 // is unreachable from the UI. The inputs that CAN be out of range arrive from
 // somewhere else entirely: a column read straight out of the database, and a
-// household snapshot restored from localStorage, which is not a value this app
+// list snapshot restored from localStorage, which is not a value this app
 // controls. Those are what this covers.
 import { describe, it, expect } from 'vitest'
 import {
   clampItemLimit,
-  HOUSEHOLD_MEMBERSHIP_CAP,
-  HOUSEHOLD_NAME_MAX_LENGTH,
+  LIST_MEMBERSHIP_CAP,
+  LIST_NAME_MAX_LENGTH,
   ITEM_LIMIT_DEFAULT,
   ITEM_LIMIT_MAX,
   ITEM_LIMIT_MIN,
@@ -33,11 +33,11 @@ describe('the caps themselves', () => {
   // nothing; these are the numbers in the migrations, written out again so that
   // changing one side without the other fails here.
   it('matches the bounds the migrations enforce', () => {
-    expect(HOUSEHOLD_NAME_MAX_LENGTH).toBe(25) // 003_households_and_members.sql
+    expect(LIST_NAME_MAX_LENGTH).toBe(25) // 003_lists_and_members.sql
     expect(ITEM_NAME_MAX_LENGTH).toBe(120) // 004_shopping_list.sql
     expect(PRODUCT_MAKER_MAX_LENGTH).toBe(60) // 006_product_catalog.sql
-    expect(HOUSEHOLD_MEMBERSHIP_CAP).toBe(3) // 003_households_and_members.sql
-    expect(ITEM_LIMIT_MIN).toBe(1) // 003_households_and_members.sql
+    expect(LIST_MEMBERSHIP_CAP).toBe(3) // 003_lists_and_members.sql
+    expect(ITEM_LIMIT_MIN).toBe(1) // 003_lists_and_members.sql
     expect(ITEM_LIMIT_MAX).toBe(50)
   })
 
@@ -90,7 +90,7 @@ describe('clampItemLimit', () => {
   })
 
   // Falling back to the default rather than to zero is the whole point: zero
-  // reads as "this household may not add anything", which is a working app
+  // reads as "this list may not add anything", which is a working app
   // that refuses every write.
   it('falls back to the default for anything unusable, never to zero', () => {
     for (const value of [null, undefined, '', 'fifty', NaN, {}, [], 0]) {

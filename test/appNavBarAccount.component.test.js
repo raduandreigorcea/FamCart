@@ -2,7 +2,7 @@
 //
 // When the app cold-boots offline, Clerk can't load so `useUser` yields a null
 // user. The account button and menu must still show who's signed in, pulled
-// from the cached household roster for the current user.
+// from the cached list roster for the current user.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { ref } from 'vue'
@@ -69,7 +69,7 @@ const profiles = [
 describe('AppNavBar account identity offline', () => {
   it('falls back to the cached profile when Clerk has no user', () => {
     const wrapper = mountBar({
-      householdName: 'Home',
+      listName: 'Home',
       memberProfiles: profiles,
       currentUserId: 'u_self',
     })
@@ -85,7 +85,7 @@ describe('AppNavBar account identity offline', () => {
 
   it('shows the generic Account label when no cached profile matches', () => {
     const wrapper = mountBar({
-      householdName: 'Home',
+      listName: 'Home',
       memberProfiles: profiles,
       currentUserId: 'u_missing',
     })
@@ -102,7 +102,7 @@ describe('AppNavBar account identity offline', () => {
       primaryEmailAddress: { emailAddress: 'clerk@example.com' },
     }
     const wrapper = mountBar({
-      householdName: 'Home',
+      listName: 'Home',
       memberProfiles: profiles,
       currentUserId: 'u_self',
     })
@@ -114,42 +114,42 @@ describe('AppNavBar account identity offline', () => {
   })
 })
 
-describe('AppNavBar household block', () => {
-  const households = [
+describe('AppNavBar list block', () => {
+  const lists = [
     { id: 'fam-1', name: 'Home' },
     { id: 'fam-2', name: 'Parents' },
   ]
 
-  // The household's own emoji anchors the block, the same square it wears on its
+  // The list's own emoji anchors the block, the same square it wears on its
   // row in the account dialog.
-  it('leads the household block with its emoji', () => {
+  it('leads the list block with its emoji', () => {
     const wrapper = mountBar({
-      householdId: 'fam-1',
-      householdName: 'Home',
-      householdEmoji: 'HOUSEEMOJI',
-      households,
+      listId: 'fam-1',
+      listName: 'Home',
+      listEmoji: 'HOUSEEMOJI',
+      lists,
       memberProfiles: profiles,
       currentUserId: 'u_self',
     })
 
-    expect(wrapper.find('.household-btn .household-emoji').text()).toBe('HOUSEEMOJI')
+    expect(wrapper.find('.list-btn .list-emoji').text()).toBe('HOUSEEMOJI')
   })
 
-  // The account dialog is about YOU. Which household's list is on screen is a
+  // The account dialog is about YOU. Which list is on screen is a
   // fact about the screen, so the roster goes to the switcher instead and this
   // dialog is not even told about it.
-  it('keeps the household roster out of the account dialog', () => {
+  it('keeps the list roster out of the account dialog', () => {
     const wrapper = mountBar({
-      householdId: 'fam-1',
-      householdName: 'Home',
-      households,
+      listId: 'fam-1',
+      listName: 'Home',
+      lists,
       memberProfiles: profiles,
       currentUserId: 'u_self',
     })
 
     const modal = wrapper.findComponent(AccountActionModal)
-    expect(modal.props('households')).toBeUndefined()
-    expect(modal.props('householdId')).toBeUndefined()
+    expect(modal.props('lists')).toBeUndefined()
+    expect(modal.props('listId')).toBeUndefined()
   })
 
 
@@ -167,7 +167,7 @@ describe('AccountActionModal report issue', () => {
   }
 
   it('offers a report row and emits from it', async () => {
-    const wrapper = mountAccount({ householdName: 'Home' })
+    const wrapper = mountAccount({ listName: 'Home' })
 
     const row = wrapper.find('.account-report-item')
     expect(row.exists()).toBe(true)
@@ -178,7 +178,7 @@ describe('AccountActionModal report issue', () => {
   })
 
   it('keeps sign out as the last row', () => {
-    const wrapper = mountAccount({ householdName: 'Home' })
+    const wrapper = mountAccount({ listName: 'Home' })
 
     const rows = wrapper.findAll('.account-menu-item')
     const last = rows[rows.length - 1]
@@ -188,7 +188,7 @@ describe('AccountActionModal report issue', () => {
 
   it('reaches the navbar as a handled event', () => {
     const wrapper = mountBar({
-      householdName: 'Home',
+      listName: 'Home',
       memberProfiles: profiles,
       currentUserId: 'u_self',
     })
@@ -213,14 +213,14 @@ describe('AccountActionModal row icons', () => {
 
   it('leads every row with a mark, and never the same one twice', () => {
     const wrapper = mountAccount({
-      householdName: 'Home',
-      households: [{ id: 'fam-1', name: 'Home', emoji: 'E1' }],
-      householdId: 'fam-1',
+      listName: 'Home',
+      lists: [{ id: 'fam-1', name: 'Home', emoji: 'E1' }],
+      listId: 'fam-1',
     })
 
     // No exceptions, sign out included.
     for (const row of wrapper.findAll('.account-menu-item')) {
-      const mark = row.find('.account-item-icon, .account-household-emoji')
+      const mark = row.find('.account-item-icon, .account-list-emoji')
       expect(mark.exists(), `no icon on: ${row.text()}`).toBe(true)
     }
 
@@ -232,7 +232,7 @@ describe('AccountActionModal row icons', () => {
   // The row used to empty to a bare spinner, which said something was happening
   // but not what. Only the mark is replaced now.
   it('keeps sign out named while it is signing out', () => {
-    const wrapper = mountAccount({ householdName: 'Home', loadingSignOut: true })
+    const wrapper = mountAccount({ listName: 'Home', loadingSignOut: true })
 
     const row = wrapper.find('.account-menu-item--danger')
     expect(row.text()).toContain('Signing out')
@@ -248,7 +248,7 @@ describe('AccountActionModal row icons', () => {
 describe('AppNavBar sign out', () => {
   it('detaches the account from error reporting', async () => {
     const wrapper = mountBar({
-      householdName: 'Home',
+      listName: 'Home',
       memberProfiles: profiles,
       currentUserId: 'u_self',
     })

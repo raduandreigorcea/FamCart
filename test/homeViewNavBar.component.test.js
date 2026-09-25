@@ -28,8 +28,8 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: (...args) => mocks.routerReplace(...args) }),
 }))
 
-vi.mock('../src/lib/householdRealtime', () => ({
-  useHouseholdRealtime: () => ({
+vi.mock('../src/lib/listRealtime', () => ({
+  useListRealtime: () => ({
     realtimeHealthy: { value: false },
     setupRealtimeSubscriptions: async () => {},
     cleanupRealtimeSubscriptions: () => {},
@@ -53,16 +53,16 @@ const mountedWrappers = []
 async function mountHome() {
   mocks.db = createFakeDb()
   mocks.routerReplace = vi.fn()
-  mocks.db.handlers['household_members.select'] = (q) =>
+  mocks.db.handlers['list_members.select'] = (q) =>
     q.filters.user_id
-      ? { data: [{ household_id: 'fam-1', households: { id: 'fam-1', name: 'Fam' } }], error: null }
+      ? { data: [{ list_id: 'fam-1', lists: { id: 'fam-1', name: 'Fam' } }], error: null }
       : {
           data: [
             { user_id: 'user-1', display_name: 'Test User', image_url: null, role: 'moderator' },
           ],
           error: null,
         }
-  mocks.db.handlers['households.select'] = () => ({
+  mocks.db.handlers['lists.select'] = () => ({
     data: {
       name: 'Fam',
       invite_code: 'ABCDEFGH',
@@ -97,7 +97,7 @@ afterEach(() => {
 })
 
 describe('HomeView, its header and its composer', () => {
-  // The bar shell, not the header one. HouseholdSetupView renders the same
+  // The bar shell, not the header one. ListSetupView renders the same
   // component with the default and must not get a bar; this is the other half
   // of that contract.
   it('asks for the bar shell, not the header', async () => {
@@ -138,12 +138,12 @@ describe('HomeView, its header and its composer', () => {
   })
 
   // The emoji is what the bar's first slot draws, and it identifies WHICH
-  // household. It reaches the bar as a prop, so a rename on either side is
+  // list. It reaches the bar as a prop, so a rename on either side is
   // silent without this.
-  it('hands the bar the household it is about', async () => {
+  it('hands the bar the list it is about', async () => {
     const wrapper = await mountHome()
 
-    expect(bar(wrapper).props('householdName')).toBe('Fam')
-    expect(bar(wrapper).props('householdEmoji')).toBe('\u{1F3E1}')
+    expect(bar(wrapper).props('listName')).toBe('Fam')
+    expect(bar(wrapper).props('listEmoji')).toBe('\u{1F3E1}')
   })
 })

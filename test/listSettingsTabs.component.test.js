@@ -12,7 +12,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import HouseholdSettingsModal from '../src/components/HouseholdSettingsModal.vue'
+import ListSettingsModal from '../src/components/ListSettingsModal.vue'
 
 const currentUserId = vi.hoisted(() => ({ value: 'u_owner' }))
 
@@ -25,11 +25,11 @@ vi.mock('../src/supabase', () => ({
 const wrappers = []
 
 function mountSettings(props = {}) {
-  const w = mount(HouseholdSettingsModal, {
+  const w = mount(ListSettingsModal, {
     props: {
       open: true,
-      householdId: 'fam_1',
-      householdName: 'Gorcea',
+      listId: 'fam_1',
+      listName: 'Gorcea',
       inviteCode: 'ABCD2345',
       ownerUserId: 'u_owner',
       memberProfiles: [
@@ -95,10 +95,10 @@ describe('the settings sidebar is a real tablist', () => {
 })
 
 describe('which tabs a viewer gets', () => {
-  // Every tab here changes something about THIS household. About used to sit at
+  // Every tab here changes something about THIS list. About used to sit at
   // the end and changed nothing; it describes the app, so it moved to
   // AppSettingsModal (see test/dataAttribution.component.test.js).
-  it('gives an owner every household tab, and nothing about the app', () => {
+  it('gives an owner every list tab, and nothing about the app', () => {
     const labels = tabLabels(mountSettings())
     expect(labels).toEqual(['Overview', 'Preferences', 'Members', 'Danger Zone'])
   })

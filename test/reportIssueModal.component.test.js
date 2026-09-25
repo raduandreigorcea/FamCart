@@ -112,14 +112,14 @@ describe('sending', () => {
   })
 
   it('sends the place and the diagnostics the app read for itself', async () => {
-    const wrapper = mountReport({ householdId: 'h1' })
+    const wrapper = mountReport({ listId: 'h1' })
     await fillBug(wrapper)
     await sendBtn(wrapper).trigger('click')
 
     const report = send.mock.calls[0][0]
     expect(report.kind).toBe('bug')
     expect(report.surface).toBe('list')
-    expect(report.diagnostics.householdId).toBe('h1')
+    expect(report.diagnostics.listId).toBe('h1')
     expect(report.diagnostics.version).toBeTruthy()
   })
 
@@ -206,7 +206,7 @@ describe('sending', () => {
 describe('what it tells you it is sending', () => {
   // Nothing travels that the reporter was not shown first.
   it('lists the attached facts in plain words', () => {
-    const wrapper = mountReport({ householdId: 'h1' })
+    const wrapper = mountReport({ listId: 'h1' })
 
     const attached = wrapper.find('.report-attached').text()
     expect(attached).toContain('FamCart')

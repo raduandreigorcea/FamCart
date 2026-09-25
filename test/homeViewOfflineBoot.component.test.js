@@ -13,7 +13,7 @@ import ShoppingList from '../src/components/ShoppingList.vue'
 import AppSplash from '../src/components/AppSplash.vue'
 import ErrorModal from '../src/components/ErrorModal.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
-import { saveHouseholdSnapshot } from '../src/lib/householdCache'
+import { saveListSnapshot } from '../src/lib/listCache'
 import { rememberUser } from '../src/lib/session'
 import { __setOnlineForTest } from '../src/lib/connectivity'
 
@@ -26,8 +26,8 @@ vi.mock('../src/supabase', () => ({
 vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: (...a) => mocks.routerReplace(...a) }),
 }))
-vi.mock('../src/lib/householdRealtime', () => ({
-  useHouseholdRealtime: () => ({
+vi.mock('../src/lib/listRealtime', () => ({
+  useListRealtime: () => ({
     realtimeHealthy: { value: false },
     setupRealtimeSubscriptions: async () => {},
     cleanupRealtimeSubscriptions: () => {},
@@ -65,15 +65,15 @@ afterEach(() => {
 describe('offline boot with a cached session', () => {
   it('renders the cached list without redirecting to login or showing an error', async () => {
     rememberUser(localStorage, 'user-1')
-    saveHouseholdSnapshot(localStorage, 'user-1', {
-      householdId: 'fam-1',
-      householdName: 'Fam',
-      householdInviteCode: 'ABCDEFGH',
-      householdOwnerId: 'user-1',
-      householdItemLimit: 50,
-      householdMembers: [{ user_id: 'user-1', display_name: 'Me', image_url: null, role: 'moderator' }],
+    saveListSnapshot(localStorage, 'user-1', {
+      listId: 'fam-1',
+      listName: 'Fam',
+      listInviteCode: 'ABCDEFGH',
+      listOwnerId: 'user-1',
+      listItemLimit: 50,
+      listMembers: [{ user_id: 'user-1', display_name: 'Me', image_url: null, role: 'moderator' }],
       items: [
-        { id: 'c1', household_id: 'fam-1', name: 'Milk', quantity: 1, checked: false, added_by: 'user-1', created_at: '2026-01-01T00:00:00.000Z' },
+        { id: 'c1', list_id: 'fam-1', name: 'Milk', quantity: 1, checked: false, added_by: 'user-1', created_at: '2026-01-01T00:00:00.000Z' },
       ],
     })
     __setOnlineForTest(false)
@@ -96,8 +96,8 @@ describe('offline boot with a cached session', () => {
     await flushPromises()
 
     // Nothing to show and nothing to redirect to offline. Not an empty list
-    // either: a list-shaped screen with no household behind it is the thing
-    // householdUnknown exists to stop. The splash stays up and reconciles once
+    // either: a list-shaped screen with no list behind it is the thing
+    // listUnknown exists to stop. The splash stays up and reconciles once
     // back online.
     expect(wrapper.findComponent(ShoppingList).exists()).toBe(false)
     expect(wrapper.findComponent(AppSplash).exists()).toBe(true)

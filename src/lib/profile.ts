@@ -9,7 +9,7 @@ import { deriveProfileFields, type UserLike } from './userIdentity'
 // skips a write that would change nothing. Exported, this was the way to make
 // the unconditional write by accident.
 //
-// It used to say it was also called on the create-household path, "the FK target
+// It used to say it was also called on the create-list path, "the FK target
 // must exist before the membership insert". That is still true of the row and no
 // longer true of this function: both setup paths hand the fields to an RPC that
 // upserts the profile and inserts the membership in one server-side step, so
@@ -36,7 +36,7 @@ const PROFILE_REWRITE_MS = 24 * 60 * 60 * 1000
 const writtenKey = (userId: string) => `famcart.profileWritten.${userId}`
 
 // The boot-time refresh. Every write counts against the profile_write rate
-// limit (003_households_and_members.sql), and writing an unchanged name on
+// limit (003_lists_and_members.sql), and writing an unchanged name on
 // every app open, tab and reload filled that counter for nothing -- 14 hits in
 // an hour for one person just using the app. So this writes only when the name
 // or photo differs from the last successful write on this device, or a day has

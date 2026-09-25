@@ -1,23 +1,23 @@
 import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
-  buildHouseholdProductStats,
-  matchHouseholdStats,
+  buildListProductStats,
+  matchListStats,
   productKey,
   rankSuggestions,
-  type HouseholdProductStat,
+  type ListProductStat,
   type ProductSuggestion,
 } from './productSearch'
 import { barcodeCandidates } from './barcodeScanner'
 import { getCatalogSupabase } from '../supabase'
 import type { AddedProduct } from './shoppingListActions'
-import { topHouseholdProducts } from './productRecents'
+import { topListProducts } from './productRecents'
 import { fetchShopList } from './shopBadges'
 import type { Market } from './region'
-import type { ShoppingItemRow } from './householdRealtime'
+import type { ShoppingItemRow } from './listRealtime'
 
 // Everything behind the add form's search box: what the catalog is asked, what
-// this household's history does to the order, and what the screen offers before
+// this list's history does to the order, and what the screen offers before
 // anything is typed.
 //
 // The catalog is the only SOURCE of suggestions; history only decides their
@@ -27,7 +27,7 @@ import type { ShoppingItemRow } from './householdRealtime'
 //
 // Extracted from HomeView, where it sat among six other concerns. It brings the
 // purchase-history fold with it, because the same numbers rank the suggestions
-// and answer "has this household ever shopped" for the empty list.
+// and answer "has this list ever shopped" for the empty list.
 
 export interface ProductSuggestions {
   suggestions: Ref<ProductSuggestion[]>
@@ -46,7 +46,7 @@ export interface ProductSuggestions {
    *
    * Read here, written through setSearchShop -- never assigned directly. A
    * watcher would have to tell a tap apart from the reset that clears this on a
-   * household switch, and Vue's watchers are queued rather than synchronous, so
+   * list switch, and Vue's watchers are queued rather than synchronous, so
    * the flag saying which it was is already stale by the time one runs.
    */
   searchShop: Ref<string | null>
@@ -60,25 +60,25 @@ export interface ProductSuggestions {
   /** The shops it may be set to. Empty hides the control. */
   shopOptions: Ref<string[]>
   canAddCustomProduct: Ref<boolean>
-  /** This household's purchase habits: the ranking signal, and the empty state's answer. */
-  householdProductStats: Ref<Map<string, HouseholdProductStat>>
+  /** This list's purchase habits: the ranking signal, and the empty state's answer. */
+  listProductStats: Ref<Map<string, ListProductStat>>
   /** Whether the fold has run. An empty map means "none" only once it has. */
   productStatsLoaded: Ref<boolean>
-  loadHouseholdProductStats: () => Promise<void>
+  loadListProductStats: () => Promise<void>
   /**
-   * Forget everything scoped to the household being left, before the next one
+   * Forget everything scoped to the list being left, before the next one
    * loads.
    *
    * Owned here rather than done by the caller. HomeView used to clear
-   * householdProductStats and productStatsLoaded itself on a switch, which meant
+   * listProductStats and productStatsLoaded itself on a switch, which meant
    * this composable's reset rule lived at a call site that could not see the
    * rest of its state — and did not: recentsExcluded, a picked product and the
-   * last-added confirmation all belonged to the previous household and all
+   * last-added confirmation all belonged to the previous list and all
    * survived the switch. The second of those had already caused a visible bug
-   * once (an empty list in a new household reading "All bought"), which is the
+   * once (an empty list in a new list reading "All bought"), which is the
    * kind that comes back every time state is added here and not there.
    */
-  resetForHousehold: () => void
+  resetForList: () => void
   /** The regulars, for the search screen before anything is typed. */
   recentProducts: Ref<ProductSuggestion[]>
   /** The same list, shorter, for the empty list's one-tap adds. */
@@ -105,7 +105,7 @@ const SUGGEST_LIMIT = 6
 // costs nothing but stops throwing ranked matches away.
 const SUGGEST_LIMIT_EXPANDED = 12
 // Wide enough that a common two-character prefix does not fill the pool with
-// globally-popular strangers before this household's own products get a look in.
+// globally-popular strangers before this list's own products get a look in.
 // The trigram index does the filtering either way, so the cost is the sort and
 // the payload, not the match.
 const SUGGEST_POOL = 100
@@ -114,7 +114,7 @@ const RESTART_LIMIT = 6
 
 export function useProductSuggestions(options: {
   db: SupabaseClient
-  householdId: Ref<string | null>
+  listId: Ref<string | null>
   items: Ref<ShoppingItemRow[]>
   /** What is currently typed into the add form. */
   query: Ref<string>
@@ -138,19 +138,19 @@ export function useProductSuggestions(options: {
    */
   locale: () => string
 }): ProductSuggestions {
-  const { db, householdId, items, query, isOffline, region, locale } = options
+  const { db, listId, items, query, isOffline, region, locale } = options
 
   const suggestions = ref<ProductSuggestion[]>([])
   const suggestionsLoading = ref(false)
   // Why the matches on screen may be incomplete: 'offline' (only this
-  // household's own history was searched) or 'degraded' (a source errored).
+  // list's own history was searched) or 'degraded' (a source errored).
   // Null when the answer is the whole answer.
   const searchNote = ref<'offline' | 'degraded' | null>(null)
   const searchShop = ref<string | null>(null)
   const shopOptions = ref<string[]>([])
   // Set on the way out, and checked by every async path that resolves into a
   // ref. The search and the stats fetch each have a sharper guard of their own
-  // (a request id, a pinned household id) because they also have to reject a
+  // (a request id, a pinned list id) because they also have to reject a
   // STALE answer, not merely a late one; this only has to know the view is gone.
   let disposed = false
   // Best-effort and unawaited: three rows from the catalog, and an empty answer
@@ -163,7 +163,7 @@ export function useProductSuggestions(options: {
   })
   const selectedProduct = ref<ProductSuggestion | null>(null)
   const searchExpanded = ref(false)
-  const householdProductStats = ref<Map<string, HouseholdProductStat>>(new Map())
+  const listProductStats = ref<Map<string, ListProductStat>>(new Map())
   const productStatsLoaded = ref(false)
   const lastAdded = ref<{ name: string; maker: string | null } | null>(null)
 
@@ -188,7 +188,7 @@ export function useProductSuggestions(options: {
   // What the search screen opens on before anything is typed, and what the empty
   // list offers as one-tap adds. Groceries are mostly repeats, so the most useful
   // thing either space can hold is the shortcut past typing altogether.
-  // householdProductStats is already loaded for ranking, so this costs no query.
+  // listProductStats is already loaded for ranking, so this costs no query.
   // What was already on the list when the search screen opened, frozen there.
   //
   // The exclusion itself is right -- something already on the list is not much of
@@ -212,7 +212,7 @@ export function useProductSuggestions(options: {
   })
 
   const recentProducts = computed(() =>
-    topHouseholdProducts(householdProductStats.value, {
+    topListProducts(listProductStats.value, {
       limit: RECENT_LIMIT,
       exclude: recentsExcluded.value,
     }),
@@ -223,7 +223,7 @@ export function useProductSuggestions(options: {
   // it has no screen of its own to hold still -- a chip whose product lands on the
   // list has done its job and the list is right there showing it.
   const restartProducts = computed(() =>
-    topHouseholdProducts(householdProductStats.value, {
+    topListProducts(listProductStats.value, {
       limit: RESTART_LIMIT,
       exclude: items.value.map((item) => productKey(item.name, item.maker as string | null)),
     }),
@@ -246,28 +246,28 @@ export function useProductSuggestions(options: {
     suggestions.value = []
   }
 
-  // See the note on the interface. Ordered as: what the next household has to
+  // See the note on the interface. Ordered as: what the next list has to
   // re-answer, then what the previous one had already answered.
-  function resetForHousehold(): void {
-    householdProductStats.value = new Map()
+  function resetForList(): void {
+    listProductStats.value = new Map()
     // Deliberately false rather than left alone: an empty map reads as "never
-    // shopped" until the refetch lands, which is what made a new household's
+    // shopped" until the refetch lands, which is what made a new list's
     // empty list flash "Nothing here yet" before turning into "All bought".
     productStatsLoaded.value = false
-    // Frozen from the previous household's list when its search screen opened.
+    // Frozen from the previous list when its search screen opened.
     recentsExcluded.value = []
     // All three describe the catalog query, the pick and the add that belonged
-    // to the household being left. A stale one is not merely useless here, it is
+    // to the list being left. A stale one is not merely useless here, it is
     // about a different list.
     suggestions.value = []
     suggestionsLoading.value = false
     selectedProduct.value = null
     lastAdded.value = null
     // A narrowed search is a question about the list you were just looking at.
-    // Carrying it into another household would answer the first search there
+    // Carrying it into another list would answer the first search there
     // with a filter nobody set and no visible reason for the gaps.
     searchShop.value = null
-    // A response already on the wire must not land in the new household's
+    // A response already on the wire must not land in the new list's
     // dropdown; bumping the id is what makes fetchSuggestions discard it.
     suggestRequestId++
     if (suggestTimer) {
@@ -279,12 +279,12 @@ export function useProductSuggestions(options: {
   async function fetchSuggestions(text: string): Promise<void> {
     searchNote.value = null
     if (isOffline()) {
-      // No network is not no answer: what this household has bought before is
+      // No network is not no answer: what this list has bought before is
       // already on the device, and in a basement supermarket it is most of what
       // anyone types. The note says why the catalog is missing from it.
       suggestions.value = rankSuggestions(
-        matchHouseholdStats(text, householdProductStats.value, { limit: suggestLimit.value }),
-        householdProductStats.value,
+        matchListStats(text, listProductStats.value, { limit: suggestLimit.value }),
+        listProductStats.value,
         suggestLimit.value,
       )
       searchNote.value = 'offline'
@@ -296,7 +296,7 @@ export function useProductSuggestions(options: {
       // Two catalogs, asked at once.
       //
       // The global reference catalog is its own Supabase project, shared live by
-      // production and development; this household's contributed products and
+      // production and development; this list's contributed products and
       // anything promoted out of them stay in the app database. So a full answer
       // is the union of two searches, and they go out concurrently rather than
       // in sequence: the slower of the two is the wait, not their sum.
@@ -307,7 +307,7 @@ export function useProductSuggestions(options: {
       // reaches a product in a language it is not named in.
       //
       // allSettled, not all: a rejecting Promise.all would throw away the
-      // household's own products because a third project was slow. One source
+      // list's own products because a third project was slow. One source
       // failing must cost only that source.
       const catalogDb = getCatalogSupabase()
 
@@ -320,7 +320,7 @@ export function useProductSuggestions(options: {
       // listings, and Auchan Romania stocking something is a hard fact about
       // where you can buy it. Offering it to a phone in Germany is offering a
       // shop they cannot reach; they get nothing from the catalog and fall back
-      // to this household's own product_catalog, which is the right answer.
+      // to this list's own product_catalog, which is the right answer.
       //
       // LANGUAGE NO LONGER RANKS ANYTHING. Every product in the catalog is
       // Romanian, because every retailer in it is, so there is no second
@@ -334,13 +334,13 @@ export function useProductSuggestions(options: {
       const langs = locale()
 
       // Neither is sent to the app database, which has no markets or name_lang
-      // column and wants none. Its rows are this household's own contributions
+      // column and wants none. Its rows are this list's own contributions
       // plus the curated seed, and its search_catalog already sorts them above
       // popularity. There is nothing there that should ever be demoted for
-      // being foreign — the household typed it in themselves, in whatever
+      // being foreign — the list typed it in themselves, in whatever
       // language they typed it in.
       // THE SHOP FILTER SILENCES THE APP DATABASE, and that is the whole of why
-      // it is not simply another argument. This household's own product_catalog
+      // it is not simply another argument. This list's own product_catalog
       // has no retailers and never will -- its rows are things somebody typed
       // in. Asking it while the filter says "Lidl" would answer with products
       // that have nothing to do with Lidl, and they would be indistinguishable
@@ -370,25 +370,25 @@ export function useProductSuggestions(options: {
         return (res.data ?? []) as ProductSuggestion[]
       }
 
-      // The pool is capped and ordered globally, so a product this household buys
+      // The pool is capped and ordered globally, so a product this list buys
       // every week can be crowded out of it entirely by a catalog this large.
-      // householdProductStats is already loaded, so recovering those matches costs
+      // listProductStats is already loaded, so recovering those matches costs
       // no network — which is also why they can be on screen before either
       // database has answered.
       //
       // The history fold is silenced by the shop filter for the same reason the
-      // app database is: it is drawn from what this household has bought, which
+      // app database is: it is drawn from what this list has bought, which
       // says nothing at all about which shops carry it.
       const historyRows = shop
         ? []
-        : matchHouseholdStats(text, householdProductStats.value, { limit: suggestLimit.value })
+        : matchListStats(text, listProductStats.value, { limit: suggestLimit.value })
       let globalRows: ProductSuggestion[] = []
       let localRows: ProductSuggestion[] = []
 
       // EACH SOURCE LANDS ON ITS OWN. This used to await both, so every search
       // was as slow as the slower one, and the slower one is the catalog project:
       // a small instance that swaps, measured at 230-870ms of server time for a
-      // word nobody had searched yet, on top of the network. A household's own
+      // word nobody had searched yet, on top of the network. A list's own
       // rows had no reason to sit behind that.
       //
       // `done` is false while a source is still out. Until then an empty answer
@@ -406,7 +406,7 @@ export function useProductSuggestions(options: {
         suggestionOrigins.clear()
         for (const row of globalRows) suggestionOrigins.set(productKey(row.name, row.maker), 'catalog')
         // Local second, so a product in both is remembered as local: its row is
-        // the one carrying this household's own add_count, and the app database
+        // the one carrying this list's own add_count, and the app database
         // is where a promoted row keeps earning.
         for (const row of localRows) suggestionOrigins.set(productKey(row.name, row.maker), 'local')
 
@@ -415,7 +415,7 @@ export function useProductSuggestions(options: {
         // product — including over a duplicate of it promoted in the app
         // database. Which means a catalog answer arriving second can replace a
         // row already on screen with the same product under its own spelling.
-        suggestions.value = rankSuggestions(candidates, householdProductStats.value, suggestLimit.value)
+        suggestions.value = rankSuggestions(candidates, listProductStats.value, suggestLimit.value)
         suggestionsLoading.value = false
       }
 
@@ -441,7 +441,7 @@ export function useProductSuggestions(options: {
           ? { data: [], error: null }
           : db.rpc('search_catalog', {
               p_query: text,
-              p_household_id: householdId.value || null,
+              p_list_id: listId.value || null,
               p_limit: SUGGEST_POOL,
             }),
       ).then((res) => {
@@ -478,11 +478,11 @@ export function useProductSuggestions(options: {
   // A barcode is an exact key, so this is the one lookup that does not go near
   // search_text, ranking, or the debounce: there is nothing to rank and nothing
   // to guess at. Scoped the same way fetchSuggestions is — the global catalog
-  // plus this household's own contributions — which is what lets a product this
-  // household named after a miss be found by the next scan.
+  // plus this list's own contributions — which is what lets a product this
+  // list named after a miss be found by the next scan.
   //
   // Ordered so a global row wins over a scoped one carrying the same code. The
-  // global is the canonical spelling; the scoped row is what this household
+  // global is the canonical spelling; the scoped row is what this list
   // called it before the catalog caught up.
   //
   // "Exact key" is doing less work than it looks. buildLoadPlan merges products
@@ -496,9 +496,9 @@ export function useProductSuggestions(options: {
     try {
       const catalogDb = getCatalogSupabase()
       // Both projects, at once, for the same reason the search asks both: the
-      // code may name an imported product or one this household named after a
+      // code may name an imported product or one this list named after a
       // scan that missed. allSettled so an unreachable catalog project still
-      // lets the household's own row answer.
+      // lets the list's own row answer.
       const [globalRes, localRes] = await Promise.allSettled([
         // An RPC on the reference catalog, where the app database below is
         // still a plain select, and the asymmetry is real rather than untidy.
@@ -520,19 +520,19 @@ export function useProductSuggestions(options: {
               })
             })()
           : Promise.resolve({ data: [], error: null }),
-        (householdId.value
+        (listId.value
           ? db
               .from('product_catalog')
               .select('name, maker, popularity')
               .in('barcode', candidates)
-              .or(`household_id.is.null,household_id.eq.${householdId.value}`)
+              .or(`list_id.is.null,list_id.eq.${listId.value}`)
           : db
               .from('product_catalog')
               .select('name, maker, popularity')
               .in('barcode', candidates)
-              .is('household_id', null)
+              .is('list_id', null)
         )
-          .order('household_id', { ascending: true, nullsFirst: true })
+          .order('list_id', { ascending: true, nullsFirst: true })
           .order('popularity', { ascending: false })
           .limit(1),
       ])
@@ -544,10 +544,10 @@ export function useProductSuggestions(options: {
           ? (((settled.value.data ?? []) as ProductSuggestion[])[0] ?? null)
           : null
 
-      // The imported row wins over a household's own, which is the same rule the
+      // The imported row wins over a list's own, which is the same rule the
       // single-database version applied when it ordered globals first: the
       // catalog holds the canonical spelling, the scoped row holds what this
-      // household called it before the catalog caught up.
+      // list called it before the catalog caught up.
       const global = firstOf(globalRes)
       const local = firstOf(localRes)
       const found = global ?? local
@@ -620,7 +620,7 @@ export function useProductSuggestions(options: {
   // exists for typing.
   //
   // A function rather than a watcher on searchShop, which is what this was
-  // first. resetForHousehold also clears the filter, and that is not somebody
+  // first. resetForList also clears the filter, and that is not somebody
   // asking the question again -- there is a new list loading and nothing to
   // answer yet -- so a watcher would have needed a flag to tell the two apart.
   // Vue queues watchers rather than running them synchronously, so the flag was
@@ -632,17 +632,17 @@ export function useProductSuggestions(options: {
     startSearch(query.value.trim(), { debounce: false })
   }
 
-  // Fold this household's recent purchases into the ranking signal. Best-effort: on
+  // Fold this list's recent purchases into the ranking signal. Best-effort: on
   // failure suggestions just fall back to the global catalog order. Retention
   // (005_purchase_history.sql) already caps history at 60 checkouts / 30 days, so this is a
   // small, naturally-recent window and can be fetched whole.
-  async function loadHouseholdProductStats(): Promise<void> {
-    // Pinned before the await: this fetch can span a household switch, and a
-    // response is only an answer for the household it was asked about. The
+  async function loadListProductStats(): Promise<void> {
+    // Pinned before the await: this fetch can span a list switch, and a
+    // response is only an answer for the list it was asked about. The
     // suggestions fetch guards the same race with suggestRequestId; here the
     // id itself is the request's identity.
-    const requestedHouseholdId = householdId.value
-    if (!requestedHouseholdId || isOffline()) {
+    const requestedListId = listId.value
+    if (!requestedListId || isOffline()) {
       // Nothing is coming, so stop the empty list waiting on an answer it will
       // never get.
       productStatsLoaded.value = true
@@ -652,35 +652,35 @@ export function useProductSuggestions(options: {
       const { data, error } = await db
         .from('purchase_history')
         .select('name, maker, purchased_at')
-        .eq('household_id', requestedHouseholdId)
-      // Stale: the household changed while this was in flight. Its rows would
-      // become the new household's ranking signal — and its `finally` below
-      // would claim the new household's still-pending answer has arrived,
+        .eq('list_id', requestedListId)
+      // Stale: the list changed while this was in flight. Its rows would
+      // become the new list's ranking signal — and its `finally` below
+      // would claim the new list's still-pending answer has arrived,
       // which is what turns a fresh empty list into a false "All bought".
-      if (householdId.value !== requestedHouseholdId) return
+      if (listId.value !== requestedListId) return
       if (error) return
-      householdProductStats.value = buildHouseholdProductStats(data ?? [])
+      listProductStats.value = buildListProductStats(data ?? [])
     } catch {
       // No stats just means suggestions rank globally, which is the old behaviour.
     } finally {
-      // Every path resolves the question, including the failures above: a household
-      // whose history we could not read is not a household that never shopped, but
-      // it is one we cannot hold a blank screen for. Only for the household that
+      // Every path resolves the question, including the failures above: a list
+      // whose history we could not read is not a list that never shopped, but
+      // it is one we cannot hold a blank screen for. Only for the list that
       // asked, though — a stale response answers nothing.
-      if (householdId.value === requestedHouseholdId) productStatsLoaded.value = true
+      if (listId.value === requestedListId) productStatsLoaded.value = true
     }
   }
 
   // A catalog product just gets its popularity bumped. A custom one is
-  // contributed to the catalog scoped to this household — suggested back to them
+  // contributed to the catalog scoped to this list — suggested back to them
   // straight away, and promoted to a global suggestion only once enough other
-  // households have added the same product (006_product_catalog.sql), so one household's
+  // lists have added the same product (006_product_catalog.sql), so one list's
   // spelling cannot leak into everyone else's dropdown.
   //
   // A custom product named after a scan carries its barcode into that
   // contribution, which is what closes the scanning loop: the code missed once,
   // was named once, and every later scan of the same package — by anyone in the
-  // household — finds it. The server validates the format and ignores anything
+  // list — finds it. The server validates the format and ignores anything
   // that is not a barcode, so nothing here has to.
   //
   // Best-effort either way: fire-and-forget, never blocks or errors the add, and
@@ -697,13 +697,13 @@ export function useProductSuggestions(options: {
     }
 
     // A contribution is user data and always belongs to the app database. The
-    // catalog project has no household column to scope it by, and the promotion
-    // rule that eventually turns three households' contributions into one global
+    // catalog project has no list column to scope it by, and the promotion
+    // rule that eventually turns three lists' contributions into one global
     // row runs there too.
     if (product.custom) {
       ignore(
         db.rpc('add_custom_product', {
-          p_household_id: householdId.value,
+          p_list_id: listId.value,
           p_name: product.name,
           p_maker: product.maker ?? null,
           p_barcode: product.barcode ?? null,
@@ -714,14 +714,14 @@ export function useProductSuggestions(options: {
 
     // A bump has to reach the database holding the row, and the two projects
     // each carry a copy of this RPC with a different signature — the app's takes
-    // a household to scope by, the catalog's has nothing to scope.
+    // a list to scope by, the catalog's has nothing to scope.
     //
     // An unknown origin means the product came from purchase history rather than
     // from either search, and history does not record where a product was found.
     // Both are asked in that case: each is a no-op where the row is not, they
     // are fire-and-forget already, and the rate limits are counted per project
     // so one add can never spend two of anything. Guessing instead would quietly
-    // stop counting exactly the products this household buys most.
+    // stop counting exactly the products this list buys most.
     const origin = suggestionOrigins.get(productKey(product.name, product.maker))
     const catalogDb = getCatalogSupabase()
 
@@ -738,7 +738,7 @@ export function useProductSuggestions(options: {
         db.rpc('bump_product_popularity', {
           p_name: product.name,
           p_maker: product.maker ?? null,
-          p_household_id: householdId.value,
+          p_list_id: listId.value,
         }),
       )
     }
@@ -752,8 +752,8 @@ export function useProductSuggestions(options: {
     // started; a search in flight still resolves and still writes into a ref
     // nobody is rendering. Every guard in this file is
     // `requestId !== suggestRequestId`, so moving the id past all of them
-    // closes them at once — the same mechanism resetForHousehold uses for a
-    // household switch.
+    // closes them at once — the same mechanism resetForList uses for a
+    // list switch.
     suggestRequestId++
   })
 
@@ -764,13 +764,13 @@ export function useProductSuggestions(options: {
     selectedProduct,
     searchExpanded,
     canAddCustomProduct,
-    householdProductStats,
+    listProductStats,
     productStatsLoaded,
-    loadHouseholdProductStats,
+    loadListProductStats,
     searchShop,
     setSearchShop,
     shopOptions,
-    resetForHousehold,
+    resetForList,
     recentProducts,
     restartProducts,
     lookupBarcode,

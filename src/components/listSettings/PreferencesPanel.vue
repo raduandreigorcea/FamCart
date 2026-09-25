@@ -2,10 +2,10 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useSupabase } from '../../supabase'
 import { userMessage } from '../../lib/errorMessages'
-import { DEFAULT_HOUSEHOLD_EMOJI, HOUSEHOLD_EMOJIS } from '../../lib/householdEmoji'
+import { DEFAULT_LIST_EMOJI, LIST_EMOJIS } from '../../lib/listEmoji'
 import {
   clampItemLimit,
-  HOUSEHOLD_NAME_MAX_LENGTH,
+  LIST_NAME_MAX_LENGTH,
   ITEM_LIMIT_DEFAULT,
   ITEM_LIMIT_MAX,
   ITEM_LIMIT_MIN,
@@ -13,24 +13,24 @@ import {
 import { t } from '../../lib/i18n'
 import AppIcon from '../AppIcon.vue'
 
-// The three settings an owner can change: the household's name, its emoji, and how
+// The three settings an owner can change: the list's name, its emoji, and how
 // many active items each member may hold. Each is edited locally and committed
 // by its own Save button, so a half-typed name is never written.
 //
 // The item limit is the one a moderator can also change, which is why it sits
 // outside the isOwner sections rather than in a panel of its own.
 const props = defineProps({
-  householdId: { type: String, default: '' },
-  householdName: { type: String, default: '' },
-  householdItemLimit: { type: Number, default: ITEM_LIMIT_DEFAULT },
-  householdEmoji: { type: String, default: '' },
+  listId: { type: String, default: '' },
+  listName: { type: String, default: '' },
+  listItemLimit: { type: Number, default: ITEM_LIMIT_DEFAULT },
+  listEmoji: { type: String, default: '' },
   isOwner: { type: Boolean, default: false },
 })
 
 // `error` carries the message up to the modal's single ErrorModal rather than
 // opening one per panel — one dialog, wherever the failure came from.
 const emit = defineEmits<{
-  (e: 'refresh-household'): void
+  (e: 'refresh-list'): void
   (e: 'error', message: string, title?: string): void
 }>()
 
@@ -40,7 +40,7 @@ const renameValue = ref('')
 const savingName = ref(false)
 const nameSaved = ref(false)
 const renameLength = computed(() => renameValue.value.length)
-const renameOverLimit = computed(() => renameLength.value > HOUSEHOLD_NAME_MAX_LENGTH)
+const renameOverLimit = computed(() => renameLength.value > LIST_NAME_MAX_LENGTH)
 
 const itemLimitValue = ref(ITEM_LIMIT_DEFAULT)
 const savingItemLimit = ref(false)
@@ -53,7 +53,7 @@ const emojiSaved = ref(false)
 // Re-seed the editable fields whenever the source values change — which
 // includes the moment this panel mounts, and a refresh landing underneath it.
 watch(
-  () => [props.householdName, props.householdItemLimit, props.householdEmoji] as const,
+  () => [props.listName, props.listItemLimit, props.listEmoji] as const,
   ([name, limit, emoji]) => {
     renameValue.value = name || ''
     itemLimitValue.value = clampItemLimit(limit)
@@ -80,35 +80,35 @@ onBeforeUnmount(() => {
   savedTimers.clear()
 })
 
-async function renameHousehold() {
+async function renameList() {
   if (!props.isOwner) return
   const nextName = renameValue.value.trim()
-  if (!props.householdId || savingName.value) return
+  if (!props.listId || savingName.value) return
   // An empty field is a mistake, not an instruction, and it used to be answered
   // with nothing at all: Save sent no write, raised no dialog, and left the
   // button looking as though it had worked. It is refused the same way the
   // ceiling below it is, because both are the same thing to whoever pressed the
-  // button -- a name this household cannot have.
+  // button -- a name this list cannot have.
   if (!nextName) {
-    emit('error', t('error.householdNameRequired'), t('error.nameRequiredTitle'))
+    emit('error', t('error.listNameRequired'), t('error.nameRequiredTitle'))
     return
   }
   if (renameOverLimit.value) {
     emit(
       'error',
-      t('error.householdNameTooLong', { max: HOUSEHOLD_NAME_MAX_LENGTH }),
+      t('error.listNameTooLong', { max: LIST_NAME_MAX_LENGTH }),
       t('error.nameTooLongTitle'),
     )
     return
   }
   savingName.value = true
   try {
-    const { error } = await db.from('households').update({ name: nextName }).eq('id', props.householdId)
+    const { error } = await db.from('lists').update({ name: nextName }).eq('id', props.listId)
     if (error) {
-      emit('error', userMessage(error, t('error.renameHouseholdFailed')))
+      emit('error', userMessage(error, t('error.renameListFailed')))
       return
     }
-    emit('refresh-household')
+    emit('refresh-list')
     flashSaved(nameSaved)
   } finally {
     savingName.value = false
@@ -116,18 +116,18 @@ async function renameHousehold() {
 }
 
 async function saveEmoji() {
-  if (!props.isOwner || !props.householdId || savingEmoji.value) return
+  if (!props.isOwner || !props.listId || savingEmoji.value) return
   savingEmoji.value = true
   try {
     const { error } = await db
-      .from('households')
+      .from('lists')
       .update({ emoji: emojiValue.value || null })
-      .eq('id', props.householdId)
+      .eq('id', props.listId)
     if (error) {
       emit('error', userMessage(error, t('error.saveEmojiFailed')))
       return
     }
-    emit('refresh-household')
+    emit('refresh-list')
     flashSaved(emojiSaved)
   } finally {
     savingEmoji.value = false
@@ -142,7 +142,7 @@ function pickEmoji(emoji: string) {
 }
 
 async function saveItemLimit() {
-  if (!props.householdId || savingItemLimit.value) return
+  if (!props.listId || savingItemLimit.value) return
 
   const normalizedLimit = clampItemLimit(itemLimitValue.value)
   itemLimitValue.value = normalizedLimit
@@ -150,14 +150,14 @@ async function saveItemLimit() {
   savingItemLimit.value = true
   try {
     const { error } = await db
-      .from('households')
+      .from('lists')
       .update({ max_items_per_member: normalizedLimit })
-      .eq('id', props.householdId)
+      .eq('id', props.listId)
     if (error) {
       emit('error', userMessage(error, t('error.saveLimitFailed')))
       return
     }
-    emit('refresh-household')
+    emit('refresh-list')
     flashSaved(itemLimitSaved)
   } finally {
     savingItemLimit.value = false
@@ -184,7 +184,7 @@ async function saveItemLimit() {
             <div class="input-action-group">
               <div class="input-wrapper">
                 <input
-                  id="householdNameInput"
+                  id="listNameInput"
                   :aria-label="t('prefs.nameTitle')"
                   v-model="renameValue"
                   class="panel-input"
@@ -197,7 +197,7 @@ async function saveItemLimit() {
                   class="panel-save-btn"
                   type="button"
                   :disabled="savingName"
-                  @click="renameHousehold"
+                  @click="renameList"
                 >
                   <span v-if="savingName" class="btn-spinner"></span>
                   <span v-else-if="nameSaved" class="success-state animate-pop">
@@ -207,7 +207,7 @@ async function saveItemLimit() {
                   <span v-else>{{ t('common.save') }}</span>
                 </button>
                 <p class="panel-counter panel-counter--under-save" :class="{ 'panel-counter--danger': renameOverLimit }">
-                  {{ renameLength }}/{{ HOUSEHOLD_NAME_MAX_LENGTH }}
+                  {{ renameLength }}/{{ LIST_NAME_MAX_LENGTH }}
                 </p>
               </div>
             </div>
@@ -224,12 +224,12 @@ async function saveItemLimit() {
             <span
               class="pref-card__value pref-card__value--emoji"
               :class="{ 'pref-card__value--emoji-default': !emojiValue }"
-            >{{ emojiValue || DEFAULT_HOUSEHOLD_EMOJI }}</span>
+            >{{ emojiValue || DEFAULT_LIST_EMOJI }}</span>
           </div>
 
           <div class="emoji-picker">
             <button
-              v-for="e in HOUSEHOLD_EMOJIS"
+              v-for="e in LIST_EMOJIS"
               :key="e"
               type="button"
               class="emoji-option"

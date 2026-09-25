@@ -9,7 +9,7 @@ import { t } from '../lib/i18n'
 // as a bottom sheet on a phone. Owns the teleport, the overlay, the transition,
 // dismissal, and where the panel lands. Knows nothing about what is in it.
 //
-// Extracted from the household switcher and the list filter, which had grown the
+// Extracted from the list switcher and the list filter, which had grown the
 // same twenty lines each. Both are callers again -- the switcher was removed for
 // a while and came back as the bottom bar's fourth slot -- and what lives here
 // is the sheet/popover behaviour, not anything about filtering or switching. The
@@ -18,7 +18,7 @@ import { t } from '../lib/i18n'
 // approximating them.
 //
 // Teleported to <body> because both callers sit inside a container that clips
-// or stacks: the topbar has overflow:hidden to ellipsize the household name, and
+// or stacks: the topbar has overflow:hidden to ellipsize the list name, and
 // the list header sits under the add form's dropdown.
 const open = defineModel({ type: Boolean, default: false })
 
@@ -90,8 +90,8 @@ function measure() {
   // Below the trigger, or above it when there is more room that way.
   //
   // It only ever hung downwards before, and that was right for as long as every
-  // trigger was near the top of the screen -- the topbar's household name, and
-  // the list filter in the list header. The household switcher's is in the
+  // trigger was near the top of the screen -- the topbar's list name, and
+  // the list filter in the list header. The list switcher's is in the
   // bottom action bar, which is the visible shell right up to 900px, so between
   // the two breakpoints this placed the panel 8px below a button already sitting
   // on the bottom edge: the menu opened, entirely off screen, and nobody saw it.
@@ -230,7 +230,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 2px;
   padding: var(--space-2);
-  /* The scroll lives here rather than on the panel, so a long list of households
+  /* The scroll lives here rather than on the panel, so a long list of lists
      moves under a header that stays put. */
   overflow-y: auto;
 }
@@ -351,7 +351,7 @@ onBeforeUnmount(() => {
 }
 
 /* A quiet neutral fill, not a colour wash — the check is the only accent, so
-   anything coloured inside the row (a household's emoji) stays readable on it. */
+   anything coloured inside the row (a list's emoji) stays readable on it. */
 :slotted(.menu-item--active) {
   background: var(--bg-hover);
 }

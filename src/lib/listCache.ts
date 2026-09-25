@@ -1,29 +1,29 @@
-import type { HouseholdMemberProfile, ShoppingItemRow } from './householdRealtime'
+import type { ListMemberProfile, ShoppingItemRow } from './listRealtime'
 import { clearUserScopedKeys, userScopedKey } from './perUserStorage'
 
-// Last known household state, keyed to one user. Read on startup so a returning
+// Last known list state, keyed to one user. Read on startup so a returning
 // user sees their list instantly (stale-while-revalidate) instead of skeletons
 // while Clerk and the first Supabase fetches warm up; the fresh data then
 // overwrites it. The cache is an optimization only — every failure mode
 // degrades to "no snapshot".
 
-export interface HouseholdSnapshot {
-  householdId: string
-  householdName: string
-  householdInviteCode: string
-  householdOwnerId: string
-  householdItemLimit: number
-  householdEmoji: string
-  householdMembers: HouseholdMemberProfile[]
+export interface ListSnapshot {
+  listId: string
+  listName: string
+  listInviteCode: string
+  listOwnerId: string
+  listItemLimit: number
+  listEmoji: string
+  listMembers: ListMemberProfile[]
   items: ShoppingItemRow[]
-  // Whether this household has ever bought anything. Cached because it decides
+  // Whether this list has ever bought anything. Cached because it decides
   // between "All bought" and "Nothing here yet" on an empty list, and the
   // purchase history that answers it cannot be read offline — without this, a
-  // household that shops every week is told they have never started.
+  // list that shops every week is told they have never started.
   hasShopped: boolean
 }
 
-interface StoredSnapshot extends HouseholdSnapshot {
+interface StoredSnapshot extends ListSnapshot {
   version: number
   userId: string
   savedAt: number
@@ -57,7 +57,7 @@ function snapshotKey(userId: string): string {
 export const SNAPSHOT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
 // Everything else in a snapshot is display text that gets escaped on its way to
-// the DOM, and is overwritten by the first fetch anyway. The household id is
+// the DOM, and is overwritten by the first fetch anyway. The list id is
 // different: it is read back out as a QUERY parameter, and one of its uses
 // (lib/productSuggestions) interpolates it into a PostgREST `or` filter, whose
 // syntax is comma- and dot-separated. The comment there is right that the id is
@@ -66,7 +66,7 @@ export const SNAPSHOT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 // boundary the app controls.
 //
 // RLS is still what decides which rows anyone may see, so this is not the thing
-// standing between a tampered cache and another household's list. It is the
+// standing between a tampered cache and another list. It is the
 // cheap check that keeps a value that was never an id from being spliced into a
 // filter expression at all.
 //
@@ -78,17 +78,17 @@ export const SNAPSHOT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 // would additionally assert a storage format this module has no reason to
 // care about, and would break on any future id scheme without being any safer
 // against the thing it is actually guarding.
-const HOUSEHOLD_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
+const LIST_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
 
-function isHouseholdId(value: unknown): value is string {
-  return typeof value === 'string' && HOUSEHOLD_ID_PATTERN.test(value)
+function isListId(value: unknown): value is string {
+  return typeof value === 'string' && LIST_ID_PATTERN.test(value)
 }
 
-export function loadHouseholdSnapshot(
+export function loadListSnapshot(
   storage: Storage,
   userId: string,
   now: number = Date.now(),
-): HouseholdSnapshot | null {
+): ListSnapshot | null {
   try {
     const raw = storage.getItem(snapshotKey(userId))
     if (!raw) return null
@@ -97,17 +97,17 @@ export function loadHouseholdSnapshot(
     // Never show one account's list to another account on the same browser.
     if (stored.userId !== userId) return null
     if (now - stored.savedAt > SNAPSHOT_MAX_AGE_MS) return null
-    if (!isHouseholdId(stored.householdId) || !Array.isArray(stored.items) || !Array.isArray(stored.householdMembers)) {
+    if (!isListId(stored.listId) || !Array.isArray(stored.items) || !Array.isArray(stored.listMembers)) {
       return null
     }
     return {
-      householdId: stored.householdId,
-      householdName: stored.householdName ?? '',
-      householdInviteCode: stored.householdInviteCode ?? '',
-      householdOwnerId: stored.householdOwnerId ?? '',
-      householdItemLimit: typeof stored.householdItemLimit === 'number' ? stored.householdItemLimit : 50,
-      householdEmoji: stored.householdEmoji ?? '',
-      householdMembers: stored.householdMembers,
+      listId: stored.listId,
+      listName: stored.listName ?? '',
+      listInviteCode: stored.listInviteCode ?? '',
+      listOwnerId: stored.listOwnerId ?? '',
+      listItemLimit: typeof stored.listItemLimit === 'number' ? stored.listItemLimit : 50,
+      listEmoji: stored.listEmoji ?? '',
+      listMembers: stored.listMembers,
       items: stored.items,
       // Snapshots written before this field existed are still version 1, so
       // default rather than discard them: false is the pre-existing behaviour.
@@ -118,10 +118,10 @@ export function loadHouseholdSnapshot(
   }
 }
 
-export function saveHouseholdSnapshot(
+export function saveListSnapshot(
   storage: Storage,
   userId: string,
-  snapshot: HouseholdSnapshot,
+  snapshot: ListSnapshot,
   now: number = Date.now(),
 ): void {
   const stored: StoredSnapshot = { ...snapshot, version: VERSION, userId, savedAt: now }
@@ -136,13 +136,13 @@ export function saveHouseholdSnapshot(
 // whose snapshot this is — every account's is cleared, which is the safer end of
 // the trade on a shared browser. Same signature and same reasoning as
 // clearOfflineQueue, and now the same implementation.
-export function clearHouseholdSnapshot(storage: Storage, userId?: string): void {
+export function clearListSnapshot(storage: Storage, userId?: string): void {
   clearUserScopedKeys(storage, STORAGE_PREFIX, userId)
 }
 
-// Which of a user's households is currently active, so the choice survives
+// Which of a user's lists is currently active, so the choice survives
 // reloads. The stored id is only a hint: HomeView uses it only if it still
-// matches a live membership, otherwise it falls back to the first household.
+// matches a live membership, otherwise it falls back to the first list.
 //
 // ONE RECORD PER ACCOUNT, which this was the last of the four to become.
 //
@@ -154,44 +154,44 @@ export function clearHouseholdSnapshot(storage: Storage, userId?: string): void 
 // whichever account saved last, so B signing in destroyed A's outright.
 //
 // What that costs here is the mildest of the four by a distance: A lands on
-// their first household instead of the one they last picked. It is fixed anyway
+// their first list instead of the one they last picked. It is fixed anyway
 // because it is the same shape one severity down, and leaving the shape in place
 // is how it comes back somewhere it matters.
-const ACTIVE_HOUSEHOLD_PREFIX = 'famcart-active-household'
+const ACTIVE_LIST_PREFIX = 'famcart-active-household'
 
-function activeHouseholdKey(userId: string): string {
-  return userScopedKey(ACTIVE_HOUSEHOLD_PREFIX, userId)
+function activeListKey(userId: string): string {
+  return userScopedKey(ACTIVE_LIST_PREFIX, userId)
 }
 
-export function loadActiveHouseholdId(storage: Storage, userId: string): string | null {
+export function loadActiveListId(storage: Storage, userId: string): string | null {
   try {
-    const raw = storage.getItem(activeHouseholdKey(userId))
+    const raw = storage.getItem(activeListKey(userId))
     if (!raw) return null
-    const stored = JSON.parse(raw) as { userId?: string; householdId?: string }
+    const stored = JSON.parse(raw) as { userId?: string; listId?: string }
     if (stored.userId !== userId) return null
     // Same reasoning as the snapshot above. This one is checked against live
     // memberships before it is used, so it is the better-guarded of the two —
     // but both end up in the same place, and only one of them being validated
     // is how the unvalidated one gets forgotten.
-    const active = stored.householdId || null
-    return isHouseholdId(active) ? active : null
+    const active = stored.listId || null
+    return isListId(active) ? active : null
   } catch {
     return null
   }
 }
 
-export function saveActiveHouseholdId(storage: Storage, userId: string, householdId: string): void {
+export function saveActiveListId(storage: Storage, userId: string, listId: string): void {
   try {
-    storage.setItem(activeHouseholdKey(userId), JSON.stringify({ userId, householdId }))
+    storage.setItem(activeListKey(userId), JSON.stringify({ userId, listId }))
   } catch {
-    // Storage disabled — the active household just won't persist across reloads.
+    // Storage disabled — the active list just won't persist across reloads.
   }
 }
 
 // `userId` scopes it to one account. Without one — a sign-out from a screen that
 // does not know who is signed in — every account's choice on the device is
 // cleared, which is the safer end of the trade on a shared browser. Same
-// signature and same reasoning as clearHouseholdSnapshot and clearOfflineQueue.
-export function clearActiveHouseholdId(storage: Storage, userId?: string): void {
-  clearUserScopedKeys(storage, ACTIVE_HOUSEHOLD_PREFIX, userId)
+// signature and same reasoning as clearListSnapshot and clearOfflineQueue.
+export function clearActiveListId(storage: Storage, userId?: string): void {
+  clearUserScopedKeys(storage, ACTIVE_LIST_PREFIX, userId)
 }

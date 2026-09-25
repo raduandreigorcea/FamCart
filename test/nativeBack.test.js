@@ -71,7 +71,7 @@ describe('with something open in front', () => {
 
 describe('with nothing open', () => {
   it('goes back a screen from one you did not start on', () => {
-    const router = fakeRouter('household-setup')
+    const router = fakeRouter('list-setup')
     const exit = vi.fn()
 
     handleBackPress(router, true, exit)
@@ -83,7 +83,7 @@ describe('with nothing open', () => {
   // Deep-linked straight onto an inner screen there is no history, and back()
   // would sit there doing nothing.
   it('sends you home rather than nowhere when there is no history', () => {
-    const router = fakeRouter('household-setup')
+    const router = fakeRouter('list-setup')
 
     handleBackPress(router, false, vi.fn())
 

@@ -6,11 +6,11 @@ import {
   forgetLocalUserState,
 } from '../src/lib/session'
 import {
-  saveHouseholdSnapshot,
-  loadHouseholdSnapshot,
-  saveActiveHouseholdId,
-  loadActiveHouseholdId,
-} from '../src/lib/householdCache'
+  saveListSnapshot,
+  loadListSnapshot,
+  saveActiveListId,
+  loadActiveListId,
+} from '../src/lib/listCache'
 import { enqueueOfflineMutation, hasQueuedOfflineMutations } from '../src/lib/offlineQueue'
 import { makeStorage } from './support/fakeStorage'
 
@@ -47,25 +47,25 @@ describe('session', () => {
 
 // ─── what signing out drops ──────────────────────────────────────────────────
 // Sign-out used to spell this list out at the call site and got three of the
-// four: the active-household pointer was left behind. Harmless in itself (it is
+// four: the active-list pointer was left behind. Harmless in itself (it is
 // rejected on read by any other account) but the list only existed inside one
 // component, so the next key added would have been forgotten the same way.
 describe('forgetLocalUserState', () => {
   it('drops every key this device holds for the account', () => {
     const storage = makeStorage()
     rememberUser(storage, 'user-1')
-    saveHouseholdSnapshot(storage, 'user-1', {
-      householdId: 'fam-1',
-      householdName: 'Fam',
-      householdInviteCode: 'ABCDEFGH',
-      householdOwnerId: 'user-1',
-      householdItemLimit: 50,
-      householdEmoji: '🏠',
-      householdMembers: [],
+    saveListSnapshot(storage, 'user-1', {
+      listId: 'fam-1',
+      listName: 'Fam',
+      listInviteCode: 'ABCDEFGH',
+      listOwnerId: 'user-1',
+      listItemLimit: 50,
+      listEmoji: '🏠',
+      listMembers: [],
       items: [],
       hasShopped: false,
     })
-    saveActiveHouseholdId(storage, 'user-1', 'fam-1')
+    saveActiveListId(storage, 'user-1', 'fam-1')
     enqueueOfflineMutation(storage, 'user-1', { kind: 'delete', id: 'i1' })
     // Written raw rather than through saveCachedShops, which is a no-op off
     // nightly. The key is device-wide by design, so what has to be proved is
@@ -76,8 +76,8 @@ describe('forgetLocalUserState', () => {
     forgetLocalUserState(storage, 'user-1')
 
     expect(getRememberedUser(storage)).toBeNull()
-    expect(loadHouseholdSnapshot(storage, 'user-1')).toBeNull()
-    expect(loadActiveHouseholdId(storage, 'user-1')).toBeNull()
+    expect(loadListSnapshot(storage, 'user-1')).toBeNull()
+    expect(loadActiveListId(storage, 'user-1')).toBeNull()
     expect(hasQueuedOfflineMutations(storage, 'user-1')).toBe(false)
     expect(storage.getItem('famcart.shop-badges.v1')).toBeNull()
     // Nothing of this account left anywhere on the device.

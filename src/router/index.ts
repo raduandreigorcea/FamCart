@@ -2,7 +2,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { watch } from 'vue'
 import { useAuth } from '@clerk/vue'
 import { ensureOnlineStatus } from '../lib/connectivity'
-import { HOUSEHOLD_MEMBERSHIP_CAP } from '../lib/limits'
+import { LIST_MEMBERSHIP_CAP } from '../lib/limits'
 import { getSupabase, setSupabaseTokenResolver } from '../supabase'
 import { whenLocaleReady } from '../lib/i18n'
 
@@ -20,10 +20,16 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresGuest: true },
   },
   {
-    path: '/household-setup',
-    name: 'household-setup',
-    component: () => import('../views/HouseholdSetupView.vue'),
+    path: '/list-setup',
+    name: 'list-setup',
+    component: () => import('../views/ListSetupView.vue'),
     meta: { requiresAuth: true },
+  },
+  {
+    // A URL people may have open: kept as a redirect rather than folded into
+    // the catch-all below, unlike /family-setup before it.
+    path: '/household-setup',
+    redirect: '/list-setup',
   },
   {
     path: '/sso-callback',
@@ -79,7 +85,7 @@ function waitForClerkLoad(isClerkLoaded: () => boolean): Promise<void> {
   })
 }
 
-// How many households this user belongs to, capped at the membership limit — enough
+// How many lists this user belongs to, capped at the membership limit — enough
 // to answer both "brand-new user with none" and "already at the cap". On any error
 // we return 0 so the guard fails open: better to let a genuine new user reach setup
 // than to strand them, and a member who slips through only sees a page that can do
@@ -102,13 +108,13 @@ async function fetchMembershipCount(
     // `supabase` JWT template is not used.
     setSupabaseTokenResolver(async (options) => getToken.value(options))
     // Count only THIS user's memberships. RLS lets a member see every co-member
-    // of their households, so without the user_id filter this would count other
-    // people too and falsely report the cap once your households hold 3+ members.
+    // of their lists, so without the user_id filter this would count other
+    // people too and falsely report the cap once your lists hold 3+ members.
     const { data, error } = await getSupabase()
-      .from('household_members')
-      .select('household_id')
+      .from('list_members')
+      .select('list_id')
       .eq('user_id', userId.value)
-      .limit(HOUSEHOLD_MEMBERSHIP_CAP)
+      .limit(LIST_MEMBERSHIP_CAP)
     if (error) return 0
     return Array.isArray(data) ? data.length : 0
   } catch {
@@ -167,16 +173,16 @@ router.beforeEach(async (to) => {
   }
 
   // Guard the setup page by membership. A plain visit is meant only for a
-  // brand-new user with no household, so anyone already in one is sent home — the
+  // brand-new user with no list, so anyone already in one is sent home — the
   // welcome/create flow isn't theirs to see again. `?add=1` (the account dialog's "join
-  // or create a household" action) is the deliberate exception: it stays reachable until the
+  // or create a list" action) is the deliberate exception: it stays reachable until the
   // user hits the cap, where there is nothing left to add. Other views resolve
   // membership themselves (HomeView redirects to setup when there is none), so
   // ordinary navigations skip this round-trip.
-  if (to.name === 'household-setup' && isSignedIn.value) {
+  if (to.name === 'list-setup' && isSignedIn.value) {
     const memberships = await fetchMembershipCount(getToken, userId)
-    const isAddingHousehold = to.query.add === '1'
-    if (isAddingHousehold ? memberships >= HOUSEHOLD_MEMBERSHIP_CAP : memberships >= 1) {
+    const isAddingList = to.query.add === '1'
+    if (isAddingList ? memberships >= LIST_MEMBERSHIP_CAP : memberships >= 1) {
       return { name: 'home' }
     }
   }

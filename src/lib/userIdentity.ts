@@ -12,7 +12,7 @@ export interface UserLike {
 // The two identity fields the profiles table stores, derived from a Clerk user.
 // The one authority the client uses for both the create/join writes and the
 // keep-fresh upsert, so they can never disagree. Mirrors the clamping the DB
-// applies (003_households_and_members.sql): name capped at 80 chars, avatar https-only.
+// applies (003_lists_and_members.sql): name capped at 80 chars, avatar https-only.
 export interface ProfileFields {
   display_name: string
   image_url: string | null
@@ -29,7 +29,7 @@ export interface ProfileFields {
 // can write their own profiles row, and every co-member's browser fetches
 // whatever is in it. An arbitrary https host is therefore a beacon — it hands
 // the person who chose it the IP address, device and viewing time of everyone
-// else in the household. 003 spotted this and closed the scheme half of it
+// else in the list. 003 spotted this and closed the scheme half of it
 // (https only); this is the host half.
 const CLERK_IMAGE_HOST = 'img.clerk.com'
 
@@ -71,7 +71,7 @@ export function getUserPrimaryEmail(user: UserLike | null | undefined): string {
 //
 // 'Member' is a shared contract, not a local default: it is the profiles column
 // default, the fallback buy_items() archives into purchase_history, and what
-// join_household_with_code() writes for a joiner with no name — all in
+// join_list_with_code() writes for a joiner with no name — all in
 // 003/005. It was also written out inline in six components, which is one
 // spelling away from a roster that says "Member" and a history that says
 // "Unknown" for the same person.

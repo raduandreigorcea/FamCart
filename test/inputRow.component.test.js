@@ -5,7 +5,7 @@ import InputRow from '../src/components/InputRow.vue'
 
 // InputRow wraps its <input> in a styled <div>, which is where undeclared
 // attributes land by default — silently doing nothing. That is not hypothetical:
-// `required` and `autofocus` were once lost exactly this way and the household
+// `required` and `autofocus` were once lost exactly this way and the list
 // setup screen quietly stopped focusing its field, with nothing failing. These
 // cover the fall-through staying pointed at the input.
 describe('InputRow attribute fall-through', () => {

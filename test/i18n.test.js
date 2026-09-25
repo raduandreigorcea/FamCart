@@ -193,14 +193,14 @@ describe('tAccent', () => {
   it('splits a heading on its marker', () => {
     expect(tAccent('setup.welcome.title')).toEqual([
       'The list your whole ',
-      'household',
+      'list',
       ' shares',
     ])
   })
 
   it('handles a marker that runs to the end of the string', () => {
     expect(tAccent('login.tagline')).toEqual([
-      'Household Groceries, ',
+      'List Groceries, ',
       'fresh together daily',
       '',
     ])
@@ -218,7 +218,7 @@ describe('tAccent', () => {
   })
 
   it('splits before interpolating, so a value cannot move the accent', () => {
-    // The household's name is the accented run. A name carrying brackets of its
+    // The list's name is the accented run. A name carrying brackets of its
     // own used to cut that run short, because the split saw the assembled
     // sentence rather than the catalog template.
     const [lead, accent, tail] = tAccent('danger.deleteDesc', { name: 'Home]s [Attic' })

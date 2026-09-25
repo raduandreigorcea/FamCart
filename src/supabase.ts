@@ -6,8 +6,8 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 // The product catalog is a THIRD Supabase project, separate from the production
 // and development app databases and shared live by both. It holds the imported
-// and curated reference rows and nothing that belongs to anybody; households,
-// lists, history and household-contributed products stay in the app database.
+// and curated reference rows and nothing that belongs to anybody; lists,
+// lists, history and list-contributed products stay in the app database.
 // Its table is `catalog_products`, named so that nothing reads ambiguously
 // against the app database's own `product_catalog`.
 //
@@ -139,7 +139,7 @@ export function getSupabase(): SupabaseClient {
 //
 // Null is a supported state, not a broken one. It is what a checkout with no
 // VITE_CATALOG_* variables gets, and every caller treats a missing catalog the
-// same way it treats a failed catalog request: the household's own products
+// same way it treats a failed catalog request: the list's own products
 // still appear and the add-item box still works. Suggestions are a convenience,
 // and a third project being unreachable must not be able to empty the dropdown.
 export function getCatalogSupabase(): SupabaseClient | null {

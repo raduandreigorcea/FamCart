@@ -2,18 +2,18 @@
 //
 // The list screen's header: one header on every width, meaning the same thing
 // on a phone and a desktop. It replaced a five-slot bottom bar on the phone and
-// a different desktop header, where the household name opened a different
+// a different desktop header, where the list name opened a different
 // dialog on each.
 //
 // What it must do: say whose list this is and how much is left, open the
-// household sheet from the name (the one door to members, invite, switching and
+// list sheet from the name (the one door to members, invite, switching and
 // settings), and keep history and the account one tap away.
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import AppNavBar from '../src/components/AppNavBar.vue'
 import { setLocale } from '../src/lib/i18n'
-import HouseholdSheet from '../src/components/HouseholdSheet.vue'
+import ListSheet from '../src/components/ListSheet.vue'
 import AccountActionModal from '../src/components/AccountActionModal.vue'
 
 vi.mock('@clerk/vue', () => ({
@@ -41,9 +41,9 @@ function mountBar(props = {}) {
   const w = mount(AppNavBar, {
     props: {
       layout: 'bar',
-      householdId: 'hh-1',
-      householdName: 'Gorcea',
-      households: [{ id: 'hh-1', name: 'Gorcea' }, { id: 'hh-2', name: 'Bunica' }],
+      listId: 'hh-1',
+      listName: 'Gorcea',
+      lists: [{ id: 'hh-1', name: 'Gorcea' }, { id: 'hh-2', name: 'Bunica' }],
       currentUserId: 'u_self',
       ownerUserId: 'u_ana',
       memberProfiles: MEMBERS,
@@ -60,7 +60,7 @@ afterEach(() => {
 
 describe('the list header', () => {
   // The phone's bottom bar: five slots, the add disc in the middle. Switch is
-  // the household sheet, Household its settings, Add only reports the press.
+  // the list sheet, List its settings, Add only reports the press.
   // Green is the list's; the setup screen draws the same header plain.
   it('wears the brand green only on the list', () => {
     expect(mountBar().find('.topbar--list').exists()).toBe(true)
@@ -69,7 +69,7 @@ describe('the list header', () => {
 
   it('draws the five-slot bar with Add in the middle', () => {
     const labels = mountBar().findAll('.nav-slot__label').map((l) => l.text())
-    expect(labels).toEqual(['Household', 'History', 'Add', 'Switch', 'You'])
+    expect(labels).toEqual(['List', 'History', 'Add', 'Switch', 'You'])
   })
 
   it('reports the add press rather than opening anything itself', async () => {
@@ -78,44 +78,44 @@ describe('the list header', () => {
     expect(wrapper.emitted('add')).toHaveLength(1)
   })
 
-  it('opens the household sheet from Switch', async () => {
+  it('opens the list sheet from Switch', async () => {
     const wrapper = mountBar()
     await wrapper.findAll('.nav-slot')[3].trigger('click')
-    expect(wrapper.findComponent(HouseholdSheet).props('open')).toBe(true)
+    expect(wrapper.findComponent(ListSheet).props('open')).toBe(true)
   })
 
-  // The name, who is in the household, and how far this trip has got. No
+  // The name, who is in the list, and how far this trip has got. No
   // count in words: the list's own header already has it.
-  it('names the household, with its faces and the trip progress under it', () => {
+  it('names the list, with its faces and the trip progress under it', () => {
     // Four rows, one of them "x10" and ticked: 10 of 13 things picked up.
     const wrapper = mountBar({
-      householdEmoji: '🏡',
+      listEmoji: '🏡',
       totalCount: 4,
       checkedCount: 1,
       totalUnits: 13,
       checkedUnits: 10,
     })
-    expect(wrapper.find('.household-name').text()).toContain('Gorcea')
-    expect(wrapper.find('.household-emoji').text()).toBe('🏡')
-    expect(wrapper.findAll('.household-subrow .member-avatar')).toHaveLength(2)
+    expect(wrapper.find('.list-name').text()).toContain('Gorcea')
+    expect(wrapper.find('.list-emoji').text()).toBe('🏡')
+    expect(wrapper.findAll('.list-subrow .member-avatar')).toHaveLength(2)
 
     const bar = wrapper.find('[role="progressbar"]')
     expect(bar.attributes('aria-valuenow')).toBe('10')
     expect(bar.attributes('aria-valuemax')).toBe('13')
     // The fill goes by quantity; the words above it still count rows left.
-    expect(wrapper.find('.household-progress__fill').attributes('style')).toContain('width: 77%')
-    expect(wrapper.find('.household-progress__label').text()).toBe('3 items')
+    expect(wrapper.find('.list-progress__fill').attributes('style')).toContain('width: 77%')
+    expect(wrapper.find('.list-progress__label').text()).toBe('3 items')
   })
 
   // What is left, over the bar that shows it going; rows, not units.
   it('says how many products are left above the bar', () => {
-    const label = (props) => mountBar(props).find('.household-progress__label').text()
+    const label = (props) => mountBar(props).find('.list-progress__label').text()
     expect(label({ totalCount: 5, checkedCount: 3 })).toBe('2 items')
     expect(label({ totalCount: 5, checkedCount: 4 })).toBe('1 item')
 
     const done = mountBar({ totalCount: 5, checkedCount: 5 })
-    expect(done.find('.household-progress__label').text()).toBe("Everything's in the cart")
-    expect(done.find('.household-progress--done').exists()).toBe(true)
+    expect(done.find('.list-progress__label').text()).toBe("Everything's in the cart")
+    expect(done.find('.list-progress--done').exists()).toBe(true)
   })
 
   // Romanian has three plural forms and "de" from 20 up; the boundary is what
@@ -124,7 +124,7 @@ describe('the list header', () => {
     await setLocale('ro')
     try {
       const label = (left) =>
-        mountBar({ totalCount: left + 1, checkedCount: 1 }).find('.household-progress__label').text()
+        mountBar({ totalCount: left + 1, checkedCount: 1 }).find('.list-progress__label').text()
       expect(label(1)).toBe('1 produs')
       expect(label(2)).toBe('2 produse')
       expect(label(19)).toBe('19 produse')
@@ -139,21 +139,21 @@ describe('the list header', () => {
   // something is unticked.
   it('plays the glint when the cart grows, not when it shrinks', async () => {
     const wrapper = mountBar({ totalCount: 5, checkedCount: 1, totalUnits: 5, checkedUnits: 1 })
-    expect(wrapper.find('.household-progress__shine').exists()).toBe(false)
+    expect(wrapper.find('.list-progress__shine').exists()).toBe(false)
 
     await wrapper.setProps({ checkedCount: 2, checkedUnits: 2 })
-    const first = wrapper.find('.household-progress__shine')
+    const first = wrapper.find('.list-progress__shine')
     expect(first.exists()).toBe(true)
 
     await wrapper.setProps({ checkedCount: 1, checkedUnits: 1 })
-    expect(wrapper.find('.household-progress__shine').element).toBe(first.element)
+    expect(wrapper.find('.list-progress__shine').element).toBe(first.element)
   })
 
   it('draws no progress bar over an empty list', () => {
     expect(mountBar({ totalCount: 0 }).find('[role="progressbar"]').exists()).toBe(false)
   })
 
-  // On a phone the bottom bar's Household and Switch are the ways in, so the
+  // On a phone the bottom bar's List and Switch are the ways in, so the
   // name is a label. Where there is no bar it is still the door.
   it('makes the name a label on a phone and a button on a desktop', () => {
     const realMatchMedia = window.matchMedia
@@ -167,33 +167,33 @@ describe('the list header', () => {
     try {
       stub(false)
       const phone = mountBar()
-      expect(phone.find('button.household-btn').exists()).toBe(false)
-      expect(phone.find('.household-btn--static').text()).toContain('Gorcea')
+      expect(phone.find('button.list-btn').exists()).toBe(false)
+      expect(phone.find('.list-btn--static').text()).toContain('Gorcea')
 
       stub(true)
-      expect(mountBar().find('button.household-btn').exists()).toBe(true)
+      expect(mountBar().find('button.list-btn').exists()).toBe(true)
     } finally {
       window.matchMedia = realMatchMedia
     }
   })
 
-  it('opens the household sheet from the name', async () => {
+  it('opens the list sheet from the name', async () => {
     const wrapper = mountBar()
-    const button = wrapper.find('.household-btn')
+    const button = wrapper.find('.list-btn')
     expect(button.attributes('aria-haspopup')).toBe('dialog')
 
     await button.trigger('click')
-    expect(wrapper.findComponent(HouseholdSheet).props('open')).toBe(true)
+    expect(wrapper.findComponent(ListSheet).props('open')).toBe(true)
   })
 
-  it('switches household from the sheet and closes it', async () => {
+  it('switches list from the sheet and closes it', async () => {
     const wrapper = mountBar()
-    await wrapper.find('.household-btn').trigger('click')
-    wrapper.findComponent(HouseholdSheet).vm.$emit('switch-household', 'hh-2')
+    await wrapper.find('.list-btn').trigger('click')
+    wrapper.findComponent(ListSheet).vm.$emit('switch-list', 'hh-2')
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.emitted('switch-household')).toEqual([['hh-2']])
-    expect(wrapper.findComponent(HouseholdSheet).props('open')).toBe(false)
+    expect(wrapper.emitted('switch-list')).toEqual([['hh-2']])
+    expect(wrapper.findComponent(ListSheet).props('open')).toBe(false)
   })
 
   it('keeps history and the account one tap away', async () => {
@@ -205,14 +205,14 @@ describe('the list header', () => {
   })
 })
 
-describe('the household sheet', () => {
+describe('the list sheet', () => {
   function mountSheet(props = {}) {
-    const w = mount(HouseholdSheet, {
+    const w = mount(ListSheet, {
       props: {
         open: true,
-        householdId: 'hh-1',
-        householdName: 'Gorcea',
-        households: [{ id: 'hh-1', name: 'Gorcea' }],
+        listId: 'hh-1',
+        listName: 'Gorcea',
+        lists: [{ id: 'hh-1', name: 'Gorcea' }],
         members: MEMBERS,
         ownerUserId: 'u_ana',
         currentUserId: 'u_self',
@@ -235,7 +235,7 @@ describe('the household sheet', () => {
 
   it('offers the invite as the next face in the row', async () => {
     const wrapper = mountSheet()
-    const members = wrapper.findAll('.household-sheet__members > li')
+    const members = wrapper.findAll('.list-sheet__members > li')
     const invite = members.at(-1).find('.member__invite')
     expect(invite.text()).toBe('Invite')
 
@@ -243,27 +243,27 @@ describe('the household sheet', () => {
     expect(wrapper.emitted('invite')).toHaveLength(1)
   })
 
-  it('nudges a household of one toward inviting someone', () => {
-    expect(mountSheet({ members: [MEMBERS[0]] }).find('.household-sheet__alone').exists()).toBe(true)
-    expect(mountSheet().find('.household-sheet__alone').exists()).toBe(false)
+  it('nudges a list of one toward inviting someone', () => {
+    expect(mountSheet({ members: [MEMBERS[0]] }).find('.list-sheet__alone').exists()).toBe(true)
+    expect(mountSheet().find('.list-sheet__alone').exists()).toBe(false)
   })
 
-  it('does not report picking the household you are already on as a switch', async () => {
+  it('does not report picking the list you are already on as a switch', async () => {
     const wrapper = mountSheet()
     await wrapper.find('[role="radio"]').trigger('click')
-    expect(wrapper.emitted('switch-household')).toBeUndefined()
+    expect(wrapper.emitted('switch-list')).toBeUndefined()
     expect(wrapper.emitted('close')).toHaveLength(1)
   })
 })
 
 // On a desktop a wheel only scrolls vertically, and this row has no scrollbar,
-// so a big household's later faces were reachable by trackpad alone.
-describe('scrolling a large household', () => {
+// so a big list's later faces were reachable by trackpad alone.
+describe('scrolling a large list', () => {
   it('turns a vertical wheel into sideways travel while the row can move', async () => {
     const many = Array.from({ length: 10 }, (_, i) => ({ user_id: `u${i}`, display_name: `M${i}` }))
-    const w = mount(HouseholdSheet, { props: { open: true, members: many, households: [] } })
+    const w = mount(ListSheet, { props: { open: true, members: many, lists: [] } })
     wrappers.push(w)
-    const row = w.find('.household-sheet__members').element
+    const row = w.find('.list-sheet__members').element
     Object.defineProperty(row, 'scrollWidth', { value: 800 })
     Object.defineProperty(row, 'clientWidth', { value: 300 })
 
@@ -274,9 +274,9 @@ describe('scrolling a large household', () => {
   })
 
   it('lets the wheel through when everyone fits', () => {
-    const w = mount(HouseholdSheet, { props: { open: true, members: MEMBERS, households: [] } })
+    const w = mount(ListSheet, { props: { open: true, members: MEMBERS, lists: [] } })
     wrappers.push(w)
-    const row = w.find('.household-sheet__members').element
+    const row = w.find('.list-sheet__members').element
     Object.defineProperty(row, 'scrollWidth', { value: 300 })
     Object.defineProperty(row, 'clientWidth', { value: 300 })
 

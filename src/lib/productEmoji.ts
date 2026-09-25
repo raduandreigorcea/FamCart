@@ -237,7 +237,7 @@ const flatten = (rules: { emoji: string; keywords: string[] }[]) =>
 const MATCHERS = [...flatten(BRAND_RULES), ...flatten(EMOJI_RULES)]
 
 // The list re-renders on every mutation and the set of distinct products a
-// household sees is small, so memoizing turns a few hundred string scans per row
+// list sees is small, so memoizing turns a few hundred string scans per row
 // into one. Keyed by the word bag: two products that reduce to the same words
 // must resolve to the same emoji anyway.
 const cache = new Map<string, string>()

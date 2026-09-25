@@ -2,7 +2,7 @@
 //
 // The catalog holds 191,394 products and 190,394 of them name the markets they
 // are sold in. Until this existed the app never told the catalog where the
-// searcher was, so a household in Romania ranked 37,008 French and 33,813
+// searcher was, so a list in Romania ranked 37,008 French and 33,813
 // German products against its own 9,011 Romanian ones, ordered by a popularity
 // measured across all of Europe. Every French product won.
 //

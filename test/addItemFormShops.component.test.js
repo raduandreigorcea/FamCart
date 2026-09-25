@@ -3,7 +3,7 @@
 // Which shop a suggestion came from, shown on nightly only.
 //
 // It is a development aid rather than a feature: while the catalog is being
-// filled, "did this come from a real shop or from something this household typed
+// filled, "did this come from a real shop or from something this list typed
 // in?" is the one question you cannot answer by looking at the row. A production
 // build must not render it at all, which is the half of this that needs a test --
 // a debugging affordance that quietly ships is worse than one that never existed.
@@ -24,7 +24,7 @@ vi.mock('../src/lib/appChannel', async (importOriginal) => ({
 
 // Two shops, one shop, and a row from the app database's own search_catalog --
 // which returns no `retailers` at all, because those products came from a
-// household rather than from a scrape.
+// list rather than from a scrape.
 const SUGGESTIONS = [
   { name: 'Apa plata Dorna 2L', maker: 'Dorna', retailers: ['auchan', 'carrefour'] },
   { name: 'Ciocolata', maker: 'Ritter SPORT', retailers: ['lidl'] },
@@ -109,7 +109,7 @@ describe('the shop a suggestion came from', () => {
 
   it('leaves a row with no shops alone rather than drawing an empty chip', async () => {
     // A product from the app database's own catalog has no `retailers` key.
-    // Absent is meaningful here -- it says a household typed this in -- so it
+    // Absent is meaningful here -- it says a list typed this in -- so it
     // has to render as nothing, not as a blank tag.
     const wrapper = await mountForm(true)
     const rows = wrapper.findAll('.suggestion-text')
@@ -219,7 +219,7 @@ describe('the shop filter chips', () => {
   })
 
   it('stays out of the way of the recents list', async () => {
-    // Recents come from what this household has bought, which says nothing
+    // Recents come from what this list has bought, which says nothing
     // about which shops carry it -- so the chips would sit above rows they
     // cannot narrow, and the one that did nothing would look broken.
     const wrapper = await mountWithChips({

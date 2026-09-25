@@ -25,7 +25,7 @@
 /** A shopping_list_items row, as the webhook delivers it. */
 export interface ItemRecord {
   id: string
-  household_id: string
+  list_id: string
   name: string
   quantity: number | null
   added_by: string
@@ -34,7 +34,7 @@ export interface ItemRecord {
 /** A purchase_history row, as the webhook delivers it. */
 export interface PurchaseRecord {
   checkout_id: string
-  household_id: string
+  list_id: string
   purchased_by: string
 }
 
@@ -195,7 +195,7 @@ export function checkoutBody(
  * about who is receiving it. OneSignal holds a language per subscription — the
  * app sets it from the language the user actually reads, see
  * setPushLanguage() in src/lib/pushNotifications.ts — and picks the matching
- * key at delivery, falling back to `en`. So one REST call serves a household
+ * key at delivery, falling back to `en`. So one REST call serves a list
  * whose members read three different languages, which is the common case here
  * and the reason this is not a per-recipient loop.
  */
@@ -226,7 +226,7 @@ export function recipientsFor(
  * Whether the webhook presented the right shared secret.
  *
  * This is the ONLY thing standing between an unauthenticated POST and a push to
- * every member of a household: verify_jwt is off for this function, because a
+ * every member of a list: verify_jwt is off for this function, because a
  * database webhook carries no user JWT.
  *
  * Digests are compared rather than the strings themselves. A plain `===`

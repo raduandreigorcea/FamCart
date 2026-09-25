@@ -3,7 +3,7 @@ import { computed, ref, onMounted, watch } from 'vue'
 import { useAuth, useUser } from '@clerk/vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSupabase } from '../supabase'
-import { saveActiveHouseholdId } from '../lib/householdCache'
+import { saveActiveListId } from '../lib/listCache'
 import { deriveProfileFields } from '../lib/userIdentity'
 import AppNavBar from '../components/AppNavBar.vue'
 import InputRow from '../components/InputRow.vue'
@@ -16,7 +16,7 @@ import ConfirmModal from '../components/ConfirmModal.vue'
 import { isOfflineError } from '../lib/offlineQueue'
 import { UserFacingError, userMessage } from '../lib/errorMessages'
 import { isValidInviteCode, normalizeInviteCode, randomInviteCode } from '../lib/inviteCode'
-import { HOUSEHOLD_MEMBERSHIP_CAP, HOUSEHOLD_NAME_MAX_LENGTH } from '../lib/limits'
+import { LIST_MEMBERSHIP_CAP, LIST_NAME_MAX_LENGTH } from '../lib/limits'
 import { getLocale, setLocale, t, tAccent, type Locale } from '../lib/i18n'
 import { hasUserLocale } from '../lib/locale'
 
@@ -26,30 +26,30 @@ const router = useRouter()
 const route = useRoute()
 const db = useSupabase()
 
-// Reached from the account dialog's "join or create" action while the user already has households
+// Reached from the account dialog's "join or create" action while the user already has lists
 // (vs. a brand-new user with none): offer a way back to their list.
-const isAddingHousehold = computed(() => route.query.add === '1')
+const isAddingList = computed(() => route.query.add === '1')
 
-// Owning is capped at one household (003_households_and_members.sql). Someone adding a household while
+// Owning is capped at one list (003_lists_and_members.sql). Someone adding a list while
 // they already own one can only join, so the create option is hidden. A brand-new
 // user (not adding) always sees it.
-const ownsHousehold = ref(false)
+const ownsList = ref(false)
 // Only known after the async check below. Until then, in add mode we don't yet
 // know whether create is allowed, so we withhold the create option rather than
 // flash it and yank it away for an owner.
 const ownershipChecked = ref(false)
-const showCreate = computed(() => !isAddingHousehold.value || (ownershipChecked.value && !ownsHousehold.value))
+const showCreate = computed(() => !isAddingList.value || (ownershipChecked.value && !ownsList.value))
 onMounted(async () => {
-  if (!isAddingHousehold.value || !userId.value) return
+  if (!isAddingList.value || !userId.value) return
 
   try {
     const { data } = await db
-      .from('households')
+      .from('lists')
       .select('id')
       .eq('created_by', userId.value)
       .limit(1)
       .maybeSingle()
-    ownsHousehold.value = !!data
+    ownsList.value = !!data
   } finally {
     ownershipChecked.value = true
   }
@@ -59,7 +59,7 @@ onMounted(async () => {
 //
 // A warm English welcome is the wrong first thing to show someone whose phone
 // has been Romanian all along, and this is the one screen where changing it
-// costs nothing. Someone adding a second household from the account dialog
+// costs nothing. Someone adding a second list from the account dialog
 // already answered this, so they skip it — checked in both the seed below and
 // the computed, deliberately, because re-asking there would be the obvious bug.
 //
@@ -67,7 +67,7 @@ onMounted(async () => {
 // English: English is a real answer somebody gave, and treating it as "not yet
 // asked" would re-ask every English speaker on every fresh install.
 const languageChosen = ref(true)
-const showLanguage = computed(() => !languageChosen.value && !isAddingHousehold.value)
+const showLanguage = computed(() => !languageChosen.value && !isAddingList.value)
 // Whatever the boot resolver landed on — the device's own language if this is
 // a fresh device, or a hint left by a previous account. Either way it is
 // where the grid starts highlighted; see LanguagePicker for why that is not
@@ -81,7 +81,7 @@ const languageTitle = computed(() => tAccent('setup.language.title'))
 watch(
   userId,
   (uid) => {
-    if (isAddingHousehold.value) {
+    if (isAddingList.value) {
       languageChosen.value = true
       return
     }
@@ -101,14 +101,14 @@ async function chooseLanguage(next: Locale) {
 }
 
 // Brand-new users open on a warm welcome before the create/join picker; someone
-// adding a household from the account dialog already knows the app, so they skip it.
+// adding a list from the account dialog already knows the app, so they skip it.
 const welcomed = ref(false)
 const showWelcome = computed(
-  () => !welcomed.value && !isAddingHousehold.value && languageChosen.value,
+  () => !welcomed.value && !isAddingList.value && languageChosen.value,
 )
 const welcomeTitle = computed(() => tAccent('setup.welcome.title'))
 const pickerTitle = computed(() =>
-  tAccent(isAddingHousehold.value ? 'setup.picker.titleAdd' : 'setup.picker.titleNew'),
+  tAccent(isAddingList.value ? 'setup.picker.titleAdd' : 'setup.picker.titleNew'),
 )
 
 const mode = ref<'create' | 'join' | null>(null)
@@ -120,7 +120,7 @@ const mode = ref<'create' | 'join' | null>(null)
 // list you came from. The language and welcome steps are a brand-new user's
 // first two screens and have nothing behind them.
 const canGoBack = computed(
-  () => !showLanguage.value && !showWelcome.value && (!!mode.value || isAddingHousehold.value),
+  () => !showLanguage.value && !showWelcome.value && (!!mode.value || isAddingList.value),
 )
 
 function goBack() {
@@ -131,12 +131,12 @@ function goBack() {
   }
   router.replace('/')
 }
-const householdName = ref('')
+const listName = ref('')
 const inviteCode = ref('')
 const error = ref('')
 const loading = ref(false)
-const householdNameLength = computed(() => householdName.value.length)
-const householdNameOverLimit = computed(() => householdNameLength.value > HOUSEHOLD_NAME_MAX_LENGTH)
+const listNameLength = computed(() => listName.value.length)
+const listNameOverLimit = computed(() => listNameLength.value > LIST_NAME_MAX_LENGTH)
 const limitModal = ref({ open: false, title: '', message: '' })
 
 function openLimitModal(message: string) {
@@ -151,18 +151,18 @@ function closeLimitModal() {
   limitModal.value = { open: false, title: '', message: '' }
 }
 
-async function createHousehold() {
+async function createList() {
   if (loading.value) return
   const uid = userId.value
   if (!uid) return
   // On the untrimmed value, matching the counter the field shows. Trimming can
   // only shorten, so a name that passes here cannot re-fail after the trim.
-  if (householdNameOverLimit.value) {
-    openLimitModal(t('error.householdNameTooLong', { max: HOUSEHOLD_NAME_MAX_LENGTH }))
+  if (listNameOverLimit.value) {
+    openLimitModal(t('error.listNameTooLong', { max: LIST_NAME_MAX_LENGTH }))
     return
   }
-  const nextHouseholdName = householdName.value.trim()
-  if (!nextHouseholdName) return
+  const nextListName = listName.value.trim()
+  if (!nextListName) return
   error.value = ''
   loading.value = true
   try {
@@ -170,18 +170,18 @@ async function createHousehold() {
     const { display_name, image_url } = deriveProfileFields(user.value)
 
     // One server-side step, exactly like the join path below: the profile (which
-    // the membership references), the household and the membership are one
-    // transaction, so a rejected membership takes the household row back with it.
+    // the membership references), the list and the membership are one
+    // transaction, so a rejected membership takes the list row back with it.
     //
     // This used to be three client writes with a compensating delete if the last
     // one failed. When that delete failed too — it is a network call like any
-    // other — the leftover household permanently occupied the account's one
-    // ownership slot (households_one_per_owner) while being invisible to every
-    // list in the app, which are all built from household_members. There was no
+    // other — the leftover list permanently occupied the account's one
+    // ownership slot (lists_one_per_owner) while being invisible to every
+    // list in the app, which are all built from list_members. There was no
     // way back from it without SQL.
-    const { data: household, error: createErr } = await db
-      .rpc('create_household', {
-        p_name: nextHouseholdName,
+    const { data: list, error: createErr } = await db
+      .rpc('create_list', {
+        p_name: nextListName,
         p_invite_code: code,
         p_display_name: display_name,
         p_image_url: image_url,
@@ -189,23 +189,23 @@ async function createHousehold() {
       .maybeSingle<{ id: string; name: string }>()
 
     if (createErr) {
-      // A user may own only one household (003_households_and_members.sql). The
+      // A user may own only one list (003_lists_and_members.sql). The
       // unique index rejects a second with a 23505; turn that one case into a
       // message that explains it rather than leaking the raw constraint text.
-      if (createErr.message?.includes('households_one_per_owner')) {
-        throw new UserFacingError(t('error.ownOneHousehold'))
+      if (createErr.message?.includes('lists_one_per_owner')) {
+        throw new UserFacingError(t('error.ownOneList'))
       }
       // The sentinels are raised as the exception DETAIL, which supabase-js
       // exposes on error.details, not error.message.
       const detail = createErr.details ?? createErr.message ?? ''
       if (detail.includes('membership_limit_exceeded')) {
         throw new UserFacingError(
-          t('error.membershipCapCreate', { cap: HOUSEHOLD_MEMBERSHIP_CAP }),
+          t('error.membershipCapCreate', { cap: LIST_MEMBERSHIP_CAP }),
         )
       }
-      if (detail.includes('household_name_invalid')) {
+      if (detail.includes('list_name_invalid')) {
         throw new UserFacingError(
-          t('error.householdNameTooLong', { max: HOUSEHOLD_NAME_MAX_LENGTH }),
+          t('error.listNameTooLong', { max: LIST_NAME_MAX_LENGTH }),
         )
       }
       throw createErr
@@ -213,21 +213,21 @@ async function createHousehold() {
     // The function returns no row only for an unauthenticated caller, which the
     // uid check above has already ruled out. Treated as a plain failure rather
     // than dereferenced.
-    if (!household) throw new UserFacingError(t('error.createHouseholdFailed'))
+    if (!list) throw new UserFacingError(t('error.createListFailed'))
 
-    // Make the new household the active one so HomeView opens straight to it.
-    saveActiveHouseholdId(localStorage, uid, household.id)
+    // Make the new list the active one so HomeView opens straight to it.
+    saveActiveListId(localStorage, uid, list.id)
     router.replace('/')
   } catch (e) {
     error.value = isOfflineError(e)
       ? t('error.offline')
-      : userMessage(e, t('error.createHouseholdFailed'))
+      : userMessage(e, t('error.createListFailed'))
   } finally {
     loading.value = false
   }
 }
 
-async function joinHousehold() {
+async function joinList() {
   if (loading.value || !inviteCode.value.trim()) return
   const uid = userId.value
   if (!uid) return
@@ -242,11 +242,11 @@ async function joinHousehold() {
     const { display_name, image_url } = deriveProfileFields(user.value)
 
     // The RPC checks the code, upserts the joiner's profile, and inserts the
-    // membership in one server-side step; a direct household_members insert would
+    // membership in one server-side step; a direct list_members insert would
     // be rejected by RLS, so the code is a real credential (rotating it locks
     // out removed members).
-    const { data: household, error: joinErr } = await db
-      .rpc('join_household_with_code', {
+    const { data: list, error: joinErr } = await db
+      .rpc('join_list_with_code', {
         p_code: code,
         p_display_name: display_name,
         p_image_url: image_url,
@@ -256,23 +256,23 @@ async function joinHousehold() {
     if (joinErr) {
       // The sentinel is raised as the exception DETAIL (error.details), not message.
       if ((joinErr.details ?? joinErr.message ?? '').includes('membership_limit_exceeded')) {
-        error.value = t('error.membershipCapJoin', { cap: HOUSEHOLD_MEMBERSHIP_CAP })
+        error.value = t('error.membershipCapJoin', { cap: LIST_MEMBERSHIP_CAP })
         return
       }
       throw joinErr
     }
-    if (!household) {
-      error.value = t('error.noHouseholdForCode')
+    if (!list) {
+      error.value = t('error.noListForCode')
       return
     }
 
-    // Make the joined household the active one so HomeView opens straight to it.
-    saveActiveHouseholdId(localStorage, uid, household.id)
+    // Make the joined list the active one so HomeView opens straight to it.
+    saveActiveListId(localStorage, uid, list.id)
     router.replace('/')
   } catch (e) {
     error.value = isOfflineError(e)
       ? t('error.offline')
-      : userMessage(e, t('error.joinHouseholdFailed'))
+      : userMessage(e, t('error.joinListFailed'))
   } finally {
     loading.value = false
   }
@@ -342,7 +342,7 @@ async function joinHousehold() {
         <!-- Picker -->
         <template v-else-if="!mode">
           <div class="card-header">
-            <p class="card-eyebrow">{{ t(isAddingHousehold ? 'setup.picker.eyebrowAdd' : 'setup.picker.eyebrowNew') }}</p>
+            <p class="card-eyebrow">{{ t(isAddingList ? 'setup.picker.eyebrowAdd' : 'setup.picker.eyebrowNew') }}</p>
             <h2 class="heading">{{ pickerTitle[0]
               }}<span class="heading--accent">{{ pickerTitle[1] }}</span>{{ pickerTitle[2] }}</h2>
             <!-- Three whole sentences rather than a stem with a clause appended.
@@ -350,7 +350,7 @@ async function joinHousehold() {
                  the end, which only reads correctly in a language that puts the
                  clause there. -->
             <p class="sub">
-              {{ isAddingHousehold
+              {{ isAddingList
                 ? (showCreate ? t('setup.picker.subAddOrCreate') : t('setup.picker.subAdd'))
                 : t('setup.picker.subNew') }}
             </p>
@@ -379,10 +379,10 @@ async function joinHousehold() {
             <h2 class="heading">{{ t('setup.create.title') }}</h2>
             <p class="sub">{{ t('setup.create.sub') }}</p>
           </div>
-          <form @submit.prevent="createHousehold" class="input-form">
-            <InputRow v-model="householdName" :aria-label="t('setup.create.nameLabel')" :placeholder="t('setup.create.namePlaceholder')" :loading="loading" required autofocus />
-            <p class="field-counter" :class="{ 'field-counter--danger': householdNameOverLimit }">
-              {{ householdNameLength }}/{{ HOUSEHOLD_NAME_MAX_LENGTH }}
+          <form @submit.prevent="createList" class="input-form">
+            <InputRow v-model="listName" :aria-label="t('setup.create.nameLabel')" :placeholder="t('setup.create.namePlaceholder')" :loading="loading" required autofocus />
+            <p class="field-counter" :class="{ 'field-counter--danger': listNameOverLimit }">
+              {{ listNameLength }}/{{ LIST_NAME_MAX_LENGTH }}
             </p>          </form>
         </template>
 
@@ -393,7 +393,7 @@ async function joinHousehold() {
             <h2 class="heading">{{ t('setup.join.title') }}</h2>
             <p class="sub">{{ t('setup.join.sub') }}</p>
           </div>
-          <form @submit.prevent="joinHousehold" class="input-form">
+          <form @submit.prevent="joinList" class="input-form">
             <InputRow v-model="inviteCode" :aria-label="t('setup.join.codeLabel')" :placeholder="t('setup.join.codePlaceholder')" maxlength="8" :loading="loading" :uppercase="true" required autofocus />          </form>
         </template>
 
@@ -616,7 +616,7 @@ async function joinHousehold() {
   line-height: 1.55;
 }
 
-/* ── Back to households ────────────────────────────────────── */
+/* ── Back to lists ────────────────────────────────────── */
 /* ── Choice list ─────────────────────────────────────────── */
 .choice-row {
   display: flex;

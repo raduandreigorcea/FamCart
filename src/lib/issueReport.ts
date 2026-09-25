@@ -35,7 +35,7 @@ export const REPORT_SURFACES: ReportSurface[] = [
   { id: 'add', label: 'Adding items' },
   { id: 'scan', label: 'Barcode scanner' },
   { id: 'history', label: 'Checkout & history' },
-  { id: 'household', label: 'Household & members' },
+  { id: 'settings', label: 'List & members' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'signin', label: 'Signing in' },
   { id: 'other', label: 'Somewhere else' },
@@ -46,7 +46,7 @@ export function surfaceLabel(id: string): string {
 }
 
 export interface ReportContext {
-  householdId?: string
+  listId?: string
   userId?: string
 }
 
@@ -59,7 +59,7 @@ export interface ReportDiagnostics {
   version: string
   platform: string
   pendingOfflineEdits: boolean
-  householdId: string
+  listId: string
   userId: string
 }
 
@@ -94,7 +94,7 @@ export function collectDiagnostics(
     // A list that will not sync is the single most common thing behind "my
     // items keep disappearing", and it is invisible from the outside.
     pendingOfflineEdits: Boolean(storage && userId && hasQueuedOfflineMutations(storage, userId)),
-    householdId: context.householdId || '',
+    listId: context.listId || '',
     userId,
   }
 }
@@ -110,7 +110,7 @@ export function describeDiagnostics(diagnostics: ReportDiagnostics): string[] {
     t('report.diag.version', { version: diagnostics.version, platform: diagnostics.platform }),
   ]
   if (diagnostics.pendingOfflineEdits) lines.push(t('report.diag.pendingEdits'))
-  if (diagnostics.householdId) lines.push(t('report.diag.ids'))
+  if (diagnostics.listId) lines.push(t('report.diag.ids'))
   return lines
 }
 

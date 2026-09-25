@@ -2,7 +2,7 @@
 //
 // Shared because the `length`/`key` half is easy to leave out and expensive to
 // leave out: every unscoped clear in the app (clearOfflineQueue,
-// clearHouseholdSnapshot, and forgetLocalUserState through both) enumerates the
+// clearListSnapshot, and forgetLocalUserState through both) enumerates the
 // store to sweep every account's keys, and guards itself on those two members
 // being present. A stub without them does not fail — the guard returns early and
 // the branch under test silently never runs.

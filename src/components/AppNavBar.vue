@@ -5,12 +5,12 @@ import { useClerk, useUser } from '@clerk/vue'
 import AccountActionModal from './AccountActionModal.vue'
 import AppIcon from './AppIcon.vue'
 import BackButton from './BackButton.vue'
-import HouseholdSheet from './HouseholdSheet.vue'
+import ListSheet from './ListSheet.vue'
 import MemberAvatarStack from './MemberAvatarStack.vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { sortMembersSelfFirst } from '../lib/memberRoles'
-import type { HouseholdMemberProfile } from '../lib/householdRealtime'
-import { DEFAULT_HOUSEHOLD_EMOJI } from '../lib/householdEmoji'
+import type { ListMemberProfile } from '../lib/listRealtime'
+import { DEFAULT_LIST_EMOJI } from '../lib/listEmoji'
 import { ITEM_LIMIT_DEFAULT } from '../lib/limits'
 import { getUserDisplayName, getUserInitial, getUserPrimaryEmail, initialOf } from '../lib/userIdentity'
 import { useSignOut } from '../lib/useSignOut'
@@ -26,8 +26,8 @@ import type { ProductSuggestion } from '../lib/productSearch'
 // been pressed, the dialog was mounted with open:true, and the screen sat there.
 // Starting on pointerdown buys the whole press-and-release, and on a phone that
 // is most of the round trip.
-const loadHouseholdSettingsModal = () => import('./HouseholdSettingsModal.vue')
-const HouseholdSettingsModal = defineAsyncComponent(loadHouseholdSettingsModal)
+const loadListSettingsModal = () => import('./ListSettingsModal.vue')
+const ListSettingsModal = defineAsyncComponent(loadListSettingsModal)
 // Same treatment for the purchase-history modal: fetched and rendered on demand.
 const loadPurchaseHistoryModal = () => import('./PurchaseHistoryModal.vue')
 const PurchaseHistoryModal = defineAsyncComponent(loadPurchaseHistoryModal)
@@ -53,30 +53,30 @@ import { IS_NIGHTLY } from '../lib/appChannel'
 const props = defineProps({
   // Which screen this header is on.
   //
-  // 'bar' is the list screen: the household, what is left, history and you.
-  // 'header' is HouseholdSetupView, which has no household yet, so it gets the
+  // 'bar' is the list screen: the list, what is left, history and you.
+  // 'header' is ListSetupView, which has no list yet, so it gets the
   // logo (or a way back) and the account button and nothing else.
   //
   // One header at every width, meaning the same thing on a phone and a desktop.
   // It used to be a five-slot bottom bar on a phone and a different header on a
-  // desktop, where the household name opened a different thing on each.
+  // desktop, where the list name opened a different thing on each.
   layout: { type: String as PropType<'bar' | 'header'>, default: 'header' },
   // Whether the header's left slot is a way back rather than the brand mark.
   // Only the 'header' shell has that slot, and only a screen with a step behind
-  // it asks for this -- see HouseholdSetupView, which is every screen that draws
+  // it asks for this -- see ListSetupView, which is every screen that draws
   // the logo today.
   back: { type: Boolean, default: false },
-  householdId: { type: String, default: '' },
-  householdName: { type: String, default: '' },
-  // Every household the user belongs to ({ id, name }); the account dialog lists
+  listId: { type: String, default: '' },
+  listName: { type: String, default: '' },
+  // Every list the user belongs to ({ id, name }); the account dialog lists
   // them so you can move between them.
-  households: {
+  lists: {
     type: Array as PropType<{ id: string; name: string; emoji?: string | null }[]>,
     default: () => [],
   },
   loading: { type: Boolean, default: false },
   // Rows on the list, and how many of them are in the cart, for the progress
-  // bar under the household name.
+  // bar under the list name.
   totalCount: { type: Number, default: 0 },
   checkedCount: { type: Number, default: 0 },
   // The same, in units: what the bar fills by. "Eggs x10" is ten of the
@@ -85,29 +85,29 @@ const props = defineProps({
   // because they say how many things are still to find.
   totalUnits: { type: Number, default: 0 },
   checkedUnits: { type: Number, default: 0 },
-  // True mid household-switch: the name is already known but the roster is
-  // not, so the faces show a skeleton rather than the previous household's.
+  // True mid list-switch: the name is already known but the roster is
+  // not, so the faces show a skeleton rather than the previous list's.
   membersLoading: { type: Boolean, default: false },
   // 'offline' or 'reconnecting' puts a small pill in the header; empty says
   // nothing, which is the normal state.
   syncState: { type: String as PropType<'offline' | 'reconnecting' | ''>, default: '' },
   inviteCode: { type: String, default: '' },
-  householdItemLimit: { type: Number, default: ITEM_LIMIT_DEFAULT },
-  householdEmoji: { type: String, default: '' },
+  listItemLimit: { type: Number, default: ITEM_LIMIT_DEFAULT },
+  listEmoji: { type: String, default: '' },
   ownerUserId: { type: String, default: '' },
   currentUserId: { type: String, default: '' },
   memberProfiles: {
-    type: Array as PropType<HouseholdMemberProfile[]>,
+    type: Array as PropType<ListMemberProfile[]>,
     default: () => [],
   },
 })
 
 const emit = defineEmits<{
-  'refresh-household': []
-  'household-deleted': []
-  'household-left': []
-  'switch-household': [id: string]
-  'add-household': []
+  'refresh-list': []
+  'list-deleted': []
+  'list-left': []
+  'switch-list': [id: string]
+  'add-list': []
   // The bar's centre button. The search belongs to AddItemForm and its open
   // state is HomeView's, so the bar only says it was pressed.
   add: []
@@ -134,26 +134,26 @@ const { user } = useUser()
 
 const accountMenuOpen = ref(false)
 
-// The household sheet: members, invite, and which household you are on. It is
-// what the household name opens, on every width.
-const householdSheetOpen = ref(false)
+// The list sheet: members, invite, and which list you are on. It is
+// what the list name opens, on every width.
+const listSheetOpen = ref(false)
 
-function openHouseholdSheet() {
-  prefetch(loadHouseholdSettingsModal)
-  householdSheetOpen.value = true
+function openListSheet() {
+  prefetch(loadListSettingsModal)
+  listSheetOpen.value = true
 }
 
 // Closes the sheet itself; the switch is the parent's to perform, because it
-// owns which household is active and everything that has to be refetched with
-// it. The sheet has already dropped a pick of the household you are on.
-function switchHousehold(id: string) {
-  householdSheetOpen.value = false
-  emit('switch-household', id)
+// owns which list is active and everything that has to be refetched with
+// it. The sheet has already dropped a pick of the list you are on.
+function switchList(id: string) {
+  listSheetOpen.value = false
+  emit('switch-list', id)
 }
 
-function addHousehold() {
-  householdSheetOpen.value = false
-  emit('add-household')
+function addList() {
+  listSheetOpen.value = false
+  emit('add-list')
 }
 
 const settingsOpen = ref(false)
@@ -196,9 +196,9 @@ function openReportIssue() {
   reportOpen.value = true
 }
 
-// One door: "Manage household" in the household sheet. It used to have three.
-function openHouseholdSettings() {
-  householdSheetOpen.value = false
+// One door: "Manage list" in the list sheet. It used to have three.
+function openListSettings() {
+  listSheetOpen.value = false
   settingsEverOpened.value = true
   settingsOpen.value = true
 }
@@ -213,19 +213,19 @@ function inviteMembers() {
   if (!props.inviteCode) {
     // No code to send yet. The overview panel is where one is minted, so that is
     // where this has to end up.
-    openHouseholdSettings()
+    openListSettings()
     return
   }
 
-  void shareInvite(props.householdName, props.inviteCode).then((outcome) => {
+  void shareInvite(props.listName, props.inviteCode).then((outcome) => {
     // Backing out of the sheet is an answer, not a failure: stay exactly where
     // they were so a second try is one tap away.
     if (outcome === 'cancelled') return
     if (outcome === 'unavailable') {
-      openHouseholdSettings()
+      openListSettings()
       return
     }
-    householdSheetOpen.value = false
+    listSheetOpen.value = false
   })
 }
 
@@ -241,7 +241,7 @@ const { signingOut, signOut: handleSignOut } = useSignOut({
 })
 
 // Offline (cold-booted from cache) Clerk can't load, so `user` is null. The
-// cached household roster still holds this user's profile, so fall back to it for
+// cached list roster still holds this user's profile, so fall back to it for
 // the account button and menu rather than showing an empty "Account".
 const cachedProfile = computed(() =>
   props.currentUserId
@@ -260,13 +260,13 @@ const userInitial = computed(() => {
   return initialOf(cachedProfile.value?.display_name)
 })
 
-// The emoji the owner picked for this household. It already identifies each row
+// The emoji the owner picked for this list. It already identifies each row
 // inside the panel; showing it on the bar too means the thing you tap and the
 // row you land on are the same object, and gives the left-hand block a fixed
 // anchor to start from instead of beginning with ragged text.
-const activeHouseholdEmoji = computed(() => props.householdEmoji || DEFAULT_HOUSEHOLD_EMOJI)
+const activeListEmoji = computed(() => props.listEmoji || DEFAULT_LIST_EMOJI)
 
-// Whether the bottom bar is on screen, which decides whether the household
+// Whether the bottom bar is on screen, which decides whether the list
 // name has to be a way in. Followed live, so a window resized across the
 // desktop boundary gets the right one.
 const DESKTOP_QUERY = '(min-width: 900px)'
@@ -303,40 +303,40 @@ watch(
   },
 )
 
-// The active household's members, ordered for the stack that sits under the name.
+// The active list's members, ordered for the stack that sits under the name.
 const orderedActiveMembers = computed(() =>
   sortMembersSelfFirst(props.memberProfiles || [], props.ownerUserId, props.currentUserId),
 )
 </script>
 
 <template>
-  <!-- The phone's action bar: Household, History, Add, Switch, You. Hidden
+  <!-- The phone's action bar: List, History, Add, Switch, You. Hidden
        from the desktop column up, where the header carries history and the
-       account and AddItemForm is an inline field. Switch opens the household
-       sheet (members, invite, switching); Household goes straight to its
+       account and AddItemForm is an inline field. Switch opens the list
+       sheet (members, invite, switching); List goes straight to its
        settings, as it always did. -->
   <nav v-if="layout === 'bar'" class="navbar" :aria-label="t('nav.label')">
     <!-- Every slot here carries an aria-label, for the same reason the centre
          disc does: the visible labels are single words because they sit under a
          24px mark in six languages, and a single word is not always a name. The
-         household's is the one that matters most — the emoji that says WHICH
-         household is decorative, so without this a screen reader gets
-         "Household" for each of the three you might belong to. -->
+         list's is the one that matters most — the emoji that says WHICH
+         list is decorative, so without this a screen reader gets
+         "List" for each of the three you might belong to. -->
     <button
       class="nav-slot"
       type="button"
       aria-haspopup="dialog"
       :aria-expanded="settingsOpen"
       :aria-label="
-        householdName ? t('topbar.householdSettings', { name: householdName }) : t('nav.household')
+        listName ? t('topbar.listSettings', { name: listName }) : t('nav.list')
       "
-      @pointerdown="prefetch(loadHouseholdSettingsModal)"
-      @click="openHouseholdSettings"
+      @pointerdown="prefetch(loadListSettingsModal)"
+      @click="openListSettings"
     >
       <span class="nav-slot__mark nav-slot__mark--emoji" aria-hidden="true">
-        {{ activeHouseholdEmoji }}
+        {{ activeListEmoji }}
       </span>
-      <span class="nav-slot__label">{{ t('nav.household') }}</span>
+      <span class="nav-slot__label">{{ t('nav.list') }}</span>
     </button>
 
     <button
@@ -375,20 +375,20 @@ const orderedActiveMembers = computed(() =>
       <span class="nav-slot__label">{{ t('nav.add') }}</span>
     </button>
 
-    <!-- Which household's list you are looking at. Drawn even for the account
+    <!-- Which list you are looking at. Drawn even for the account
          that has one, which is most of them: with nothing to switch to the menu
-         is still the way to a second household, and a slot that comes and goes
+         is still the way to a second list, and a slot that comes and goes
          is a bar that changes shape under you.
 
-         "Switch", not "Households": the first slot is already "Household" and
+         "Switch", not "Lists": the first slot is already "List" and
          the two would read as the same word. -->
     <button
       class="nav-slot"
       type="button"
       aria-haspopup="dialog"
-      :aria-expanded="householdSheetOpen"
+      :aria-expanded="listSheetOpen"
       :aria-label="t('nav.switchLabel')"
-      @click="openHouseholdSheet"
+      @click="openListSheet"
     >
       <span class="nav-slot__mark">
         <AppIcon name="menu-bold" />
@@ -424,36 +424,36 @@ const orderedActiveMembers = computed(() =>
 
   <header class="topbar" :class="{ 'topbar--list': layout === 'bar' }">
     <div class="topbar-left">
-      <template v-if="householdName">
-        <!-- Which household's list this is, who is in it, and how far this
+      <template v-if="listName">
+        <!-- Which list this is, who is in it, and how far this
              trip has got. On a phone it is only that: the bottom bar's
-             Household and Switch are the ways in, so the block is a label, not
+             List and Switch are the ways in, so the block is a label, not
              a third door. Where there is no bar (the desktop column, and the
-             setup screen) it opens the household sheet, since nothing else
+             setup screen) it opens the list sheet, since nothing else
              would. One element either way, so the two cannot drift apart. -->
         <component
           :is="nameOpensSheet ? 'button' : 'div'"
-          class="household-btn"
-          :class="{ 'household-btn--static': !nameOpensSheet }"
+          class="list-btn"
+          :class="{ 'list-btn--static': !nameOpensSheet }"
           v-bind="
             nameOpensSheet
               ? {
                   type: 'button',
                   'aria-haspopup': 'dialog',
-                  'aria-expanded': householdSheetOpen,
-                  'aria-label': t('household.open', { name: householdName }),
+                  'aria-expanded': listSheetOpen,
+                  'aria-label': t('list.open', { name: listName }),
                 }
               : {}
           "
-          @click="nameOpensSheet && openHouseholdSheet()"
+          @click="nameOpensSheet && openListSheet()"
         >
-          <span class="household-emoji" aria-hidden="true">{{ activeHouseholdEmoji }}</span>
-          <div class="household-info">
-            <p class="household-name">
-              <span class="household-name__text">{{ householdName }}</span>
-              <AppIcon v-if="nameOpensSheet" class="household-name__chevron" name="chevron-right" />
+          <span class="list-emoji" aria-hidden="true">{{ activeListEmoji }}</span>
+          <div class="list-info">
+            <p class="list-name">
+              <span class="list-name__text">{{ listName }}</span>
+              <AppIcon v-if="nameOpensSheet" class="list-name__chevron" name="chevron-right" />
             </p>
-            <div v-if="layout === 'bar'" class="household-subrow">
+            <div v-if="layout === 'bar'" class="list-subrow">
               <MemberAvatarStack :members="orderedActiveMembers" :loading="membersLoading" />
             </div>
           </div>
@@ -462,12 +462,12 @@ const orderedActiveMembers = computed(() =>
       <template v-else-if="loading">
         <!-- Stands in for the real block above, tile included: without the
              square the name and the faces would start at the left edge and then
-             jump right by its width the moment the household lands. -->
-        <div class="household-meta" aria-hidden="true">
-          <SkeletonBlock class="household-emoji-skeleton" width="34px" height="34px" radius="var(--radius-md)" />
-          <div class="household-info">
+             jump right by its width the moment the list lands. -->
+        <div class="list-meta" aria-hidden="true">
+          <SkeletonBlock class="list-emoji-skeleton" width="34px" height="34px" radius="var(--radius-md)" />
+          <div class="list-info">
             <SkeletonBlock width="7.5rem" height="1rem" />
-            <div v-if="layout === 'bar'" class="household-subrow">
+            <div v-if="layout === 'bar'" class="list-subrow">
               <MemberAvatarStack loading />
             </div>
           </div>
@@ -487,13 +487,13 @@ const orderedActiveMembers = computed(() =>
     <div class="topbar-actions">
       <!-- How much of this trip is in the cart, on the header's right: a
            fixed-width block in the layout rather than one floated over the
-           middle, so a long household name or a big household's faces can
+           middle, so a long list name or a big list's faces can
            never run into it. The name ellipsizes first. Rows, like every
            count here. -->
       <div
-        v-if="layout === 'bar' && householdName && totalCount > 0"
-        class="household-progress"
-        :class="{ 'household-progress--done': progressDone }"
+        v-if="layout === 'bar' && listName && totalCount > 0"
+        class="list-progress"
+        :class="{ 'list-progress--done': progressDone }"
         role="progressbar"
         :aria-label="t('header.progressLabel')"
         :aria-valuenow="checkedUnits"
@@ -504,19 +504,19 @@ const orderedActiveMembers = computed(() =>
              The list's own header used to carry this count; one place
              for it is enough, and here it sits with the progress it
              describes. -->
-        <span class="household-progress__label">{{ progressLabel }}</span>
-        <span class="household-progress__track">
-          <span class="household-progress__fill" :style="{ width: `${progressPercent}%` }">
+        <span class="list-progress__label">{{ progressLabel }}</span>
+        <span class="list-progress__track">
+          <span class="list-progress__fill" :style="{ width: `${progressPercent}%` }">
             <!-- Re-keyed on every tick, so the shine replays each time
                  something goes into the cart: the bar answers the tap
                  even when the step is too small to see. -->
-            <span v-if="shineKey" :key="shineKey" class="household-progress__shine"></span>
+            <span v-if="shineKey" :key="shineKey" class="list-progress__shine"></span>
           </span>
         </span>
       </div>
       <!-- The nightly build says so, in the one place that is on screen whatever
            you are doing. Sits at the head of the actions rather than beside the
-           household name, which ellipsizes and would have had to give up width
+           list name, which ellipsizes and would have had to give up width
            for it. Untranslated on purpose, like the manifest: it names a build
            channel, not anything the app does. -->
       <!-- eslint-disable-next-line vue/no-bare-strings-in-template -- build channel, the same word in every language -->
@@ -540,7 +540,7 @@ const orderedActiveMembers = computed(() =>
       ></span>
 
       <button
-        v-if="householdName"
+        v-if="listName"
         class="topbar-icon-btn"
         type="button"
         :aria-label="t('topbar.history')"
@@ -571,43 +571,43 @@ const orderedActiveMembers = computed(() =>
   <PurchaseHistoryModal
     v-if="historyEverOpened"
     :open="historyOpen"
-    :household-id="householdId"
+    :list-id="listId"
     :current-user-id="currentUserId"
     :member-profiles="memberProfiles"
     @close="historyOpen = false"
     @add-again="emit('add-product', $event)"
   />
 
-  <HouseholdSettingsModal
+  <ListSettingsModal
     v-if="settingsEverOpened"
     :open="settingsOpen"
-    :household-id="householdId"
-    :household-name="householdName"
+    :list-id="listId"
+    :list-name="listName"
     :invite-code="inviteCode"
-    :household-item-limit="householdItemLimit"
-    :household-emoji="householdEmoji"
+    :list-item-limit="listItemLimit"
+    :list-emoji="listEmoji"
     :owner-user-id="ownerUserId"
     :member-profiles="memberProfiles"
     @close="settingsOpen = false"
-    @refresh-household="emit('refresh-household')"
-    @household-deleted="emit('household-deleted')"
-    @household-left="emit('household-left')"
+    @refresh-list="emit('refresh-list')"
+    @list-deleted="emit('list-deleted')"
+    @list-left="emit('list-left')"
   />
 
-  <HouseholdSheet
-    :open="householdSheetOpen"
-    :households="households"
-    :household-id="householdId"
-    :household-name="householdName"
-    :household-emoji="householdEmoji"
+  <ListSheet
+    :open="listSheetOpen"
+    :lists="lists"
+    :list-id="listId"
+    :list-name="listName"
+    :list-emoji="listEmoji"
     :members="orderedActiveMembers"
     :owner-user-id="ownerUserId"
     :current-user-id="currentUserId"
-    @close="householdSheetOpen = false"
-    @switch-household="switchHousehold"
-    @add-household="addHousehold"
+    @close="listSheetOpen = false"
+    @switch-list="switchList"
+    @add-list="addList"
     @invite="inviteMembers"
-    @manage="openHouseholdSettings"
+    @manage="openListSettings"
   />
 
   <AccountActionModal
@@ -627,7 +627,7 @@ const orderedActiveMembers = computed(() =>
   <ReportIssueModal
     v-if="reportEverOpened"
     :open="reportOpen"
-    :household-id="householdId"
+    :list-id="listId"
     :user-id="currentUserId"
     @close="reportOpen = false"
   />
@@ -644,7 +644,7 @@ const orderedActiveMembers = computed(() =>
   display: flex;
   align-items: center;
   justify-content: space-between;
-  /* Always keep breathing room between the household name and the action buttons,
+  /* Always keep breathing room between the list name and the action buttons,
      so the name can never butt up against (or slide under) them. */
   gap: 0.75rem;
   /* The bar's surface extends up behind the phone's status bar; its content
@@ -654,7 +654,7 @@ const orderedActiveMembers = computed(() =>
   height: calc(var(--header-height) + var(--safe-top));
   /* Brand green, up behind the status bar (whose icons go light for it, see
      setStatusBarOnBrand). The one saturated band on the screen says which app
-     and which household before anything is read. */
+     and which list before anything is read. */
   background: var(--color-primary-strong);
   color: var(--color-on-strong);
   position: fixed;
@@ -678,7 +678,7 @@ const orderedActiveMembers = computed(() =>
 }
 
 /* Desktop: keep the bar full-width but align its content with the centered
-   dashboard column, so the household name and buttons don't hug the far corners
+   dashboard column, so the list name and buttons don't hug the far corners
    of a wide screen. 100% is the bar's own width, which matches the base the
    column is centered against. */
 @media (min-width: 900px) {
@@ -938,7 +938,7 @@ const orderedActiveMembers = computed(() =>
 }
 
 /* On a phone the list screen's history and account live in the bottom bar,
-   so the header gives their width to the household name. */
+   so the header gives their width to the list name. */
 @media (max-width: 899.98px) {
   .topbar--list .topbar-icon-btn,
   .topbar--list .user-avatar-btn {
@@ -947,7 +947,7 @@ const orderedActiveMembers = computed(() =>
 }
 
 /* The build stamp belongs to the desktop header only: on a phone the header's
-   width goes to the household name, and the About screen already says which
+   width goes to the list name, and the About screen already says which
    build this is. */
 @media (max-width: 899.98px) {
   .channel-badge {
@@ -970,14 +970,14 @@ const orderedActiveMembers = computed(() =>
    2. It has to be visible. The two controls that had an :active state painted
       --border-light, which in light mode is the same #f3f4f6 as --bg-hover and
       in dark is lighter than it, so a press either changed nothing or moved the
-      wrong way. The other two had no :active at all — and the household block,
+      wrong way. The other two had no :active at all — and the list block,
       the biggest target in the bar, also suppresses the tap highlight, so a tap
       on it changed nothing on screen at all until its dialog arrived. --bg-press is a real step in the right direction in both
       themes.
 
    Scale is inverse to size: the same ratio that reads as a press on a 40px
    circle reads as a lurch on a block the width of the screen. */
-.household-btn:active,
+.list-btn:active,
 .topbar-icon-btn:active,
 .user-avatar-btn:active {
   background: var(--color-on-strong-fill-strong);
@@ -989,17 +989,17 @@ const orderedActiveMembers = computed(() =>
   transform: scale(0.92);
 }
 
-.household-btn:active {
+.list-btn:active {
   transform: scale(0.97);
 }
 
 /* The tile holds its own against the pressed fill, same as on hover. */
-.household-btn:active .household-emoji {
+.list-btn:active .list-emoji {
   background: var(--color-on-strong-fill-strong);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .household-btn:active,
+  .list-btn:active,
   .topbar-icon-btn:active,
   .user-avatar-btn:active {
     transform: none;
@@ -1017,9 +1017,9 @@ const orderedActiveMembers = computed(() =>
   overflow: hidden;
 }
 
-/* Matches .household-btn's own gap and padding, so the placeholder
+/* Matches .list-btn's own gap and padding, so the placeholder
    sits exactly where the button it stands in for will. */
-.household-meta {
+.list-meta {
   display: flex;
   align-items: center;
   gap: 0.55rem;
@@ -1027,7 +1027,7 @@ const orderedActiveMembers = computed(() =>
   min-width: 0;
 }
 
-.household-emoji-skeleton {
+.list-emoji-skeleton {
   flex-shrink: 0;
 }
 
@@ -1047,7 +1047,7 @@ const orderedActiveMembers = computed(() =>
 }
 
 /* Shared BackButton. Its top margin is for standing alone at the top of a card;
-   here the bar centres it, and the left inset it keeps matches .household-btn's
+   here the bar centres it, and the left inset it keeps matches .list-btn's
    own padding, so whichever of the three things can hold this slot starts in the
    same place. A negative margin would be clipped by .topbar-left anyway. */
 .topbar-back {
@@ -1062,12 +1062,12 @@ const orderedActiveMembers = computed(() =>
 
 /* flex:1 so the name takes the slack and ellipsizes before the caret after it
    is pushed off the edge. */
-.household-info {
+.list-info {
   flex: 1;
   min-width: 0;
 }
 
-.household-name {
+.list-name {
   display: flex;
   align-items: center;
   gap: 0.2rem;
@@ -1080,7 +1080,7 @@ const orderedActiveMembers = computed(() =>
      block, and a 1.5 line-height pushed that block past the 72px bar. */
   line-height: 1.25;
   letter-spacing: -0.01em;
-  /* A long household name must never shove the account button off the edge: cap it
+  /* A long list name must never shove the account button off the edge: cap it
      to the available width and ellipsize the overflow. min-width:0 lets it
      shrink inside the block's flex row rather than forcing it wider. */
   max-width: 100%;
@@ -1096,7 +1096,7 @@ const orderedActiveMembers = computed(() =>
 }
 
 /* The text alone ellipsizes, so the chevron after it never goes. */
-.household-name__text {
+.list-name__text {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1104,7 +1104,7 @@ const orderedActiveMembers = computed(() =>
 
 /* Says the name opens something. Turned down, the way a disclosure points at
    what it will show. */
-.household-name__chevron {
+.list-name__chevron {
   flex-shrink: 0;
   width: 14px;
   height: 14px;
@@ -1112,7 +1112,7 @@ const orderedActiveMembers = computed(() =>
   transform: rotate(90deg);
 }
 
-.household-name__chevron :deep(svg) {
+.list-name__chevron :deep(svg) {
   width: 100%;
   height: 100%;
   display: block;
@@ -1123,8 +1123,8 @@ const orderedActiveMembers = computed(() =>
 
 
 
-/* ─── Household block ────────────────────────────────────────────────────────── */
-.household-btn {
+/* ─── List block ────────────────────────────────────────────────────────── */
+.list-btn {
   display: flex;
   align-items: center;
   gap: 0.55rem;
@@ -1147,7 +1147,7 @@ const orderedActiveMembers = computed(() =>
 }
 
 /* Faces and the trip's progress, side by side under the name. */
-.household-subrow {
+.list-subrow {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -1155,7 +1155,7 @@ const orderedActiveMembers = computed(() =>
   min-height: 20px;
 }
 
-.household-subrow :deep(.member-stack) {
+.list-subrow :deep(.member-stack) {
   --member-avatar-size: 22px;
   /* A pale ring, mixed from the white and the bar's own green: enough to cut
      each face out where a pure green gap let them blur together, not so much
@@ -1164,21 +1164,21 @@ const orderedActiveMembers = computed(() =>
   --member-avatar-ring: color-mix(in srgb, var(--color-on-strong) 40%, var(--color-primary-strong));
 }
 
-.household-subrow :deep(.member-avatar) {
+.list-subrow :deep(.member-avatar) {
   border-width: 1.5px;
 }
 
 /* The letter faces and the "+n" become white discs with green letters, so they
    read as faces rather than as holes in the bar. */
-.household-subrow :deep(.member-avatar--fallback),
-.household-subrow :deep(.member-avatar--more) {
+.list-subrow :deep(.member-avatar--fallback),
+.list-subrow :deep(.member-avatar--more) {
   background: var(--color-on-strong);
   color: var(--color-primary-strong);
   font-size: 0.6rem;
   font-weight: var(--weight-extrabold);
 }
 
-.household-progress {
+.list-progress {
   flex-shrink: 0;
   width: 8.5rem;
   display: flex;
@@ -1187,7 +1187,7 @@ const orderedActiveMembers = computed(() =>
   gap: 0.2rem;
 }
 
-.household-progress__label {
+.list-progress__label {
   text-align: center;
   font-size: var(--text-xs);
   font-weight: var(--weight-bold);
@@ -1199,7 +1199,7 @@ const orderedActiveMembers = computed(() =>
   text-overflow: ellipsis;
 }
 
-.household-progress__track {
+.list-progress__track {
   position: relative;
   height: 6px;
   border-radius: var(--radius-pill);
@@ -1209,7 +1209,7 @@ const orderedActiveMembers = computed(() =>
 
 /* The fill leads with a slightly brighter edge, so its front reads as moving
    forward rather than as a flat block. */
-.household-progress__fill {
+.list-progress__fill {
   position: relative;
   display: block;
   height: 100%;
@@ -1224,7 +1224,7 @@ const orderedActiveMembers = computed(() =>
 }
 
 /* A soft glint that runs along the fill once per tick. */
-.household-progress__shine {
+.list-progress__shine {
   position: absolute;
   inset: 0;
   background: linear-gradient(
@@ -1244,7 +1244,7 @@ const orderedActiveMembers = computed(() =>
 }
 
 /* Everything in the cart: one breath of the bar, then still. */
-.household-progress--done .household-progress__track {
+.list-progress--done .list-progress__track {
   animation: progress-done 520ms var(--ease-rise);
 }
 
@@ -1255,34 +1255,34 @@ const orderedActiveMembers = computed(() =>
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .household-progress__fill {
+  .list-progress__fill {
     transition: none;
   }
 
-  .household-progress__shine,
-  .household-progress--done .household-progress__track {
+  .list-progress__shine,
+  .list-progress--done .list-progress__track {
     animation: none;
   }
 }
 
 /* The phone's label version: same box, so nothing shifts between the two,
    but nothing that invites a press. */
-.household-btn--static,
-.household-btn--static:active {
+.list-btn--static,
+.list-btn--static:active {
   background: transparent;
   cursor: default;
   transform: none;
 }
 
-.household-btn--static:active .household-emoji {
+.list-btn--static:active .list-emoji {
   background: var(--color-on-strong-fill);
 }
 
-/* The household's emoji, in the same square it wears inside the panel. It leads
+/* The list's emoji, in the same square it wears inside the panel. It leads
    the block: the name is variable-width text and the avatar stack under it is a
    ragged row of circles, so before this there was nothing holding the left edge
-   and the block started at a different place for every household. */
-.household-emoji {
+   and the block started at a different place for every list. */
+.list-emoji {
   flex-shrink: 0;
   width: 34px;
   height: 34px;
@@ -1355,7 +1355,7 @@ const orderedActiveMembers = computed(() =>
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  /* Never let the household name squeeze the action buttons. */
+  /* Never let the list name squeeze the action buttons. */
   flex-shrink: 0;
 }
 

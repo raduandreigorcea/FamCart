@@ -5,10 +5,10 @@
 // Below 600px none of this applies: the panel is a bottom sheet and the trigger
 // is ignored. At and above it the panel hangs off the button, and it used to
 // hang off it in one direction only -- downwards, because both callers at the
-// time (the old topbar's household name, and the list filter in the list header)
+// time (the old topbar's list name, and the list filter in the list header)
 // sat near the top of the screen.
 //
-// The household switcher's trigger is in the bottom action bar, which is the
+// The list switcher's trigger is in the bottom action bar, which is the
 // visible shell right up to 900px. Between the two breakpoints the panel was
 // therefore placed 8px below a button already sitting on the bottom edge of the
 // screen: entirely off it, so the menu opened and nobody saw it.

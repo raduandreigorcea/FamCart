@@ -3,26 +3,26 @@
 -- the catalog grows.
 --
 -- Scope lives in one column:
---   household_id is null  - global. Written by catalog-importer with the service
+--   list_id is null  - global. Written by catalog-importer with the service
 --                        role key, and suggested to everyone. A few hundred
 --                        'curated' rows predate it, from a seed script deleted
 --                        in 9a4366e -- they are still in production and nothing
 --                        in the repo regenerates them, which is why the import
 --                        is careful never to overwrite one (guarantee 2 below).
---   household_id = <uuid> - contributed via add_custom_product(), suggested only
---                        back to that household until enough OTHER households add the
+--   list_id = <uuid> - contributed via add_custom_product(), suggested only
+--                        back to that list until enough OTHER lists add the
 --                        same product, at which point it is promoted to global.
 --
 -- That promotion rule is what makes a user-writable catalog safe. A misspelling
--- one household types stays scoped to them forever; a product several households
+-- one list types stays scoped to them forever; a product several lists
 -- independently ask for earns its way in on its own. No moderation queue, and no
--- way for one household's spelling to leak into everyone else's suggestions — the
+-- way for one list's spelling to leak into everyone else's suggestions — the
 -- threshold counts distinct contributing *accounts* (contributed_by) AND the
--- distinct households they contributed from, and both must reach it. Crossing it
--- takes three separate people who each added the product in their own household.
--- One account belonging to three households and typing the same junk into all
+-- distinct lists they contributed from, and both must reach it. Crossing it
+-- takes three separate people who each added the product in their own list.
+-- One account belonging to three lists and typing the same junk into all
 -- three counts as one account and cannot self-promote; three accounts one person
--- controls inside a single household count as one household and cannot either.
+-- controls inside a single list count as one list and cannot either.
 --
 -- Clients never write this table. RLS grants SELECT and nothing else; the two
 -- SECURITY DEFINER RPCs at the bottom are the only writes reachable from the
@@ -43,8 +43,8 @@ create table if not exists public.product_catalog (
   -- so "apă" typed with or without accents finds "Apa Plata 2L Dorna". Derived by
   -- product_search_text() below — never supplied by a client.
   search_text text        not null,
-  -- Null for the global catalog; the contributing household otherwise.
-  household_id   uuid        references public.households(id) on delete cascade,
+  -- Null for the global catalog; the contributing list otherwise.
+  list_id   uuid        references public.lists(id) on delete cascade,
   -- Who first contributed a scoped row; null for globals. Promotion counts
   -- distinct values of this, so it is the identity the anti-abuse gate measures.
   contributed_by text,
@@ -91,11 +91,11 @@ create table if not exists public.product_catalog (
   constraint product_catalog_source_version_length
     check (source_version is null or char_length(source_version) between 1 and 40),
   -- NULLS NOT DISTINCT so a maker-less product cannot be inserted twice within a
-  -- scope. household_id is part of the key so two households can each contribute their
+  -- scope. list_id is part of the key so two lists can each contribute their
   -- own "Olive Oil". Also the only TOTAL unique constraint here, and therefore
   -- the only conflict target PostgREST's .upsert() can infer.
-  constraint product_catalog_name_maker_household_unique
-    unique nulls not distinct (name, maker, household_id)
+  constraint product_catalog_name_maker_list_unique
+    unique nulls not distinct (name, maker, list_id)
 );
 
 -- ─── bounds and columns that have to be restated ─────────────────────────────
@@ -103,7 +103,7 @@ create table if not exists public.product_catalog (
 -- table is created, so on every database this file has already run against it is
 -- skipped entirely. Changing the source allowlist up there alone would widen it
 -- on a fresh clone and leave production rejecting the two new import sources —
--- the same trap 003 documents at length for households_name_length_check.
+-- the same trap 003 documents at length for lists_name_length_check.
 alter table public.product_catalog drop constraint if exists product_catalog_source_check;
 alter table public.product_catalog add constraint product_catalog_source_check
   check (source in (
@@ -174,27 +174,27 @@ create index if not exists product_catalog_popularity
 
 -- The real key for contributed rows, and the arbiter add_custom_product() upserts
 -- against. Stricter than the unique constraint above: "Olive Oil" and "olive oil"
--- share a search_text, so this stops one household accumulating near-duplicate rows
+-- share a search_text, so this stops one list accumulating near-duplicate rows
 -- that would read as two identical suggestions.
-create unique index if not exists product_catalog_household_search
-  on public.product_catalog (household_id, search_text)
-  where household_id is not null;
+create unique index if not exists product_catalog_list_search
+  on public.product_catalog (list_id, search_text)
+  where list_id is not null;
 
 -- One global row per search key. Stops two seed rows — or a promotion landing
 -- beside an existing global — from creating two globals that normalize alike,
 -- which would both be bumped on every add and read as duplicates to everyone.
 create unique index if not exists product_catalog_global_search
   on public.product_catalog (search_text)
-  where household_id is null;
+  where list_id is null;
 
--- One global row per barcode. Partial on household_id so that scoped rows are
--- exempt: a household naming a product the scanner could not find records the
+-- One global row per barcode. Partial on list_id so that scoped rows are
+-- exempt: a list naming a product the scanner could not find records the
 -- code on their own row, and must not be blocked by a global that already claims
 -- it under a different name. Promotion is where the two meet, and it declines to
 -- carry a code rather than collide — see add_custom_product_unthrottled.
 create unique index if not exists product_catalog_global_barcode
   on public.product_catalog (barcode)
-  where household_id is null and barcode is not null;
+  where list_id is null and barcode is not null;
 
 -- "Has this upstream record already landed?" — scoped by source so two different
 -- upstream catalogs can share an identifier space without colliding.
@@ -205,18 +205,18 @@ create unique index if not exists product_catalog_source_ref_unique
 -- Deliberately no index on source alone: the one query that filters by it is a
 -- bulk delete of an entire import, which is a sequential scan either way.
 
--- Read-only for signed-in users, and contributed rows only for the household that
+-- Read-only for signed-in users, and contributed rows only for the list that
 -- owns them. There are no insert/update/delete policies at all. Scoping the reads
 -- here rather than in the client's query is what stops a hand-crafted request
--- from pulling another household's products.
+-- from pulling another list's products.
 drop policy if exists "authenticated users can read the product catalog" on public.product_catalog;
 create policy "authenticated users can read the product catalog"
   on public.product_catalog for select
   to authenticated
   using (
-    -- Global rows belong to nobody, so no household's deletion hides them.
-    household_id is null
-    or household_id in (select public.active_household_ids())
+    -- Global rows belong to nobody, so no list's deletion hides them.
+    list_id is null
+    or list_id in (select public.active_list_ids())
   );
 
 -- Revoke first, then grant. The header of this file says "Clients never write
@@ -224,7 +224,7 @@ create policy "authenticated users can read the product catalog"
 -- DELETE and TRUNCATE granted to authenticated at provisioning, and only the
 -- absence of a write policy made the sentence true (TRUNCATE would not even have
 -- been stopped by a policy: it ignores RLS). See the long note at the end of
--- 003_households_and_members.sql.
+-- 003_lists_and_members.sql.
 --
 -- service_role is revoked here and re-granted at the bottom of this file, where
 -- the seed script's and importer's write access is declared.
@@ -278,7 +278,7 @@ revoke all on function public.product_search_text(text, text) from public, anon,
 drop function if exists public.add_custom_product_unthrottled(uuid, text, text);
 
 create or replace function public.add_custom_product_unthrottled(
-  p_household_id uuid,
+  p_list_id uuid,
   p_name text,
   p_maker text default null,
   -- The code this product was scanned from, when the catalog had nothing for it.
@@ -291,14 +291,14 @@ security definer
 set search_path = public
 as $$
 declare
-  -- How many distinct accounts, in that many distinct households, must contribute
+  -- How many distinct accounts, in that many distinct lists, must contribute
   -- a product before it goes global. Low enough that genuinely common products
   -- graduate, high enough that one account's spelling (or a two-account
   -- coincidence) cannot drag junk in.
   promote_at constant integer := 3;
 
-  -- Ceiling on distinct products one household may contribute, so a member cannot
-  -- bloat the catalog. Far above any real household's list; only repeat adds to
+  -- Ceiling on distinct products one list may contribute, so a member cannot
+  -- bloat the catalog. Far above any real list; only repeat adds to
   -- products already contributed are allowed past it.
   max_products constant integer := 500;
 
@@ -311,7 +311,7 @@ declare
   v_barcode text := nullif(btrim(coalesce(p_barcode, '')), '');
   v_search text;
   v_contributors integer;
-  v_households integer;
+  v_lists integer;
   v_first  record;
   -- Kept separate from v_barcode, which is this caller's code. This one is what
   -- the scoped rows collectively agree on, and the two are only ever the same by
@@ -322,7 +322,7 @@ begin
     v_barcode := null;
   end if;
 
-  if v_user is null or p_household_id is null then
+  if v_user is null or p_list_id is null then
     return;
   end if;
 
@@ -334,11 +334,11 @@ begin
     return;
   end if;
 
-  -- Contribute only to a household you are actually in. SECURITY DEFINER bypasses
+  -- Contribute only to a list you are actually in. SECURITY DEFINER bypasses
   -- RLS, so this is the whole tenancy check.
   if not exists (
-    select 1 from public.household_members fm
-    where fm.household_id = p_household_id and fm.user_id = v_user
+    select 1 from public.list_members fm
+    where fm.list_id = p_list_id and fm.user_id = v_user
   ) then
     return;
   end if;
@@ -349,9 +349,9 @@ begin
   end if;
 
   -- Serialize every contribution and promotion for this product key. Without it a
-  -- promotion's delete can race a concurrent contribution from another household: the
+  -- promotion's delete can race a concurrent contribution from another list: the
   -- contribution re-inserts a scoped row just after the delete removed it, leaving
-  -- that household looking at both the new global row and an orphaned scoped one.
+  -- that list looking at both the new global row and an orphaned scoped one.
   -- Transaction-scoped, so it releases on commit or rollback.
   perform pg_advisory_xact_lock(hashtext(v_search));
 
@@ -362,33 +362,33 @@ begin
   -- v_barcode is deliberately dropped on this path rather than written to the
   -- global row. Writing it would let a single account attach a code to a product
   -- everyone sees, on nothing but their own say-so — scan a cola, name it
-  -- "milk", and every household scanning that cola is offered milk. The
+  -- "milk", and every list scanning that cola is offered milk. The
   -- promotion path below is the only way a code reaches a global row, and it
   -- gets there behind the same distinct-contributor gate that guards spellings.
   -- The cost is that a global product the importer never gave a code to stays
   -- unscannable, which is where it started.
   if exists (
     select 1 from public.product_catalog
-    where household_id is null and search_text = v_search
+    where list_id is null and search_text = v_search
   ) then
     update public.product_catalog
     set add_count = add_count + 1
-    where household_id is null and search_text = v_search;
+    where list_id is null and search_text = v_search;
     return;
   end if;
 
-  -- Refuse a brand-new product once the household is at its ceiling; a repeat add to
+  -- Refuse a brand-new product once the list is at its ceiling; a repeat add to
   -- a product they already contributed still goes through (it is not a new row).
   if not exists (
     select 1 from public.product_catalog
-    where household_id = p_household_id and search_text = v_search
+    where list_id = p_list_id and search_text = v_search
   ) and (
-    select count(*) from public.product_catalog where household_id = p_household_id
+    select count(*) from public.product_catalog where list_id = p_list_id
   ) >= max_products then
     return;
   end if;
 
-  -- Contribute, or count a repeat add if this household already contributed it.
+  -- Contribute, or count a repeat add if this list already contributed it.
   -- contributed_by records who first added it and is left untouched on the repeat
   -- (do update only bumps add_count). base_weight stays 0: that column belongs to
   -- the seed script, so earned usage has to live in add_count or the next
@@ -396,36 +396,36 @@ begin
   -- The barcode is filled in but never overwritten: a product first typed by
   -- hand and later scanned gains its code, and a second scan reporting something
   -- different cannot take the first one's place. Scoped rows are not covered by
-  -- the barcode unique index (it is partial on household_id is null), so nothing
+  -- the barcode unique index (it is partial on list_id is null), so nothing
   -- here can conflict.
   insert into public.product_catalog as pc
-    (name, maker, search_text, household_id, contributed_by, base_weight, add_count, source, barcode)
-  values (v_name, v_maker, v_search, p_household_id, v_user, 0, 1, 'community', v_barcode)
-  on conflict (household_id, search_text) where household_id is not null
+    (name, maker, search_text, list_id, contributed_by, base_weight, add_count, source, barcode)
+  values (v_name, v_maker, v_search, p_list_id, v_user, 0, 1, 'community', v_barcode)
+  on conflict (list_id, search_text) where list_id is not null
   do update set add_count = pc.add_count + 1,
                 barcode = coalesce(pc.barcode, excluded.barcode);
 
   -- Both counts, and both have to clear the bar: three distinct accounts, spread
-  -- over three distinct households. They defeat different abuses, and neither
+  -- over three distinct lists. They defeat different abuses, and neither
   -- alone is the rule.
   --
-  -- Accounts is what stops one person who belongs to three households typing the
-  -- same junk into all three (test 7i). Households is what stops three accounts
-  -- one person controls doing it from inside a single household.
+  -- Accounts is what stops one person who belongs to three lists typing the
+  -- same junk into all three (test 7i). Lists is what stops three accounts
+  -- one person controls doing it from inside a single list.
   --
-  -- That second one is, today, already impossible: product_catalog_household_search
-  -- is unique on (household_id, search_text), so a household holds at most one
+  -- That second one is, today, already impossible: product_catalog_list_search
+  -- is unique on (list_id, search_text), so a list holds at most one
   -- scoped row per product, and three distinct contributed_by therefore cannot
-  -- come from fewer than three households. It is counted anyway. The property the
+  -- come from fewer than three lists. It is counted anyway. The property the
   -- header promises should be readable here rather than inferred from an index two
   -- hundred lines up, and relaxing that index later must break this rule loudly
-  -- instead of quietly widening what reaches every household's suggestions.
-  select count(distinct pc.contributed_by), count(distinct pc.household_id)
-    into v_contributors, v_households
+  -- instead of quietly widening what reaches every list's suggestions.
+  select count(distinct pc.contributed_by), count(distinct pc.list_id)
+    into v_contributors, v_lists
   from public.product_catalog pc
-  where pc.household_id is not null and pc.search_text = v_search;
+  where pc.list_id is not null and pc.search_text = v_search;
 
-  if v_contributors < promote_at or v_households < promote_at then
+  if v_contributors < promote_at or v_lists < promote_at then
     return;
   end if;
 
@@ -433,7 +433,7 @@ begin
   -- search_text, so they differ only in case, accents, or spacing anyway.
   select name, maker into v_first
   from public.product_catalog
-  where household_id is not null and search_text = v_search
+  where list_id is not null and search_text = v_search
   order by created_at, id
   limit 1;
 
@@ -454,11 +454,11 @@ begin
   select case when count(distinct barcode) = 1 then min(barcode) end
     into v_promote_barcode
   from public.product_catalog
-  where household_id is not null and search_text = v_search and barcode is not null;
+  where list_id is not null and search_text = v_search and barcode is not null;
 
   -- Collapse the scoped rows into one global in a single statement, carrying
   -- their add_counts so the product arrives ranked by the usage it earned rather
-  -- than at zero. Leaving the scoped rows would show their households the same
+  -- than at zero. Leaving the scoped rows would show their lists the same
   -- product twice.
   --
   -- ON CONFLICT folds the carried count into an existing global instead of
@@ -467,21 +467,21 @@ begin
   -- check above and this insert; without the DO UPDATE the delete would still
   -- fire and the earned counts would just vanish.
   --
-  -- Each household's share is capped at promote_at, for calibration as much as for
+  -- Each list's share is capped at promote_at, for calibration as much as for
   -- abuse: seeded base_weight is 10 for an ordinary product and 100 for a staple,
-  -- so an uncapped sum would let one household re-adding a niche product outrank
+  -- so an uncapped sum would let one list re-adding a niche product outrank
   -- bottled water for everyone.
   with scoped as (
     delete from public.product_catalog
-    where household_id is not null and search_text = v_search
+    where list_id is not null and search_text = v_search
     returning add_count
   )
   insert into public.product_catalog
-    (name, maker, search_text, household_id, base_weight, add_count, source)
+    (name, maker, search_text, list_id, base_weight, add_count, source)
   select v_first.name, v_first.maker, v_search, null::uuid, 0,
          coalesce(sum(least(add_count, promote_at)), 0)::integer, 'community'
   from scoped
-  on conflict (search_text) where household_id is null
+  on conflict (search_text) where list_id is null
   do update set add_count = public.product_catalog.add_count + excluded.add_count;
 
   -- The code goes on afterwards, in its own block, and never as part of the
@@ -494,7 +494,7 @@ begin
     begin
       update public.product_catalog
       set barcode = v_promote_barcode
-      where household_id is null and search_text = v_search and barcode is null;
+      where list_id is null and search_text = v_search and barcode is null;
     exception when unique_violation then
       null;
     end;
@@ -523,7 +523,7 @@ drop function if exists public.add_custom_product(uuid, text, text);
 
 -- The public entry point: 120 contributions per hour, then silence.
 create or replace function public.add_custom_product(
-  p_household_id uuid,
+  p_list_id uuid,
   p_name text,
   p_maker text default null,
   p_barcode text default null
@@ -537,7 +537,7 @@ begin
   if public.rate_limit_hit('catalog_contribute', 120, interval '1 hour') then
     return;
   end if;
-  perform public.add_custom_product_unthrottled(p_household_id, p_name, p_maker, p_barcode);
+  perform public.add_custom_product_unthrottled(p_list_id, p_name, p_maker, p_barcode);
 end;
 $$;
 
@@ -550,11 +550,11 @@ grant execute on function public.add_custom_product(uuid, text, text, text) to a
 -- maker — so a null and an empty maker are treated alike. An unknown product is
 -- a silent no-op.
 --
--- The scope matters now that a name+maker can exist in more than one household. The
--- add happened in exactly one household (p_household_id), so bump only that household's
+-- The scope matters now that a name+maker can exist in more than one list. The
+-- add happened in exactly one list (p_list_id), so bump only that list's
 -- row and any global it matches — never the same product the caller happens to
--- have contributed in a *different* household they belong to, which would inflate
--- that household's count toward a promotion the add never earned.
+-- have contributed in a *different* list they belong to, which would inflate
+-- that list's count toward a promotion the add never earned.
 --
 -- 240 bumps per hour. A person adding groceries fires one per item; a busy shop
 -- is a few dozen. A script inflating a global ranking needs thousands, and the
@@ -562,7 +562,7 @@ grant execute on function public.add_custom_product(uuid, text, text, text) to a
 create or replace function public.bump_product_popularity(
   p_name text,
   p_maker text default null,
-  p_household_id uuid default null
+  p_list_id uuid default null
 )
 returns void
 language plpgsql
@@ -581,12 +581,12 @@ begin
   where lower(btrim(pc.name)) = lower(btrim(p_name))
     and lower(btrim(coalesce(pc.maker, ''))) = lower(btrim(coalesce(p_maker, '')))
     and (
-      pc.household_id is null
+      pc.list_id is null
       or (
-        pc.household_id = p_household_id
+        pc.list_id = p_list_id
         and exists (
-          select 1 from public.household_members fm
-          where fm.household_id = p_household_id and fm.user_id = v_user
+          select 1 from public.list_members fm
+          where fm.list_id = p_list_id and fm.user_id = v_user
         )
       )
     );
@@ -613,11 +613,11 @@ grant execute on function public.bump_product_popularity(text, text, uuid) to au
 -- product_search_text(), and EXECUTE on that is revoked from authenticated.
 -- Granting it instead would put the merge-key function in reach of every
 -- client. That choice has a cost: RLS does not run for a definer function, so
--- the household scoping below is doing real work rather than restating the
--- policy, and p_household_id is verified rather than believed.
+-- the list scoping below is doing real work rather than restating the
+-- policy, and p_list_id is verified rather than believed.
 create or replace function public.search_catalog(
   p_query        text,
-  p_household_id uuid default null,
+  p_list_id uuid default null,
   p_limit        integer default 100
 )
 returns table (name text, maker text, popularity integer)
@@ -642,7 +642,7 @@ declare
   v_primary   text;
   v_rest      text[];
   v_word_pats text[];
-  v_household uuid := null;
+  v_list uuid := null;
   v_limit     integer := least(greatest(coalesce(p_limit, 100), 1), 200);
 begin
   -- Fold the query exactly the way search_text was folded, so "Apă" and "apa"
@@ -696,15 +696,15 @@ begin
     limit max_tokens
   ) t;
 
-  -- Membership checked, not assumed. A household id arriving here came from
+  -- Membership checked, not assumed. A list id arriving here came from
   -- client state, and the RLS policy that would otherwise reject a forged one
   -- does not run for a definer function. Resolving it to null on a miss means a
   -- bad id degrades to the global catalog rather than erroring.
-  if p_household_id is not null then
-    select hm.household_id
-      into v_household
-    from public.household_members hm
-    where hm.household_id = p_household_id
+  if p_list_id is not null then
+    select hm.list_id
+      into v_list
+    from public.list_members hm
+    where hm.list_id = p_list_id
       and hm.user_id = public.requesting_user_id()
     limit 1;
   end if;
@@ -712,24 +712,24 @@ begin
   return query
   select pc.name, pc.maker, pc.popularity
   from public.product_catalog pc
-  where (pc.household_id is null or pc.household_id = v_household)
+  where (pc.list_id is null or pc.list_id = v_list)
     and pc.search_blob like v_primary
     and pc.search_blob like all (v_rest)
     -- Null when every token was long enough to be trusted anywhere.
     and (v_word_pats is null or (' ' || pc.search_blob) like all (v_word_pats))
-  -- This household's own contributions first, then popularity.
+  -- This list's own contributions first, then popularity.
   --
   -- Without the first term they compete on popularity against the whole global
   -- catalog and lose every time: a contributed row starts at base_weight 0 and
-  -- earns add_count one tap at a time, so at this catalog's size a household's
+  -- earns add_count one tap at a time, so at this catalog's size a list's
   -- own "Olive Oil" never reaches a pool filled by globally-popular strangers.
-  -- The client's matchHouseholdStats already recovers products they have BOUGHT
+  -- The client's matchListStats already recovers products they have BOUGHT
   -- recently; this covers the ones they typed in and have not bought yet.
   --
-  -- A household is capped at 500 contributed products, so this can crowd out
+  -- A list is capped at 500 contributed products, so this can crowd out
   -- globals only for somebody who contributed hundreds of matches for one
   -- query — at which point those are the rows they meant.
-  order by (pc.household_id is not null) desc, pc.popularity desc, pc.name
+  order by (pc.list_id is not null) desc, pc.popularity desc, pc.name
   limit v_limit;
 end;
 $$;
@@ -744,7 +744,7 @@ grant execute on function public.search_catalog(text, uuid, integer) to authenti
 --
 -- PostgREST can only infer ON CONFLICT against a *total* unique constraint. Of
 -- the three keys that govern a global row, only
--- product_catalog_name_maker_household_unique qualifies —
+-- product_catalog_name_maker_list_unique qualifies —
 -- product_catalog_global_search and product_catalog_global_barcode are both
 -- partial indexes, and `.upsert({ onConflict: 'barcode' })` against either fails
 -- at runtime with "there is no unique or exclusion constraint matching the ON
@@ -784,7 +784,7 @@ set search_path = public, extensions
 as $$
 declare
   -- Same cap add_custom_product_unthrottled() uses when it folds scoped counts
-  -- into a global, for the same reason: one enthusiastic household must not outrank
+  -- into a global, for the same reason: one enthusiastic list must not outrank
   -- the editorial baseline on its own.
   promote_at constant integer := 3;
 
@@ -883,7 +883,7 @@ begin
   delete from catalog_import_staging s
   using public.product_catalog pc
   where s.barcode is not null
-    and pc.household_id is null
+    and pc.list_id is null
     and pc.barcode = s.barcode
     and pc.search_text <> s.search_text;
   get diagnostics v_skipped_barcode = row_count;
@@ -907,15 +907,15 @@ begin
     into v_inserted, v_updated_imported, v_updated_provenance
     from catalog_import_staging s
     left join public.product_catalog g
-      on g.household_id is null and g.search_text = s.search_text;
+      on g.list_id is null and g.search_text = s.search_text;
 
     select count(*) into v_collapsed_scoped
     from public.product_catalog pc
     join catalog_import_staging s on s.search_text = pc.search_text
-    where pc.household_id is not null
+    where pc.list_id is not null
       and not exists (
         select 1 from public.product_catalog g
-        where g.household_id is null and g.search_text = s.search_text
+        where g.list_id is null and g.search_text = s.search_text
       );
   else
     -- Rows this import already owns: fully refreshed, because a better normalizer
@@ -931,7 +931,7 @@ begin
         search_aliases = s.search_aliases,
         source_version = coalesce(p_source_version, pc.source_version)
     from catalog_import_staging s
-    where pc.household_id is null
+    where pc.list_id is null
       and pc.source = p_source
       and pc.search_text = s.search_text;
     get diagnostics v_updated_imported = row_count;
@@ -948,7 +948,7 @@ begin
         -- weight and source stay untouched, which is guarantee 2.
         search_aliases = coalesce(pc.search_aliases, s.search_aliases)
     from catalog_import_staging s
-    where pc.household_id is null
+    where pc.list_id is null
       and pc.source <> p_source
       and pc.search_text = s.search_text
       and (pc.barcode is null or pc.source_ref is null or pc.search_aliases is null)
@@ -960,31 +960,31 @@ begin
 
     with ins as (
       insert into public.product_catalog
-        (name, maker, search_text, search_aliases, household_id, base_weight,
+        (name, maker, search_text, search_aliases, list_id, base_weight,
          barcode, source, source_ref, source_version)
       select s.name, s.maker, s.search_text, s.search_aliases, null::uuid,
              s.base_weight, s.barcode, p_source, s.source_ref, p_source_version
       from catalog_import_staging s
       where not exists (
         select 1 from public.product_catalog pc
-        where pc.household_id is null and pc.search_text = s.search_text
+        where pc.list_id is null and pc.search_text = s.search_text
       )
-      on conflict (search_text) where household_id is null do nothing
+      on conflict (search_text) where list_id is null do nothing
       returning search_text
     )
     insert into catalog_import_inserted (search_text)
     select search_text from ins;
     get diagnostics v_inserted = row_count;
 
-    -- A household may have contributed this product before it was imported. Their
+    -- A list may have contributed this product before it was imported. Their
     -- scoped row and the new global read as the same product twice, forever, so
     -- collapse them the way a promotion would — and carry the counts they earned,
-    -- capped per household. This is the sole exception to "add_count is never
+    -- capped per list. This is the sole exception to "add_count is never
     -- written", and it only ever adds counts that already existed.
     with scoped as (
       delete from public.product_catalog pc
       using catalog_import_inserted i
-      where pc.household_id is not null
+      where pc.list_id is not null
         and pc.search_text = i.search_text
       returning pc.search_text, pc.add_count
     ),
@@ -999,7 +999,7 @@ begin
       update public.product_catalog pc
       set add_count = pc.add_count + f.carried
       from folded f
-      where pc.household_id is null and pc.search_text = f.search_text
+      where pc.list_id is null and pc.search_text = f.search_text
       returning f.scoped_rows
     )
     select coalesce(sum(scoped_rows), 0)::integer into v_collapsed_scoped from applied;

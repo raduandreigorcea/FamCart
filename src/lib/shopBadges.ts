@@ -147,11 +147,11 @@ function readShopCache(): ShopEntry[] {
 
 // For tests: forget what was learned this session.
 //
-// It used to say "and a household switch", which was never true and would have
+// It used to say "and a list switch", which was never true and would have
 // been wrong if it were. The shop list comes from catalog_retailers and belongs
-// to nobody -- it is the same handful of rows whichever household you are in --
+// to nobody -- it is the same handful of rows whichever list you are in --
 // so a switch has nothing to forget here, unlike the suggestions and the filters
-// that resetForHousehold does clear.
+// that resetForList does clear.
 export function resetShopList(): void {
   shopRows = null
 }
@@ -169,7 +169,7 @@ export function shopsEnabled(): boolean {
 // ─── remembering the answer ──────────────────────────────────────────────────
 // The badges used to arrive a beat after the rows, and the reason was never the
 // logos -- those are inlined in the bundle. It was this lookup: the list paints
-// from the household snapshot cache with no network at all, and then had to wait
+// from the list snapshot cache with no network at all, and then had to wait
 // for a round trip to a SECOND database before it could say where anything came
 // from.
 //
@@ -179,7 +179,7 @@ export function shopsEnabled(): boolean {
 //
 // Nothing here is private: it is which shops sell a product, which every signed
 // in user can read anyway. It is keyed by version alone rather than by user, and
-// a household's product NAMES are the only thing about it that came from them --
+// a list's product NAMES are the only thing about it that came from them --
 // the same names already sitting in the snapshot cache next to it.
 //
 // That comparison only holds because of clearCachedShops below: the snapshot
@@ -228,7 +228,7 @@ export function saveCachedShops(map: ShopMap, storage: Storage = localStorage): 
  * The key above is deliberately device-wide and stays that way: which shops
  * sell a product belongs to nobody, and sharing one copy across accounts is
  * what keeps the badges painting in the same frame as the rows. The header
- * there argues that a household's product NAMES are the only part that came
+ * there argues that a list's product NAMES are the only part that came
  * from a user, and that they already sit in the snapshot cache beside this one.
  *
  * True — but that cache is keyed per account AND cleared when its account

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 //
 // Promoting, demoting and removing a member: the writes that change who can do
-// what inside a household, and the one that ends somebody's access to it.
+// what inside a list, and the one that ends somebody's access to it.
 //
 // lib/memberRoles owns the RULES and has its own tests. What is untested is the
 // panel's half — that the affordance it draws and the write it then sends agree
@@ -14,7 +14,7 @@
 // rule is exactly the arrangement where one of them quietly stops matching.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import MembersPanel from '../src/components/householdSettings/MembersPanel.vue'
+import MembersPanel from '../src/components/listSettings/MembersPanel.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
 
 const mocks = vi.hoisted(() => ({ db: null, userId: null }))
@@ -40,7 +40,7 @@ function mountPanel({ answer = true, ...props } = {}) {
   const confirm = vi.fn(async () => answer)
   const w = mount(MembersPanel, {
     props: {
-      householdId: 'hh-1',
+      listId: 'hh-1',
       ownerUserId: 'u_owner',
       isOwner: true,
       isOwnerOrModerator: true,
@@ -84,37 +84,37 @@ afterEach(() => {
 })
 
 describe('changing a member’s role', () => {
-  it('promotes to moderator, scoped to the household and the member', async () => {
-    mocks.db.handlers['household_members.update'] = () => ({ data: null, error: null })
+  it('promotes to moderator, scoped to the list and the member', async () => {
+    mocks.db.handlers['list_members.update'] = () => ({ data: null, error: null })
     const { wrapper } = mountPanel()
 
     const row = await openMenuFor(wrapper, 'u_plain')
     await row.find('.member-action-item').trigger('click')
     await flushPromises()
 
-    const updates = writes('household_members', 'update')
+    const updates = writes('list_members', 'update')
     expect(updates).toHaveLength(1)
     expect(updates[0].payload).toEqual({ role: 'moderator' })
     // Both filters: without the user_id one this rewrites the whole roster.
-    expect(updates[0].filters).toEqual({ household_id: 'hh-1', user_id: 'u_plain' })
-    expect(wrapper.emitted('refresh-household')).toHaveLength(1)
+    expect(updates[0].filters).toEqual({ list_id: 'hh-1', user_id: 'u_plain' })
+    expect(wrapper.emitted('refresh-list')).toHaveLength(1)
   })
 
   it('demotes a moderator back to member', async () => {
-    mocks.db.handlers['household_members.update'] = () => ({ data: null, error: null })
+    mocks.db.handlers['list_members.update'] = () => ({ data: null, error: null })
     const { wrapper } = mountPanel()
 
     const row = await openMenuFor(wrapper, 'u_mod')
     await row.find('.member-action-item').trigger('click')
     await flushPromises()
 
-    const updates = writes('household_members', 'update')
+    const updates = writes('list_members', 'update')
     expect(updates[0].payload).toEqual({ role: 'member' })
     expect(updates[0].filters.user_id).toBe('u_mod')
   })
 
   it('surfaces a rejected role change instead of reporting success', async () => {
-    mocks.db.handlers['household_members.update'] = () => ({
+    mocks.db.handlers['list_members.update'] = () => ({
       data: null,
       error: { code: '42501', message: 'permission denied' },
     })
@@ -125,7 +125,7 @@ describe('changing a member’s role', () => {
     await flushPromises()
 
     expect(wrapper.emitted('error')).toHaveLength(1)
-    expect(wrapper.emitted('refresh-household')).toBeUndefined()
+    expect(wrapper.emitted('refresh-list')).toBeUndefined()
   })
 
   // A moderator may remove members but may not change ranks, so the promote and
@@ -143,7 +143,7 @@ describe('changing a member’s role', () => {
 
 describe('removing a member', () => {
   it('deletes the one membership row after the confirm', async () => {
-    mocks.db.handlers['household_members.delete'] = () => ({ data: null, error: null })
+    mocks.db.handlers['list_members.delete'] = () => ({ data: null, error: null })
     const { wrapper, confirm } = mountPanel()
 
     const row = await openMenuFor(wrapper, 'u_plain')
@@ -151,10 +151,10 @@ describe('removing a member', () => {
     await flushPromises()
 
     expect(confirm).toHaveBeenCalled()
-    const deletes = writes('household_members', 'delete')
+    const deletes = writes('list_members', 'delete')
     expect(deletes).toHaveLength(1)
-    expect(deletes[0].filters).toEqual({ household_id: 'hh-1', user_id: 'u_plain' })
-    expect(wrapper.emitted('refresh-household')).toHaveLength(1)
+    expect(deletes[0].filters).toEqual({ list_id: 'hh-1', user_id: 'u_plain' })
+    expect(wrapper.emitted('refresh-list')).toHaveLength(1)
   })
 
   it('writes nothing when the confirm is declined', async () => {
@@ -164,12 +164,12 @@ describe('removing a member', () => {
     await row.find('.member-action-item--danger').trigger('click')
     await flushPromises()
 
-    expect(writes('household_members', 'delete')).toHaveLength(0)
-    expect(wrapper.emitted('refresh-household')).toBeUndefined()
+    expect(writes('list_members', 'delete')).toHaveLength(0)
+    expect(wrapper.emitted('refresh-list')).toBeUndefined()
   })
 
   it('surfaces a rejected removal', async () => {
-    mocks.db.handlers['household_members.delete'] = () => ({
+    mocks.db.handlers['list_members.delete'] = () => ({
       data: null,
       error: { code: '42501', message: 'permission denied' },
     })
@@ -180,7 +180,7 @@ describe('removing a member', () => {
     await flushPromises()
 
     expect(wrapper.emitted('error')).toHaveLength(1)
-    expect(wrapper.emitted('refresh-household')).toBeUndefined()
+    expect(wrapper.emitted('refresh-list')).toBeUndefined()
   })
 })
 

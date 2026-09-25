@@ -22,7 +22,7 @@ defineProps({
   // accessible name reliably, and it disappears the moment someone types — so a
   // screen-reader user checking what they are in the middle of filling in hears
   // "edit text" and nothing else. This component is the sign-in email field and
-  // both household setup fields, which made it the app's front door.
+  // both list setup fields, which made it the app's front door.
   ariaLabel: String,
   placeholder: String,
   autocomplete: String,

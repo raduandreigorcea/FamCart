@@ -40,13 +40,13 @@ vi.mock('../src/lib/errorReporting', () => ({
 
 const wrappers = []
 function mountHeader() {
-  const w = mount(AppNavBar, { props: { householdName: 'Home' } })
+  const w = mount(AppNavBar, { props: { listName: 'Home' } })
   wrappers.push(w)
   return w
 }
 
 function mountBar() {
-  const w = mount(AppNavBar, { props: { layout: 'bar', householdName: 'Home' } })
+  const w = mount(AppNavBar, { props: { layout: 'bar', listName: 'Home' } })
   wrappers.push(w)
   return w
 }
@@ -73,7 +73,7 @@ describe('AppNavBar channel badge', () => {
 
   // One header on every width now, so the stamp lives in it everywhere; a
   // media query hides it on a phone, where the header's width belongs to the
-  // household name (CLAUDE.md: the phone carries none). What must not come back
+  // list name (CLAUDE.md: the phone carries none). What must not come back
   // is the ribbon floating over the list.
   it('no longer floats a ribbon over the list', () => {
     channel.nightly = true

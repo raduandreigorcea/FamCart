@@ -33,7 +33,7 @@ const FRESH_MS = 1600
 export function useRemoteChanges(options: {
   items: Ref<Row[]>
   userId: () => string
-  // False while the list is loading or switching household: rows arriving then
+  // False while the list is loading or switching list: rows arriving then
   // are the list itself, not somebody adding to it.
   active: () => boolean
   onRemoteCheckout: (count: number) => void

@@ -96,7 +96,7 @@ export function captureException(error: unknown): void {
 //
 // That zero was not a quiet cosmetic gap. It is what Sentry sorts, alerts and
 // triages on, so with nothing set every issue looked equally unimportant and an
-// error hitting the whole household was indistinguishable from one hitting a
+// error hitting the whole list was indistinguishable from one hitting a
 // single old phone.
 //
 // Only the opaque Clerk id travels. No email, no name: the id is enough to tell

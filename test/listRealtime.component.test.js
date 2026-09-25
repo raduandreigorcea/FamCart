@@ -1,12 +1,12 @@
 // @vitest-environment happy-dom
 //
-// Tests for the useHouseholdRealtime composable's channel handlers: echo dedupe on
+// Tests for the useListRealtime composable's channel handlers: echo dedupe on
 // INSERT (optimistic rows share ids with their realtime echo), merge-or-reload
-// on UPDATE, removal on DELETE, and the household-deleted teardown.
+// on UPDATE, removal on DELETE, and the list-deleted teardown.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { defineComponent, ref } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
-import { useHouseholdRealtime } from '../src/lib/householdRealtime'
+import { useListRealtime } from '../src/lib/listRealtime'
 
 // Fake realtime client: channels record their postgres_changes listeners so
 // tests can fire payloads at them directly.
@@ -50,20 +50,20 @@ async function mountRealtime() {
   const db = createRealtimeFakeDb()
   const ctx = {
     db,
-    householdId: ref('fam-1'),
+    listId: ref('fam-1'),
     hasInitialized: ref(true),
     items: ref([]),
-    householdMembers: ref([]),
+    listMembers: ref([]),
     loadItems: vi.fn(async () => {}),
-    loadHouseholdHeader: vi.fn(async () => {}),
+    loadListHeader: vi.fn(async () => {}),
     refreshMembershipOrRedirect: vi.fn(async () => {}),
-    onHouseholdDeleted: vi.fn(),
+    onListDeleted: vi.fn(),
   }
 
   let api
   const Harness = defineComponent({
     setup() {
-      api = useHouseholdRealtime(ctx)
+      api = useListRealtime(ctx)
       return () => null
     },
   })
@@ -77,8 +77,8 @@ async function mountRealtime() {
     api,
     wrapper,
     itemsChannel: channelByName('shopping-list:'),
-    membersChannel: channelByName('household-members:'),
-    householdChannel: channelByName('household:'),
+    membersChannel: channelByName('list-members:'),
+    listChannel: channelByName('list:'),
   }
 }
 
@@ -156,26 +156,26 @@ describe('shopping list channel', () => {
 
 describe('members channel', () => {
   it('removes the member on DELETE and rechecks own membership', async () => {
-    const { membersChannel, householdMembers, refreshMembershipOrRedirect, wrapper } = await mountRealtime()
-    householdMembers.value = [
+    const { membersChannel, listMembers, refreshMembershipOrRedirect, wrapper } = await mountRealtime()
+    listMembers.value = [
       { user_id: 'user-1', display_name: 'Me' },
       { user_id: 'user-2', display_name: 'Them' },
     ]
 
     membersChannel.emit('DELETE', { eventType: 'DELETE', old: { user_id: 'user-2' } })
-    expect(householdMembers.value.map((m) => m.user_id)).toEqual(['user-1'])
+    expect(listMembers.value.map((m) => m.user_id)).toEqual(['user-1'])
     expect(refreshMembershipOrRedirect).toHaveBeenCalled()
 
     wrapper.unmount()
   })
 })
 
-describe('household channel', () => {
-  it('tears down subscriptions and signals the caller when the household is deleted', async () => {
-    const { householdChannel, db, onHouseholdDeleted, wrapper } = await mountRealtime()
+describe('list channel', () => {
+  it('tears down subscriptions and signals the caller when the list is deleted', async () => {
+    const { listChannel, db, onListDeleted, wrapper } = await mountRealtime()
 
-    householdChannel.emit('DELETE', { eventType: 'DELETE', old: { id: 'fam-1' } })
-    expect(onHouseholdDeleted).toHaveBeenCalled()
+    listChannel.emit('DELETE', { eventType: 'DELETE', old: { id: 'fam-1' } })
+    expect(onListDeleted).toHaveBeenCalled()
     expect(db.removedChannels).toHaveLength(3)
 
     wrapper.unmount()
@@ -184,40 +184,40 @@ describe('household channel', () => {
 
 describe('refresh coalescing', () => {
   it('collapses three channels resubscribing into one fetch of each half', async () => {
-    const { itemsChannel, membersChannel, householdChannel, loadItems, loadHouseholdHeader, wrapper } =
+    const { itemsChannel, membersChannel, listChannel, loadItems, loadListHeader, wrapper } =
       await mountRealtime()
     // Let the refresh the initial subscribe asked for run to completion, so what
     // is measured below is only what the reconnect itself costs.
     await settle()
     loadItems.mockClear()
-    loadHouseholdHeader.mockClear()
+    loadListHeader.mockClear()
 
     // What a reconnect looks like from here: all three acknowledgements land
     // within a few milliseconds of each other. Before coalescing this was one
-    // loadItems and two loadHouseholdHeaders, on top of the pair the reconnect
+    // loadItems and two loadListHeaders, on top of the pair the reconnect
     // had already issued itself.
     itemsChannel.statusCallback('SUBSCRIBED')
     membersChannel.statusCallback('SUBSCRIBED')
-    householdChannel.statusCallback('SUBSCRIBED')
+    listChannel.statusCallback('SUBSCRIBED')
     await settle()
 
     expect(loadItems).toHaveBeenCalledTimes(1)
-    expect(loadHouseholdHeader).toHaveBeenCalledTimes(1)
+    expect(loadListHeader).toHaveBeenCalledTimes(1)
 
     wrapper.unmount()
   })
 
   it('asks only for the half the resubscribed channel is responsible for', async () => {
-    const { membersChannel, loadItems, loadHouseholdHeader, wrapper } = await mountRealtime()
+    const { membersChannel, loadItems, loadListHeader, wrapper } = await mountRealtime()
     await settle()
     loadItems.mockClear()
-    loadHouseholdHeader.mockClear()
+    loadListHeader.mockClear()
 
     // The roster came back; the item list never went anywhere.
     membersChannel.statusCallback('SUBSCRIBED')
     await settle()
 
-    expect(loadHouseholdHeader).toHaveBeenCalledTimes(1)
+    expect(loadListHeader).toHaveBeenCalledTimes(1)
     expect(loadItems).not.toHaveBeenCalled()
 
     wrapper.unmount()

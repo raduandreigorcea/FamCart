@@ -4,7 +4,7 @@
 // login page that also can't work offline. This is only a routing/cache hint;
 // every authenticated request still carries a real Clerk token once online.
 
-import { clearActiveHouseholdId, clearHouseholdSnapshot } from './householdCache'
+import { clearActiveListId, clearListSnapshot } from './listCache'
 import { clearOfflineQueue } from './offlineQueue'
 import { clearProfileWritten } from './profile'
 import { clearCachedShops } from './shopBadges'
@@ -39,7 +39,7 @@ export function forgetUser(storage: Storage): void {
 //
 // Sign-out used to spell this out at the call site, and got three of the four:
 // the remembered user, the snapshot and the offline queue were cleared, and the
-// active-household pointer was not. That particular omission was harmless — the
+// active-list pointer was not. That particular omission was harmless — the
 // pointer is stored with the account it belongs to and rejected on read by
 // anyone else — but "harmless" was luck rather than design, and the list only
 // exists in one function whose name does not say it is a list.
@@ -71,8 +71,8 @@ export function forgetUser(storage: Storage): void {
 // two taps to fix, and the same trade famcart-last-user already makes.
 export function forgetLocalUserState(storage: Storage, userId?: string): void {
   forgetUser(storage)
-  clearHouseholdSnapshot(storage, userId)
-  clearActiveHouseholdId(storage, userId)
+  clearListSnapshot(storage, userId)
+  clearActiveListId(storage, userId)
   clearOfflineQueue(storage, userId)
   clearProfileWritten(storage, userId)
   // The fifth entry, and the one that proves the paragraph above was worth

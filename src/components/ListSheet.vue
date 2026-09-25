@@ -3,41 +3,41 @@ import { computed, useId, type PropType } from 'vue'
 import AppModal from './AppModal.vue'
 import AppIcon from './AppIcon.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
-import { DEFAULT_HOUSEHOLD_EMOJI } from '../lib/householdEmoji'
-import { HOUSEHOLD_MEMBERSHIP_CAP } from '../lib/limits'
+import { DEFAULT_LIST_EMOJI } from '../lib/listEmoji'
+import { LIST_MEMBERSHIP_CAP } from '../lib/limits'
 import { normalizeMemberRole } from '../lib/memberRoles'
 import { initialOf, memberDisplayName } from '../lib/userIdentity'
-import type { HouseholdMemberProfile } from '../lib/householdRealtime'
+import type { ListMemberProfile } from '../lib/listRealtime'
 import { t, tn } from '../lib/i18n'
 
-// Whose list this is. Opened from the household name at the top of the list,
+// Whose list this is. Opened from the list name at the top of the list,
 // which is where people look to ask that question.
 //
-// It gathers what used to be spread over three doors -- a household slot and a
-// "Switch" slot in the bottom bar, and "Manage household" and "Invite" in the
-// account dialog -- into the one place a household is: who is in it, how to get
-// somebody else in, and which household you are looking at. The deep settings
-// (name, emoji, roles, leaving) are one row away, in HouseholdSettingsModal,
+// It gathers what used to be spread over three doors -- a list slot and a
+// "Switch" slot in the bottom bar, and "Manage list" and "Invite" in the
+// account dialog -- into the one place a list is: who is in it, how to get
+// somebody else in, and which list you are looking at. The deep settings
+// (name, emoji, roles, leaving) are one row away, in ListSettingsModal,
 // because they are occasional and administrative and this sheet is neither.
 const props = defineProps({
   open: { type: Boolean, default: false },
-  households: {
+  lists: {
     type: Array as PropType<{ id: string; name: string; emoji?: string | null }[]>,
     default: () => [],
   },
-  householdId: { type: String, default: '' },
-  householdName: { type: String, default: '' },
-  householdEmoji: { type: String, default: '' },
+  listId: { type: String, default: '' },
+  listName: { type: String, default: '' },
+  listEmoji: { type: String, default: '' },
   // Already ordered for display (you first, then the owner).
-  members: { type: Array as PropType<HouseholdMemberProfile[]>, default: () => [] },
+  members: { type: Array as PropType<ListMemberProfile[]>, default: () => [] },
   ownerUserId: { type: String, default: '' },
   currentUserId: { type: String, default: '' },
 })
 
 const emit = defineEmits<{
   close: []
-  'switch-household': [id: string]
-  'add-household': []
+  'switch-list': [id: string]
+  'add-list': []
   invite: []
   manage: []
 }>()
@@ -45,21 +45,21 @@ const emit = defineEmits<{
 const titleId = useId()
 
 const alone = computed(() => props.members.length <= 1)
-const canAddHousehold = computed(() => props.households.length < HOUSEHOLD_MEMBERSHIP_CAP)
+const canAddList = computed(() => props.lists.length < LIST_MEMBERSHIP_CAP)
 
-function roleLabel(member: HouseholdMemberProfile): string {
-  if (member.user_id === props.ownerUserId) return t('household.roleOwner')
-  return normalizeMemberRole(member.role) === 'moderator' ? t('household.roleModerator') : ''
+function roleLabel(member: ListMemberProfile): string {
+  if (member.user_id === props.ownerUserId) return t('list.roleOwner')
+  return normalizeMemberRole(member.role) === 'moderator' ? t('list.roleModerator') : ''
 }
 
-function nameOf(member: HouseholdMemberProfile): string {
-  return member.user_id === props.currentUserId ? t('household.you') : memberDisplayName(member)
+function nameOf(member: ListMemberProfile): string {
+  return member.user_id === props.currentUserId ? t('list.you') : memberDisplayName(member)
 }
 
 // A mouse wheel only scrolls up and down, so on a desktop a row that scrolls
 // sideways would be reachable by trackpad and scrollbar-drag only, and this one
 // has no scrollbar. Turn a vertical wheel into sideways travel -- but only while
-// the row has somewhere to go, so a household that fits lets the wheel through
+// the row has somewhere to go, so a list that fits lets the wheel through
 // to the sheet as usual.
 function scrollMembersSideways(event: WheelEvent) {
   const row = event.currentTarget as HTMLElement
@@ -72,31 +72,31 @@ function scrollMembersSideways(event: WheelEvent) {
   row.scrollLeft = next
 }
 
-function addHousehold() {
+function addList() {
   emit('close')
-  emit('add-household')
+  emit('add-list')
 }
 
 // Picking the one you are on is confirming where you are, not a switch.
 function pick(id: string) {
   emit('close')
-  if (id !== props.householdId) emit('switch-household', id)
+  if (id !== props.listId) emit('switch-list', id)
 }
 </script>
 
 <template>
   <AppModal :open="open" variant="sheet" @close="emit('close')">
-    <div class="app-sheet household-sheet" role="dialog" aria-modal="true" :aria-labelledby="titleId">
+    <div class="app-sheet list-sheet" role="dialog" aria-modal="true" :aria-labelledby="titleId">
       <!-- The same header every menu here wears: a tinted square, a title with a
-           line under it, and the close button. The square holds the household's
+           line under it, and the close button. The square holds the list's
            own emoji where the others hold an icon. -->
       <header class="sheet-header">
         <div class="sheet-header__title-wrap">
           <span class="sheet-header__icon-bg" aria-hidden="true">
-            {{ householdEmoji || DEFAULT_HOUSEHOLD_EMOJI }}
+            {{ listEmoji || DEFAULT_LIST_EMOJI }}
           </span>
           <div class="sheet-header__text">
-            <h3 :id="titleId">{{ householdName || t('account.householdFallback') }}</h3>
+            <h3 :id="titleId">{{ listName || t('account.listFallback') }}</h3>
             <p>{{ tn('account.memberCount', members.length) }}</p>
           </div>
         </div>
@@ -108,7 +108,7 @@ function pick(id: string) {
              are. Inviting is adding a face to this row, so it is drawn as the
              next face. -->
         <section class="members-card">
-          <ul class="household-sheet__members" @wheel="scrollMembersSideways">
+          <ul class="list-sheet__members" @wheel="scrollMembersSideways">
             <li v-for="member in members" :key="member.user_id" class="member">
               <img v-if="member.image_url" :src="member.image_url" alt="" class="member__avatar" />
               <span v-else class="member__avatar member__avatar--fallback" aria-hidden="true">
@@ -122,49 +122,49 @@ function pick(id: string) {
                 <span class="member__avatar member__avatar--invite" aria-hidden="true">
                   <AppIcon name="user-round-plus" />
                 </span>
-                <span class="member__name member__name--invite">{{ t('household.invite') }}</span>
+                <span class="member__name member__name--invite">{{ t('list.invite') }}</span>
               </button>
             </li>
           </ul>
-          <!-- A household of one is a list nobody else can see, which is most of
+          <!-- A list of one is a list nobody else can see, which is most of
                the point missed. So it says why the empty face is there. -->
-          <p v-if="alone" class="household-sheet__alone">{{ t('household.aloneHint') }}</p>
+          <p v-if="alone" class="list-sheet__alone">{{ t('list.aloneHint') }}</p>
         </section>
 
         <div class="menu-section">
           <button type="button" class="menu-row" @click="emit('manage')">
             <span class="menu-row__label">
               <AppIcon class="menu-row__icon" name="settings" />
-              <span>{{ t('account.manageHousehold') }}</span>
+              <span>{{ t('account.manageList') }}</span>
             </span>
             <AppIcon class="menu-row__chevron" name="chevron-right" />
           </button>
         </div>
 
         <!-- Which list you are looking at. Shown to everyone, even with one
-             household: it is also the way to a second one. -->
+             list: it is also the way to a second one. -->
         <section class="menu-section" :aria-label="t('switcher.heading')">
           <h4 class="menu-section__heading">{{ t('switcher.heading') }}</h4>
           <div class="menu-section" role="radiogroup" :aria-label="t('switcher.heading')">
             <button
-              v-for="household in households"
-              :key="household.id"
+              v-for="list in lists"
+              :key="list.id"
               type="button"
               class="menu-row"
-              :class="{ 'menu-row--current': household.id === householdId }"
+              :class="{ 'menu-row--current': list.id === listId }"
               role="radio"
-              :aria-checked="household.id === householdId"
-              @click="pick(household.id)"
+              :aria-checked="list.id === listId"
+              @click="pick(list.id)"
             >
               <span class="menu-row__label">
                 <span class="menu-row__emoji" aria-hidden="true">
-                  {{ household.emoji || DEFAULT_HOUSEHOLD_EMOJI }}
+                  {{ list.emoji || DEFAULT_LIST_EMOJI }}
                 </span>
-                <span class="menu-row__text">{{ household.name || t('account.householdFallback') }}</span>
+                <span class="menu-row__text">{{ list.name || t('account.listFallback') }}</span>
               </span>
-              <AppIcon v-if="household.id === householdId" class="menu-row__check" name="check-bold" />
+              <AppIcon v-if="list.id === listId" class="menu-row__check" name="check-bold" />
             </button>
-            <button v-if="canAddHousehold" type="button" class="menu-row" @click="addHousehold">
+            <button v-if="canAddList" type="button" class="menu-row" @click="addList">
               <span class="menu-row__label">
                 <AppIcon class="menu-row__icon" name="plus" />
                 <span>{{ t('account.joinOrCreate') }}</span>
@@ -250,7 +250,7 @@ function pick(id: string) {
 /* The people, by face and name. A row that scrolls sideways rather than a
    list, so a family of six does not push the rest off a phone screen. The
    edges fade, so faces slide out under them rather than being sliced off. */
-.household-sheet__members {
+.list-sheet__members {
   display: flex;
   gap: var(--space-4);
   margin: 0;
@@ -265,7 +265,7 @@ function pick(id: string) {
   mask-image: linear-gradient(to right, transparent, #000 0.9rem, #000 calc(100% - 0.9rem), transparent);
 }
 
-.household-sheet__members::-webkit-scrollbar {
+.list-sheet__members::-webkit-scrollbar {
   display: none;
 }
 
@@ -362,7 +362,7 @@ function pick(id: string) {
   color: var(--color-primary-text);
 }
 
-.household-sheet__alone {
+.list-sheet__alone {
   margin: 0;
   padding: 0 0.9rem 0.8rem;
   font-size: var(--text-xs);
@@ -411,7 +411,7 @@ function pick(id: string) {
   background: var(--bg-press);
 }
 
-/* The household you are on: marked the way a chosen option is everywhere
+/* The list you are on: marked the way a chosen option is everywhere
    else, a green edge and a tick, not a different kind of row. */
 .menu-row--current {
   border-color: color-mix(in srgb, var(--color-primary) 55%, var(--bg-surface));

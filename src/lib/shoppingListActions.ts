@@ -19,7 +19,7 @@ import {
 import { userMessage } from './errorMessages'
 import { t } from './i18n'
 import { ITEM_NAME_MAX_LENGTH, ITEM_QUANTITY_MAX, sumQuantities } from './limits'
-import type { ShoppingItemRow } from './householdRealtime'
+import type { ShoppingItemRow } from './listRealtime'
 import type { ProductSuggestion } from './productSearch'
 
 // How long a quantity stepper may keep being tapped before the change is sent.
@@ -83,7 +83,7 @@ export interface ShoppingListActions {
 export function useShoppingListActions(options: {
   db: SupabaseClient
   items: Ref<ShoppingItemRow[]>
-  householdId: Ref<string | null>
+  listId: Ref<string | null>
   /** The Clerk id, or the remembered one while Clerk is still loading offline. */
   userId: Ref<string>
   itemLimit: Ref<number>
@@ -95,7 +95,7 @@ export function useShoppingListActions(options: {
   selectedProduct: Ref<AddedProduct | null>
   // The view's shared error surface. addError below is this composable's own
   // because only the add path writes it; loadError is passed in because the
-  // household loaders and the reconnect sync write it too.
+  // list loaders and the reconnect sync write it too.
   loadError: Ref<string>
   // From the suggestions composable: what to tell the search screen landed, and
   // what to record against the catalog once it has.
@@ -108,7 +108,7 @@ export function useShoppingListActions(options: {
   const {
     db,
     items,
-    householdId,
+    listId,
     userId,
     itemLimit,
     isOffline,
@@ -181,7 +181,7 @@ export function useShoppingListActions(options: {
         const item = items.value.find((i) => i.id === id)
         if (item) return flushQuantityWrite(item, before, entry.onError)
         // The row left the list while its write was still in its debounce —
-        // switchHousehold empties the array, and a delete from another device
+        // switchList empties the array, and a delete from another device
         // does the same for one row. There is nothing to send, but the guard
         // scheduleQuantityWrite took out still has to come off: without this the
         // id stayed in pendingItemWrites for the life of the view, so every
@@ -255,21 +255,21 @@ export function useShoppingListActions(options: {
     // server's version without the user's own pending change.
     await ensureQueueFlushed()
 
-    // Which household these rows will be ABOUT, read before the round trip and
+    // Which list these rows will be ABOUT, read before the round trip and
     // checked against the live one after it. See the guard below.
-    const forHousehold = householdId.value
+    const forList = listId.value
 
     const [uncheckedRes, checkedRes] = await Promise.all([
       db
         .from('shopping_list_items')
         .select('*')
-        .eq('household_id', forHousehold)
+        .eq('list_id', forList)
         .eq('checked', false)
         .order('created_at', { ascending: true }),
       db
         .from('shopping_list_items')
         .select('*')
-        .eq('household_id', forHousehold)
+        .eq('list_id', forList)
         .eq('checked', true)
         // Most recently checked first, so the 30-row cap keeps the latest ticks.
         // This is a "which rows survive the cap" order, not a display order:
@@ -278,20 +278,20 @@ export function useShoppingListActions(options: {
         .limit(30),
     ])
 
-    // The household moved on while these were in flight, so they are somebody
-    // else's rows now — the previous household's, about to be painted under the
-    // current household's name.
+    // The list moved on while these were in flight, so they are somebody
+    // else's rows now — the previous list's, about to be painted under the
+    // current list's name.
     //
     // Returned before the error check as well as before the assignment, and
-    // deliberately: a failed read of a household the user has left must not
+    // deliberately: a failed read of a list the user has left must not
     // raise "couldn't load the list" over a list that loaded perfectly well.
     //
-    // The switch path re-reads householdId after its own awaits, so it is not
+    // The switch path re-reads listId after its own awaits, so it is not
     // what reaches this. A load already on the wire is: the reconnect handler,
     // each realtime subscribe acknowledgement, and the watchdog every 30
-    // seconds while the socket is down all refetch the household that was
+    // seconds while the socket is down all refetch the list that was
     // current when they started.
-    if (householdId.value !== forHousehold) return
+    if (listId.value !== forList) return
 
     // Offline: keep the cached list on screen and let the 'online' handler refetch.
     // Genuine server errors get a plain message, never a raw "Failed to fetch".
@@ -361,16 +361,16 @@ export function useShoppingListActions(options: {
     // Only inserts: an update or delete refers to a row the server already has,
     // so the fetched copy is the right thing to show until the queue drains.
     //
-    // Scoped to this household, and that is load-bearing: the queue is keyed by
-    // user, not by household, and a user may belong to three. Without the
-    // household_id check, an add queued offline in one household renders in another
-    // household's list the moment you switch to it — the row is never written
+    // Scoped to this list, and that is load-bearing: the queue is keyed by
+    // user, not by list, and a user may belong to three. Without the
+    // list_id check, an add queued offline in one list renders in another
+    // list the moment you switch to it — the row is never written
     // there, but showing it at all is the cross-tenant leak the whole RLS design
     // exists to prevent.
     const queued = userId.value ? loadOfflineQueue(localStorage, userId.value) : []
     for (const mutation of queued) {
       if (mutation.kind !== 'insert') continue
-      if (mutation.row.household_id !== householdId.value) continue
+      if (mutation.row.list_id !== listId.value) continue
       if (fresh.some((i) => i.id === mutation.id)) continue
       fresh.push({
         checked: false,
@@ -409,7 +409,7 @@ export function useShoppingListActions(options: {
     const { data } = await db
       .from('shopping_list_items')
       .select('*')
-      .eq('household_id', householdId.value)
+      .eq('list_id', listId.value)
       .eq('checked', false)
     const fetched = findActiveItemByName((data ?? []) as ShoppingItemRow[], name, options)
     if (!fetched) return null
@@ -536,7 +536,7 @@ export function useShoppingListActions(options: {
     const id = crypto.randomUUID()
     const row = {
       id,
-      household_id: householdId.value,
+      list_id: listId.value,
       name,
       maker,
       quantity,
@@ -830,7 +830,7 @@ export function useShoppingListActions(options: {
     // row that happened to be named, mirroring the RPC's own `checked = true`
     // guard.
     //
-    // None of them being here is a different situation: switching household
+    // None of them being here is a different situation: switching list
     // replaces the whole array while that animation is still running. This used
     // to read as "nothing to buy" and return, leaving the rows checked in the
     // database after the user had been told they were bought. There is nothing
@@ -858,9 +858,9 @@ export function useShoppingListActions(options: {
       })
       // Still a checkout as far as the screen is concerned, so it still counts.
       // Without this the list empties and then reads "Nothing here yet" — the
-      // sentence for a household that has never shopped — because the only
+      // sentence for a list that has never shopped — because the only
       // other things that answer that question are purchase history (which
-      // nothing has written yet) and the cached answer (which a household on
+      // nothing has written yet) and the cached answer (which a list on
       // its first-ever checkout does not have yet).
       onCheckedOut()
       return

@@ -3,16 +3,16 @@ import { UserFacingError, userMessage } from '../src/lib/errorMessages.ts'
 
 describe('userMessage', () => {
   it('shows a UserFacingError message as written', () => {
-    const error = new UserFacingError('You can only own one household.')
-    expect(userMessage(error, 'Failed to create household.')).toBe('You can only own one household.')
+    const error = new UserFacingError('You can only own one list.')
+    expect(userMessage(error, 'Failed to create list.')).toBe('You can only own one list.')
   })
 
   it('masks raw Postgres error text with the fallback', () => {
     const error = {
-      message: 'duplicate key value violates unique constraint "households_one_per_owner"',
+      message: 'duplicate key value violates unique constraint "lists_one_per_owner"',
       code: '23505',
     }
-    expect(userMessage(error, 'Failed to create household.')).toBe('Failed to create household.')
+    expect(userMessage(error, 'Failed to create list.')).toBe('Failed to create list.')
   })
 
   it('masks permission-denied text, which names the table', () => {

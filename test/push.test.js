@@ -86,7 +86,7 @@ describe('the message bodies', () => {
 //
 // The fix is a language map rather than a per-recipient send: OneSignal holds a
 // language per subscription and picks the matching key, so one REST call serves
-// a household reading in three languages. What these pin is that the map is
+// a list reading in three languages. What these pin is that the map is
 // COMPLETE — a missing key is not an error anywhere, it is a silent fall back
 // to English, which is indistinguishable from the bug this replaced.
 describe('the localised bodies', () => {
@@ -232,8 +232,8 @@ describe('secretMatches', () => {
 })
 
 describe('routePayload', () => {
-  const item = { id: 'i1', household_id: 'hh-1', name: 'Milk', quantity: 1, added_by: 'u_a' }
-  const purchase = { checkout_id: 'c1', household_id: 'hh-1', purchased_by: 'u_a' }
+  const item = { id: 'i1', list_id: 'hh-1', name: 'Milk', quantity: 1, added_by: 'u_a' }
+  const purchase = { checkout_id: 'c1', list_id: 'hh-1', purchased_by: 'u_a' }
 
   it('routes an item insert', () => {
     expect(routePayload({ type: 'INSERT', table: 'shopping_list_items', record: item })).toEqual({
@@ -258,7 +258,7 @@ describe('routePayload', () => {
   })
 
   it('skips a table with no fan-out of its own', () => {
-    expect(routePayload({ type: 'INSERT', table: 'households', record: {} })).toBeNull()
+    expect(routePayload({ type: 'INSERT', table: 'lists', record: {} })).toBeNull()
     // The nearest miss, and the one a rename would produce.
     expect(routePayload({ type: 'INSERT', table: 'shopping_items', record: item })).toBeNull()
   })

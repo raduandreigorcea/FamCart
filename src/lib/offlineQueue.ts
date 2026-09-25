@@ -8,7 +8,7 @@ import { sumQuantities } from './limits'
 // every mutation optimistically already; when the browser reports no
 // connectivity they enqueue the write here instead of hitting the network, and
 // replay the queue in order once connectivity returns. The queue is keyed to
-// one user (like the household snapshot) and survives restarts via localStorage,
+// one user (like the list snapshot) and survives restarts via localStorage,
 // pairing with the snapshot cache: the snapshot restores what the list looked
 // like, the queue restores what still has to reach the server.
 
@@ -17,11 +17,11 @@ export type OfflineMutation =
   | { kind: 'update'; id: string; patch: Record<string, unknown> }
   | { kind: 'delete'; id: string }
   // A checkout made offline, replayed through buy_items so it still reaches
-  // purchase history (and the household's push) instead of being queued as bare
+  // purchase history (and the list's push) instead of being queued as bare
   // deletes, which it used to be. `id` names the checkout, not a row, so the
   // per-row coalescing below never touches it. Safe to replay late or twice:
   // buy_items moves only rows that are still ticked and in the caller's
-  // household, so a row already bought, or unticked since by someone else, is
+  // list, so a row already bought, or unticked since by someone else, is
   // simply not moved. The ticks it relies on are queued before it, in order.
   | { kind: 'checkout'; id: string; ids: string[] }
 
@@ -64,7 +64,7 @@ const STORAGE_PREFIX = 'famcart-offline-queue'
 // account's queue was last saved. Read once and migrated on the next save.
 //
 // This and renameLegacyRowKeys below are the last of the pre-rename shims. The
-// others (snapshot, active household, update and push keys) were removed on
+// others (snapshot, active list, update and push keys) were removed on
 // 2026-09-22; these stayed because removing them loses writes rather than a
 // cache. Safe to delete from 2026-11-14, three months after the newer of the two.
 const LEGACY_STORAGE_KEY = STORAGE_PREFIX
@@ -98,7 +98,7 @@ function queueKey(userId: string): string {
 function renameLegacyRowKeys(row: Record<string, unknown>): Record<string, unknown> {
   if (!('family_id' in row)) return row
   const { family_id: legacyId, ...rest } = row
-  return { ...rest, household_id: rest.household_id ?? legacyId }
+  return { ...rest, list_id: rest.list_id ?? legacyId }
 }
 
 export function loadOfflineQueue(storage: Storage, userId: string): OfflineMutation[] {
@@ -343,7 +343,7 @@ async function applyMutation(
       const { data, error: selectErr } = await db
         .from(TABLE)
         .select('*')
-        .eq('household_id', mutation.row.household_id)
+        .eq('list_id', mutation.row.list_id)
       if (selectErr) return { ok: false, transient: isOfflineError(selectErr) }
       const rows = (data ?? []) as ShoppingItem[]
       if (rows.some((row) => row.id === mutation.id)) return { ok: true, transient: false }
@@ -356,7 +356,7 @@ async function applyMutation(
       //
       // The maker is half the match key, and leaving it out was silent data
       // loss. shopping_list_items_unique_active_name (004_shopping_list.sql) is
-      // on (household_id, name, coalesce(maker, '')), so a 23505 on a row that
+      // on (list_id, name, coalesce(maker, '')), so a 23505 on a row that
       // HAS a maker means the row it collided with has that same maker — while
       // findActiveItemByName with no maker option looks for '' and matches only
       // maker-less rows. It therefore found nothing, this returned a permanent

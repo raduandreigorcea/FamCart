@@ -24,9 +24,9 @@
 // A drift costs a duplicate row in a dropdown rather than data: the database is
 // the only copy that writes.
 //
-// Ranking (see rankSuggestions) puts what THIS household actually buys first and
+// Ranking (see rankSuggestions) puts what THIS list actually buys first and
 // only falls back to the global catalog ordering for products they have never
-// bought. The global signal is a cold-start default; a household's own history is
+// bought. The global signal is a cold-start default; a list's own history is
 // the real answer to "what did they mean by 'apa'".
 //
 // The split of responsibility matters: the catalog is the only SOURCE of
@@ -39,13 +39,13 @@
 export interface ProductSuggestion {
   name: string
   maker: string | null
-  // Global cross-household score from product_catalog (006_product_catalog.sql).
+  // Global cross-list score from product_catalog (006_product_catalog.sql).
   popularity?: number
 
   // ─── what the catalog project's search_catalog adds ────────────────────────
   //
   // Present only on rows from the CATALOG project. The app database's own
-  // search_catalog returns three columns, and rows recovered from household
+  // search_catalog returns three columns, and rows recovered from list
   // history have none of this, so every one of these is optional and nothing
   // may depend on it being there.
   //
@@ -67,8 +67,8 @@ export interface ProductSuggestion {
   relevance_score?: number | null
 }
 
-// One product a household has bought, folded across all its purchase_history rows.
-export interface HouseholdProductStat {
+// One product a list has bought, folded across all its purchase_history rows.
+export interface ListProductStat {
   name: string
   maker: string | null
   // Purchase occasions, not units: buying "apa x6" once says less about habit
@@ -92,7 +92,7 @@ export function normalizeSearchText(text: string): string {
     .trim()
 }
 
-// Identity of a product across the catalog and a household's history. Name + maker,
+// Identity of a product across the catalog and a list's history. Name + maker,
 // normalized the same way search_text is, so "Apă Plată"/"Apa Plata" and a null
 // vs empty maker collapse together — matching how the DB's merge key and
 // bump_product_popularity() pair a product with itself.
@@ -103,13 +103,13 @@ export function productKey(name: string | null | undefined, maker: string | null
   return `${normalizeSearchText(String(name ?? ''))}\u0000${normalizeSearchText(String(maker ?? ''))}`
 }
 
-// Fold a household's purchase_history rows into per-product stats.
+// Fold a list's purchase_history rows into per-product stats.
 //
 // purchase_history is pruned to 60 checkouts / 30 days (005_purchase_history.sql), so this
 // is inherently a rolling window of recent behaviour: no decay maths needed, the
 // retention policy already forgets for us.
-export function buildHouseholdProductStats(rows: PurchaseHistoryRow[]): Map<string, HouseholdProductStat> {
-  const stats = new Map<string, HouseholdProductStat>()
+export function buildListProductStats(rows: PurchaseHistoryRow[]): Map<string, ListProductStat> {
+  const stats = new Map<string, ListProductStat>()
 
   for (const row of rows || []) {
     const name = String(row?.name ?? '').trim()
@@ -139,17 +139,17 @@ export function buildHouseholdProductStats(rows: PurchaseHistoryRow[]): Map<stri
   return stats
 }
 
-// Catalog matches this household has bought, recovered without a second query.
+// Catalog matches this list has bought, recovered without a second query.
 //
 // The catalog pool the caller fetches is capped and ordered by GLOBAL
 // popularity, which was harmless while the catalog was a few hundred curated
 // rows: everything that matched fit in the pool, and rankSuggestions could sort
 // it. Once the catalog is imported at scale, a two-character prefix matches
-// thousands of products, and a household's own weekly staple can be crowded out of
+// thousands of products, and a list's own weekly staple can be crowded out of
 // the pool by globally-popular strangers before ranking ever sees it.
 // rankSuggestions can only reorder what it is handed.
 //
-// This is the other half of the pool: the household's stats are already in memory
+// This is the other half of the pool: the list's stats are already in memory
 // and already keyed the same way, so matching them here costs no network.
 //
 // It does make purchase history a SOURCE of suggestions, which the note at the
@@ -165,9 +165,9 @@ export function buildHouseholdProductStats(rows: PurchaseHistoryRow[]): Map<stri
 //      modal, so it is a strong "this is a real product" signal. A hand-typed
 //      bare "apa" has no maker and one word and can never be offered back; an
 //      "Apa Plata 2L" / "Dorna" can.
-export function matchHouseholdStats(
+export function matchListStats(
   query: string,
-  householdStats: Map<string, HouseholdProductStat>,
+  listStats: Map<string, ListProductStat>,
   options: { limit: number; requireSpecific?: boolean },
 ): ProductSuggestion[] {
   const needle = normalizeSearchText(String(query ?? ''))
@@ -177,8 +177,8 @@ export function matchHouseholdStats(
   const limit = Math.max(0, Number(options?.limit) || 0)
   if (limit === 0) return []
 
-  const matches: HouseholdProductStat[] = []
-  for (const stat of householdStats?.values() ?? []) {
+  const matches: ListProductStat[] = []
+  for (const stat of listStats?.values() ?? []) {
     if (requireSpecific && !stat.maker && stat.name.trim().split(/\s+/).length < 2) continue
     // The same haystack product_search_text() builds, so "contains" means the
     // same thing here as it does in the server's ilike.
@@ -202,7 +202,7 @@ export function matchHouseholdStats(
 }
 
 // Order catalog matches, dropping any duplicate product:
-//   1. products this household buys — most often, then most recently
+//   1. products this list buys — most often, then most recently
 //   2. global popularity, for everything they have never bought
 //   3. name, so the order is stable
 //
@@ -211,14 +211,14 @@ export function matchHouseholdStats(
 // nothing and can never be suggested. The first candidate for a key wins.
 export function rankSuggestions(
   candidates: ProductSuggestion[],
-  householdStats: Map<string, HouseholdProductStat>,
+  listStats: Map<string, ListProductStat>,
   limit: number,
 ): ProductSuggestion[] {
   // Decorate before sorting, rather than resolving each row inside the
   // comparator.
   //
   // This is the search box's keystroke path, and the pool it is handed is large:
-  // SUGGEST_POOL is 100 from each of two projects, plus whatever the household's
+  // SUGGEST_POOL is 100 from each of two projects, plus whatever the list's
   // own history matched. The comparator ran productKey TWICE per comparison, and
   // productKey is an NFD normalize, two regex passes, a lowercase and a trim,
   // for the name and again for the maker — so a sort of a few hundred rows spent
@@ -231,7 +231,7 @@ export function rankSuggestions(
   // instead of O(n log n).
   interface Ranked {
     candidate: ProductSuggestion
-    stat: HouseholdProductStat | undefined
+    stat: ListProductStat | undefined
   }
 
   const unique = new Map<string, Ranked>()
@@ -241,7 +241,7 @@ export function rankSuggestions(
     const key = productKey(name, candidate.maker)
     // The key normalizes its inputs, so the trimmed name above and the raw one
     // the comparator used to pass produce the same key. Nothing shifts.
-    if (!unique.has(key)) unique.set(key, { candidate, stat: householdStats.get(key) })
+    if (!unique.has(key)) unique.set(key, { candidate, stat: listStats.get(key) })
   }
 
   return [...unique.values()]

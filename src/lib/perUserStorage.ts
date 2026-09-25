@@ -1,7 +1,7 @@
 // Storing one record per account instead of one record with an account stamped
 // on it.
 //
-// Three things on this device are per-account — the offline queue, the household
+// Three things on this device are per-account — the offline queue, the list
 // snapshot and the notification preference — and all three arrived at the same
 // key shape (`${prefix}:${userId}`) by being fixed one at a time, each copying
 // the last. The copying is the problem this file exists to stop: the clear half

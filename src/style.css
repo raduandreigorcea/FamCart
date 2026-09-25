@@ -234,7 +234,7 @@
      told apart. Same reasoning as the ramp below — it was three hardcoded
      stacks, one of them reaching for a --mono token that never existed, so the
      onboarding tour taught people an invite code in one typeface and the
-     household panels then showed them the real one in another. */
+     list panels then showed them the real one in another. */
   --font-mono: ui-monospace, 'SF Mono', Consolas, 'Cascadia Mono', Monaco, monospace;
 
   /* Typography scale. Theme-independent. Collapses the ad-hoc font sizes that

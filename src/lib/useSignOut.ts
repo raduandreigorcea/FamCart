@@ -41,7 +41,7 @@ export function useSignOut(options: {
    * The account being signed out, where the caller knows it.
    *
    * Empty is a supported answer rather than a missing one: the topbar renders
-   * on HouseholdSetupView with no props, and lib/session then clears EVERY
+   * on ListSetupView with no props, and lib/session then clears EVERY
    * account's queue and snapshot on the device instead of one. That is the
    * safer end of the trade on a shared browser — leaving one behind is the
    * failure the per-account keying was introduced to prevent.

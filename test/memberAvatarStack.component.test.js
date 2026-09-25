@@ -52,7 +52,7 @@ describe('MemberAvatarStack', () => {
     }
   })
 
-  it('renders nothing when the household has no members and is not loading', () => {
+  it('renders nothing when the list has no members and is not loading', () => {
     const wrapper = mountStack(0)
     expect(wrapper.find('.member-stack').exists()).toBe(false)
   })

@@ -51,11 +51,11 @@ describe('what can be sent', () => {
 
 describe('what rides along', () => {
   it('reads the version and platform without being asked', () => {
-    const diagnostics = collectDiagnostics({ householdId: 'h1', userId: 'u1' })
+    const diagnostics = collectDiagnostics({ listId: 'h1', userId: 'u1' })
 
     expect(diagnostics.version).toBeTruthy()
     expect(diagnostics.platform).toBeTruthy()
-    expect(diagnostics.householdId).toBe('h1')
+    expect(diagnostics.listId).toBe('h1')
   })
 
   // Sending needs a connection, so a report that arrives is always from someone
@@ -84,7 +84,7 @@ describe('what rides along', () => {
       version: '0.1.9',
       platform: 'browser',
       pendingOfflineEdits: true,
-      householdId: 'h1',
+      listId: 'h1',
       userId: 'u1',
     })
 
