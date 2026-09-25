@@ -192,15 +192,15 @@ describe('applyUserLocale', () => {
 describe('tAccent', () => {
   it('splits a heading on its marker', () => {
     expect(tAccent('setup.welcome.title')).toEqual([
-      'The list your whole ',
-      'list',
-      ' shares',
+      'One list for ',
+      'everyone',
+      ' who shops',
     ])
   })
 
   it('handles a marker that runs to the end of the string', () => {
     expect(tAccent('login.tagline')).toEqual([
-      'List Groceries, ',
+      'Shared Groceries, ',
       'fresh together daily',
       '',
     ])
@@ -208,7 +208,7 @@ describe('tAccent', () => {
 
   it('follows the language, and the marker moves with the grammar', async () => {
     await setLocale('de')
-    expect(tAccent('setup.picker.titleNew')).toEqual(['Richte deinen ', 'Haushalt', ' ein'])
+    expect(tAccent('setup.picker.titleNew')).toEqual(['Richte deine ', 'Liste', ' ein'])
   })
 
   it('returns the whole string as the lead when a heading has no marker', () => {
@@ -225,7 +225,7 @@ describe('tAccent', () => {
     expect(accent).toBe('Home]s [Attic')
     expect(lead).toBe('Permanently deletes ')
     expect(tail).toBe(
-      ', removes all members, and erases all shopping list data. This cannot be undone.',
+      ', removes everyone on it, and erases its items and history. This cannot be undone.',
     )
   })
 })

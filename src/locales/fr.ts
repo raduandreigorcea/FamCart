@@ -21,34 +21,34 @@ const fr: Catalog = {
   'setup.language.sub': 'Vous pourrez la changer à tout moment dans les Réglages de l’app.',
 
   'setup.welcome.eyebrow': 'Bienvenue sur FamCart 🛒',
-  'setup.welcome.title': 'La liste que partage tout le [foyer]',
+  'setup.welcome.title': 'Une seule liste pour [tous] ceux qui font les courses',
   'setup.welcome.sub':
-    'Chacun ajoute, chacun coche, et tout se met à jour pour le foyer entier à l’instant même, pour ne rien oublier en magasin.',
+    'Chacun ajoute, chacun coche, et tout se met à jour pour tout le monde à l’instant même, pour ne rien oublier en magasin.',
   'setup.welcome.cta': 'Commencer',
 
-  'setup.picker.eyebrowAdd': 'Ajouter un foyer',
+  'setup.picker.eyebrowAdd': 'Ajouter une liste',
   'setup.picker.eyebrowNew': 'Bienvenue à bord 👋',
-  'setup.picker.titleAdd': 'Ajouter un autre [foyer]',
-  'setup.picker.titleNew': 'Configurez votre [foyer]',
-  'setup.picker.subAdd': 'Rejoignez un autre foyer avec son code d’invitation.',
+  'setup.picker.titleAdd': 'Ajouter une autre [liste]',
+  'setup.picker.titleNew': 'Configurez votre [liste]',
+  'setup.picker.subAdd': 'Rejoignez une autre liste avec son code d’invitation.',
   'setup.picker.subAddOrCreate':
-    'Rejoignez un autre foyer avec son code d’invitation, ou créez-en un nouveau.',
+    'Rejoignez une autre liste avec son code d’invitation, ou créez-en une nouvelle.',
   'setup.picker.subNew':
-    'Créez une liste de courses partagée pour votre foyer, ou rejoignez-en une avec un code d’invitation.',
-  'setup.picker.createLabel': 'Créer un foyer',
+    'Créez une liste de courses partagée, ou rejoignez-en une avec un code d’invitation.',
+  'setup.picker.createLabel': 'Créer une liste',
   'setup.picker.createDescription': 'Démarrez une nouvelle liste et obtenez un code d’invitation',
-  'setup.picker.joinLabel': 'Rejoindre un foyer',
-  'setup.picker.joinDescription': 'Collez le code d’invitation que votre foyer a partagé',
+  'setup.picker.joinLabel': 'Rejoindre une liste',
+  'setup.picker.joinDescription': 'Collez le code d’invitation que vous avez reçu',
 
-  'setup.create.eyebrow': 'Nouveau foyer',
-  'setup.create.title': 'Quel est le nom de votre foyer ?',
-  'setup.create.sub': 'C’est ainsi que la liste de votre foyer apparaîtra pour tout le monde.',
-  'setup.create.nameLabel': 'Nom du foyer',
-  'setup.create.namePlaceholder': 'p. ex. Les Dupont',
+  'setup.create.eyebrow': 'Nouvelle liste',
+  'setup.create.title': 'Quel est le nom de votre liste ?',
+  'setup.create.sub': 'C’est ainsi que votre liste apparaîtra pour tout le monde.',
+  'setup.create.nameLabel': 'Nom de la liste',
+  'setup.create.namePlaceholder': 'p. ex. Courses de la semaine',
 
-  'setup.join.eyebrow': 'Rejoindre un foyer',
+  'setup.join.eyebrow': 'Rejoindre une liste',
   'setup.join.title': 'Saisissez votre code d’invitation',
-  'setup.join.sub': 'Demandez le code d’invitation à un membre du foyer.',
+  'setup.join.sub': 'Demandez le code d’invitation à quelqu’un de la liste.',
   'setup.join.codeLabel': 'Code d’invitation',
   'setup.join.codePlaceholder': 'p. ex. AB3K7XYZ',
 
@@ -80,20 +80,20 @@ const fr: Catalog = {
   'error.genericTitle': 'Une erreur est survenue',
   'error.offline': 'Vous semblez hors ligne. Vérifiez votre connexion et réessayez.',
   'error.nameTooLongTitle': 'Nom trop long',
-  'error.listNameTooLong': 'Le nom du foyer doit comporter au maximum {max} caractères.',
+  'error.listNameTooLong': 'Le nom de la liste doit comporter au maximum {max} caractères.',
   'error.nameRequiredTitle': 'Nom requis',
-  'error.listNameRequired': 'Donnez un nom à votre foyer avant d’enregistrer.',
+  'error.listNameRequired': 'Donnez un nom à votre liste avant d’enregistrer.',
   'error.ownOneList':
-    'Vous ne pouvez posséder qu’un seul foyer. Quittez ou supprimez le vôtre avant d’en créer un autre.',
+    'Vous ne pouvez posséder qu’une seule liste. Quittez ou supprimez la vôtre avant d’en créer une autre.',
   'error.membershipCapCreate':
-    'Vous pouvez faire partie de {cap} foyers au maximum. Quittez-en un avant d’en créer un autre.',
+    'Vous pouvez faire partie de {cap} listes au maximum. Quittez-en une avant d’en créer une autre.',
   'error.membershipCapJoin':
-    'Vous pouvez faire partie de {cap} foyers au maximum. Quittez-en un avant d’en rejoindre un autre.',
-  'error.createListFailed': 'Impossible de créer le foyer.',
-  'error.joinListFailed': 'Impossible de rejoindre le foyer.',
+    'Vous pouvez faire partie de {cap} listes au maximum. Quittez-en une avant d’en rejoindre une autre.',
+  'error.createListFailed': 'Impossible de créer la liste.',
+  'error.joinListFailed': 'Impossible de rejoindre la liste.',
   'error.inviteCodeInvalid':
     'Le code d’invitation doit comporter 8 caractères, lettres et chiffres uniquement.',
-  'error.noListForCode': 'Aucun foyer trouvé avec ce code d’invitation.',
+  'error.noListForCode': 'Aucune liste trouvée avec ce code d’invitation.',
   'error.notificationsBlocked':
     'Les notifications sont bloquées pour FamCart dans les réglages de votre appareil ou navigateur.',
   'error.notificationsFailed': 'Impossible d’activer les notifications. Veuillez réessayer.',
@@ -104,7 +104,7 @@ const fr: Catalog = {
   'list.empty.titleShopped': 'Tout est acheté',
   'list.empty.titleNew': 'Rien ici pour l’instant',
   'list.empty.textShopped': 'Il ne reste rien à prendre.',
-  'list.empty.textNew': 'Ajoutez la première chose et tout le foyer la voit aussitôt.',
+  'list.empty.textNew': 'Ajoutez la première chose et tous ceux de la liste la voient aussitôt.',
   'list.buyAgain': 'Racheter',
   'list.addProduct': 'Ajouter {name}',
   'list.buyBar.checkedOut': 'Validé !',
@@ -123,7 +123,7 @@ const fr: Catalog = {
   'item.quantityDone': 'Quantité {n}. Terminé',
   'item.quantityChange': 'Quantité {n}. Modifier',
 
-  'switcher.heading': 'Vos foyers',
+  'switcher.heading': 'Vos listes',
 
   'filter.shopHeading': 'Magasin',
   'filter.shopAny.label': 'Tous les magasins',
@@ -143,7 +143,7 @@ const fr: Catalog = {
   'add.announced': '{name} ajouté à votre liste',
 
   'custom.message':
-    'Décrivez-le et il va droit sur votre liste. La prochaine fois, nous le suggérerons à votre foyer.',
+    'Décrivez-le et il va droit sur votre liste. La prochaine fois, nous le suggérerons à tous ceux de la liste.',
   'custom.productLabel': 'Produit',
   'custom.productPlaceholder': 'Huile d’olive 500 ml',
   'custom.makerLabel': 'Fabricant',
@@ -184,18 +184,18 @@ const fr: Catalog = {
   'account.close': 'Fermer la fenêtre du compte',
   'account.editProfile': 'Modifier votre profil : nom, photo, mot de passe',
   'account.noEmail': 'Aucun e-mail disponible',
-  'account.manageList': 'Gérer le foyer',
-  'account.listFallback': 'Foyer',
+  'account.manageList': 'Gérer la liste',
+  'account.listFallback': 'Liste',
   'account.memberCount': { one: '{n} membre', other: '{n} membres' },
   'account.appSettings': 'Réglages de l’app',
   'account.appSettingsHint': 'Apparence, notifications, langue',
-  'account.joinOrCreate': 'Rejoindre ou créer un foyer',
+  'account.joinOrCreate': 'Rejoindre ou créer une liste',
   'account.reportIssue': 'Signaler un problème',
   'account.reportHint': 'Bugs et retours',
   'account.signOut': 'Se déconnecter',
   'account.signingOut': 'Déconnexion',
 
-  'list.title': 'Réglages du foyer',
+  'list.title': 'Réglages de la liste',
   'list.close': 'Fermer les réglages',
   'list.sections': 'Sections des réglages',
   'list.tab.overview': 'Aperçu',
@@ -203,30 +203,30 @@ const fr: Catalog = {
   'list.tab.members': 'Membres',
   'list.tab.danger': 'Zone sensible',
 
-  'overview.summary': 'Résumé du foyer',
-  'overview.name': 'Nom du foyer',
+  'overview.summary': 'Résumé de la liste',
+  'overview.name': 'Nom de la liste',
   'overview.createdBy': 'Créé par',
   'overview.owner': 'Propriétaire',
   'overview.totalMembers': 'Membres au total',
   'overview.activeCount': '{n} actifs',
   'overview.inviteTitle': 'Inviter de nouveaux membres',
-  'overview.inviteDesc': 'Partagez ce code avec votre foyer pour qu’ils rejoignent votre liste.',
+  'overview.inviteDesc': 'Partagez ce code pour que d’autres rejoignent votre liste.',
   'overview.inviteCode': 'CODE D’INVITATION',
   'overview.copyCode': 'Copier le code',
   'overview.copied': 'Copié !',
 
   'prefs.title': 'Préférences générales',
-  'prefs.nameTitle': 'Nom du foyer',
-  'prefs.nameDesc': 'Choisissez un nom que tout le foyer reconnaît d’un coup d’œil.',
-  'prefs.namePlaceholder': 'Mon super foyer',
-  'prefs.emojiTitle': 'Emoji du foyer',
-  'prefs.emojiDesc': 'Choisissez un emoji pour votre foyer. Il apparaît dans la barre du haut.',
+  'prefs.nameTitle': 'Nom de la liste',
+  'prefs.nameDesc': 'Choisissez un nom que tous ceux de la liste reconnaissent d’un coup d’œil.',
+  'prefs.namePlaceholder': 'Courses de la semaine',
+  'prefs.emojiTitle': 'Emoji de la liste',
+  'prefs.emojiDesc': 'Choisissez un emoji pour votre liste. Il apparaît dans la barre du haut.',
   'prefs.limitTitle': 'Limite d’articles par personne',
   'prefs.limitDesc':
     'Définissez combien d’articles actifs (non cochés) chaque membre peut ajouter.',
   'prefs.limitSlider': 'Curseur de la limite d’articles',
 
-  'members.title': 'Membres du foyer ({n})',
+  'members.title': 'Personnes sur cette liste ({n})',
   'members.desc': 'Voici les personnes qui ont accès à cette liste de courses.',
   'members.you': '(Vous)',
   'members.openActions': 'Ouvrir les actions du membre',
@@ -234,31 +234,31 @@ const fr: Catalog = {
   'members.promoteHint': 'Peut gérer les articles et les membres',
   'members.demote': 'Rétrograder en membre',
   'members.demoteHint': 'Retire les droits de modérateur',
-  'members.remove': 'Retirer du foyer',
-  'members.removeHint': 'Perd l’accès à la liste de courses',
+  'members.remove': 'Retirer de la liste',
+  'members.removeHint': 'Perd l’accès à la liste',
   'members.roleModerator': 'Modérateur',
   'members.roleMember': 'Membre',
   'members.confirmRemoveTitle': 'Retirer ce membre ?',
   'members.confirmRemoveMessage':
-    'Cette personne perdra aussitôt l’accès à la liste du foyer. Elle pourra revenir avec le code d’invitation.',
+    'Cette personne perdra aussitôt l’accès à la liste. Elle pourra revenir avec le code d’invitation.',
 
   'danger.inviteTitle': 'Gestion du code d’invitation',
   'danger.inviteDesc':
     'Invalide immédiatement le code actuel. Les membres existants ne sont pas affectés, mais les nouveaux devront utiliser le nouveau code.',
   'danger.regenerate': 'Régénérer',
   'danger.regenerated': 'Régénéré',
-  'danger.leaveTitle': 'Quitter le foyer',
-  'danger.leaveDesc': 'Vous serez retiré du foyer et n’aurez plus accès à la liste de courses.',
-  'danger.deleteTitle': 'Supprimer le foyer',
+  'danger.leaveTitle': 'Quitter la liste',
+  'danger.leaveDesc': 'Vous serez retiré de la liste et n’y aurez plus accès.',
+  'danger.deleteTitle': 'Supprimer la liste',
   'danger.deleteDesc':
     'Supprime définitivement [{name}], retire tous les membres et efface toutes les données de la liste. Cette action est irréversible.',
   'danger.confirmRegenerateTitle': 'Régénérer le code d’invitation ?',
   'danger.confirmRegenerateMessage':
     'Le code actuel sera immédiatement invalidé. Les membres existants ne sont pas affectés, mais plus personne ne pourra rejoindre avec l’ancien code.',
-  'danger.confirmLeaveTitle': 'Quitter le foyer ?',
+  'danger.confirmLeaveTitle': 'Quitter la liste ?',
   'danger.confirmLeaveMessage':
-    'Vous perdrez l’accès à la liste de courses et il vous faudra un nouveau code pour revenir.',
-  'danger.confirmDeleteTitle': 'Supprimer le foyer ?',
+    'Vous perdrez l’accès à la liste et il vous faudra un nouveau code pour revenir.',
+  'danger.confirmDeleteTitle': 'Supprimer la liste ?',
   'danger.confirmDeleteMessage':
     'Supprimer « {name} » retirera définitivement tous les membres, les articles et l’historique. Cette action est irréversible.',
 
@@ -275,10 +275,10 @@ const fr: Catalog = {
   'error.roleUpdateFailed': 'Impossible de modifier le rôle de ce membre.',
   'error.removeMemberFailed': 'Impossible de retirer ce membre.',
   'error.regenerateCodeFailed': 'Impossible de régénérer le code d’invitation. Veuillez réessayer.',
-  'error.leaveListFailed': 'Impossible de quitter le foyer.',
-  'error.deleteListFailed': 'Impossible de supprimer le foyer.',
-  'error.renameListFailed': 'Impossible de renommer le foyer.',
-  'error.saveEmojiFailed': 'Impossible d’enregistrer l’emoji du foyer.',
+  'error.leaveListFailed': 'Impossible de quitter la liste.',
+  'error.deleteListFailed': 'Impossible de supprimer la liste.',
+  'error.renameListFailed': 'Impossible de renommer la liste.',
+  'error.saveEmojiFailed': 'Impossible d’enregistrer l’emoji de la liste.',
   'error.saveLimitFailed': 'Impossible d’enregistrer la limite d’articles.',
   'error.loadHistoryFailed':
     'Impossible de charger l’historique. Vérifiez votre connexion et réessayez.',
@@ -291,7 +291,7 @@ const fr: Catalog = {
 
   'notify.title': 'Activer les notifications ?',
   'notify.message':
-    'Sachez à l’instant où quelqu’un de votre foyer ajoute quelque chose à la liste ou coche des articles, pour ne rien oublier en magasin.',
+    'Sachez à l’instant où quelqu’un de votre liste ajoute quelque chose ou coche des articles, pour ne rien oublier en magasin.',
   'notify.notNow': 'Pas maintenant',
   'notify.turnOn': 'Activer',
 
@@ -314,7 +314,7 @@ const fr: Catalog = {
   'tour.checkout.title': 'Glissez pour valider',
   'tour.checkout.body':
     'Les lignes cochées attendent dans le panier jusqu’à ce que vous glissiez la barre du bas. C’est ce qui les efface et enregistre la sortie dans votre historique.',
-  'tour.invite.title': 'Faites venir votre foyer',
+  'tour.invite.title': 'Faites venir les autres',
   'tour.invite.body':
     'Partagez votre code d’invitation pour que tout le monde fasse ses courses sur la même liste. Chaque changement apparaît pour tous à l’instant même.',
 
@@ -322,7 +322,7 @@ const fr: Catalog = {
   'common.close': 'Fermer',
   'common.tryAgain': 'Réessayer',
 
-  'login.tagline': 'Les courses du foyer, [fraîches et partagées chaque jour]',
+  'login.tagline': 'Les courses en commun, [fraîches et partagées chaque jour]',
   'login.logoAlt': 'Logo FamCart',
   'login.emailLabel': 'Adresse e-mail',
   'login.emailPlaceholder': 'vous@email.com',
@@ -355,7 +355,7 @@ const fr: Catalog = {
     'Android n’autorise une app à installer des mises à jour qu’avec votre accord. Activez [Autoriser depuis cette source] pour FamCart, puis revenez et appuyez sur Mettre à jour.',
   'update.downloadingMessage': 'Téléchargement de FamCart {version}…',
   'update.installingMessage':
-    'Android prend le relais. Suivez l’invite d’installation pour terminer. Votre liste et votre foyer restent exactement tels quels.',
+    'Android prend le relais. Suivez l’invite d’installation pour terminer. Votre liste reste exactement telle quelle.',
   'update.failedMessage':
     'La mise à jour n’a pas pu être téléchargée. C’est peut-être juste la connexion. Réessayez, ou récupérez l’APK depuis la page des versions.',
   'update.progressLabel': 'Progression du téléchargement',
@@ -380,7 +380,7 @@ const fr: Catalog = {
   'report.promptIdea': 'Qu’est-ce qui pourrait être mieux ?',
   'report.placeholderBug':
     'J’ai coché le lait et il est revenu sur la liste à la réouverture de l’app.',
-  'report.placeholderIdea': 'Ce n’est pas évident de retirer quelqu’un du foyer.',
+  'report.placeholderIdea': 'Ce n’est pas évident de retirer quelqu’un de la liste.',
   'report.charsLeft': '{n} caractères restants',
   'report.attachedTitle': 'Envoyé avec votre signalement',
   'report.send': 'Envoyer',
@@ -390,7 +390,7 @@ const fr: Catalog = {
   'report.surface.add': 'Ajout d’articles',
   'report.surface.scan': 'Scanner de codes-barres',
   'report.surface.history': 'Validation et historique',
-  'report.surface.settings': 'Foyer et membres',
+  'report.surface.settings': 'Réglages de la liste et personnes',
   'report.surface.notifications': 'Notifications',
   'report.surface.signin': 'Connexion',
   'report.surface.other': 'Ailleurs',
@@ -400,7 +400,7 @@ const fr: Catalog = {
     'Rien n’a été envoyé. Le signalement ne nous est pas parvenu. Votre texte est toujours là, réessayez. Si l’échec persiste, une extension de confidentialité du navigateur le bloque peut-être.',
   'report.diag.version': 'FamCart {version}, {platform}',
   'report.diag.pendingEdits': 'Des modifications attendent d’être synchronisées',
-  'report.diag.ids': 'Les identifiants de votre foyer et de votre compte',
+  'report.diag.ids': 'Les identifiants de votre liste et de votre compte',
 
   'common.gotIt': 'Compris',
 
@@ -409,7 +409,7 @@ const fr: Catalog = {
     'Vous avez atteint votre limite de {n} articles actifs. Cochez ou supprimez des articles avant d’en ajouter d’autres.',
   'error.offlineSyncFailed':
     'Certaines modifications faites hors ligne n’ont pas pu être synchronisées.',
-  'error.loadListsFailed': 'Impossible de charger votre foyer.',
+  'error.loadListsFailed': 'Impossible de charger vos listes.',
 
   'sso.title': 'Presque terminé',
   'sso.text': 'Retour vers l’app FamCart…',
@@ -423,7 +423,7 @@ const fr: Catalog = {
   'account.fallbackName': 'Compte',
   'members.sheetLabel': 'Actions pour {name}',
   'members.sheetLabelGeneric': 'Actions pour ce membre',
-  'preferences.useEmoji': 'Utiliser {emoji} pour ce foyer',
+  'preferences.useEmoji': 'Utiliser {emoji} pour cette liste',
   'history.addedBy': 'Ajouté par {name}',
   'history.addedThis': '{name} a ajouté cet article',
 
@@ -437,11 +437,11 @@ const fr: Catalog = {
     '{name}, quantité {n}. Glissez vers la droite pour décocher, vers la gauche pour supprimer',
 
   'invite.shareTitle': 'Rejoignez {name} sur FamCart',
-  'invite.shareTitleGeneric': 'Rejoignez mon foyer sur FamCart',
+  'invite.shareTitleGeneric': 'Rejoignez ma liste sur FamCart',
   'invite.shareBody':
-    'Rejoignez « {name} » sur FamCart pour partager une liste de courses. Votre code d’invitation est {code}.',
+    'Rejoignez « {name} » sur FamCart pour faire les courses sur la même liste. Votre code d’invitation est {code}.',
   'invite.shareBodyGeneric':
-    'Rejoignez mon foyer sur FamCart pour partager une liste de courses. Votre code d’invitation est {code}.',
+    'Rejoignez ma liste sur FamCart pour faire les courses sur la même liste. Votre code d’invitation est {code}.',
   'invite.shareDialogTitle': 'Inviter sur FamCart',
 
   'error.loadListFailed': 'Impossible de charger votre liste. Veuillez réessayer.',
@@ -487,7 +487,7 @@ const fr: Catalog = {
   'list.roleModerator': 'Modérateur',
   'list.you': 'Vous',
   'list.aloneHint': "Vous êtes seul pour l'instant. Invitez quelqu'un et vous verrez tous deux la liste changer en direct.",
-  'list.open': '{name} : membres, inviter, changer de foyer',
+  'list.open': '{name} : membres, inviter, changer de liste',
   'history.searchPlaceholder': 'A-t-on acheté… ?',
   'history.noMatch': "Rien qui s'appelle « {query} » dans vos derniers achats.",
   'history.addAgain': 'Remettre {name} sur la liste',
@@ -501,13 +501,13 @@ const fr: Catalog = {
   'history.tripReaddedShort': 'Ajouté',
   'list.invite': 'Inviter',
   'nav.label': 'Actions principales',
-  'nav.list': 'Foyer',
+  'nav.list': 'Liste',
   'nav.history': 'Historique',
   'nav.add': 'Ajouter',
   'nav.addLabel': 'Ajouter un article',
   'nav.you': 'Vous',
   'nav.switch': 'Changer',
-  'nav.switchLabel': 'Changer de foyer',
+  'nav.switchLabel': 'Changer de liste',
   'topbar.listSettings': 'Paramètres de {name}',
   'header.progressLabel': 'Part de la liste déjà dans le panier',
 }

@@ -168,7 +168,7 @@ describe('choosing a language', () => {
     expect(picker(w).exists()).toBe(false)
     // The welcome hero behind it re-rendered from the swapped catalog rather
     // than waiting for a reload.
-    expect(w.text()).toContain('gospodăria')
+    expect(w.text()).toContain('O singură listă')
   })
 
   it('passes the boot-resolved locale as current', async () => {

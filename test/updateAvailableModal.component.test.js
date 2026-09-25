@@ -104,7 +104,7 @@ describe('UpdateAvailableModal', () => {
 
   it('says the data is safe once Android has taken over', () => {
     const wrapper = mountModal({ phase: 'installing' })
-    expect(wrapper.text()).toContain('stay exactly as they are')
+    expect(wrapper.text()).toContain('stays exactly as it is')
     expect(buttonLabels(wrapper)).toEqual(['Close', 'Try again'])
   })
 

@@ -39,7 +39,7 @@ describe('the message', () => {
 
     expect(message.text).toContain('"Home"')
     expect(message.text).toContain('ABCD2345')
-    expect(message.text).toContain('share one shopping list')
+    expect(message.text).toContain('shop from the same list')
     expect(message.title).toBe('Join Home on FamCart')
   })
 

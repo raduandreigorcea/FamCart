@@ -21,34 +21,34 @@ const es: Catalog = {
   'setup.language.sub': 'Puedes cambiarlo cuando quieras en los Ajustes de la app.',
 
   'setup.welcome.eyebrow': 'Te damos la bienvenida a FamCart 🛒',
-  'setup.welcome.title': 'La lista que comparte todo el [hogar]',
+  'setup.welcome.title': 'Una sola lista para [todos] los que hacen la compra',
   'setup.welcome.sub':
-    'Todos añaden, todos marcan, y todo se actualiza para el hogar entero en el momento en que ocurre, así no se olvida nada en la tienda.',
+    'Todos añaden, todos marcan, y todo se actualiza para todos en el momento en que ocurre, así no se olvida nada en la tienda.',
   'setup.welcome.cta': 'Empezar',
 
-  'setup.picker.eyebrowAdd': 'Añadir un hogar',
+  'setup.picker.eyebrowAdd': 'Añadir una lista',
   'setup.picker.eyebrowNew': 'Bienvenido a bordo 👋',
-  'setup.picker.titleAdd': 'Añade otro [hogar]',
-  'setup.picker.titleNew': 'Configura tu [hogar]',
-  'setup.picker.subAdd': 'Únete a otro hogar con su código de invitación.',
+  'setup.picker.titleAdd': 'Añade otra [lista]',
+  'setup.picker.titleNew': 'Configura tu [lista]',
+  'setup.picker.subAdd': 'Únete a otra lista con su código de invitación.',
   'setup.picker.subAddOrCreate':
-    'Únete a otro hogar con su código de invitación, o crea uno nuevo.',
+    'Únete a otra lista con su código de invitación, o crea una nueva.',
   'setup.picker.subNew':
-    'Crea una lista de la compra compartida para tu hogar, o únete a una con un código de invitación.',
-  'setup.picker.createLabel': 'Crear un hogar',
+    'Crea una lista de la compra compartida, o únete a una con un código de invitación.',
+  'setup.picker.createLabel': 'Crear una lista',
   'setup.picker.createDescription': 'Empieza una lista nueva y obtén un código de invitación',
-  'setup.picker.joinLabel': 'Unirse a un hogar',
-  'setup.picker.joinDescription': 'Pega el código de invitación que te ha compartido tu hogar',
+  'setup.picker.joinLabel': 'Unirse a una lista',
+  'setup.picker.joinDescription': 'Pega el código de invitación que te han enviado',
 
-  'setup.create.eyebrow': 'Hogar nuevo',
-  'setup.create.title': '¿Cómo se llama tu hogar?',
-  'setup.create.sub': 'Así aparecerá la lista de tu hogar para todos.',
-  'setup.create.nameLabel': 'Nombre del hogar',
-  'setup.create.namePlaceholder': 'p. ej. Los García',
+  'setup.create.eyebrow': 'Lista nueva',
+  'setup.create.title': '¿Cómo se llama tu lista?',
+  'setup.create.sub': 'Así aparecerá tu lista para todos.',
+  'setup.create.nameLabel': 'Nombre de la lista',
+  'setup.create.namePlaceholder': 'p. ej. Compra semanal',
 
-  'setup.join.eyebrow': 'Unirse a un hogar',
+  'setup.join.eyebrow': 'Unirse a una lista',
   'setup.join.title': 'Introduce tu código de invitación',
-  'setup.join.sub': 'Pide el código de invitación a un miembro del hogar.',
+  'setup.join.sub': 'Pide el código de invitación a alguien de la lista.',
   'setup.join.codeLabel': 'Código de invitación',
   'setup.join.codePlaceholder': 'p. ej. AB3K7XYZ',
 
@@ -80,20 +80,20 @@ const es: Catalog = {
   'error.genericTitle': 'Algo ha salido mal',
   'error.offline': 'Parece que estás sin conexión. Comprueba tu conexión e inténtalo de nuevo.',
   'error.nameTooLongTitle': 'Nombre demasiado largo',
-  'error.listNameTooLong': 'El nombre del hogar debe tener {max} caracteres o menos.',
+  'error.listNameTooLong': 'El nombre de la lista debe tener {max} caracteres o menos.',
   'error.nameRequiredTitle': 'Nombre obligatorio',
-  'error.listNameRequired': 'Ponle un nombre a tu hogar antes de guardar.',
+  'error.listNameRequired': 'Ponle un nombre a tu lista antes de guardar.',
   'error.ownOneList':
-    'Solo puedes ser propietario de un hogar. Abandona o elimina el actual antes de crear otro.',
+    'Solo puedes ser propietario de una lista. Abandona o elimina la actual antes de crear otra.',
   'error.membershipCapCreate':
-    'Puedes formar parte de un máximo de {cap} hogares. Abandona uno antes de crear otro.',
+    'Puedes formar parte de un máximo de {cap} listas. Abandona una antes de crear otra.',
   'error.membershipCapJoin':
-    'Puedes formar parte de un máximo de {cap} hogares. Abandona uno antes de unirte a otro.',
-  'error.createListFailed': 'No se ha podido crear el hogar.',
-  'error.joinListFailed': 'No se ha podido unir al hogar.',
+    'Puedes formar parte de un máximo de {cap} listas. Abandona una antes de unirte a otra.',
+  'error.createListFailed': 'No se ha podido crear la lista.',
+  'error.joinListFailed': 'No se ha podido unir a la lista.',
   'error.inviteCodeInvalid':
     'El código de invitación debe tener 8 caracteres, solo letras y números.',
-  'error.noListForCode': 'No se ha encontrado ningún hogar con ese código de invitación.',
+  'error.noListForCode': 'No se ha encontrado ninguna lista con ese código de invitación.',
   'error.notificationsBlocked':
     'Las notificaciones están bloqueadas para FamCart en los ajustes de tu dispositivo o navegador.',
   'error.notificationsFailed':
@@ -105,7 +105,7 @@ const es: Catalog = {
   'list.empty.titleShopped': 'Todo comprado',
   'list.empty.titleNew': 'Aquí no hay nada aún',
   'list.empty.textShopped': 'No queda nada por recoger.',
-  'list.empty.textNew': 'Añade lo primero y todo el hogar lo verá al instante.',
+  'list.empty.textNew': 'Añade lo primero y todos los de la lista lo verán al instante.',
   'list.buyAgain': 'Comprar otra vez',
   'list.addProduct': 'Añadir {name}',
   'list.buyBar.checkedOut': '¡Compra hecha!',
@@ -124,7 +124,7 @@ const es: Catalog = {
   'item.quantityDone': 'Cantidad {n}. Listo',
   'item.quantityChange': 'Cantidad {n}. Cambiar',
 
-  'switcher.heading': 'Tus hogares',
+  'switcher.heading': 'Tus listas',
 
   'filter.shopHeading': 'Tienda',
   'filter.shopAny.label': 'Cualquier tienda',
@@ -144,7 +144,7 @@ const es: Catalog = {
   'add.announced': '{name} añadido a tu lista',
 
   'custom.message':
-    'Descríbelo y va directo a tu lista. La próxima vez se lo sugeriremos a tu hogar.',
+    'Descríbelo y va directo a tu lista. La próxima vez se lo sugeriremos a todos los de la lista.',
   'custom.productLabel': 'Producto',
   'custom.productPlaceholder': 'Aceite de oliva 500 ml',
   'custom.makerLabel': 'Fabricante',
@@ -186,18 +186,18 @@ const es: Catalog = {
   'account.close': 'Cerrar la ventana de la cuenta',
   'account.editProfile': 'Edita tu perfil: nombre, foto, contraseña',
   'account.noEmail': 'No hay correo disponible',
-  'account.manageList': 'Gestionar el hogar',
-  'account.listFallback': 'Hogar',
+  'account.manageList': 'Gestionar la lista',
+  'account.listFallback': 'Lista',
   'account.memberCount': { one: '{n} miembro', other: '{n} miembros' },
   'account.appSettings': 'Ajustes de la app',
   'account.appSettingsHint': 'Apariencia, notificaciones, idioma',
-  'account.joinOrCreate': 'Unirse o crear un hogar',
+  'account.joinOrCreate': 'Unirse o crear una lista',
   'account.reportIssue': 'Informar de un problema',
   'account.reportHint': 'Errores y sugerencias',
   'account.signOut': 'Cerrar sesión',
   'account.signingOut': 'Cerrando sesión',
 
-  'list.title': 'Ajustes del hogar',
+  'list.title': 'Ajustes de la lista',
   'list.close': 'Cerrar los ajustes',
   'list.sections': 'Secciones de ajustes',
   'list.tab.overview': 'Resumen',
@@ -205,29 +205,29 @@ const es: Catalog = {
   'list.tab.members': 'Miembros',
   'list.tab.danger': 'Zona de peligro',
 
-  'overview.summary': 'Resumen del hogar',
-  'overview.name': 'Nombre del hogar',
+  'overview.summary': 'Resumen de la lista',
+  'overview.name': 'Nombre de la lista',
   'overview.createdBy': 'Creado por',
   'overview.owner': 'Propietario',
   'overview.totalMembers': 'Miembros en total',
   'overview.activeCount': '{n} activos',
   'overview.inviteTitle': 'Invitar a nuevos miembros',
-  'overview.inviteDesc': 'Comparte este código con tu hogar para que puedan unirse a tu lista.',
+  'overview.inviteDesc': 'Comparte este código para que otros puedan unirse a tu lista.',
   'overview.inviteCode': 'CÓDIGO DE INVITACIÓN',
   'overview.copyCode': 'Copiar el código',
   'overview.copied': '¡Copiado!',
 
   'prefs.title': 'Preferencias generales',
-  'prefs.nameTitle': 'Nombre del hogar',
-  'prefs.nameDesc': 'Elige un nombre que todo el hogar reconozca al momento.',
-  'prefs.namePlaceholder': 'Mi hogar genial',
-  'prefs.emojiTitle': 'Emoji del hogar',
-  'prefs.emojiDesc': 'Elige un emoji para tu hogar. Aparece en la barra superior.',
+  'prefs.nameTitle': 'Nombre de la lista',
+  'prefs.nameDesc': 'Elige un nombre que todos los de la lista reconozcan al momento.',
+  'prefs.namePlaceholder': 'Compra semanal',
+  'prefs.emojiTitle': 'Emoji de la lista',
+  'prefs.emojiDesc': 'Elige un emoji para tu lista. Aparece en la barra superior.',
   'prefs.limitTitle': 'Límite de artículos por persona',
   'prefs.limitDesc': 'Controla cuántos artículos activos (sin marcar) puede añadir cada miembro.',
   'prefs.limitSlider': 'Control deslizante del límite de artículos',
 
-  'members.title': 'Miembros del hogar ({n})',
+  'members.title': 'Personas en esta lista ({n})',
   'members.desc': 'Abajo están las personas con acceso a esta lista de la compra.',
   'members.you': '(Tú)',
   'members.openActions': 'Abrir acciones del miembro',
@@ -235,31 +235,31 @@ const es: Catalog = {
   'members.promoteHint': 'Puede gestionar artículos y miembros',
   'members.demote': 'Degradar a miembro',
   'members.demoteHint': 'Quita los permisos de moderador',
-  'members.remove': 'Quitar del hogar',
-  'members.removeHint': 'Pierde el acceso a la lista de la compra',
+  'members.remove': 'Quitar de la lista',
+  'members.removeHint': 'Pierde el acceso a la lista',
   'members.roleModerator': 'Moderador',
   'members.roleMember': 'Miembro',
   'members.confirmRemoveTitle': '¿Quitar al miembro?',
   'members.confirmRemoveMessage':
-    'Esta persona perderá el acceso a la lista del hogar de inmediato. Puede volver a unirse con el código de invitación.',
+    'Esta persona perderá el acceso a la lista de inmediato. Puede volver a unirse con el código de invitación.',
 
   'danger.inviteTitle': 'Administración del código de invitación',
   'danger.inviteDesc':
     'Invalida al instante el código actual. Los miembros actuales no se ven afectados, pero los nuevos deberán usar el código nuevo.',
   'danger.regenerate': 'Regenerar',
   'danger.regenerated': 'Regenerado',
-  'danger.leaveTitle': 'Salir del hogar',
-  'danger.leaveDesc': 'Esto te quitará del hogar. Ya no tendrás acceso a la lista de la compra.',
-  'danger.deleteTitle': 'Eliminar el hogar',
+  'danger.leaveTitle': 'Salir de la lista',
+  'danger.leaveDesc': 'Esto te quitará de la lista y ya no tendrás acceso a ella.',
+  'danger.deleteTitle': 'Eliminar la lista',
   'danger.deleteDesc':
     'Elimina [{name}] de forma permanente, quita a todos los miembros y borra todos los datos de la lista. No se puede deshacer.',
   'danger.confirmRegenerateTitle': '¿Regenerar el código de invitación?',
   'danger.confirmRegenerateMessage':
     'El código actual quedará invalidado de inmediato. Los miembros actuales no se ven afectados, pero nadie podrá unirse con el código antiguo.',
-  'danger.confirmLeaveTitle': '¿Salir del hogar?',
+  'danger.confirmLeaveTitle': '¿Salir de la lista?',
   'danger.confirmLeaveMessage':
-    'Perderás el acceso a la lista de la compra y necesitarás un código nuevo para volver.',
-  'danger.confirmDeleteTitle': '¿Eliminar el hogar?',
+    'Perderás el acceso a la lista y necesitarás un código nuevo para volver.',
+  'danger.confirmDeleteTitle': '¿Eliminar la lista?',
   'danger.confirmDeleteMessage':
     'Eliminar «{name}» quitará de forma permanente a todos los miembros, los artículos y el historial. No se puede deshacer.',
 
@@ -277,10 +277,10 @@ const es: Catalog = {
   'error.removeMemberFailed': 'No se ha podido quitar a ese miembro.',
   'error.regenerateCodeFailed':
     'No se ha podido regenerar el código de invitación. Inténtalo de nuevo.',
-  'error.leaveListFailed': 'No se ha podido salir del hogar.',
-  'error.deleteListFailed': 'No se ha podido eliminar el hogar.',
-  'error.renameListFailed': 'No se ha podido renombrar el hogar.',
-  'error.saveEmojiFailed': 'No se ha podido guardar el emoji del hogar.',
+  'error.leaveListFailed': 'No se ha podido salir de la lista.',
+  'error.deleteListFailed': 'No se ha podido eliminar la lista.',
+  'error.renameListFailed': 'No se ha podido renombrar la lista.',
+  'error.saveEmojiFailed': 'No se ha podido guardar el emoji de la lista.',
   'error.saveLimitFailed': 'No se ha podido guardar el límite de artículos.',
   'error.loadHistoryFailed':
     'No se ha podido cargar el historial. Comprueba tu conexión e inténtalo de nuevo.',
@@ -293,7 +293,7 @@ const es: Catalog = {
 
   'notify.title': '¿Activar las notificaciones?',
   'notify.message':
-    'Entérate en el momento en que alguien de tu hogar añade algo a la lista o marca artículos, así no se olvida nada en la tienda.',
+    'Entérate en el momento en que alguien de tu lista añade algo o marca artículos, así no se olvida nada en la tienda.',
   'notify.notNow': 'Ahora no',
   'notify.turnOn': 'Activar',
 
@@ -316,7 +316,7 @@ const es: Catalog = {
   'tour.checkout.title': 'Desliza para finalizar',
   'tour.checkout.body':
     'Las filas marcadas esperan en el carrito hasta que deslizas la barra de abajo. Eso es lo que las vacía y guarda la compra en tu historial.',
-  'tour.invite.title': 'Trae a tu hogar',
+  'tour.invite.title': 'Trae a los demás',
   'tour.invite.body':
     'Comparte tu código de invitación para que todos compren de la misma lista. Cada cambio aparece para todos en el momento en que ocurre.',
 
@@ -324,7 +324,7 @@ const es: Catalog = {
   'common.close': 'Cerrar',
   'common.tryAgain': 'Inténtalo de nuevo',
 
-  'login.tagline': 'La compra del hogar, [fresca y en común cada día]',
+  'login.tagline': 'La compra de todos, [fresca y en común cada día]',
   'login.logoAlt': 'Logotipo de FamCart',
   'login.emailLabel': 'Dirección de correo',
   'login.emailPlaceholder': 'tu@email.com',
@@ -357,7 +357,7 @@ const es: Catalog = {
     'Android solo deja que una app instale actualizaciones cuando lo permites. Activa [Permitir de esta fuente] para FamCart, vuelve y pulsa Actualizar.',
   'update.downloadingMessage': 'Descargando FamCart {version}…',
   'update.installingMessage':
-    'A partir de aquí se encarga Android. Sigue las indicaciones de instalación para terminar. Tu lista y tu hogar se quedan tal cual.',
+    'A partir de aquí se encarga Android. Sigue las indicaciones de instalación para terminar. Tu lista se queda tal cual.',
   'update.failedMessage':
     'No se ha podido descargar la actualización. Puede ser solo la conexión. Inténtalo de nuevo u obtén el APK desde la página de versiones.',
   'update.progressLabel': 'Progreso de la descarga',
@@ -381,7 +381,7 @@ const es: Catalog = {
   'report.promptBug': '¿Qué ha pasado?',
   'report.promptIdea': '¿Qué podría estar mejor?',
   'report.placeholderBug': 'Marqué la leche y volvió a aparecer en la lista al reabrir la app.',
-  'report.placeholderIdea': 'No queda claro cómo quitar a alguien del hogar.',
+  'report.placeholderIdea': 'No queda claro cómo quitar a alguien de la lista.',
   'report.charsLeft': 'Quedan {n} caracteres',
   'report.attachedTitle': 'Se envía con tu informe',
   'report.send': 'Enviar',
@@ -391,7 +391,7 @@ const es: Catalog = {
   'report.surface.add': 'Añadir artículos',
   'report.surface.scan': 'Escáner de códigos',
   'report.surface.history': 'Compra e historial',
-  'report.surface.settings': 'Hogar y miembros',
+  'report.surface.settings': 'Ajustes de la lista y personas',
   'report.surface.notifications': 'Notificaciones',
   'report.surface.signin': 'Iniciar sesión',
   'report.surface.other': 'En otro sitio',
@@ -401,7 +401,7 @@ const es: Catalog = {
     'No se ha enviado nada. El informe no ha llegado. Tu texto sigue aquí, así que inténtalo de nuevo. Si sigue fallando, puede que lo bloquee una extensión de privacidad del navegador.',
   'report.diag.version': 'FamCart {version}, {platform}',
   'report.diag.pendingEdits': 'Tiene cambios pendientes de sincronizar',
-  'report.diag.ids': 'Los ID de tu hogar y de tu cuenta',
+  'report.diag.ids': 'Los ID de tu lista y de tu cuenta',
 
   'common.gotIt': 'Entendido',
 
@@ -409,7 +409,7 @@ const es: Catalog = {
   'error.limitReached':
     'Has alcanzado tu límite de {n} artículos activos. Marca o elimina artículos antes de añadir más.',
   'error.offlineSyncFailed': 'Algunos cambios hechos sin conexión no se han podido sincronizar.',
-  'error.loadListsFailed': 'No se ha podido cargar tu hogar.',
+  'error.loadListsFailed': 'No se han podido cargar tus listas.',
 
   'sso.title': 'Ya casi está',
   'sso.text': 'Volviendo a la app de FamCart…',
@@ -423,7 +423,7 @@ const es: Catalog = {
   'account.fallbackName': 'Cuenta',
   'members.sheetLabel': 'Acciones para {name}',
   'members.sheetLabelGeneric': 'Acciones para este miembro',
-  'preferences.useEmoji': 'Usar {emoji} para este hogar',
+  'preferences.useEmoji': 'Usar {emoji} para esta lista',
   'history.addedBy': 'Añadido por {name}',
   'history.addedThis': '{name} añadió esto',
 
@@ -436,11 +436,11 @@ const es: Catalog = {
     '{name}, cantidad {n}. Desliza a la derecha para desmarcar, a la izquierda para eliminar',
 
   'invite.shareTitle': 'Únete a {name} en FamCart',
-  'invite.shareTitleGeneric': 'Únete a mi hogar en FamCart',
+  'invite.shareTitleGeneric': 'Únete a mi lista en FamCart',
   'invite.shareBody':
-    'Únete a «{name}» en FamCart para compartir una lista de la compra. Tu código de invitación es {code}.',
+    'Únete a «{name}» en FamCart para hacer la compra desde la misma lista. Tu código de invitación es {code}.',
   'invite.shareBodyGeneric':
-    'Únete a mi hogar en FamCart para compartir una lista de la compra. Tu código de invitación es {code}.',
+    'Únete a mi lista en FamCart para hacer la compra desde la misma lista. Tu código de invitación es {code}.',
   'invite.shareDialogTitle': 'Invitar a FamCart',
 
   'error.loadListFailed': 'No se ha podido cargar tu lista. Inténtalo de nuevo.',
@@ -486,7 +486,7 @@ const es: Catalog = {
   'list.roleModerator': 'Moderador',
   'list.you': 'Tú',
   'list.aloneHint': 'Por ahora solo tú. Invita a alguien y los dos veréis la lista cambiar al instante.',
-  'list.open': '{name}: miembros, invitar, cambiar de hogar',
+  'list.open': '{name}: miembros, invitar, cambiar de lista',
   'history.searchPlaceholder': '¿Compramos…?',
   'history.noMatch': 'Nada llamado «{query}» en tus compras recientes.',
   'history.addAgain': 'Volver a añadir {name} a la lista',
@@ -500,13 +500,13 @@ const es: Catalog = {
   'history.tripReaddedShort': 'Añadido',
   'list.invite': 'Invitar',
   'nav.label': 'Acciones principales',
-  'nav.list': 'Hogar',
+  'nav.list': 'Lista',
   'nav.history': 'Historial',
   'nav.add': 'Añadir',
   'nav.addLabel': 'Añadir un artículo',
   'nav.you': 'Tú',
   'nav.switch': 'Cambiar',
-  'nav.switchLabel': 'Cambiar de hogar',
+  'nav.switchLabel': 'Cambiar de lista',
   'topbar.listSettings': 'Ajustes de {name}',
   'header.progressLabel': 'Cuánto de la lista está en el carrito',
 }

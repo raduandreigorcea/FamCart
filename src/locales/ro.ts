@@ -23,34 +23,34 @@ const ro: Catalog = {
   'setup.language.sub': 'O poți schimba oricând din Setările aplicației.',
 
   'setup.welcome.eyebrow': 'Bun venit la FamCart 🛒',
-  'setup.welcome.title': 'Lista pe care o împarte toată [gospodăria]',
+  'setup.welcome.title': 'O singură listă pentru [toți] cei care cumpără',
   'setup.welcome.sub':
-    'Toată lumea adaugă, toată lumea bifează, iar totul se actualizează pentru toată gospodăria în clipa în care se întâmplă, ca să nu se uite nimic la magazin.',
+    'Toată lumea adaugă, toată lumea bifează, iar totul se actualizează pentru toți în clipa în care se întâmplă, ca să nu se uite nimic la magazin.',
   'setup.welcome.cta': 'Începe',
 
-  'setup.picker.eyebrowAdd': 'Adaugă o gospodărie',
+  'setup.picker.eyebrowAdd': 'Adaugă o listă',
   'setup.picker.eyebrowNew': 'Bine ai venit 👋',
-  'setup.picker.titleAdd': 'Adaugă altă [gospodărie]',
-  'setup.picker.titleNew': 'Configurează-ți [gospodăria]',
-  'setup.picker.subAdd': 'Alătură-te altei gospodării cu codul lor de invitație.',
+  'setup.picker.titleAdd': 'Adaugă altă [listă]',
+  'setup.picker.titleNew': 'Configurează-ți [lista]',
+  'setup.picker.subAdd': 'Alătură-te altei liste cu codul ei de invitație.',
   'setup.picker.subAddOrCreate':
-    'Alătură-te altei gospodării cu codul lor de invitație sau creează una nouă.',
+    'Alătură-te altei liste cu codul ei de invitație sau creează una nouă.',
   'setup.picker.subNew':
-    'Creează o listă de cumpărături comună pentru gospodăria ta sau alătură-te uneia folosind un cod de invitație.',
-  'setup.picker.createLabel': 'Creează o gospodărie',
+    'Creează o listă de cumpărături comună sau alătură-te uneia folosind un cod de invitație.',
+  'setup.picker.createLabel': 'Creează o listă',
   'setup.picker.createDescription': 'Începe o listă nouă și primești un cod de invitație',
-  'setup.picker.joinLabel': 'Alătură-te unei gospodării',
-  'setup.picker.joinDescription': 'Lipește codul de invitație primit de la gospodăria ta',
+  'setup.picker.joinLabel': 'Alătură-te unei liste',
+  'setup.picker.joinDescription': 'Lipește codul de invitație pe care l-ai primit',
 
-  'setup.create.eyebrow': 'Gospodărie nouă',
-  'setup.create.title': 'Cum se numește gospodăria ta?',
-  'setup.create.sub': 'Așa va apărea lista gospodăriei pentru toată lumea.',
-  'setup.create.nameLabel': 'Numele gospodăriei',
-  'setup.create.namePlaceholder': 'ex. Familia Popescu',
+  'setup.create.eyebrow': 'Listă nouă',
+  'setup.create.title': 'Cum se numește lista ta?',
+  'setup.create.sub': 'Așa va apărea lista pentru toată lumea.',
+  'setup.create.nameLabel': 'Numele listei',
+  'setup.create.namePlaceholder': 'ex. Cumpărături săptămânale',
 
-  'setup.join.eyebrow': 'Alătură-te unei gospodării',
+  'setup.join.eyebrow': 'Alătură-te unei liste',
   'setup.join.title': 'Introdu codul de invitație',
-  'setup.join.sub': 'Cere codul de invitație unui membru al gospodăriei.',
+  'setup.join.sub': 'Cere codul de invitație cuiva de pe listă.',
   'setup.join.codeLabel': 'Cod de invitație',
   'setup.join.codePlaceholder': 'ex. AB3K7XYZ',
 
@@ -82,20 +82,20 @@ const ro: Catalog = {
   'error.genericTitle': 'Ceva nu a mers bine',
   'error.offline': 'Se pare că ești offline. Verifică conexiunea și încearcă din nou.',
   'error.nameTooLongTitle': 'Nume prea lung',
-  'error.listNameTooLong': 'Numele gospodăriei trebuie să aibă cel mult {max} caractere.',
+  'error.listNameTooLong': 'Numele listei trebuie să aibă cel mult {max} caractere.',
   'error.nameRequiredTitle': 'Nume necesar',
-  'error.listNameRequired': 'Dă-i gospodăriei un nume înainte de a salva.',
+  'error.listNameRequired': 'Dă-i listei un nume înainte de a salva.',
   'error.ownOneList':
-    'Poți deține o singură gospodărie. Părăsește-o sau șterge-o pe cea actuală înainte de a crea alta.',
+    'Poți deține o singură listă. Părăsește-o sau șterge-o pe cea actuală înainte de a crea alta.',
   'error.membershipCapCreate':
-    'Poți face parte din cel mult {cap} gospodării. Părăsește una înainte de a crea alta.',
+    'Poți face parte din cel mult {cap} liste. Părăsește una înainte de a crea alta.',
   'error.membershipCapJoin':
-    'Poți face parte din cel mult {cap} gospodării. Părăsește una înainte de a te alătura alteia.',
-  'error.createListFailed': 'Crearea gospodăriei a eșuat.',
-  'error.joinListFailed': 'Alăturarea la gospodărie a eșuat.',
+    'Poți face parte din cel mult {cap} liste. Părăsește una înainte de a te alătura alteia.',
+  'error.createListFailed': 'Crearea listei a eșuat.',
+  'error.joinListFailed': 'Alăturarea la listă a eșuat.',
   'error.inviteCodeInvalid':
     'Codul de invitație trebuie să aibă 8 caractere, doar litere și cifre.',
-  'error.noListForCode': 'Nu există nicio gospodărie cu acest cod de invitație.',
+  'error.noListForCode': 'Nu există nicio listă cu acest cod de invitație.',
   'error.notificationsBlocked':
     'Notificările sunt blocate pentru FamCart în setările dispozitivului sau ale browserului.',
   'error.notificationsFailed': 'Notificările nu au putut fi activate. Încearcă din nou.',
@@ -106,7 +106,7 @@ const ro: Catalog = {
   'list.empty.titleShopped': 'Totul cumpărat',
   'list.empty.titleNew': 'Nimic aici încă',
   'list.empty.textShopped': 'Nu mai e nimic de luat.',
-  'list.empty.textNew': 'Adaugă primul lucru și toată lumea din gospodărie îl vede imediat.',
+  'list.empty.textNew': 'Adaugă primul lucru și toți cei de pe listă îl văd imediat.',
   'list.buyAgain': 'Cumpără din nou',
   'list.addProduct': 'Adaugă {name}',
   'list.buyBar.checkedOut': 'Gata!',
@@ -130,7 +130,7 @@ const ro: Catalog = {
   'item.quantityDone': 'Cantitate {n}. Gata',
   'item.quantityChange': 'Cantitate {n}. Modifică',
 
-  'switcher.heading': 'Gospodăriile tale',
+  'switcher.heading': 'Listele tale',
 
   'filter.shopHeading': 'Magazin',
   'filter.shopAny.label': 'Orice magazin',
@@ -150,7 +150,7 @@ const ro: Catalog = {
   'add.announced': '{name} adăugat pe lista ta',
 
   'custom.message':
-    'Descrie-l și ajunge direct pe lista ta. Data viitoare îl vom sugera gospodăriei tale.',
+    'Descrie-l și ajunge direct pe lista ta. Data viitoare îl vom sugera tuturor celor de pe listă.',
   'custom.productLabel': 'Produs',
   'custom.productPlaceholder': 'Ulei de măsline 500ml',
   'custom.makerLabel': 'Producător',
@@ -191,18 +191,18 @@ const ro: Catalog = {
   'account.close': 'Închide fereastra contului',
   'account.editProfile': 'Editează-ți profilul: nume, poză, parolă',
   'account.noEmail': 'Niciun e-mail disponibil',
-  'account.manageList': 'Gestionează gospodăria',
-  'account.listFallback': 'Gospodărie',
+  'account.manageList': 'Gestionează lista',
+  'account.listFallback': 'Listă',
   'account.memberCount': { one: '{n} membru', few: '{n} membri', other: '{n} de membri' },
   'account.appSettings': 'Setările aplicației',
   'account.appSettingsHint': 'Aspect, notificări, limbă',
-  'account.joinOrCreate': 'Alătură-te sau creează o gospodărie',
+  'account.joinOrCreate': 'Alătură-te sau creează o listă',
   'account.reportIssue': 'Raportează o problemă',
   'account.reportHint': 'Erori și sugestii',
   'account.signOut': 'Deconectează-te',
   'account.signingOut': 'Se deconectează',
 
-  'list.title': 'Setările gospodăriei',
+  'list.title': 'Setările listei',
   'list.close': 'Închide setările',
   'list.sections': 'Secțiunile setărilor',
   'list.tab.overview': 'Prezentare',
@@ -210,29 +210,29 @@ const ro: Catalog = {
   'list.tab.members': 'Membri',
   'list.tab.danger': 'Zonă periculoasă',
 
-  'overview.summary': 'Sumarul gospodăriei',
-  'overview.name': 'Numele gospodăriei',
+  'overview.summary': 'Sumarul listei',
+  'overview.name': 'Numele listei',
   'overview.createdBy': 'Creată de',
   'overview.owner': 'Proprietar',
   'overview.totalMembers': 'Total membri',
   'overview.activeCount': '{n} activi',
   'overview.inviteTitle': 'Invită membri noi',
-  'overview.inviteDesc': 'Trimite acest cod membrilor gospodăriei ca să se alăture listei tale.',
+  'overview.inviteDesc': 'Trimite acest cod ca alții să se poată alătura listei tale.',
   'overview.inviteCode': 'COD DE INVITAȚIE',
   'overview.copyCode': 'Copiază codul',
   'overview.copied': 'Copiat!',
 
   'prefs.title': 'Preferințe generale',
-  'prefs.nameTitle': 'Numele gospodăriei',
-  'prefs.nameDesc': 'Alege un nume pe care toți din gospodărie îl recunosc repede.',
-  'prefs.namePlaceholder': 'Gospodăria mea grozavă',
-  'prefs.emojiTitle': 'Emoji-ul gospodăriei',
-  'prefs.emojiDesc': 'Alege un emoji pentru gospodărie. Apare în bara de sus.',
+  'prefs.nameTitle': 'Numele listei',
+  'prefs.nameDesc': 'Alege un nume pe care toți cei de pe listă îl recunosc repede.',
+  'prefs.namePlaceholder': 'Cumpărături săptămânale',
+  'prefs.emojiTitle': 'Emoji-ul listei',
+  'prefs.emojiDesc': 'Alege un emoji pentru listă. Apare în bara de sus.',
   'prefs.limitTitle': 'Limită de produse per membru',
   'prefs.limitDesc': 'Stabilește câte produse active (nebifate) poate adăuga fiecare membru.',
   'prefs.limitSlider': 'Cursor pentru limita de produse',
 
-  'members.title': 'Membrii gospodăriei ({n})',
+  'members.title': 'Persoanele de pe listă ({n})',
   'members.desc': 'Mai jos sunt persoanele care au acces la această listă de cumpărături.',
   'members.you': '(Tu)',
   'members.openActions': 'Deschide acțiunile pentru membru',
@@ -240,32 +240,32 @@ const ro: Catalog = {
   'members.promoteHint': 'Poate gestiona produsele și membrii',
   'members.demote': 'Retrogradează la membru',
   'members.demoteHint': 'Elimină permisiunile de moderator',
-  'members.remove': 'Elimină din gospodărie',
-  'members.removeHint': 'Pierde accesul la lista de cumpărături',
+  'members.remove': 'Elimină de pe listă',
+  'members.removeHint': 'Pierde accesul la listă',
   'members.roleModerator': 'Moderator',
   'members.roleMember': 'Membru',
   'members.confirmRemoveTitle': 'Elimini membrul?',
   'members.confirmRemoveMessage':
-    'Persoana va pierde imediat accesul la lista gospodăriei. Se poate alătura din nou cu codul de invitație.',
+    'Persoana va pierde imediat accesul la listă. Se poate alătura din nou cu codul de invitație.',
 
   'danger.inviteTitle': 'Administrarea codului de invitație',
   'danger.inviteDesc':
     'Invalidează imediat codul actual. Membrii existenți nu sunt afectați, dar cei viitori trebuie să folosească noul cod.',
   'danger.regenerate': 'Regenerează',
   'danger.regenerated': 'Regenerat',
-  'danger.leaveTitle': 'Părăsește gospodăria',
+  'danger.leaveTitle': 'Părăsește lista',
   'danger.leaveDesc':
-    'Vei fi eliminat din gospodărie. Nu vei mai avea acces la lista de cumpărături.',
-  'danger.deleteTitle': 'Șterge gospodăria',
+    'Vei fi eliminat de pe listă și nu vei mai avea acces la ea.',
+  'danger.deleteTitle': 'Șterge lista',
   'danger.deleteDesc':
     'Șterge definitiv [{name}], elimină toți membrii și șterge toate datele listei. Această acțiune nu poate fi anulată.',
   'danger.confirmRegenerateTitle': 'Regenerezi codul de invitație?',
   'danger.confirmRegenerateMessage':
     'Codul actual va fi invalidat imediat. Membrii existenți nu sunt afectați, dar nimeni cu codul vechi nu se va mai putea alătura.',
-  'danger.confirmLeaveTitle': 'Părăsești gospodăria?',
+  'danger.confirmLeaveTitle': 'Părăsești lista?',
   'danger.confirmLeaveMessage':
-    'Vei pierde accesul la lista de cumpărături și vei avea nevoie de un cod nou ca să revii.',
-  'danger.confirmDeleteTitle': 'Ștergi gospodăria?',
+    'Vei pierde accesul la listă și vei avea nevoie de un cod nou ca să revii.',
+  'danger.confirmDeleteTitle': 'Ștergi lista?',
   'danger.confirmDeleteMessage':
     'Ștergerea „{name}” va elimina definitiv toți membrii, produsele și istoricul. Această acțiune nu poate fi anulată.',
 
@@ -282,10 +282,10 @@ const ro: Catalog = {
   'error.roleUpdateFailed': 'Rolul membrului nu a putut fi actualizat.',
   'error.removeMemberFailed': 'Membrul nu a putut fi eliminat.',
   'error.regenerateCodeFailed': 'Codul de invitație nu a putut fi regenerat. Încearcă din nou.',
-  'error.leaveListFailed': 'Nu ai putut părăsi gospodăria.',
-  'error.deleteListFailed': 'Gospodăria nu a putut fi ștearsă.',
-  'error.renameListFailed': 'Gospodăria nu a putut fi redenumită.',
-  'error.saveEmojiFailed': 'Emoji-ul gospodăriei nu a putut fi salvat.',
+  'error.leaveListFailed': 'Nu ai putut părăsi lista.',
+  'error.deleteListFailed': 'Lista nu a putut fi ștearsă.',
+  'error.renameListFailed': 'Lista nu a putut fi redenumită.',
+  'error.saveEmojiFailed': 'Emoji-ul listei nu a putut fi salvat.',
   'error.saveLimitFailed': 'Limita de produse nu a putut fi salvată.',
   'error.loadHistoryFailed':
     'Istoricul nu a putut fi încărcat. Verifică conexiunea și încearcă din nou.',
@@ -298,7 +298,7 @@ const ro: Catalog = {
 
   'notify.title': 'Activezi notificările?',
   'notify.message':
-    'Află pe loc când cineva din gospodărie adaugă ceva pe listă sau bifează produse, ca să nu se uite nimic la magazin.',
+    'Află pe loc când cineva de pe listă adaugă ceva sau bifează produse, ca să nu se uite nimic la magazin.',
   'notify.notNow': 'Nu acum',
   'notify.turnOn': 'Activează',
 
@@ -321,7 +321,7 @@ const ro: Catalog = {
   'tour.checkout.title': 'Glisează când ai luat tot',
   'tour.checkout.body':
     'Rândurile bifate așteaptă în coș până glisezi bara de jos. Asta le șterge și salvează drumul în istoricul tău.',
-  'tour.invite.title': 'Adu-ți gospodăria alături',
+  'tour.invite.title': 'Adu-i și pe ceilalți',
   'tour.invite.body':
     'Trimite codul de invitație ca toți să cumpere de pe aceeași listă. Fiecare schimbare apare la toți în clipa în care se întâmplă.',
 
@@ -329,7 +329,7 @@ const ro: Catalog = {
   'common.close': 'Închide',
   'common.tryAgain': 'Încearcă din nou',
 
-  'login.tagline': 'Cumpărături pentru gospodărie, [proaspete împreună zilnic]',
+  'login.tagline': 'Cumpărături în comun, [proaspete împreună zilnic]',
   'login.logoAlt': 'Logoul FamCart',
   'login.emailLabel': 'Adresă de e-mail',
   'login.emailPlaceholder': 'tu@email.com',
@@ -362,7 +362,7 @@ const ro: Catalog = {
     'Android permite unei aplicații să instaleze actualizări doar după ce îi dai voie. Activează [Permite din această sursă] pentru FamCart, apoi revino și apasă Actualizează.',
   'update.downloadingMessage': 'Se descarcă FamCart {version}…',
   'update.installingMessage':
-    'De aici preia Android. Urmează pașii de instalare până la capăt. Lista și gospodăria ta rămân exact cum sunt.',
+    'De aici preia Android. Urmează pașii de instalare până la capăt. Lista ta rămâne exact cum este.',
   'update.failedMessage':
     'Actualizarea nu a putut fi descărcată. Poate fi doar conexiunea. Încearcă din nou sau ia APK-ul din pagina de versiuni.',
   'update.progressLabel': 'Progresul descărcării',
@@ -385,7 +385,7 @@ const ro: Catalog = {
   'report.promptBug': 'Ce s-a întâmplat?',
   'report.promptIdea': 'Ce ar putea fi mai bun?',
   'report.placeholderBug': 'Am bifat laptele și a revenit pe listă când am redeschis aplicația.',
-  'report.placeholderIdea': 'Nu e evident cum se scoate cineva din gospodărie.',
+  'report.placeholderIdea': 'Nu e evident cum se scoate cineva de pe listă.',
   'report.charsLeft': '{n} caractere rămase',
   'report.attachedTitle': 'Trimis împreună cu raportul',
   'report.send': 'Trimite',
@@ -395,7 +395,7 @@ const ro: Catalog = {
   'report.surface.add': 'Adăugarea produselor',
   'report.surface.scan': 'Scanerul de coduri',
   'report.surface.history': 'Cumpărături și istoric',
-  'report.surface.settings': 'Gospodărie și membri',
+  'report.surface.settings': 'Setările listei și membrii',
   'report.surface.notifications': 'Notificări',
   'report.surface.signin': 'Conectarea',
   'report.surface.other': 'În altă parte',
@@ -405,7 +405,7 @@ const ro: Catalog = {
     'Nu s-a trimis nimic. Raportul nu a ajuns la noi. Textul tău e încă aici, deci încearcă din nou. Dacă tot nu merge, o extensie de confidențialitate din browser poate să îl blocheze.',
   'report.diag.version': 'FamCart {version}, {platform}',
   'report.diag.pendingEdits': 'Are modificări în așteptare de sincronizare',
-  'report.diag.ids': 'ID-urile gospodăriei și contului tău',
+  'report.diag.ids': 'ID-urile listei și contului tău',
 
   'common.gotIt': 'Am înțeles',
 
@@ -413,7 +413,7 @@ const ro: Catalog = {
   'error.limitReached':
     'Ai atins limita de {n} produse active. Bifează sau șterge produse înainte de a adăuga altele.',
   'error.offlineSyncFailed': 'Unele modificări făcute offline nu au putut fi sincronizate.',
-  'error.loadListsFailed': 'Gospodăria ta nu a putut fi încărcată.',
+  'error.loadListsFailed': 'Listele tale nu au putut fi încărcate.',
 
   'sso.title': 'Aproape gata',
   'sso.text': 'Te ducem înapoi în aplicația FamCart…',
@@ -427,7 +427,7 @@ const ro: Catalog = {
   'account.fallbackName': 'Cont',
   'members.sheetLabel': 'Acțiuni pentru {name}',
   'members.sheetLabelGeneric': 'Acțiuni pentru acest membru',
-  'preferences.useEmoji': 'Folosește {emoji} pentru această gospodărie',
+  'preferences.useEmoji': 'Folosește {emoji} pentru această listă',
   'history.addedBy': 'Adăugat de {name}',
   'history.addedThis': '{name} a adăugat acest produs',
 
@@ -438,12 +438,12 @@ const ro: Catalog = {
   'item.swipeLabelUncheckQty':
     '{name}, cantitate {n}. Glisează la dreapta pentru a debifa, la stânga pentru a șterge',
 
-  'invite.shareTitle': 'Alătură-te gospodăriei {name} pe FamCart',
-  'invite.shareTitleGeneric': 'Alătură-te gospodăriei mele pe FamCart',
+  'invite.shareTitle': 'Alătură-te listei {name} pe FamCart',
+  'invite.shareTitleGeneric': 'Alătură-te listei mele pe FamCart',
   'invite.shareBody':
-    'Alătură-te gospodăriei „{name}” pe FamCart ca să avem o listă de cumpărături comună. Codul tău de invitație este {code}.',
+    'Alătură-te listei „{name}” pe FamCart ca să cumpărăm de pe aceeași listă. Codul tău de invitație este {code}.',
   'invite.shareBodyGeneric':
-    'Alătură-te gospodăriei mele pe FamCart ca să avem o listă de cumpărături comună. Codul tău de invitație este {code}.',
+    'Alătură-te listei mele pe FamCart ca să cumpărăm de pe aceeași listă. Codul tău de invitație este {code}.',
   'invite.shareDialogTitle': 'Invitație la FamCart',
 
   'error.loadListFailed': 'Lista nu a putut fi încărcată. Încearcă din nou.',
@@ -488,7 +488,7 @@ const ro: Catalog = {
   'list.roleModerator': 'Moderator',
   'list.you': 'Tu',
   'list.aloneHint': 'Deocamdată doar tu. Invită pe cineva și veți vedea amândoi lista schimbându-se pe loc.',
-  'list.open': '{name}: membri, invitații, schimbă gospodăria',
+  'list.open': '{name}: membri, invitații, schimbă lista',
   'history.searchPlaceholder': 'Am mai cumpărat…?',
   'history.noMatch': 'Nimic numit „{query}” în cumpărăturile recente.',
   'history.addAgain': 'Adaugă din nou {name} pe listă',
@@ -502,13 +502,13 @@ const ro: Catalog = {
   'history.tripReaddedShort': 'Adăugat',
   'list.invite': 'Invită',
   'nav.label': 'Acțiuni principale',
-  'nav.list': 'Gospodărie',
+  'nav.list': 'Listă',
   'nav.history': 'Istoric',
   'nav.add': 'Adaugă',
   'nav.addLabel': 'Adaugă un produs',
   'nav.you': 'Tu',
   'nav.switch': 'Schimbă',
-  'nav.switchLabel': 'Schimbă gospodăria',
+  'nav.switchLabel': 'Schimbă lista',
   'topbar.listSettings': 'Setări pentru {name}',
   'header.progressLabel': 'Cât din listă e în coș',
 }
