@@ -1031,7 +1031,10 @@ begin
       left join public.profiles p on p.user_id = hm.user_id
       where hm.list_id = f.id
     ), '[]'::jsonb),
-    'list', coalesce((
+    -- The items on the list. This key was `list` while the entity was called a
+    -- household; after the rename that collided with the `list` key above, and
+    -- jsonb keeps the last duplicate, so the entity silently vanished.
+    'items', coalesce((
       select jsonb_agg(jsonb_build_object(
         'id',         si.id,
         'name',       si.name,
