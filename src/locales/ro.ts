@@ -441,9 +441,9 @@ const ro: Catalog = {
   'invite.shareTitle': 'Alătură-te listei {name} pe FamCart',
   'invite.shareTitleGeneric': 'Alătură-te listei mele pe FamCart',
   'invite.shareBody':
-    'Alătură-te listei „{name}” pe FamCart ca să cumpărăm de pe aceeași listă. Codul tău de invitație este {code}.',
+    'Alătură-te listei „{name}” pe FamCart ca să cumpărăm împreună. Codul tău de invitație este {code}.',
   'invite.shareBodyGeneric':
-    'Alătură-te listei mele pe FamCart ca să cumpărăm de pe aceeași listă. Codul tău de invitație este {code}.',
+    'Alătură-te listei mele pe FamCart ca să cumpărăm împreună. Codul tău de invitație este {code}.',
   'invite.shareDialogTitle': 'Invitație la FamCart',
 
   'error.loadListFailed': 'Lista nu a putut fi încărcată. Încearcă din nou.',

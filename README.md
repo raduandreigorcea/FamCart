@@ -10,7 +10,7 @@ Ever bought milk on the way home, only to find your partner already got some an 
 
 ## What it does
 
-- 🛒 **One live list, shared by everyone.** Add an item on your phone, and it appears on everyone else's instantly — no refresh, no "did you get my message?".
+- 🛒 **One live list, shared by everyone.** Add an item on your phone, and it appears on everyone else's instantly. No refresh, no "did you get my message?".
 
 - 👨‍👩‍👧‍👦 **Easy to join.** Start a list, share a short invite code, done. The list owner decides who can manage it and its members.
 

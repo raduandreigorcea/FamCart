@@ -441,7 +441,7 @@ const fr: Catalog = {
   'invite.shareBody':
     'Rejoignez « {name} » sur FamCart pour faire les courses sur la même liste. Votre code d’invitation est {code}.',
   'invite.shareBodyGeneric':
-    'Rejoignez ma liste sur FamCart pour faire les courses sur la même liste. Votre code d’invitation est {code}.',
+    'Rejoignez ma liste sur FamCart pour faire les courses ensemble. Votre code d’invitation est {code}.',
   'invite.shareDialogTitle': 'Inviter sur FamCart',
 
   'error.loadListFailed': 'Impossible de charger votre liste. Veuillez réessayer.',

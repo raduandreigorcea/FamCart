@@ -231,7 +231,7 @@ export default {
   'account.signOut': 'Sign out',
   'account.signingOut': 'Signing out',
 
-  'list.title': 'List settings',
+  'list.title': 'List Settings',
   'list.close': 'Close settings',
   'list.sections': 'Settings sections',
   'list.tab.overview': 'Overview',
@@ -282,19 +282,19 @@ export default {
     'Immediately invalidates the current invite code. Existing members are unaffected, but future members must use the new code.',
   'danger.regenerate': 'Regenerate',
   'danger.regenerated': 'Regenerated',
-  'danger.leaveTitle': 'Leave list',
+  'danger.leaveTitle': 'Leave List',
   'danger.leaveDesc':
     'This will remove you from the list, and you will no longer have access to it.',
-  'danger.deleteTitle': 'Delete list',
+  'danger.deleteTitle': 'Delete List',
   'danger.deleteDesc':
     'Permanently deletes [{name}], removes everyone on it, and erases its items and history. This cannot be undone.',
   'danger.confirmRegenerateTitle': 'Regenerate Invite Code?',
   'danger.confirmRegenerateMessage':
     'This will immediately invalidate the current invite code. Existing members are unaffected, but anyone with the old code will no longer be able to join.',
-  'danger.confirmLeaveTitle': 'Leave list?',
+  'danger.confirmLeaveTitle': 'Leave List?',
   'danger.confirmLeaveMessage':
     'You will lose access to this list and will need a new invite code to rejoin.',
-  'danger.confirmDeleteTitle': 'Delete list?',
+  'danger.confirmDeleteTitle': 'Delete List?',
   'danger.confirmDeleteMessage':
     'Deleting "{name}" will permanently remove everyone on it, its items, and its history. This action cannot be undone.',
 
@@ -484,7 +484,7 @@ export default {
   'invite.shareBody':
     'Join "{name}" on FamCart so we can shop from the same list. Your invite code is {code}.',
   'invite.shareBodyGeneric':
-    'Join my list on FamCart so we can shop from the same list. Your invite code is {code}.',
+    'Join my list on FamCart so we can shop together. Your invite code is {code}.',
   'invite.shareDialogTitle': 'Invite to FamCart',
 
   'error.loadListFailed': 'Could not load your list. Please try again.',

@@ -249,7 +249,7 @@ const it: Catalog = {
   'danger.regenerated': 'Rigenerato',
   'danger.leaveTitle': 'Lascia la lista',
   'danger.leaveDesc':
-    'Verrai rimosso dalla lista e non avrai più accesso.',
+    'Verrai rimosso dalla lista e non avrai più accesso alla lista.',
   'danger.deleteTitle': 'Elimina la lista',
   'danger.deleteDesc':
     'Elimina definitivamente [{name}], rimuove tutti i membri e cancella tutti i dati della lista. Non si può annullare.',
@@ -440,7 +440,7 @@ const it: Catalog = {
   'invite.shareBody':
     'Unisciti a «{name}» su FamCart così facciamo la spesa dalla stessa lista. Il tuo codice di invito è {code}.',
   'invite.shareBodyGeneric':
-    'Unisciti alla mia lista su FamCart così facciamo la spesa dalla stessa lista. Il tuo codice di invito è {code}.',
+    'Unisciti alla mia lista su FamCart così facciamo la spesa insieme. Il tuo codice di invito è {code}.',
   'invite.shareDialogTitle': 'Invita su FamCart',
 
   'error.loadListFailed': 'Non è stato possibile caricare la lista. Riprova.',

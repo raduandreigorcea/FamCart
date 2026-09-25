@@ -440,7 +440,7 @@ const es: Catalog = {
   'invite.shareBody':
     'Únete a «{name}» en FamCart para hacer la compra desde la misma lista. Tu código de invitación es {code}.',
   'invite.shareBodyGeneric':
-    'Únete a mi lista en FamCart para hacer la compra desde la misma lista. Tu código de invitación es {code}.',
+    'Únete a mi lista en FamCart para hacer la compra juntos. Tu código de invitación es {code}.',
   'invite.shareDialogTitle': 'Invitar a FamCart',
 
   'error.loadListFailed': 'No se ha podido cargar tu lista. Inténtalo de nuevo.',

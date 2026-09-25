@@ -443,7 +443,7 @@ const de: Catalog = {
   'invite.shareTitle': 'Tritt {name} auf FamCart bei',
   'invite.shareTitleGeneric': 'Tritt meiner Liste auf FamCart bei',
   'invite.shareBody':
-    'Tritt „{name}” auf FamCart bei, damit wir gemeinsam von einer Liste einkaufen. Dein Einladungscode ist {code}.',
+    'Tritt „{name}” auf FamCart bei, damit wir gemeinsam einkaufen. Dein Einladungscode ist {code}.',
   'invite.shareBodyGeneric':
     'Tritt meiner Liste auf FamCart bei, damit wir gemeinsam einkaufen können. Dein Einladungscode ist {code}.',
   'invite.shareDialogTitle': 'Zu FamCart einladen',
