@@ -47,7 +47,7 @@ const props = defineProps({
   // a catalog with no retailers yet. See useProductSuggestions.
   shopOptions: { type: Array as PropType<string[]>, default: () => [] },
   searchShop: { type: String as PropType<string | null>, default: null },
-  // What this household buys most, same shape as suggestions. Shown in the
+  // What this list buys most, same shape as suggestions. Shown in the
   // sheet before anything is typed; ignored above the bar boundary, where the
   // dropdown has no screen to fill.
   recents: { type: Array as PropType<ProductSuggestion[]>, default: () => [] },
@@ -223,7 +223,7 @@ function onAddCustomClick(event: MouseEvent) {
   emit('add-custom')
 }
 
-// Before anything is typed the screen shows what this household buys, so the
+// Before anything is typed the screen shows what this list buys, so the
 // common case — the same bread as last week — is one tap and no typing. Once
 // there is a query it is the matches' screen, and these step aside.
 // On the desktop column too: an empty field there is the same "what do we
@@ -265,7 +265,7 @@ watch(dimmed, (on) => {
   if (on) lifted.value = true
 })
 
-// A household with no history yet gets a line telling them what to do rather than
+// A list with no history yet gets a line telling them what to do rather than
 // a blank screen. Only on an empty query: telling someone who has typed a
 // character to type a product name is worse than saying nothing, and that
 // single keystroke before the search starts is the only other time this would
@@ -363,7 +363,7 @@ function onEnter(event: KeyboardEvent) {
 
 // A fresh set of matches is a fresh list to choose from. Watching the rendered
 // rows rather than the query catches every way they can change — a search
-// landing, the recents taking over on an emptied field, a household switch
+// landing, the recents taking over on an emptied field, a list switch
 // clearing them.
 watch([rows, () => props.canAddCustom], () => {
   activeIndex.value = -1
@@ -374,7 +374,7 @@ watch([rows, () => props.canAddCustom], () => {
 // search_catalog returns `retailers` on every row it answers with; a row from
 // the app database's own search_catalog has none, and neither does one recovered
 // from purchase history. So an empty answer here is meaningful rather than
-// missing: it says this product came from what the household typed in, not from
+// missing: it says this product came from what the list typed in, not from
 // a shop we read.
 //
 // Gated on the channel rather than on import.meta.env.DEV so it survives into a
@@ -388,7 +388,7 @@ function shopsOf(product: ProductSuggestion): string[] {
 
 
 // The shop filter shows while SEARCHING and not while showing recents. Recents
-// come from what this household has bought, which says nothing about which shops
+// come from what this list has bought, which says nothing about which shops
 // carry it -- so the chips would sit above rows they cannot narrow, and the one
 // that did nothing would look broken rather than empty.
 const showingShopFilter = computed(
@@ -858,7 +858,7 @@ onBeforeUnmount(() => {
             </template>
           </ul>
 
-          <!-- A household with nothing bought yet has no usuals to open on. An
+          <!-- A list with nothing bought yet has no usuals to open on. An
                empty screen should say what to do with it. -->
           <p v-if="showingHint" class="suggestions-hint">{{ t('add.typeToSearch') }}</p>
 

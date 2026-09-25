@@ -26,17 +26,17 @@ import {
 import AppIcon from './AppIcon.vue'
 import { IS_NIGHTLY, SUPABASE_PROJECT_REF } from '../lib/appChannel'
 
-// Settings that belong to the app on this device rather than to a household or
+// Settings that belong to the app on this device rather than to a list or
 // to the account: how it looks, whether it may notify, and what it is.
 //
 // About lives here because it is the clearest case of the three — an app's
 // version and its product-data credit are not a property of any one
-// household, which is exactly what made it odd sitting in the household dialog
+// list, which is exactly what made it odd sitting in the list dialog
 // behind a flag that pushed it to the bottom of the sidebar.
 //
 // Sections stacked in one scroll rather than tabs: Appearance is three buttons
 // and Notifications is two, and a tab pane holding three buttons reads as an
-// empty room. Household Settings earns its sidebar because its panels are big.
+// empty room. List Settings earns its sidebar because its panels are big.
 
 const props = defineProps({
   open: { type: Boolean, default: false },

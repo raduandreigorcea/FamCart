@@ -5,7 +5,7 @@ import ModalCloseButton from './ModalCloseButton.vue'
 // One icon per row, and each one distinct: their job here is to tell three
 // near-identically shaped rows apart at a glance, so a repeat would cost more
 // than it buys. They name the destination rather than the dialog it opens --
-// a house for the household, a gear for the app -- which is also what keeps
+// a house for the list, a gear for the app -- which is also what keeps
 // them apart, since both of those dialogs wear the same gear in their headers.
 // The identity card's affordance. It is the only control here that leads
 // somewhere without a hint on the right saying what it holds, because what it
@@ -18,9 +18,9 @@ import AppIcon from './AppIcon.vue'
 // than for the person, so they moved to AppSettingsModal and this now offers a
 // row leading there.
 //
-// Nothing about the household is here. This is the place you open to act on
-// YOURSELF; the household -- its members, the invite, switching, its settings --
-// is the sheet the household name at the top of the list opens.
+// Nothing about the list is here. This is the place you open to act on
+// YOURSELF; the list -- its members, the invite, switching, its settings --
+// is the sheet the list name at the top of the list opens.
 const props = defineProps({
   open: { type: Boolean, default: false },
   loadingSignOut: { type: Boolean, default: false },
@@ -388,7 +388,7 @@ const resolvedDisplayName = computed(() => props.displayName || t('account.fallb
 }
 
 /* Every row leads with an icon now, so the row/icon layout lives here rather
-   than being re-declared per row. min-width:0 is what lets a long household
+   than being re-declared per row. min-width:0 is what lets a long list
    name ellipsize inside it. */
 .account-menu-item__label {
   display: flex;

@@ -8,7 +8,7 @@ import { shopLabel, shopBrand } from '../lib/shopBadges'
 //
 // A DEVELOPMENT AID RATHER THAN A FEATURE. While the catalog is being filled,
 // where a row came from is the one thing you cannot tell by looking at it: a
-// product scraped from Auchan and one somebody in the household typed in render
+// product scraped from Auchan and one somebody in the list typed in render
 // identically. A shopper never sees this.
 //
 // A LOGO RATHER THAN THE NAME, because the shop and the maker are frequently the

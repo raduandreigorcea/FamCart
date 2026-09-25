@@ -37,8 +37,8 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: (...args) => mocks.routerReplace(...args) }),
 }))
 
-vi.mock('../src/lib/householdRealtime', () => ({
-  useHouseholdRealtime: () => ({
+vi.mock('../src/lib/listRealtime', () => ({
+  useListRealtime: () => ({
     realtimeHealthy: { value: false },
     setupRealtimeSubscriptions: async () => {},
     cleanupRealtimeSubscriptions: () => {},
@@ -65,7 +65,7 @@ const CATALOG = [
 const mountedWrappers = []
 
 // `catalog` opts a test into the second Supabase project. Left out,
-// getCatalogSupabase() returns null and the app runs on household products
+// getCatalogSupabase() returns null and the app runs on list products
 // alone -- which is a supported state, not a broken one, and is what every
 // other test in this file exercises.
 async function mountHome({ history = [], items = [], catalog } = {}) {
@@ -77,11 +77,11 @@ async function mountHome({ history = [], items = [], catalog } = {}) {
       typeof catalog === 'function' ? catalog() : { data: catalog, error: null }
   }
   mocks.routerReplace = vi.fn()
-  mocks.db.handlers['household_members.select'] = (q) =>
+  mocks.db.handlers['list_members.select'] = (q) =>
     q.filters.user_id
-      ? { data: [{ household_id: 'fam-1', households: { id: 'fam-1', name: 'Fam' } }], error: null }
+      ? { data: [{ list_id: 'fam-1', lists: { id: 'fam-1', name: 'Fam' } }], error: null }
       : { data: [{ user_id: 'user-1', display_name: 'Test User', image_url: null, role: 'moderator' }], error: null }
-  mocks.db.handlers['households.select'] = () => ({
+  mocks.db.handlers['lists.select'] = () => ({
     data: { name: 'Fam', invite_code: 'ABCDEFGH', created_by: 'user-1', max_items_per_member: 50 },
     error: null,
   })
@@ -117,7 +117,7 @@ function deferCatalogQueries() {
 
 // The catalog is searched through the search_catalog RPC rather than a
 // product_catalog select: one query, every word matched separately, and the
-// household membership check done server-side. See 006_product_catalog.sql.
+// list membership check done server-side. See 006_product_catalog.sql.
 const catalogQueries = () =>
   mocks.db.calls.filter((c) => c.table === 'rpc' && c.op === 'search_catalog')
 
@@ -315,10 +315,10 @@ describe('suggestion loading state', () => {
 })
 
 // The catalog query is capped and ordered by GLOBAL popularity, so a big
-// imported catalog can fill the pool with strangers and leave this household's own
+// imported catalog can fill the pool with strangers and leave this list's own
 // staple out of it entirely — and ranking can only reorder what it is handed.
-describe('a household product the catalog pool left out', () => {
-  // Six globally-popular products, none of them the one this household actually
+describe('a list product the catalog pool left out', () => {
+  // Six globally-popular products, none of them the one this list actually
   // buys. Enough to fill the dropdown on their own.
   const STRANGERS = [
     { name: 'Apa Minerala 1.5L', maker: 'Perla Harghitei', popularity: 950 },
@@ -345,7 +345,7 @@ describe('a household product the catalog pool left out', () => {
 
     const names = form(wrapper).props('suggestions').map((p) => p.name)
     // Bought here twice, and the pool never returned it — without the merge it
-    // would be unreachable no matter how often this household buys it.
+    // would be unreachable no matter how often this list buys it.
     expect(names[0]).toBe('Apa Plata 2L')
     expect(names).toHaveLength(6)
   })
@@ -369,7 +369,7 @@ describe('a household product the catalog pool left out', () => {
     expect(suggestions[0]).toMatchObject({ name: 'Apa Plata 2L', popularity: 100 })
   })
 
-  it('leaves the dropdown alone for a household with no history', async () => {
+  it('leaves the dropdown alone for a list with no history', async () => {
     const wrapper = await mountHome()
     const pending = deferCatalogQueries()
 
@@ -406,7 +406,7 @@ describe('the regulars offered before anything is typed', () => {
     await flushPromises()
   }
 
-  it('offers what the household buys', async () => {
+  it('offers what the list buys', async () => {
     const wrapper = await mountHome({ history: HISTORY })
     await openSearch(wrapper)
 
@@ -440,7 +440,7 @@ describe('the regulars offered before anything is typed', () => {
       items: [
         {
           id: 'item-1',
-          household_id: 'fam-1',
+          list_id: 'fam-1',
           name: 'Lapte 1L',
           maker: 'Zuzu',
           quantity: 1,
@@ -460,7 +460,7 @@ describe('the regulars offered before anything is typed', () => {
 
 // ── The two-project split ────────────────────────────────────────────────────
 // The global catalog is its own Supabase project, shared live by production and
-// development; a household's contributed products and anything promoted out of
+// development; a list's contributed products and anything promoted out of
 // them stay in the app database. So a full answer is the union of two searches,
 // and the failure modes worth pinning are about what happens when only one of
 // them answers.
@@ -503,7 +503,7 @@ describe('searching both catalogs', () => {
   // The reason the merge uses allSettled rather than Promise.all. Production
   // search now depends on a third project being reachable, and an unreachable
   // one must cost only its own rows.
-  it('still offers household products when the catalog project fails', async () => {
+  it('still offers list products when the catalog project fails', async () => {
     const wrapper = await mountHome({
       catalog: () => ({ data: null, error: { message: 'unreachable' } }),
     })
@@ -559,15 +559,15 @@ describe('searching both catalogs', () => {
       (c) => c.table === 'rpc' && c.op === 'bump_product_popularity',
     )
     expect(catalogBumps).toHaveLength(1)
-    // The catalog's copy has no household to scope by, so it is not passed one.
-    expect(catalogBumps[0].params.p_household_id).toBeUndefined()
+    // The catalog's copy has no list to scope by, so it is not passed one.
+    expect(catalogBumps[0].params.p_list_id).toBeUndefined()
     expect(localBumps).toHaveLength(0)
   })
 })
 
 // ── Scoping suggestions to where somebody shops ──────────────────────────────
 // The catalog holds 191,394 products and 190,394 of them name a market. Until
-// the app started sending one, a household in Romania ranked 37,008 French
+// the app started sending one, a list in Romania ranked 37,008 French
 // products against its own 9,011 Romanian ones on a popularity measured across
 // all of Europe, and lost every time.
 //
@@ -633,7 +633,7 @@ describe('what the reference catalog is told about this person', () => {
   })
 
   // The app database has no markets or name_lang column and wants none: its
-  // rows are this household's own contributions plus the curated seed, and
+  // rows are this list's own contributions plus the curated seed, and
   // nothing there should ever be demoted for being foreign. Sending either
   // argument would fail the call outright, since that function has neither
   // parameter.

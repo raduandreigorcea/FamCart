@@ -4,7 +4,7 @@
 // here".
 //
 // The load-bearing half is not the argument sent to the catalog. It is the two
-// sources that must go QUIET while the filter is on: this household's own
+// sources that must go QUIET while the filter is on: this list's own
 // product_catalog and its purchase history. Neither has retailers and neither
 // ever will -- they hold what people typed in -- so answering with them under a
 // "Lidl" filter would offer products that have nothing to do with Lidl, and a
@@ -42,7 +42,7 @@ const CATALOG_ROW = {
   popularity: 10,
   retailers: ['lidl'],
 }
-// A row from the app database's own search_catalog: this household's own
+// A row from the app database's own search_catalog: this list's own
 // contribution, and the reason the filter has to silence that leg.
 const LOCAL_ROW = { name: 'Lapte de casa', maker: null, popularity: 3 }
 
@@ -90,7 +90,7 @@ function mountSuggestions() {
     setup() {
       api = useProductSuggestions({
         db,
-        householdId: ref('hh-a'),
+        listId: ref('hh-a'),
         items: ref([]),
         query,
         isOffline: () => false,
@@ -228,10 +228,10 @@ describe('searching with a shop chosen', () => {
   })
 })
 
-describe('a household switch', () => {
-  it('clears the shop, and does not fire a search into the new household', async () => {
+describe('a list switch', () => {
+  it('clears the shop, and does not fire a search into the new list', async () => {
     // A narrowed search is a question about the list just left. Carrying it
-    // over would answer the first search in the new household with a filter
+    // over would answer the first search in the new list with a filter
     // nobody set and no visible reason for the gaps.
     //
     // The "does not fire" half is why this is a function rather than a watcher:
@@ -243,7 +243,7 @@ describe('a household switch', () => {
     await flushPromises()
     const before = searchArgs().length
 
-    api.resetForHousehold()
+    api.resetForList()
     await flushPromises()
 
     expect(api.searchShop.value).toBeNull()

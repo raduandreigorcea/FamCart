@@ -34,12 +34,12 @@ afterEach(() => {
 })
 
 describe('the message', () => {
-  it('names the household, says what joining is for, and carries the code', () => {
+  it('names the list, says what joining is for, and carries the code', () => {
     const message = buildInviteMessage('Home', 'ABCD2345', 'https://famcart-app.vercel.app')
 
     expect(message.text).toContain('"Home"')
     expect(message.text).toContain('ABCD2345')
-    expect(message.text).toContain('share one shopping list')
+    expect(message.text).toContain('shop from the same list')
     expect(message.title).toBe('Join Home on FamCart')
   })
 
@@ -52,10 +52,10 @@ describe('the message', () => {
     expect(message.text).toContain('https://famcart-app.vercel.app')
   })
 
-  it('still reads correctly for a household with no name', () => {
+  it('still reads correctly for a list with no name', () => {
     const message = buildInviteMessage('', 'ABCD2345', '')
 
-    expect(message.text).toContain('my household')
+    expect(message.text).toContain('my list')
     expect(message.text).toContain('ABCD2345')
     expect(message.text).not.toContain('""')
   })

@@ -25,8 +25,8 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: (...args) => mocks.routerReplace(...args) }),
 }))
 
-vi.mock('../src/lib/householdRealtime', () => ({
-  useHouseholdRealtime: () => ({
+vi.mock('../src/lib/listRealtime', () => ({
+  useListRealtime: () => ({
     realtimeHealthy: { value: false },
     setupRealtimeSubscriptions: async () => {},
     cleanupRealtimeSubscriptions: () => {},
@@ -50,14 +50,14 @@ const mountedWrappers = []
 async function mountHome() {
   mocks.db = createFakeDb()
   mocks.routerReplace = vi.fn()
-  mocks.db.handlers['household_members.select'] = (q) =>
+  mocks.db.handlers['list_members.select'] = (q) =>
     q.filters.user_id
-      ? { data: [{ household_id: 'fam-1', households: { id: 'fam-1', name: 'Fam' } }], error: null }
+      ? { data: [{ list_id: 'fam-1', lists: { id: 'fam-1', name: 'Fam' } }], error: null }
       : {
           data: [{ user_id: 'user-1', display_name: 'Test User', image_url: null, role: 'moderator' }],
           error: null,
         }
-  mocks.db.handlers['households.select'] = () => ({
+  mocks.db.handlers['lists.select'] = () => ({
     data: { name: 'Fam', invite_code: 'ABCDEFGH', created_by: 'user-1', max_items_per_member: 50 },
     error: null,
   })
@@ -100,7 +100,7 @@ afterEach(() => {
 })
 
 describe('contributing a custom product to the catalog', () => {
-  it('contributes the product against the household that added it', async () => {
+  it('contributes the product against the list that added it', async () => {
     const wrapper = await mountHome()
 
     await addCustomProduct(wrapper, { name: 'Olive Oil 500ml', maker: 'Bertolli' })
@@ -108,7 +108,7 @@ describe('contributing a custom product to the catalog', () => {
     const calls = rpcCalls('add_custom_product')
     expect(calls).toHaveLength(1)
     expect(calls[0].params).toEqual({
-      p_household_id: 'fam-1',
+      p_list_id: 'fam-1',
       p_name: 'Olive Oil 500ml',
       p_maker: 'Bertolli',
       // Typed in rather than scanned, so there is no code to remember. Sent

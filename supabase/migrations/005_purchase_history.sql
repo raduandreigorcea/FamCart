@@ -11,7 +11,7 @@
 -- buy_items() is the ONLY writer. The client has select and nothing else, which
 -- is deliberate and load-bearing: a direct insert path would let any member forge
 -- author names and avatars, and post-date purchased_at to trick the retention
--- logic below into deleting a household's real checkouts.
+-- logic below into deleting a list's real checkouts.
 
 create table if not exists public.purchase_history (
   id                  uuid        primary key default gen_random_uuid(),
@@ -19,7 +19,7 @@ create table if not exists public.purchase_history (
   -- separate same-day purchases by who checked out and when. Never null: every
   -- writer stamps it, and the prune below matches on it.
   checkout_id         uuid        not null,
-  household_id           uuid        not null references public.households(id) on delete cascade,
+  list_id           uuid        not null references public.lists(id) on delete cascade,
   item_id             uuid,       -- original shopping_list_items id (informational)
   name                text        not null,
   maker               text,
@@ -37,20 +37,20 @@ create table if not exists public.purchase_history (
 
 alter table public.purchase_history enable row level security;
 
--- The history view reads newest-first within a household.
-create index if not exists idx_purchase_history_household_purchased_at
-  on public.purchase_history (household_id, purchased_at desc);
+-- The history view reads newest-first within a list.
+create index if not exists idx_purchase_history_list_purchased_at
+  on public.purchase_history (list_id, purchased_at desc);
 
 create index if not exists idx_purchase_history_checkout
-  on public.purchase_history (household_id, checkout_id);
+  on public.purchase_history (list_id, checkout_id);
 
 -- Read-only from the app, and append-only in practice: no insert, update or
--- delete policy exists. Deleting a household cascades its history away.
-drop policy if exists "household members can read purchase history" on public.purchase_history;
-create policy "household members can read purchase history"
+-- delete policy exists. Deleting a list cascades its history away.
+drop policy if exists "list members can read purchase history" on public.purchase_history;
+create policy "list members can read purchase history"
   on public.purchase_history for select
   using (
-    household_id in (select public.active_household_ids())
+    list_id in (select public.active_list_ids())
   );
 
 -- Select only. buy_items() writes as the table owner.
@@ -61,7 +61,7 @@ create policy "household members can read purchase history"
 -- INSERT, UPDATE and DELETE granted to authenticated the whole time, plus TRUNCATE,
 -- which ignores RLS entirely. Only the absence of any write policy made the header
 -- true. Now both gates say the same thing. See the long note at the end of
--- 003_households_and_members.sql.
+-- 003_lists_and_members.sql.
 --
 -- service_role keeps SELECT because supabase/functions/push-on-item-insert reads
 -- this table to count the items in a checkout.
@@ -76,7 +76,7 @@ grant select on public.purchase_history to service_role;
 --
 -- SECURITY DEFINER, because the client cannot insert here. That means RLS does
 -- not guard the delete either, so membership is checked explicitly — passing ids
--- from another household archives nothing. The `checked = true` guard means an
+-- from another list archives nothing. The `checked = true` guard means an
 -- unchecked row slipping into the id list is ignored rather than silently bought.
 --
 -- Every history field is therefore server-stamped and trustworthy, which is what
@@ -84,7 +84,7 @@ grant select on public.purchase_history to service_role;
 -- by it cannot be gamed.
 --
 -- The archived author name/avatar are read from profiles at checkout time via a
--- left join, so an item added by someone who has since left the household still
+-- left join, so an item added by someone who has since left the list still
 -- archives with a 'Member' fallback rather than losing the row.
 create or replace function public.buy_items(p_item_ids uuid[])
 returns integer
@@ -105,17 +105,17 @@ begin
     delete from public.shopping_list_items
     where id = any(p_item_ids)
       and checked = true
-      -- active_household_ids(), not household_members: a household an admin
+      -- active_list_ids(), not list_members: a list an admin
       -- soft-deleted keeps its member rows, and this function is SECURITY
       -- DEFINER, so reading membership directly let a member with cached ids
-      -- still check out of a household that every policy already hides.
-      and household_id in (select public.active_household_ids())
-    returning household_id, id, name, maker, quantity, added_by
+      -- still check out of a list that every policy already hides.
+      and list_id in (select public.active_list_ids())
+    returning list_id, id, name, maker, quantity, added_by
   )
   insert into public.purchase_history
-    (checkout_id, household_id, item_id, name, maker, quantity, added_by, added_by_name, added_by_image_url, purchased_by)
+    (checkout_id, list_id, item_id, name, maker, quantity, added_by, added_by_name, added_by_image_url, purchased_by)
   select
-    v_checkout_id, r.household_id, r.id, r.name, r.maker, r.quantity, r.added_by,
+    v_checkout_id, r.list_id, r.id, r.name, r.maker, r.quantity, r.added_by,
     coalesce(p.display_name, 'Member'), p.image_url, v_user
   from removed r
   left join public.profiles p on p.user_id = r.added_by;
@@ -129,12 +129,12 @@ revoke all on function public.buy_items(uuid[]) from public;
 grant execute on function public.buy_items(uuid[]) to authenticated;
 
 -- ─── retention ───────────────────────────────────────────────────────────────
--- Each household keeps its 60 most recent checkouts, and nothing older than 30
--- days. This bound is also what lets useProductSuggestions() fetch a household's
+-- Each list keeps its 60 most recent checkouts, and nothing older than 30
+-- days. This bound is also what lets useProductSuggestions() fetch a list's
 -- whole history in one query to rank suggestions: the window is small and
 -- naturally recent, so no decay maths is needed — retention already forgets.
 --
--- On checkout: prune the households a checkout touched. A statement-level trigger
+-- On checkout: prune the lists a checkout touched. A statement-level trigger
 -- with a transition table, so this runs once per checkout rather than once per
 -- row. SECURITY DEFINER because the app role cannot delete from this table.
 create or replace function public.prune_purchase_history()
@@ -145,19 +145,19 @@ set search_path = public
 as $$
 begin
   with affected as (
-    select distinct household_id from new_rows
+    select distinct list_id from new_rows
   ),
   checkouts as (
-    select ph.household_id, ph.checkout_id, max(ph.purchased_at) as ts
+    select ph.list_id, ph.checkout_id, max(ph.purchased_at) as ts
     from public.purchase_history ph
-    join affected a on a.household_id = ph.household_id
-    group by ph.household_id, ph.checkout_id
+    join affected a on a.list_id = ph.list_id
+    group by ph.list_id, ph.checkout_id
   ),
   ranked as (
     select
       checkout_id,
       ts,
-      row_number() over (partition by household_id order by ts desc, checkout_id desc) as rn
+      row_number() over (partition by list_id order by ts desc, checkout_id desc) as rn
     from checkouts
   ),
   doomed as (
@@ -181,9 +181,9 @@ referencing new table as new_rows
 for each statement
 execute function public.prune_purchase_history();
 
--- Daily sweep. The trigger above only prunes a household when it checks out, so a
--- household that goes quiet could keep checkouts past 30 days until its next one.
--- This deletes anything older than 30 days across every household regardless of
+-- Daily sweep. The trigger above only prunes a list when it checks out, so a
+-- list that goes quiet could keep checkouts past 30 days until its next one.
+-- This deletes anything older than 30 days across every list regardless of
 -- activity. Requires pg_cron.
 --
 -- Wrapped in a DO block so a database where pg_cron cannot be created (not on

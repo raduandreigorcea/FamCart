@@ -1,13 +1,13 @@
 import { onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import {
-  loadHouseholdSnapshot,
-  saveHouseholdSnapshot,
-  type HouseholdSnapshot,
-} from './householdCache'
+  loadListSnapshot,
+  saveListSnapshot,
+  type ListSnapshot,
+} from './listCache'
 import { ITEM_LIMIT_DEFAULT } from './limits'
-import type { HouseholdMemberProfile, ShoppingItemRow } from './householdRealtime'
+import type { ListMemberProfile, ShoppingItemRow } from './listRealtime'
 
-// The painted cache: reading the last known household state back on startup,
+// The painted cache: reading the last known list state back on startup,
 // and keeping it current afterwards.
 //
 // Stale-while-revalidate, and the stale half is most of the value. A returning
@@ -19,32 +19,32 @@ import type { HouseholdMemberProfile, ShoppingItemRow } from './householdRealtim
 // The three operations here each name the same set of fields, and they have to
 // agree. Painting sets them, discarding a paint clears them, persisting reads
 // them. HomeView had all three several hundred lines apart, and they had
-// already drifted once: householdItemLimit and the cached shopping answer were
+// already drifted once: listItemLimit and the cached shopping answer were
 // set by the paint and not cleared by the discard, so after Clerk resolved to a
 // different account the PREVIOUS user's item cap still governed the add form
-// until loadHouseholdHeader returned, and their shopping history decided whether
+// until loadListHeader returned, and their shopping history decided whether
 // the new user's empty list read "All bought" or "Nothing here yet".
 //
 // The lists are now guarded by the compiler rather than by a comment. Adding a
-// field to HouseholdSnapshot fails the build in three places at once, which was
+// field to ListSnapshot fails the build in three places at once, which was
 // checked by doing it: `EMPTY` below stops satisfying its Record, `persist`
-// stops building a whole HouseholdSnapshot, and the caller's `refs` object stops
+// stops building a whole ListSnapshot, and the caller's `refs` object stops
 // matching SnapshotRefs.
 //
 // `hydrate` is the exception and the one to read carefully. It reads from the
 // snapshot it was handed, so a field it forgets to paint is not an error
 // anywhere -- it simply arrives as whatever the ref already held.
 
-/** The fields the paint owns. hasShopped is separate: see cachedShoppedHouseholdId. */
-type PaintedFields = Omit<HouseholdSnapshot, 'hasShopped'>
+/** The fields the paint owns. hasShopped is separate: see cachedShoppedListId. */
+type PaintedFields = Omit<ListSnapshot, 'hasShopped'>
 
 /** The view's refs for those fields, which it also renders from directly. */
 export type SnapshotRefs = {
-  [K in keyof Omit<PaintedFields, 'householdId'>]: Ref<PaintedFields[K]>
+  [K in keyof Omit<PaintedFields, 'listId'>]: Ref<PaintedFields[K]>
 } & {
-  // Wider than the snapshot's own: the view's "no household" is null, while a
+  // Wider than the snapshot's own: the view's "no list" is null, while a
   // snapshot that exists always describes one.
-  householdId: Ref<string | null>
+  listId: Ref<string | null>
 }
 
 // What each field goes back to when a paint is thrown away.
@@ -55,32 +55,32 @@ export type SnapshotRefs = {
 // A plain object literal would silently allow the gap that caused the bug this
 // file's header describes.
 const EMPTY = {
-  // null, not '': it is the ref's declared "no household", and HomeView tests it
+  // null, not '': it is the ref's declared "no list", and HomeView tests it
   // with truthiness that would let a second sentinel hide.
-  householdId: null,
-  householdName: '',
-  householdInviteCode: '',
-  householdOwnerId: '',
-  householdItemLimit: ITEM_LIMIT_DEFAULT,
-  householdEmoji: '',
-  householdMembers: [] as HouseholdMemberProfile[],
+  listId: null,
+  listName: '',
+  listInviteCode: '',
+  listOwnerId: '',
+  listItemLimit: ITEM_LIMIT_DEFAULT,
+  listEmoji: '',
+  listMembers: [] as ListMemberProfile[],
   items: [] as ShoppingItemRow[],
 } satisfies Record<keyof PaintedFields, unknown>
 
-export interface HouseholdSnapshotState {
+export interface ListSnapshotState {
   /** A cached snapshot has been painted, so the list on screen is real. */
   paintedFromCache: Ref<boolean>
   /**
-   * Which household the cached snapshot said had shopped, or '' for none.
+   * Which list the cached snapshot said had shopped, or '' for none.
    *
-   * The household id rather than a bare boolean, because the snapshot is keyed
-   * to the USER: after creating or joining a household, that household is active
+   * The list id rather than a bare boolean, because the snapshot is keyed
+   * to the USER: after creating or joining a list, that list is active
    * immediately while the painted snapshot still describes the previous one. A
-   * boolean carried the old household's answer straight onto the new
-   * household's empty list, which then opened on "All bought" having bought
+   * boolean carried the old list's answer straight onto the new
+   * list's empty list, which then opened on "All bought" having bought
    * nothing. Storing what the answer is ABOUT makes it self-invalidating.
    */
-  cachedShoppedHouseholdId: Ref<string>
+  cachedShoppedListId: Ref<string>
   /**
    * Whether a snapshot exists for this user at all.
    *
@@ -103,19 +103,19 @@ export interface HouseholdSnapshotState {
   persist: () => void
 }
 
-export function useHouseholdSnapshot(options: {
+export function useListSnapshot(options: {
   /** The Clerk id, or the remembered one while Clerk is still loading offline. */
   userId: Ref<string>
   hasInitialized: Ref<boolean>
   /** The view's own refs. Painted into, cleared, and read back out. */
   refs: SnapshotRefs
-  /** Has this household ever bought anything, as the view currently understands it. */
+  /** Has this list ever bought anything, as the view currently understands it. */
   hasShopped: () => boolean
-}): HouseholdSnapshotState {
+}): ListSnapshotState {
   const { userId, hasInitialized, refs, hasShopped } = options
 
   const paintedFromCache = ref(false)
-  const cachedShoppedHouseholdId = ref('')
+  const cachedShoppedListId = ref('')
   // Which user the painted cache belongs to. The paint happens before Clerk can
   // confirm the session, so if it then resolves to somebody else that paint is
   // the wrong person's list and has to be dropped.
@@ -135,43 +135,43 @@ export function useHouseholdSnapshot(options: {
       // `satisfies` above is what makes the loop's coverage exact.
       ;(refs[key] as Ref<unknown>).value = EMPTY[key]
     }
-    cachedShoppedHouseholdId.value = ''
+    cachedShoppedListId.value = ''
   }
 
   function hasSnapshot(): boolean {
-    return loadHouseholdSnapshot(localStorage, userId.value) !== null
+    return loadListSnapshot(localStorage, userId.value) !== null
   }
 
   function hydrate(): void {
     if (refs.items.value.length) return
-    const snapshot = loadHouseholdSnapshot(localStorage, userId.value)
+    const snapshot = loadListSnapshot(localStorage, userId.value)
     if (!snapshot) return
     hydratedUserId = userId.value
     paintedFromCache.value = true
-    refs.householdId.value = snapshot.householdId
-    refs.householdName.value = snapshot.householdName
-    refs.householdInviteCode.value = snapshot.householdInviteCode
-    refs.householdOwnerId.value = snapshot.householdOwnerId
-    refs.householdItemLimit.value = snapshot.householdItemLimit
-    refs.householdEmoji.value = snapshot.householdEmoji || ''
-    refs.householdMembers.value = snapshot.householdMembers
+    refs.listId.value = snapshot.listId
+    refs.listName.value = snapshot.listName
+    refs.listInviteCode.value = snapshot.listInviteCode
+    refs.listOwnerId.value = snapshot.listOwnerId
+    refs.listItemLimit.value = snapshot.listItemLimit
+    refs.listEmoji.value = snapshot.listEmoji || ''
+    refs.listMembers.value = snapshot.listMembers
     refs.items.value = snapshot.items
     // Offline there is no purchase history to read, so the cached answer is the
-    // only one available. Without it an empty list tells a household that shops
+    // only one available. Without it an empty list tells a list that shops
     // every week they have never started.
-    cachedShoppedHouseholdId.value = snapshot.hasShopped ? snapshot.householdId : ''
+    cachedShoppedListId.value = snapshot.hasShopped ? snapshot.listId : ''
   }
 
   function persist(): void {
-    if (!hasInitialized.value || !userId.value || !refs.householdId.value) return
-    saveHouseholdSnapshot(localStorage, userId.value, {
-      householdId: refs.householdId.value,
-      householdName: refs.householdName.value,
-      householdInviteCode: refs.householdInviteCode.value,
-      householdOwnerId: refs.householdOwnerId.value,
-      householdItemLimit: refs.householdItemLimit.value,
-      householdEmoji: refs.householdEmoji.value,
-      householdMembers: refs.householdMembers.value,
+    if (!hasInitialized.value || !userId.value || !refs.listId.value) return
+    saveListSnapshot(localStorage, userId.value, {
+      listId: refs.listId.value,
+      listName: refs.listName.value,
+      listInviteCode: refs.listInviteCode.value,
+      listOwnerId: refs.listOwnerId.value,
+      listItemLimit: refs.listItemLimit.value,
+      listEmoji: refs.listEmoji.value,
+      listMembers: refs.listMembers.value,
       items: refs.items.value,
       hasShopped: hasShopped(),
     })
@@ -206,11 +206,11 @@ export function useHouseholdSnapshot(options: {
   watch(
     [
       refs.items,
-      refs.householdMembers,
-      refs.householdName,
-      refs.householdInviteCode,
-      refs.householdItemLimit,
-      refs.householdEmoji,
+      refs.listMembers,
+      refs.listName,
+      refs.listInviteCode,
+      refs.listItemLimit,
+      refs.listEmoji,
     ],
     schedule,
     { deep: true },
@@ -223,7 +223,7 @@ export function useHouseholdSnapshot(options: {
 
   return {
     paintedFromCache,
-    cachedShoppedHouseholdId,
+    cachedShoppedListId,
     hasSnapshot,
     hydrate,
     discard,

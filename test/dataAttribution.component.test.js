@@ -7,7 +7,7 @@
 // and its two sibling projects, all ODbL, which obliged anyone publishing an app
 // built on it to credit them. That obligation is gone with those sources -- but
 // the test is kept, because what it really guards is the ROUTE: the credit used
-// to sit in an About tab inside the household settings dialog, and moving About
+// to sit in an About tab inside the list settings dialog, and moving About
 // out of there is exactly the kind of change that drops it on the floor. It
 // very nearly did.
 //
@@ -17,7 +17,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AppSettingsModal from '../src/components/AppSettingsModal.vue'
 import AccountActionModal from '../src/components/AccountActionModal.vue'
-import HouseholdSettingsModal from '../src/components/HouseholdSettingsModal.vue'
+import ListSettingsModal from '../src/components/ListSettingsModal.vue'
 
 vi.mock('@clerk/vue', async () => {
   const { ref } = await import('vue')
@@ -112,7 +112,7 @@ describe('product data attribution', () => {
   it('is reachable from the account dialog', () => {
     const wrapper = mount(AccountActionModal, {
       global: { stubs: { AppModal: false } },
-      props: { open: true, displayName: 'Radu', householdName: 'Acasa' },
+      props: { open: true, displayName: 'Radu', listName: 'Acasa' },
     })
 
     const row = wrapper
@@ -141,16 +141,16 @@ describe('the About section', () => {
     expect((await openAbout()).find('.about-version').text()).toBe(`v${version}`)
   })
 
-  it('no longer sits in the household dialog', () => {
-    // About describes the app, not a household. If it reappears among the
-    // household tabs, the split this dialog is built on has been undone.
-    const wrapper = mount(HouseholdSettingsModal, {
+  it('no longer sits in the list dialog', () => {
+    // About describes the app, not a list. If it reappears among the
+    // list tabs, the split this dialog is built on has been undone.
+    const wrapper = mount(ListSettingsModal, {
       shallow: true,
       global: { stubs: { AppModal: false } },
       props: {
         open: true,
-        householdId: 'fam-1',
-        householdName: 'Fam',
+        listId: 'fam-1',
+        listName: 'Fam',
         inviteCode: 'ABCDEFGH',
         ownerUserId: 'user-1',
         memberProfiles: [],

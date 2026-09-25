@@ -9,11 +9,11 @@ import { t, tAccent } from '../../lib/i18n'
 import AppIcon from '../AppIcon.vue'
 
 // The actions that cannot be undone: rotating the invite code, leaving, and
-// deleting the household. An owner sees delete, everyone else sees leave — the
-// owner cannot leave a household they still own.
+// deleting the list. An owner sees delete, everyone else sees leave — the
+// owner cannot leave a list they still own.
 const props = defineProps({
-  householdId: { type: String, default: '' },
-  householdName: { type: String, default: '' },
+  listId: { type: String, default: '' },
+  listName: { type: String, default: '' },
   isOwner: { type: Boolean, default: false },
   isOwnerOrModerator: { type: Boolean, default: false },
   // The modal's own confirm dialog, handed down so every destructive action in
@@ -25,24 +25,24 @@ const props = defineProps({
 })
 
 const emit = defineEmits<{
-  (e: 'refresh-household'): void
-  (e: 'household-deleted'): void
-  (e: 'household-left'): void
+  (e: 'refresh-list'): void
+  (e: 'list-deleted'): void
+  (e: 'list-left'): void
   (e: 'error', message: string, title?: string): void
 }>()
 
 const { userId } = useAuth()
 const db = useSupabase()
 
-// Split on the marker, then interpolated, so the bolded run is the household's
+// Split on the marker, then interpolated, so the bolded run is the list's
 // own name wherever that language puts it in the sentence — and so a name
 // carrying a bracket of its own cannot move where the bolding starts or ends.
-const deleteDesc = computed(() => tAccent('danger.deleteDesc', { name: props.householdName }))
+const deleteDesc = computed(() => tAccent('danger.deleteDesc', { name: props.listName }))
 
 const regenerating = ref(false)
 const codeRegenerated = ref(false)
-const leavingHousehold = ref(false)
-const deletingHousehold = ref(false)
+const leavingList = ref(false)
+const deletingList = ref(false)
 
 let regeneratedTimer: ReturnType<typeof setTimeout> | null = null
 onBeforeUnmount(() => {
@@ -50,7 +50,7 @@ onBeforeUnmount(() => {
 })
 
 async function regenerateInviteCode() {
-  if (!props.householdId || regenerating.value) return
+  if (!props.listId || regenerating.value) return
   const confirmed = await props.confirm({
     title: t('danger.confirmRegenerateTitle'),
     message: t('danger.confirmRegenerateMessage'),
@@ -60,16 +60,16 @@ async function regenerateInviteCode() {
   regenerating.value = true
   try {
     const { error } = await db
-      .from('households')
+      .from('lists')
       .update({ invite_code: randomInviteCode() })
-      .eq('id', props.householdId)
+      .eq('id', props.listId)
     if (error) {
       // Includes the rare unique-index collision on the new code; retrying
       // draws a different one, which is what the message asks for.
       emit('error', userMessage(error, t('error.regenerateCodeFailed')))
       return
     }
-    emit('refresh-household')
+    emit('refresh-list')
     codeRegenerated.value = true
     if (regeneratedTimer) clearTimeout(regeneratedTimer)
     regeneratedTimer = setTimeout(() => {
@@ -80,51 +80,51 @@ async function regenerateInviteCode() {
   }
 }
 
-async function leaveHousehold() {
-  if (!props.householdId || leavingHousehold.value) return
+async function leaveList() {
+  if (!props.listId || leavingList.value) return
   const confirmed = await props.confirm({
     title: t('danger.confirmLeaveTitle'),
     message: t('danger.confirmLeaveMessage'),
     danger: true,
   })
   if (!confirmed) return
-  leavingHousehold.value = true
+  leavingList.value = true
   try {
     const { error } = await db
-      .from('household_members')
+      .from('list_members')
       .delete()
-      .eq('household_id', props.householdId)
+      .eq('list_id', props.listId)
       .eq('user_id', userId.value)
     if (error) {
-      emit('error', userMessage(error, t('error.leaveHouseholdFailed')))
+      emit('error', userMessage(error, t('error.leaveListFailed')))
       return
     }
-    // HomeView moves to another household, or to setup if none remain.
-    emit('household-left')
+    // HomeView moves to another list, or to setup if none remain.
+    emit('list-left')
   } finally {
-    leavingHousehold.value = false
+    leavingList.value = false
   }
 }
 
-async function deleteHousehold() {
-  if (!props.householdId || deletingHousehold.value) return
+async function deleteList() {
+  if (!props.listId || deletingList.value) return
   const confirmed = await props.confirm({
     title: t('danger.confirmDeleteTitle'),
-    message: t('danger.confirmDeleteMessage', { name: props.householdName }),
+    message: t('danger.confirmDeleteMessage', { name: props.listName }),
     danger: true,
   })
   if (!confirmed) return
-  deletingHousehold.value = true
+  deletingList.value = true
   try {
-    const { error } = await db.from('households').delete().eq('id', props.householdId)
+    const { error } = await db.from('lists').delete().eq('id', props.listId)
     if (error) {
-      emit('error', userMessage(error, t('error.deleteHouseholdFailed')))
+      emit('error', userMessage(error, t('error.deleteListFailed')))
       return
     }
-    // HomeView reconciles: switch to another household, or setup if none remain.
-    emit('household-deleted')
+    // HomeView reconciles: switch to another list, or setup if none remain.
+    emit('list-deleted')
   } finally {
-    deletingHousehold.value = false
+    deletingList.value = false
   }
 }
 </script>
@@ -161,7 +161,7 @@ async function deleteHousehold() {
         <div class="card-item__info">
           <p>{{ t('danger.leaveDesc') }}</p>
         </div>
-        <button class="danger-action-btn" type="button" :disabled="leavingHousehold" @click="leaveHousehold">{{ t('danger.leaveTitle') }}</button>
+        <button class="danger-action-btn" type="button" :disabled="leavingList" @click="leaveList">{{ t('danger.leaveTitle') }}</button>
       </div>
     </div>
 
@@ -170,7 +170,7 @@ async function deleteHousehold() {
       <h4 class="panel-section-title text-danger">{{ t('danger.deleteTitle') }}</h4>
       <div class="card-item card-item--action card-item--danger">
         <div class="card-item__info">
-          <!-- The household's name is bolded mid-sentence, so the string
+          <!-- The list's name is bolded mid-sentence, so the string
                carries a [marker] round it and tAccent places the three
                pieces — the same mechanism the setup headings use, and for the
                same reason: which words sit either side of the name differs
@@ -180,10 +180,10 @@ async function deleteHousehold() {
         <button
           class="danger-action-btn danger-action-btn--delete"
           type="button"
-          :disabled="deletingHousehold"
-          @click="deleteHousehold"
+          :disabled="deletingList"
+          @click="deleteList"
         >
-          <span v-if="deletingHousehold" class="btn-spinner btn-spinner--light"></span>
+          <span v-if="deletingList" class="btn-spinner btn-spinner--light"></span>
           <span v-else>{{ t('danger.deleteTitle') }}</span>
         </button>
       </div>
@@ -283,7 +283,7 @@ async function deleteHousehold() {
   /* Pairs with white-space:nowrap. Without it this is an ordinary flex item and
      will shrink under its own label, which nowrap then spills outside the button
      rather than wrapping. The paragraph beside it is the part meant to give way.
-     Latent until "Delete Family" became "Delete Household" and the label got
+     Latent until "Delete Family" became "Delete List" and the label got
      wide enough to cross the threshold. */
   flex-shrink: 0;
 }

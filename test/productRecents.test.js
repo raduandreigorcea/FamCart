@@ -1,8 +1,8 @@
-// What the search screen opens on: the products this household actually reaches
+// What the search screen opens on: the products this list actually reaches
 // for, in the order they reach for them.
 import { describe, it, expect } from 'vitest'
-import { topHouseholdProducts } from '../src/lib/productRecents'
-import { buildHouseholdProductStats, productKey } from '../src/lib/productSearch'
+import { topListProducts } from '../src/lib/productRecents'
+import { buildListProductStats, productKey } from '../src/lib/productSearch'
 
 const at = (day) => `2026-07-${String(day).padStart(2, '0')}T10:00:00Z`
 
@@ -16,12 +16,12 @@ const HISTORY = [
   { name: 'Cascaval 300g', maker: 'Delaco', purchased_at: at(17) },
 ]
 
-const stats = () => buildHouseholdProductStats(HISTORY)
+const stats = () => buildListProductStats(HISTORY)
 const names = (products) => products.map((p) => p.name)
 
-describe('topHouseholdProducts', () => {
+describe('topListProducts', () => {
   it('puts what they buy most often first', () => {
-    expect(names(topHouseholdProducts(stats(), { limit: 10 }))).toEqual([
+    expect(names(topListProducts(stats(), { limit: 10 }))).toEqual([
       'Paine Alba',
       'Lapte 3.5% 1L',
       'Cascaval 300g',
@@ -29,15 +29,15 @@ describe('topHouseholdProducts', () => {
   })
 
   it('breaks a tie on how recently, not alphabetically', () => {
-    const tied = buildHouseholdProductStats([
+    const tied = buildListProductStats([
       { name: 'Zahar 1kg', maker: null, purchased_at: at(20) },
       { name: 'Apa Plata 2L', maker: 'Dorna', purchased_at: at(3) },
     ])
-    expect(names(topHouseholdProducts(tied, { limit: 10 }))).toEqual(['Zahar 1kg', 'Apa Plata 2L'])
+    expect(names(topListProducts(tied, { limit: 10 }))).toEqual(['Zahar 1kg', 'Apa Plata 2L'])
   })
 
   it('leaves out what is already on the list', () => {
-    const products = topHouseholdProducts(stats(), {
+    const products = topListProducts(stats(), {
       limit: 10,
       exclude: [productKey('Paine Alba', 'Vel Pitar')],
     })
@@ -47,7 +47,7 @@ describe('topHouseholdProducts', () => {
   // The exclusion is keyed the same way the catalog pairs a product with
   // itself, so a differently-cased or accented copy still counts as the same.
   it('matches the list by product identity rather than by spelling', () => {
-    const products = topHouseholdProducts(stats(), {
+    const products = topListProducts(stats(), {
       limit: 10,
       exclude: [productKey('pâine albă', 'VEL PITAR')],
     })
@@ -55,31 +55,31 @@ describe('topHouseholdProducts', () => {
   })
 
   it('carries the maker through, so the rows read as products', () => {
-    expect(topHouseholdProducts(stats(), { limit: 1 })[0]).toEqual({
+    expect(topListProducts(stats(), { limit: 1 })[0]).toEqual({
       name: 'Paine Alba',
       maker: 'Vel Pitar',
     })
   })
 
   it('stops at the limit', () => {
-    expect(topHouseholdProducts(stats(), { limit: 2 })).toHaveLength(2)
+    expect(topListProducts(stats(), { limit: 2 })).toHaveLength(2)
   })
 
   it('offers nothing rather than everything when there is no room', () => {
-    expect(topHouseholdProducts(stats(), { limit: 0 })).toEqual([])
+    expect(topListProducts(stats(), { limit: 0 })).toEqual([])
   })
 
-  it('survives a household with no history at all', () => {
-    expect(topHouseholdProducts(new Map(), { limit: 8 })).toEqual([])
+  it('survives a list with no history at all', () => {
+    expect(topListProducts(new Map(), { limit: 8 })).toEqual([])
   })
 
-  // Unlike matchHouseholdStats, a hand-typed one-word entry belongs here: the
+  // Unlike matchListStats, a hand-typed one-word entry belongs here: the
   // section claims to be their history, and that is what they bought.
   it('keeps a bare hand-typed staple, which a search result would drop', () => {
-    const typed = buildHouseholdProductStats([
+    const typed = buildListProductStats([
       { name: 'paine', maker: null, purchased_at: at(4) },
       { name: 'paine', maker: null, purchased_at: at(11) },
     ])
-    expect(names(topHouseholdProducts(typed, { limit: 5 }))).toEqual(['paine'])
+    expect(names(topListProducts(typed, { limit: 5 }))).toEqual(['paine'])
   })
 })

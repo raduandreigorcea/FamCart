@@ -192,15 +192,15 @@ describe('applyUserLocale', () => {
 describe('tAccent', () => {
   it('splits a heading on its marker', () => {
     expect(tAccent('setup.welcome.title')).toEqual([
-      'The list your whole ',
-      'household',
-      ' shares',
+      'One list for ',
+      'everyone',
+      ' who shops',
     ])
   })
 
   it('handles a marker that runs to the end of the string', () => {
     expect(tAccent('login.tagline')).toEqual([
-      'Household Groceries, ',
+      'Shared Groceries, ',
       'fresh together daily',
       '',
     ])
@@ -208,7 +208,7 @@ describe('tAccent', () => {
 
   it('follows the language, and the marker moves with the grammar', async () => {
     await setLocale('de')
-    expect(tAccent('setup.picker.titleNew')).toEqual(['Richte deinen ', 'Haushalt', ' ein'])
+    expect(tAccent('setup.picker.titleNew')).toEqual(['Richte deine ', 'Liste', ' ein'])
   })
 
   it('returns the whole string as the lead when a heading has no marker', () => {
@@ -218,14 +218,14 @@ describe('tAccent', () => {
   })
 
   it('splits before interpolating, so a value cannot move the accent', () => {
-    // The household's name is the accented run. A name carrying brackets of its
+    // The list's name is the accented run. A name carrying brackets of its
     // own used to cut that run short, because the split saw the assembled
     // sentence rather than the catalog template.
     const [lead, accent, tail] = tAccent('danger.deleteDesc', { name: 'Home]s [Attic' })
     expect(accent).toBe('Home]s [Attic')
     expect(lead).toBe('Permanently deletes ')
     expect(tail).toBe(
-      ', removes all members, and erases all shopping list data. This cannot be undone.',
+      ', removes everyone on it, and erases its items and history. This cannot be undone.',
     )
   })
 })

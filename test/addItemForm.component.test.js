@@ -762,7 +762,7 @@ describe('AddItemForm suggestions', () => {
       })
     })
 
-    it('opens on what the household buys before anything is typed', async () => {
+    it('opens on what the list buys before anything is typed', async () => {
       const wrapper = await mountSheet({ name: '', suggestions: [], recents: RECENTS })
 
       expect(wrapper.find('.suggestions-label').text()).toBe('Buy again')
@@ -782,7 +782,7 @@ describe('AddItemForm suggestions', () => {
       ])
     })
 
-    it('tells a household with no history what to do with the empty screen', async () => {
+    it('tells a list with no history what to do with the empty screen', async () => {
       const wrapper = await mountSheet({ name: '', suggestions: [], recents: [] })
 
       expect(wrapper.find('.suggestions-hint').text()).toBe('Type a product name to search.')

@@ -5,7 +5,7 @@
 // row; every row carries the same checkout_id, which doubles as the OneSignal
 // idempotency_key — duplicate calls collapse into a single sent notification.
 //
-// Recipients are every household member except the actor. Devices (web and
+// Recipients are every list member except the actor. Devices (web and
 // native) are registered by the client SDKs and keyed to Clerk user ids via
 // OneSignal.login(), so no subscription storage lives on our side.
 //
@@ -48,13 +48,13 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
 )
 
-// Household member ids for a household. Names live in profiles now, resolved
+// List member ids for a list. Names live in profiles now, resolved
 // separately by fetchDisplayName when a message needs to name the actor.
-async function fetchMembers(householdId: string) {
+async function fetchMembers(listId: string) {
   return await supabase
-    .from('household_members')
+    .from('list_members')
     .select('user_id')
-    .eq('household_id', householdId)
+    .eq('list_id', listId)
 }
 
 // The actor's display name from their profile row; 'Someone' if it is missing.
@@ -72,16 +72,16 @@ async function sendPush(options: {
   /**
    * The message in every language the app speaks, keyed by language code.
    * OneSignal picks the one matching each subscription's own language and
-   * falls back to `en`, so a household reading in three languages is still
+   * falls back to `en`, so a list reading in three languages is still
    * one REST call. See localisedContents in ../_shared/push.ts.
    */
   contents: Record<string, string>
-  householdId: string
+  listId: string
   idempotencyKey: string
 }): Promise<Response> {
-  // One collapsing notification per household: web_push_topic (browsers) and
+  // One collapsing notification per list: web_push_topic (browsers) and
   // collapse_id (native) make a burst of changes update in place, not stack.
-  const tag = `famcart-${options.householdId}`
+  const tag = `famcart-${options.listId}`
   const res = await fetch('https://api.onesignal.com/notifications?c=push', {
     method: 'POST',
     headers: {
@@ -117,7 +117,7 @@ async function sendPush(options: {
 }
 
 async function handleItemAdded(item: ItemRecord): Promise<Response> {
-  const { data: members, error } = await fetchMembers(item.household_id)
+  const { data: members, error } = await fetchMembers(item.list_id)
   if (error) return Response.json({ error: error.message }, { status: 500 })
   const recipientIds = recipientsFor(members, item.added_by)
   if (!recipientIds.length) return Response.json({ sent: 0 })
@@ -126,7 +126,7 @@ async function handleItemAdded(item: ItemRecord): Promise<Response> {
   return sendPush({
     recipientIds,
     contents: localisedContents((locale) => itemAddedBody(who, item, locale)),
-    householdId: item.household_id,
+    listId: item.list_id,
     idempotencyKey: item.id,
   })
 }
@@ -134,7 +134,7 @@ async function handleItemAdded(item: ItemRecord): Promise<Response> {
 async function handleCheckout(purchase: PurchaseRecord): Promise<Response> {
   const [{ data: members, error: membersErr }, { data: items, error: itemsErr }] =
     await Promise.all([
-      fetchMembers(purchase.household_id),
+      fetchMembers(purchase.list_id),
       // The webhook fires after buy_items commits, so every row of this
       // checkout is already visible; the count is complete on the first call.
       supabase
@@ -152,7 +152,7 @@ async function handleCheckout(purchase: PurchaseRecord): Promise<Response> {
   return sendPush({
     recipientIds,
     contents: localisedContents((locale) => checkoutBody(who, items, locale)),
-    householdId: purchase.household_id,
+    listId: purchase.list_id,
     idempotencyKey: purchase.checkout_id,
   })
 }

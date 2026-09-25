@@ -43,8 +43,8 @@ vi.mock('../src/lib/barcodeScanner', async (importOriginal) => ({
 
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: () => {} }) }))
 
-vi.mock('../src/lib/householdRealtime', () => ({
-  useHouseholdRealtime: () => ({
+vi.mock('../src/lib/listRealtime', () => ({
+  useListRealtime: () => ({
     realtimeHealthy: { value: false },
     setupRealtimeSubscriptions: async () => {},
     cleanupRealtimeSubscriptions: () => {},
@@ -76,7 +76,7 @@ const UNKNOWN = '4001234567890'
 const ALT = '5941234567906'
 
 // `catalog` opts a test into the second Supabase project. Left out,
-// getCatalogSupabase() returns null and only the household's own contributed
+// getCatalogSupabase() returns null and only the list's own contributed
 // rows answer a scan — which is the shape every test above this was written in.
 async function mountHome({ catalog = false } = {}) {
   mocks.catalogDb = null
@@ -90,14 +90,14 @@ async function mountHome({ catalog = false } = {}) {
     }
   }
   mocks.db = createFakeDb()
-  mocks.db.handlers['household_members.select'] = (q) =>
+  mocks.db.handlers['list_members.select'] = (q) =>
     q.filters.user_id
-      ? { data: [{ household_id: 'fam-1', households: { id: 'fam-1', name: 'Fam' } }], error: null }
+      ? { data: [{ list_id: 'fam-1', lists: { id: 'fam-1', name: 'Fam' } }], error: null }
       : {
           data: [{ user_id: 'user-1', display_name: 'Test User', image_url: null, role: 'moderator' }],
           error: null,
         }
-  mocks.db.handlers['households.select'] = () => ({
+  mocks.db.handlers['lists.select'] = () => ({
     data: { name: 'Fam', invite_code: 'ABCDEFGH', created_by: 'user-1', max_items_per_member: 50 },
     error: null,
   })
@@ -228,16 +228,16 @@ describe('scanning a barcode onto the list', () => {
     expect(rpcCalls('add_custom_product')).toHaveLength(0)
   })
 
-  it('scoped the lookup to the global catalog plus this household', async () => {
+  it('scoped the lookup to the global catalog plus this list', async () => {
     const wrapper = await mountHome()
     await openScanner(wrapper)
 
     await scan(wrapper, SCANNED)
 
-    // Same scoping the typed search uses. RLS blocks other households either
-    // way; this is what stops a product contributed in a DIFFERENT household the
+    // Same scoping the typed search uses. RLS blocks other lists either
+    // way; this is what stops a product contributed in a DIFFERENT list the
     // user belongs to being found while shopping here.
-    expect(barcodeQueries()[0].filters.or).toBe('household_id.is.null,household_id.eq.fam-1')
+    expect(barcodeQueries()[0].filters.or).toBe('list_id.is.null,list_id.eq.fam-1')
   })
 
   it('reports a code the catalog has no product for, and adds nothing', async () => {
@@ -376,9 +376,9 @@ describe('scanning a barcode onto the list', () => {
     await flushPromises()
 
     // The point of the whole miss path: the contributed row carries the code, so
-    // the next scan of this package finds it for everyone in the household.
+    // the next scan of this package finds it for everyone in the list.
     expect(rpcCalls('add_custom_product')[0].params).toEqual({
-      p_household_id: 'fam-1',
+      p_list_id: 'fam-1',
       p_name: 'Lapte 1L',
       p_maker: 'Zuzu',
       p_barcode: UNKNOWN,

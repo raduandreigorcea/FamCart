@@ -3,10 +3,10 @@ import { computed, type PropType } from 'vue'
 import SkeletonBlock from './SkeletonBlock.vue'
 import { initialOf, memberDisplayName } from '../lib/userIdentity'
 import { t } from '../lib/i18n'
-import type { HouseholdMemberProfile } from '../lib/householdRealtime'
+import type { ListMemberProfile } from '../lib/listRealtime'
 
 const props = defineProps({
-  members: { type: Array as PropType<HouseholdMemberProfile[]>, default: () => [] },
+  members: { type: Array as PropType<ListMemberProfile[]>, default: () => [] },
   loading: { type: Boolean, default: false },
 })
 

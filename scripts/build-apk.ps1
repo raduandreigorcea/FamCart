@@ -61,7 +61,7 @@ $env:VITE_APP_CHANNEL = 'nightly'
 # regex, an env var that could be overridden by the shell. This is the check
 # that a nightly build cannot be talking to production, and it is worth having
 # because the failure it prevents is invisible -- a purple app, badged NIGHTLY,
-# writing to real households.
+# writing to real lists.
 $productionProjectRef = 'qwpyiperbjaeykrvilhf'
 if (-not $env:VITE_SUPABASE_URL) {
   Write-Error 'VITE_SUPABASE_URL is not set after reading .env.development.local. Add the famcart-dev URL to that file.'

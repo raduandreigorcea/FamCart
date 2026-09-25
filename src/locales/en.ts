@@ -49,37 +49,37 @@ export default {
   'setup.language.sub': 'You can change this any time in App Settings.',
 
   'setup.welcome.eyebrow': 'Welcome to FamCart 🛒',
-  'setup.welcome.title': 'The list your whole [household] shares',
+  'setup.welcome.title': 'One list for [everyone] who shops',
   'setup.welcome.sub':
-    'Everyone adds, everyone checks off, and it all updates for the whole household the moment it happens, so nothing gets forgotten at the store.',
+    'Everyone adds, everyone checks off, and it all updates for everyone the moment it happens, so nothing gets forgotten at the store.',
   'setup.welcome.cta': 'Get started',
 
-  'setup.picker.eyebrowAdd': 'Add a household',
+  'setup.picker.eyebrowAdd': 'Add a list',
   'setup.picker.eyebrowNew': 'Welcome aboard 👋',
-  'setup.picker.titleAdd': 'Add another [household]',
-  'setup.picker.titleNew': 'Set up your [household]',
+  'setup.picker.titleAdd': 'Add another [list]',
+  'setup.picker.titleNew': 'Set up your [list]',
   // Two whole sentences rather than one plus an appended clause. The English
   // original built this by concatenating ', or create a new one.' onto a stem,
   // which only works because English puts the clause last.
-  'setup.picker.subAdd': 'Join another household with their invite code.',
+  'setup.picker.subAdd': 'Join another list with its invite code.',
   'setup.picker.subAddOrCreate':
-    'Join another household with their invite code, or create a new one.',
+    'Join another list with its invite code, or create a new one.',
   'setup.picker.subNew':
-    'Create a shared grocery list for your household, or join one using an invite code.',
-  'setup.picker.createLabel': 'Create a household',
+    'Create a shared shopping list, or join one using an invite code.',
+  'setup.picker.createLabel': 'Create a list',
   'setup.picker.createDescription': 'Start a new list and get a shareable invite code',
-  'setup.picker.joinLabel': 'Join a household',
-  'setup.picker.joinDescription': 'Paste the invite code your household shared with you',
+  'setup.picker.joinLabel': 'Join a list',
+  'setup.picker.joinDescription': 'Paste the invite code someone shared with you',
 
-  'setup.create.eyebrow': 'New household',
-  'setup.create.title': "What's your household name?",
-  'setup.create.sub': 'This is how your household list will appear for everyone.',
-  'setup.create.nameLabel': 'Household name',
-  'setup.create.namePlaceholder': 'e.g. The Smiths',
+  'setup.create.eyebrow': 'New list',
+  'setup.create.title': 'What should your list be called?',
+  'setup.create.sub': 'This is the name everyone on the list will see.',
+  'setup.create.nameLabel': 'List name',
+  'setup.create.namePlaceholder': 'e.g. Weekly shop',
 
-  'setup.join.eyebrow': 'Join a household',
+  'setup.join.eyebrow': 'Join a list',
   'setup.join.title': 'Enter your invite code',
-  'setup.join.sub': 'Ask a household member for their invite code.',
+  'setup.join.sub': 'Ask someone on the list for its invite code.',
   'setup.join.codeLabel': 'Invite code',
   'setup.join.codePlaceholder': 'e.g. AB3K7XYZ',
 
@@ -118,19 +118,19 @@ export default {
   'error.genericTitle': 'Something went wrong',
   'error.offline': 'You appear to be offline. Check your connection and try again.',
   'error.nameTooLongTitle': 'Name Too Long',
-  'error.householdNameTooLong': 'Household name must be {max} characters or fewer.',
+  'error.listNameTooLong': 'List name must be {max} characters or fewer.',
   'error.nameRequiredTitle': 'Name Required',
-  'error.householdNameRequired': 'Give your household a name before saving.',
-  'error.ownOneHousehold':
-    'You can only own one household. Leave or delete your current one before creating another.',
+  'error.listNameRequired': 'Give your list a name before saving.',
+  'error.ownOneList':
+    'You can only own one list. Leave or delete your current one before creating another.',
   'error.membershipCapCreate':
-    'You can be part of at most {cap} households. Leave one before creating another.',
+    'You can be part of at most {cap} lists. Leave one before creating another.',
   'error.membershipCapJoin':
-    'You can be part of at most {cap} households. Leave one before joining another.',
-  'error.createHouseholdFailed': 'Failed to create household.',
-  'error.joinHouseholdFailed': 'Failed to join household.',
+    'You can be part of at most {cap} lists. Leave one before joining another.',
+  'error.createListFailed': 'Failed to create list.',
+  'error.joinListFailed': 'Failed to join list.',
   'error.inviteCodeInvalid': 'Invite code must be 8 characters, letters and numbers only.',
-  'error.noHouseholdForCode': 'No household found with that invite code.',
+  'error.noListForCode': 'No list found with that invite code.',
   'error.notificationsBlocked':
     'Notifications are blocked for FamCart in your device or browser settings.',
   'error.notificationsFailed': 'Could not enable notifications. Please try again.',
@@ -141,7 +141,7 @@ export default {
   'list.empty.titleShopped': 'All bought',
   'list.empty.titleNew': 'Nothing here yet',
   'list.empty.textShopped': 'Nothing left to pick up.',
-  'list.empty.textNew': 'Add the first thing and everyone in the household sees it straight away.',
+  'list.empty.textNew': 'Add the first thing and everyone on the list sees it straight away.',
   'list.buyAgain': 'Buy again',
   'list.addProduct': 'Add {name}',
   'list.buyBar.checkedOut': 'Checked out!',
@@ -160,7 +160,7 @@ export default {
   'item.quantityDone': 'Quantity {n}. Done',
   'item.quantityChange': 'Quantity {n}. Change',
 
-  'switcher.heading': 'Your households',
+  'switcher.heading': 'Your lists',
 
   'filter.shopHeading': 'Shop',
   'filter.shopAny.label': 'Any shop',
@@ -180,7 +180,7 @@ export default {
   'add.announced': '{name} added to your list',
 
   'custom.message':
-    "Describe it and it goes straight on your list. We'll suggest it to your household next time.",
+    'Describe it and it goes straight on your list. Next time, everyone on the list gets it as a suggestion.',
   'custom.productLabel': 'Product',
   'custom.productPlaceholder': 'Olive Oil 500ml',
   'custom.makerLabel': 'Manufacturer',
@@ -220,48 +220,48 @@ export default {
   'account.close': 'Close account modal',
   'account.editProfile': 'Edit your profile: name, photo, password',
   'account.noEmail': 'No email available',
-  'account.manageHousehold': 'Manage household',
-  'account.householdFallback': 'Household',
+  'account.manageList': 'Manage list',
+  'account.listFallback': 'List',
   'account.memberCount': { one: '{n} member', other: '{n} members' },
   'account.appSettings': 'App settings',
   'account.appSettingsHint': 'Appearance, notifications, language',
-  'account.joinOrCreate': 'Join or create a household',
+  'account.joinOrCreate': 'Join or create a list',
   'account.reportIssue': 'Report an issue',
   'account.reportHint': 'Bugs and feedback',
   'account.signOut': 'Sign out',
   'account.signingOut': 'Signing out',
 
-  'household.title': 'Household Settings',
-  'household.close': 'Close settings',
-  'household.sections': 'Settings sections',
-  'household.tab.overview': 'Overview',
-  'household.tab.preferences': 'Preferences',
-  'household.tab.members': 'Members',
-  'household.tab.danger': 'Danger Zone',
+  'list.title': 'List Settings',
+  'list.close': 'Close settings',
+  'list.sections': 'Settings sections',
+  'list.tab.overview': 'Overview',
+  'list.tab.preferences': 'Preferences',
+  'list.tab.members': 'Members',
+  'list.tab.danger': 'Danger Zone',
 
-  'overview.summary': 'Household Summary',
-  'overview.name': 'Household Name',
+  'overview.summary': 'List Summary',
+  'overview.name': 'List Name',
   'overview.createdBy': 'Created By',
   'overview.owner': 'Owner',
   'overview.totalMembers': 'Total Members',
   'overview.activeCount': '{n} active',
   'overview.inviteTitle': 'Invite New Members',
-  'overview.inviteDesc': 'Share this code with your household members so they can join your list.',
+  'overview.inviteDesc': 'Share this code so people can join your list.',
   'overview.inviteCode': 'INVITE CODE',
   'overview.copyCode': 'Copy Code',
   'overview.copied': 'Copied!',
 
   'prefs.title': 'General Preferences',
-  'prefs.nameTitle': 'Household Name',
-  'prefs.nameDesc': 'Choose a name everyone in your household can recognize quickly.',
-  'prefs.namePlaceholder': 'My Awesome Household',
-  'prefs.emojiTitle': 'Household Emoji',
-  'prefs.emojiDesc': 'Pick an emoji for your household. It shows in the top bar.',
+  'prefs.nameTitle': 'List Name',
+  'prefs.nameDesc': 'Choose a name everyone on the list can recognize quickly.',
+  'prefs.namePlaceholder': 'Weekly shop',
+  'prefs.emojiTitle': 'List Emoji',
+  'prefs.emojiDesc': 'Pick an emoji for your list. It shows in the top bar.',
   'prefs.limitTitle': 'Item Limit Per User',
   'prefs.limitDesc': 'Control how many active (unchecked) items each member can add.',
   'prefs.limitSlider': 'Item limit slider',
 
-  'members.title': 'Household Members ({n})',
+  'members.title': 'People on this list ({n})',
   'members.desc': 'Below are the people who have access to this shopping list.',
   'members.you': '(You)',
   'members.openActions': 'Open member actions',
@@ -269,34 +269,34 @@ export default {
   'members.promoteHint': 'Can manage items and members',
   'members.demote': 'Demote to member',
   'members.demoteHint': 'Removes moderator permissions',
-  'members.remove': 'Remove from household',
-  'members.removeHint': 'Loses access to the shopping list',
+  'members.remove': 'Remove from list',
+  'members.removeHint': 'Loses access to this list',
   'members.roleModerator': 'Moderator',
   'members.roleMember': 'Member',
   'members.confirmRemoveTitle': 'Remove Member?',
   'members.confirmRemoveMessage':
-    'This person will immediately lose access to the household shopping list. They can join again with the invite code.',
+    'This person will immediately lose access to this list. They can join again with the invite code.',
 
   'danger.inviteTitle': 'Invite Code Administration',
   'danger.inviteDesc':
     'Immediately invalidates the current invite code. Existing members are unaffected, but future members must use the new code.',
   'danger.regenerate': 'Regenerate',
   'danger.regenerated': 'Regenerated',
-  'danger.leaveTitle': 'Leave Household',
+  'danger.leaveTitle': 'Leave List',
   'danger.leaveDesc':
-    'This will remove you from the household. You will no longer have access to the shopping list.',
-  'danger.deleteTitle': 'Delete Household',
+    'This will remove you from the list, and you will no longer have access to it.',
+  'danger.deleteTitle': 'Delete List',
   'danger.deleteDesc':
-    'Permanently deletes [{name}], removes all members, and erases all shopping list data. This cannot be undone.',
+    'Permanently deletes [{name}], removes everyone on it, and erases its items and history. This cannot be undone.',
   'danger.confirmRegenerateTitle': 'Regenerate Invite Code?',
   'danger.confirmRegenerateMessage':
     'This will immediately invalidate the current invite code. Existing members are unaffected, but anyone with the old code will no longer be able to join.',
-  'danger.confirmLeaveTitle': 'Leave Household?',
+  'danger.confirmLeaveTitle': 'Leave List?',
   'danger.confirmLeaveMessage':
-    'You will lose access to the shopping list and will need a new invite code to rejoin.',
-  'danger.confirmDeleteTitle': 'Delete Household?',
+    'You will lose access to this list and will need a new invite code to rejoin.',
+  'danger.confirmDeleteTitle': 'Delete List?',
   'danger.confirmDeleteMessage':
-    'Deleting "{name}" will permanently remove all members, shopping list items, and history. This action cannot be undone.',
+    'Deleting "{name}" will permanently remove everyone on it, its items, and its history. This action cannot be undone.',
 
   'history.buttonLabel': 'Purchase history',
   'history.title': 'Checkout history',
@@ -311,10 +311,10 @@ export default {
   'error.roleUpdateFailed': "Could not update that member's role.",
   'error.removeMemberFailed': 'Could not remove that member.',
   'error.regenerateCodeFailed': 'Could not regenerate the invite code. Please try again.',
-  'error.leaveHouseholdFailed': 'Could not leave the household.',
-  'error.deleteHouseholdFailed': 'Could not delete the household.',
-  'error.renameHouseholdFailed': 'Could not rename the household.',
-  'error.saveEmojiFailed': 'Could not save the household emoji.',
+  'error.leaveListFailed': 'Could not leave the list.',
+  'error.deleteListFailed': 'Could not delete the list.',
+  'error.renameListFailed': 'Could not rename the list.',
+  'error.saveEmojiFailed': 'Could not save the list emoji.',
   'error.saveLimitFailed': 'Could not save the item limit.',
   'error.loadHistoryFailed': 'Could not load history. Check your connection and try again.',
 
@@ -326,7 +326,7 @@ export default {
 
   'notify.title': 'Turn on notifications?',
   'notify.message':
-    'Know the moment someone in your household adds something to the list or checks items off, so nothing gets forgotten at the store.',
+    'Know the moment someone on your list adds something or checks items off, so nothing gets forgotten at the store.',
   'notify.notNow': 'Not now',
   'notify.turnOn': 'Turn on',
 
@@ -349,7 +349,7 @@ export default {
   'tour.checkout.title': 'Slide to check out',
   'tour.checkout.body':
     'Checked rows wait in the cart until you slide the bar at the bottom. That is what clears them and saves the trip to your history.',
-  'tour.invite.title': 'Bring your household in',
+  'tour.invite.title': 'Bring your people in',
   'tour.invite.body':
     'Share your invite code so everyone shops from the same list. Every change shows up for all of you the moment it happens.',
 
@@ -357,7 +357,7 @@ export default {
   'common.close': 'Close',
   'common.tryAgain': 'Try again',
 
-  'login.tagline': 'Household Groceries, [fresh together daily]',
+  'login.tagline': 'Shared Groceries, [fresh together daily]',
   'login.logoAlt': 'FamCart logo',
   'login.emailLabel': 'Email address',
   'login.emailPlaceholder': 'your@email.com',
@@ -389,7 +389,7 @@ export default {
     'Android only lets an app install updates once you allow it. Turn on [Allow from this source] for FamCart, then come back and press Update.',
   'update.downloadingMessage': 'Downloading FamCart {version}…',
   'update.installingMessage':
-    'Android is taking over from here. Follow the install prompt to finish. Your list and household stay exactly as they are.',
+    'Android is taking over from here. Follow the install prompt to finish. Your list stays exactly as it is.',
   'update.failedMessage':
     "The update couldn't be downloaded. It may just be the connection. Try again, or get the APK from the releases page.",
   'update.progressLabel': 'Download progress',
@@ -413,7 +413,7 @@ export default {
   'report.promptIdea': 'What could be better?',
   'report.placeholderBug':
     'I ticked off milk and it came back on the list when I reopened the app.',
-  'report.placeholderIdea': "It's not obvious how to remove someone from the household.",
+  'report.placeholderIdea': "It's not obvious how to remove someone from the list.",
   'report.charsLeft': '{n} characters left',
   'report.attachedTitle': 'Sent with your report',
   'report.send': 'Send',
@@ -423,7 +423,7 @@ export default {
   'report.surface.add': 'Adding items',
   'report.surface.scan': 'Barcode scanner',
   'report.surface.history': 'Checkout & history',
-  'report.surface.household': 'Household & members',
+  'report.surface.settings': 'List settings & people',
   'report.surface.notifications': 'Notifications',
   'report.surface.signin': 'Signing in',
   'report.surface.other': 'Somewhere else',
@@ -433,7 +433,7 @@ export default {
     "Nothing was sent. The report couldn't reach us. Your text is still here, so try again. If it keeps failing, a browser privacy extension may be blocking it.",
   'report.diag.version': 'FamCart {version}, {platform}',
   'report.diag.pendingEdits': 'Has edits waiting to sync',
-  'report.diag.ids': 'Your household and account IDs',
+  'report.diag.ids': 'Your list and account IDs',
 
   'common.gotIt': 'Got it',
 
@@ -441,7 +441,7 @@ export default {
   'error.limitReached':
     'You reached your limit of {n} active items. Check or delete items before adding more.',
   'error.offlineSyncFailed': 'Some changes made offline could not be synced.',
-  'error.loadHouseholdFailed': 'Could not load your household.',
+  'error.loadListsFailed': 'Could not load your lists.',
 
   'sso.title': 'Almost there',
   'sso.text': 'Taking you back to the FamCart app…',
@@ -461,7 +461,7 @@ export default {
   'account.fallbackName': 'Account',
   'members.sheetLabel': 'Actions for {name}',
   'members.sheetLabelGeneric': 'Actions for this member',
-  'preferences.useEmoji': 'Use {emoji} for this household',
+  'preferences.useEmoji': 'Use {emoji} for this list',
   'history.addedBy': 'Added by {name}',
   'history.addedThis': '{name} added this',
 
@@ -480,11 +480,11 @@ export default {
   // goes in the sender's language anyway: that is the language they are
   // writing the surrounding chat message in.
   'invite.shareTitle': 'Join {name} on FamCart',
-  'invite.shareTitleGeneric': 'Join my household on FamCart',
+  'invite.shareTitleGeneric': 'Join my list on FamCart',
   'invite.shareBody':
-    'Join "{name}" on FamCart so we can share one shopping list. Your invite code is {code}.',
+    'Join "{name}" on FamCart so we can shop from the same list. Your invite code is {code}.',
   'invite.shareBodyGeneric':
-    'Join my household on FamCart so we can share one shopping list. Your invite code is {code}.',
+    'Join my list on FamCart so we can shop together. Your invite code is {code}.',
   'invite.shareDialogTitle': 'Invite to FamCart',
 
   'error.loadListFailed': 'Could not load your list. Please try again.',
@@ -525,11 +525,11 @@ export default {
   'add.addTypedHint': 'Just as you typed it',
   'add.noteOffline': "You're offline. Showing what you've bought before.",
   'add.noteDegraded': "Couldn't reach every shop. Some products may be missing.",
-  'household.roleOwner': 'Owner',
-  'household.roleModerator': 'Moderator',
-  'household.you': 'You',
-  'household.aloneHint': "Just you so far. Invite someone and you'll both see the list change as it happens.",
-  'household.open': '{name}: members, invite, switch household',
+  'list.roleOwner': 'Owner',
+  'list.roleModerator': 'Moderator',
+  'list.you': 'You',
+  'list.aloneHint': "Just you so far. Invite someone and you'll both see the list change as it happens.",
+  'list.open': '{name}: members, invite, switch list',
   'history.searchPlaceholder': 'Did we buy…?',
   'history.noMatch': 'Nothing called “{query}” in your recent trips.',
   'history.addAgain': 'Add {name} to the list again',
@@ -541,15 +541,15 @@ export default {
   'history.addTripLabel': { one: "Add the {n} item from this trip to the list again", other: "Add all {n} items from this trip to the list again" },
   'history.tripReadded': 'This trip is back on the list',
   'history.tripReaddedShort': 'Added',
-  'household.invite': 'Invite',
+  'list.invite': 'Invite',
   'nav.label': 'Main actions',
-  'nav.household': 'Household',
+  'nav.list': 'List',
   'nav.history': 'History',
   'nav.add': 'Add',
   'nav.addLabel': 'Add an item',
   'nav.you': 'You',
   'nav.switch': 'Switch',
-  'nav.switchLabel': 'Switch household',
-  'topbar.householdSettings': '{name} settings',
+  'nav.switchLabel': 'Switch list',
+  'topbar.listSettings': '{name} settings',
   'header.progressLabel': 'How much of the list is in the cart',
 }

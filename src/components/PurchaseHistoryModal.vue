@@ -12,16 +12,16 @@ import {
   type CheckoutEntry,
   type DayLabel,
 } from '../lib/purchaseHistory'
-import type { HouseholdMemberProfile } from '../lib/householdRealtime'
+import type { ListMemberProfile } from '../lib/listRealtime'
 import { formatDate, formatTime, t, tn } from '../lib/i18n'
 import { initialOf } from '../lib/userIdentity'
 import AppIcon from './AppIcon.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
-  householdId: { type: String, default: '' },
+  listId: { type: String, default: '' },
   currentUserId: { type: String, default: '' },
-  memberProfiles: { type: Array as PropType<HouseholdMemberProfile[]>, default: () => [] },
+  memberProfiles: { type: Array as PropType<ListMemberProfile[]>, default: () => [] },
 })
 
 // History is for two things people actually ask it: "did we buy X?" (the
@@ -64,7 +64,7 @@ function readdKey(entry: CheckoutEntry): string {
 
 const db = useSupabase()
 
-// The server keeps at most 60 checkouts per household; this row cap comfortably
+// The server keeps at most 60 checkouts per list; this row cap comfortably
 // covers that many checkouts' worth of items.
 const HISTORY_LIMIT = 500
 const entries = ref<CheckoutEntry[]>([])
@@ -88,13 +88,13 @@ watch(
 )
 
 async function loadHistory() {
-  if (!props.householdId) return
+  if (!props.listId) return
   loading.value = true
   error.value = ''
   const { data, error: fetchError } = await db
     .from('purchase_history')
     .select('id, name, maker, quantity, checkout_id, purchased_by, purchased_at, added_by_name, added_by_image_url')
-    .eq('household_id', props.householdId)
+    .eq('list_id', props.listId)
     // Rows in one checkout share a single purchased_at, and Postgres returns
     // tied rows in no particular order — without tiebreakers every open could
     // shuffle them. checkout_id keeps a checkout's rows contiguous (which the

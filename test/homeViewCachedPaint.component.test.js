@@ -12,7 +12,7 @@ import HomeView from '../src/views/HomeView.vue'
 import ShoppingList from '../src/components/ShoppingList.vue'
 import AppSplash from '../src/components/AppSplash.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
-import { saveHouseholdSnapshot } from '../src/lib/householdCache'
+import { saveListSnapshot } from '../src/lib/listCache'
 import { rememberUser } from '../src/lib/session'
 import { markTourSeen } from '../src/lib/onboarding'
 import { __setOnlineForTest } from '../src/lib/connectivity'
@@ -26,8 +26,8 @@ vi.mock('../src/supabase', () => ({
 vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: (...a) => mocks.routerReplace(...a) }),
 }))
-vi.mock('../src/lib/householdRealtime', () => ({
-  useHouseholdRealtime: () => ({
+vi.mock('../src/lib/listRealtime', () => ({
+  useListRealtime: () => ({
     realtimeHealthy: { value: false },
     setupRealtimeSubscriptions: async () => {},
     cleanupRealtimeSubscriptions: () => {},
@@ -46,19 +46,19 @@ vi.mock('@clerk/vue', async () => {
 })
 
 const snapshot = (items) => ({
-  householdId: 'fam-1',
-  householdName: 'Fam',
-  householdInviteCode: 'ABCDEFGH',
-  householdOwnerId: 'user-1',
-  householdItemLimit: 50,
-  householdEmoji: '🏠',
-  householdMembers: [{ user_id: 'user-1', display_name: 'Me', image_url: null, role: 'moderator' }],
+  listId: 'fam-1',
+  listName: 'Fam',
+  listInviteCode: 'ABCDEFGH',
+  listOwnerId: 'user-1',
+  listItemLimit: 50,
+  listEmoji: '🏠',
+  listMembers: [{ user_id: 'user-1', display_name: 'Me', image_url: null, role: 'moderator' }],
   items,
 })
 
 const cachedItem = {
   id: 'c1',
-  household_id: 'fam-1',
+  list_id: 'fam-1',
   name: 'Milk',
   quantity: 1,
   checked: false,
@@ -92,7 +92,7 @@ afterEach(() => {
 describe('painting the cached list while Clerk warms up', () => {
   it('shows the cached list instead of skeletons when online', async () => {
     rememberUser(localStorage, 'user-1')
-    saveHouseholdSnapshot(localStorage, 'user-1', snapshot([cachedItem]))
+    saveListSnapshot(localStorage, 'user-1', snapshot([cachedItem]))
 
     const wrapper = trackMount(HomeView, { shallow: true })
     await flushPromises()
@@ -105,7 +105,7 @@ describe('painting the cached list while Clerk warms up', () => {
 
   it('does not skeleton over a cached list that is legitimately empty', async () => {
     rememberUser(localStorage, 'user-1')
-    saveHouseholdSnapshot(localStorage, 'user-1', snapshot([]))
+    saveListSnapshot(localStorage, 'user-1', snapshot([]))
 
     const wrapper = trackMount(HomeView, { shallow: true })
     await flushPromises()
@@ -120,16 +120,16 @@ describe('painting the cached list while Clerk warms up', () => {
     const wrapper = trackMount(HomeView, { shallow: true })
     await flushPromises()
 
-    // A skeleton here would be describing a household nobody has confirmed
+    // A skeleton here would be describing a list nobody has confirmed
     // exists — the new-account case in homeViewNewAccountBoot. Splash instead,
-    // until loadHouseholds says which of the two screens this user gets.
+    // until loadLists says which of the two screens this user gets.
     expect(wrapper.findComponent(ShoppingList).exists()).toBe(false)
     expect(wrapper.findComponent(AppSplash).exists()).toBe(true)
   })
 
   it('drops the painted list when Clerk resolves to a different account', async () => {
     rememberUser(localStorage, 'user-1')
-    saveHouseholdSnapshot(localStorage, 'user-1', snapshot([cachedItem]))
+    saveListSnapshot(localStorage, 'user-1', snapshot([cachedItem]))
 
     const wrapper = trackMount(HomeView, { shallow: true })
     await flushPromises()
@@ -145,7 +145,7 @@ describe('painting the cached list while Clerk warms up', () => {
 
   it('keeps the painted list when Clerk resolves to the same account', async () => {
     rememberUser(localStorage, 'user-1')
-    saveHouseholdSnapshot(localStorage, 'user-1', snapshot([cachedItem]))
+    saveListSnapshot(localStorage, 'user-1', snapshot([cachedItem]))
 
     const wrapper = trackMount(HomeView, { shallow: true })
     await flushPromises()

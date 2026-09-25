@@ -22,8 +22,8 @@ vi.mock('../src/supabase', () => ({
   getCatalogSupabase: () => null,
 }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: vi.fn() }) }))
-vi.mock('../src/lib/householdRealtime', () => ({
-  useHouseholdRealtime: () => ({
+vi.mock('../src/lib/listRealtime', () => ({
+  useListRealtime: () => ({
     realtimeHealthy: { value: false },
     setupRealtimeSubscriptions: async () => {},
     cleanupRealtimeSubscriptions: () => {},
@@ -44,11 +44,11 @@ beforeEach(() => {
   markTourSeen(localStorage)
   __setOnlineForTest(true)
   mocks.db = createFakeDb()
-  mocks.db.handlers['household_members.select'] = (q) =>
+  mocks.db.handlers['list_members.select'] = (q) =>
     q.filters.user_id
-      ? { data: [{ household_id: 'fam-1', households: { name: 'Fam' } }], error: null }
+      ? { data: [{ list_id: 'fam-1', lists: { name: 'Fam' } }], error: null }
       : { data: [{ user_id: 'user-1', role: 'moderator', profiles: { display_name: 'Test User' } }], error: null }
-  mocks.db.handlers['households.select'] = () => ({
+  mocks.db.handlers['lists.select'] = () => ({
     data: { name: 'Fam', invite_code: 'ABCDEFGH', created_by: 'user-1', max_items_per_member: 50 },
     error: null,
   })
@@ -86,7 +86,7 @@ it('tells the user when a queued offline change is refused at boot', async () =>
   enqueueOfflineMutation(localStorage, 'user-1', {
     kind: 'insert',
     id: 'row-1',
-    row: { id: 'row-1', household_id: 'fam-1', name: 'Milk', quantity: 1, added_by: 'user-1' },
+    row: { id: 'row-1', list_id: 'fam-1', name: 'Milk', quantity: 1, added_by: 'user-1' },
   })
   // A real rejection: the server answered, with a code.
   mocks.db.handlers['shopping_list_items.insert'] = () => ({

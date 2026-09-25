@@ -12,7 +12,7 @@
     <!-- Auto Backup off. This was Capacitor's scaffolded `true` and had never
          been revisited, which meant Android was copying the app's data
          directory to the user's Google Drive: the WebView's localStorage —
-         the household snapshot, the remembered user id, and any offline writes
+         the list snapshot, the remembered user id, and any offline writes
          still waiting to be sent — along with whatever Clerk persists beside
          it. For a shopping list that is mild; for the session state sitting in
          the same store it is auth material leaving the device, off to a place

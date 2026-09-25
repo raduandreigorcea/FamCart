@@ -9,14 +9,14 @@
 --
 --   1. The gate is real. A signed-in non-admin calling any admin_* function gets
 --      an exception, not an empty result. The distinction matters: a dashboard
---      cannot tell "no households exist" from "you may not ask", and neither can
+--      cannot tell "no lists exist" from "you may not ask", and neither can
 --      an attacker deciding whether to keep going.
 --   2. The gate is not bypassable by reading the table directly. admin_users has
 --      RLS with zero policies and no grants, so even knowing it exists gets a
 --      client nothing -- including the list of who the admins are.
 --   3. is_admin() is the one thing a client may call unauthenticated-by-admin,
 --      and it answers only about the caller.
---   4. An actual admin gets real numbers across households they are not in.
+--   4. An actual admin gets real numbers across lists they are not in.
 --      This is the whole point of the file, and it is the assertion that would
 --      fail if a definer function were accidentally declared invoker.
 --   5. The two writes behave: granting is idempotent and audited, revoking your
@@ -32,8 +32,8 @@ begin;
 select plan(102);
 
 -- ── Seed as the migration/superuser role (bypasses RLS) ──────────────────────
--- Two households owned by two different people, plus a third account that is in
--- neither. The third is the one that proves cross-household reads are gated:
+-- Two lists owned by two different people, plus a third account that is in
+-- neither. The third is the one that proves cross-list reads are gated:
 -- everything it can see through the admin functions is something RLS would have
 -- denied it.
 insert into public.profiles (user_id, display_name) values
@@ -41,15 +41,15 @@ insert into public.profiles (user_id, display_name) values
   ('plain_one', 'Pat the Plain'),
   ('plain_two', 'Pip the Plain');
 
-insert into public.households (id, name, invite_code, created_by) values
-  ('00000000-0000-0000-0000-0000000000e1', 'Household E', 'EEEEEEE2', 'plain_one'),
-  ('00000000-0000-0000-0000-0000000000f1', 'Household F', 'FFFFFFF2', 'plain_two');
+insert into public.lists (id, name, invite_code, created_by) values
+  ('00000000-0000-0000-0000-0000000000e1', 'List E', 'EEEEEEE2', 'plain_one'),
+  ('00000000-0000-0000-0000-0000000000f1', 'List F', 'FFFFFFF2', 'plain_two');
 
-insert into public.household_members (household_id, user_id, role) values
+insert into public.list_members (list_id, user_id, role) values
   ('00000000-0000-0000-0000-0000000000e1', 'plain_one', 'moderator'),
   ('00000000-0000-0000-0000-0000000000f1', 'plain_two', 'moderator');
 
-insert into public.shopping_list_items (household_id, name, added_by) values
+insert into public.shopping_list_items (list_id, name, added_by) values
   ('00000000-0000-0000-0000-0000000000e1', 'Milk',   'plain_one'),
   ('00000000-0000-0000-0000-0000000000e1', 'Bread',  'plain_one'),
   ('00000000-0000-0000-0000-0000000000f1', 'Coffee', 'plain_two');
@@ -83,10 +83,10 @@ select throws_ok(
 );
 
 select throws_ok(
-  $$ select * from public.admin_list_households() $$,
+  $$ select * from public.admin_lists() $$,
   '42501',
   null,
-  'admin_list_households() refuses a non-admin'
+  'admin_lists() refuses a non-admin'
 );
 
 select throws_ok(
@@ -153,10 +153,10 @@ select throws_ok(
 );
 
 select throws_ok(
-  $$ select public.admin_household_detail('00000000-0000-0000-0000-0000000000f1'::uuid) $$,
+  $$ select public.admin_list_detail('00000000-0000-0000-0000-0000000000f1'::uuid) $$,
   '42501',
   null,
-  'admin_household_detail() refuses a non-admin'
+  'admin_list_detail() refuses a non-admin'
 );
 
 -- ── 2. Neither write is reachable by a non-admin ─────────────────────────────
@@ -202,29 +202,29 @@ select throws_ok(
 );
 
 select throws_ok(
-  $$ select * from public.admin_household_facts() $$,
+  $$ select * from public.admin_list_facts() $$,
   '42501',
   null,
-  'admin_household_facts() is not executable by a client role'
+  'admin_list_facts() is not executable by a client role'
 );
 
--- ── 4. An admin gets real cross-household numbers ────────────────────────────
+-- ── 4. An admin gets real cross-list numbers ────────────────────────────
 set local request.jwt.claims = '{"sub":"admin_one"}';
 
 select ok(public.is_admin(), 'is_admin() is true for a seeded admin');
 
--- Ada belongs to no household at all. Under RLS she can see nothing; through the
+-- Ada belongs to no list at all. Under RLS she can see nothing; through the
 -- definer functions she sees both. That gap is the entire feature.
 select is(
-  (select count(*)::int from public.households),
+  (select count(*)::int from public.lists),
   0,
-  'the admin sees no households through RLS, being a member of none'
+  'the admin sees no lists through RLS, being a member of none'
 );
 
 select is(
-  ((public.admin_overview() -> 'totals' ->> 'households'))::int,
+  ((public.admin_overview() -> 'totals' ->> 'lists'))::int,
   2,
-  'admin_overview() reports both households regardless of membership'
+  'admin_overview() reports both lists regardless of membership'
 );
 
 select is(
@@ -236,13 +236,13 @@ select is(
 select is(
   ((public.admin_overview() -> 'totals' ->> 'list_items'))::int,
   3,
-  'admin_overview() reports every list item across households'
+  'admin_overview() reports every list item across lists'
 );
 
 select is(
-  (select count(*)::int from public.admin_list_households()),
+  (select count(*)::int from public.admin_lists()),
   2,
-  'admin_list_households() returns both households'
+  'admin_lists() returns both lists'
 );
 
 select is(
@@ -272,7 +272,7 @@ select is(
 );
 
 -- ── 5. The derived columns say what 008 claims ───────────────────────────────
--- Pat added two items, Pip one. items_added is per account, not per household.
+-- Pat added two items, Pip one. items_added is per account, not per list.
 select is(
   (select items_added::int from public.admin_list_users('Pat')),
   2,
@@ -280,9 +280,9 @@ select is(
 );
 
 select is(
-  (select (public.admin_user_detail('plain_one') -> 'households' ->> 0)::jsonb ->> 'role'),
+  (select (public.admin_user_detail('plain_one') -> 'lists' ->> 0)::jsonb ->> 'role'),
   'moderator',
-  'admin_user_detail() resolves household membership and role'
+  'admin_user_detail() resolves list membership and role'
 );
 
 -- The spine emits every bucket in range, including the empty ones. Seven days
@@ -332,23 +332,23 @@ reset role;
 --
 -- These are the only write RPCs on this dashboard besides grant/revoke, so the
 -- guard matters more here than on a read: a read that leaks is embarrassing, a
--- write that leaks lets a signed-in stranger empty somebody's household.
+-- write that leaks lets a signed-in stranger empty somebody's list.
 
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"plain_one"}';
 
 select throws_ok(
-  $$ select public.admin_delete_household('00000000-0000-0000-0000-0000000000e1') $$,
+  $$ select public.admin_delete_list('00000000-0000-0000-0000-0000000000e1') $$,
   '42501',
   null,
-  'admin_delete_household refuses a non-admin'
+  'admin_delete_list refuses a non-admin'
 );
 
 select throws_ok(
-  $$ select public.admin_restore_household('00000000-0000-0000-0000-0000000000e1') $$,
+  $$ select public.admin_restore_list('00000000-0000-0000-0000-0000000000e1') $$,
   '42501',
   null,
-  'admin_restore_household refuses a non-admin'
+  'admin_restore_list refuses a non-admin'
 );
 
 select throws_ok(
@@ -366,10 +366,10 @@ select throws_ok(
 );
 
 select throws_ok(
-  $$ select * from public.admin_deleted_households() $$,
+  $$ select * from public.admin_deleted_lists() $$,
   '42501',
   null,
-  'admin_deleted_households refuses a non-admin'
+  'admin_deleted_lists refuses a non-admin'
 );
 
 select throws_ok(
@@ -381,29 +381,29 @@ select throws_ok(
 
 set local request.jwt.claims = '{"sub":"admin_one"}';
 
--- Pat is in Household E and nothing else, so this is the number the Users list
+-- Pat is in List E and nothing else, so this is the number the Users list
 -- and Pat's own profile show right now. It is read before the delete so the
 -- assertion after it is a change and not a coincidence.
 --
--- Role dropped for the same reason as admin_household_facts below: this is an
+-- Role dropped for the same reason as admin_list_facts below: this is an
 -- internal helper the public RPCs read through, revoked from authenticated.
 reset role;
 select is(
-  (select households::int from public.admin_user_facts() where user_id = 'plain_one'),
+  (select lists::int from public.admin_user_facts() where user_id = 'plain_one'),
   1,
-  'before the delete, Pat is counted as being in one household'
+  'before the delete, Pat is counted as being in one list'
 );
 set local role authenticated;
 
 select lives_ok(
-  $$ select public.admin_delete_household('00000000-0000-0000-0000-0000000000e1') $$,
-  'an admin may delete a household'
+  $$ select public.admin_delete_list('00000000-0000-0000-0000-0000000000e1') $$,
+  'an admin may delete a list'
 );
 
 select is(
-  (select count(*)::int from public.admin_deleted_households()),
+  (select count(*)::int from public.admin_deleted_lists()),
   1,
-  'the deleted household is what Bans lists under withdrawn households'
+  'the deleted list is what Bans lists under withdrawn lists'
 );
 
 -- ── the banned list ─────────────────────────────────────────────────────────
@@ -445,11 +445,11 @@ select is(
 
 -- The count beside a banned name comes from admin_user_facts(), so it is the
 -- same number the Users list shows rather than a second query agreeing by
--- coincidence. plain_two is in one household.
+-- coincidence. plain_two is in one list.
 select is(
-  (select households::int from public.admin_banned_users() where user_id = 'plain_two'),
+  (select lists::int from public.admin_banned_users() where user_id = 'plain_two'),
   1,
-  'with the household count the Users list would show for them'
+  'with the list count the Users list would show for them'
 );
 
 -- ── and the profile page can say why ────────────────────────────────────────
@@ -497,43 +497,43 @@ select is(
 
 -- And it leaves the ordinary admin views, which is a SEPARATE mechanism from
 -- the RLS work: every admin_* function is security definer and bypasses
--- policies entirely, so hiding a household from the app says nothing about
+-- policies entirely, so hiding a list from the app says nothing about
 -- whether the dashboard still lists it. The first end-to-end run found exactly
 -- that -- deleted in the app, still sitting in the admin table.
 select is(
-  (select count(*)::int from public.admin_list_households(null, 'name', 'asc', 50, 0)
+  (select count(*)::int from public.admin_lists(null, 'name', 'asc', 50, 0)
    where id = '00000000-0000-0000-0000-0000000000e1'),
   0,
-  'a deleted household leaves the admin household list'
+  'a deleted list leaves the admin listing'
 );
 
 -- ── but the detail page still opens it ──────────────────────────────────────
 --
--- This is the half that used to be wrong. The withdrawn household inherited the
+-- This is the half that used to be wrong. The withdrawn list inherited the
 -- list's filter, so every link to it -- from a member's profile, and from the
--- Bans row offering to restore it -- landed on "No such household. It may have
--- been deleted", about a household the same dashboard was listing one page
+-- Bans row offering to restore it -- landed on "No such list. It may have
+-- been deleted", about a list the same dashboard was listing one page
 -- along. An operator deciding whether to restore something has to be able to
 -- look at it first.
 select isnt(
-  (select public.admin_household_detail('00000000-0000-0000-0000-0000000000e1')),
+  (select public.admin_list_detail('00000000-0000-0000-0000-0000000000e1')),
   null,
   'and its detail page still opens, because that is where a restore is decided'
 );
 
 select is(
-  (select public.admin_household_detail('00000000-0000-0000-0000-0000000000e1')
-          #>> '{household,deleted_at}' is not null),
+  (select public.admin_list_detail('00000000-0000-0000-0000-0000000000e1')
+          #>> '{list,deleted_at}' is not null),
   true,
   'carrying the withdrawal date, so the page can say what it is looking at'
 );
 
--- Role dropped: admin_household_facts is revoked from authenticated on purpose,
+-- Role dropped: admin_list_facts is revoked from authenticated on purpose,
 -- being an internal helper the public RPCs read through rather than something a
 -- client may call.
 reset role;
 select is(
-  (select count(*)::int from public.admin_household_facts()
+  (select count(*)::int from public.admin_list_facts()
    where id = '00000000-0000-0000-0000-0000000000e1' and deleted_at is not null),
   1,
   'the one function they all read through carries the fact rather than the filter'
@@ -542,43 +542,43 @@ set local role authenticated;
 
 -- ── what the withdrawal does to the people in it ────────────────────────────
 --
--- The count and the list disagree deliberately. Counting a household nobody can
+-- The count and the list disagree deliberately. Counting a list nobody can
 -- open would send whoever read the number to a not-found page; dropping the row
 -- from the list would take away the only route to it from the person it
 -- belonged to. So the count excludes it and the list keeps it, flagged.
 reset role;
 select is(
-  (select households::int from public.admin_user_facts() where user_id = 'plain_one'),
+  (select lists::int from public.admin_user_facts() where user_id = 'plain_one'),
   0,
-  'a withdrawn household stops counting towards its members household total'
+  'a withdrawn list stops counting towards its members list total'
 );
 set local role authenticated;
 
 select is(
-  (select jsonb_array_length(public.admin_user_detail('plain_one') -> 'households')),
+  (select jsonb_array_length(public.admin_user_detail('plain_one') -> 'lists')),
   1,
   'while their profile still lists it, because that is how you reach it'
 );
 
 select is(
-  (select public.admin_user_detail('plain_one') #>> '{households,0,deleted_at}' is not null),
+  (select public.admin_user_detail('plain_one') #>> '{lists,0,deleted_at}' is not null),
   true,
-  'marked withdrawn, so the profile does not offer it as an ordinary household'
+  'marked withdrawn, so the profile does not offer it as an ordinary list'
 );
 
 -- The membership row itself is untouched. That is what makes a restore whole
 -- rather than a re-invitation.
 reset role;
 select is(
-  (select count(*)::int from public.household_members
-   where household_id = '00000000-0000-0000-0000-0000000000e1' and user_id = 'plain_one'),
+  (select count(*)::int from public.list_members
+   where list_id = '00000000-0000-0000-0000-0000000000e1' and user_id = 'plain_one'),
   1,
   'and the membership row survives the withdrawal untouched'
 );
 set local role authenticated;
 
 -- The audit row is the reason soft delete beats hard delete here: it still
--- points at a household that exists.
+-- points at a list that exists.
 --
 -- Read with the role dropped, because security_events is unreadable from a
 -- client role on purpose -- assertion 10 of rls.test.sql exists to keep it that
@@ -587,37 +587,37 @@ set local role authenticated;
 reset role;
 select isnt(
   (select count(*)::int from public.security_events
-   where kind = 'admin_household_deleted'),
+   where kind = 'admin_list_deleted'),
   0,
   'deleting left an audit row'
 );
 set local role authenticated;
 
 select lives_ok(
-  $$ select public.admin_restore_household('00000000-0000-0000-0000-0000000000e1') $$,
+  $$ select public.admin_restore_list('00000000-0000-0000-0000-0000000000e1') $$,
   'and an admin may put it back'
 );
 
--- ── A moderated household must not cost its owner the slot (009) ─────────────
+-- ── A moderated list must not cost its owner the slot (009) ─────────────
 --
--- households_one_per_owner used to count deleted rows, and nothing ever purges
--- a household, so an admin deletion permanently blocked its owner from creating
+-- lists_one_per_owner used to count deleted rows, and nothing ever purges
+-- a list, so an admin deletion permanently blocked its owner from creating
 -- another -- silently, because the SELECT policy hides the row doing the
 -- blocking. 009 makes the index partial on deleted_at is null.
 --
 -- E is live again at this point, having just been restored. Delete it once more.
 set local request.jwt.claims = '{"sub":"admin_one"}';
 select lives_ok(
-  $$ select public.admin_delete_household('00000000-0000-0000-0000-0000000000e1') $$,
-  'an admin deletes the household again'
+  $$ select public.admin_delete_list('00000000-0000-0000-0000-0000000000e1') $$,
+  'an admin deletes the list again'
 );
 
 set local request.jwt.claims = '{"sub":"plain_one"}';
 
 -- The whole point. This raised 23505 before 009.
 select lives_ok(
-  $$ select * from public.create_household('Fresh Start', 'ABCDEFGH') $$,
-  'the owner may create another household straight away'
+  $$ select * from public.create_list('Fresh Start', 'ABCDEFGH') $$,
+  'the owner may create another list straight away'
 );
 
 reset role;
@@ -625,10 +625,10 @@ reset role;
 -- Freeing the slot must not have destroyed anything: the moderation record and
 -- everything it hides are still there, which is what soft deletion is for.
 select is(
-  (select count(*)::int from public.households
+  (select count(*)::int from public.lists
    where id = '00000000-0000-0000-0000-0000000000e1' and deleted_at is not null),
   1,
-  'and the deleted household is still on disk, untouched'
+  'and the deleted list is still on disk, untouched'
 );
 
 set local role authenticated;
@@ -637,30 +637,30 @@ set local request.jwt.claims = '{"sub":"admin_one"}';
 -- The cost 003 warned about, now paid by an admin who gets told why rather than
 -- by a user who gets told nothing.
 select throws_ok(
-  $$ select public.admin_restore_household('00000000-0000-0000-0000-0000000000e1') $$,
+  $$ select public.admin_restore_list('00000000-0000-0000-0000-0000000000e1') $$,
   'P0001',
   null,
-  'restoring is refused while the owner holds a newer household'
+  'restoring is refused while the owner holds a newer list'
 );
 
 set local request.jwt.claims = '{"sub":"plain_one"}';
 select lives_ok(
-  $$ delete from public.households where created_by = 'plain_one' and deleted_at is null $$,
+  $$ delete from public.lists where created_by = 'plain_one' and deleted_at is null $$,
   'the owner lets the newer one go'
 );
 
 set local request.jwt.claims = '{"sub":"admin_one"}';
 select lives_ok(
-  $$ select public.admin_restore_household('00000000-0000-0000-0000-0000000000e1') $$,
+  $$ select public.admin_restore_list('00000000-0000-0000-0000-0000000000e1') $$,
   'after which the restore goes through'
 );
 
 reset role;
 select is(
-  (select deleted_at from public.households
+  (select deleted_at from public.lists
    where id = '00000000-0000-0000-0000-0000000000e1'),
   null,
-  'and the household is live again'
+  'and the list is live again'
 );
 set local role authenticated;
 
@@ -703,9 +703,9 @@ select is(
 
 -- Global and curated, never a contribution somebody did not make.
 select is(
-  (select household_id from public.product_catalog where name = 'Apa Plata 2L'),
+  (select list_id from public.product_catalog where name = 'Apa Plata 2L'),
   null,
-  'the row is global rather than scoped to a household'
+  'the row is global rather than scoped to a list'
 );
 
 select is(
@@ -804,13 +804,13 @@ select is(
   'a null base_weight on update leaves the existing one alone'
 );
 
--- An admin correcting a household's typo must not turn a scoped row into a
--- contribution from nobody, or hand it to a different household.
+-- An admin correcting a list's typo must not turn a scoped row into a
+-- contribution from nobody, or hand it to a different list.
 insert into public.product_catalog
-  (id, name, maker, search_text, household_id, contributed_by, source, add_count)
+  (id, name, maker, search_text, list_id, contributed_by, source, add_count)
 -- An explicit id, because the lookup below runs as the CALLER and the caller is
--- an admin who belongs to no household. product_catalog's SELECT policy scopes a
--- household row to that household's members, so `where name = 'Bred'` returns
+-- an admin who belongs to no list. product_catalog's SELECT policy scopes a
+-- list row to that list's members, so `where name = 'Bred'` returns
 -- nothing for Ada and the RPC is handed a null id. security definer applies
 -- inside the function, never to the arguments being assembled for it.
 values ('00000000-0000-0000-0000-0000000000b1',
@@ -824,15 +824,15 @@ select lives_ok(
   $t$ select public.admin_update_product(
        '00000000-0000-0000-0000-0000000000b1'::uuid,
        'Bread', null, null, null) $t$,
-  'an admin fixes a household typo in place'
+  'an admin fixes a list typo in place'
 );
 
 reset role;
 select is(
-  (select household_id from public.product_catalog
+  (select list_id from public.product_catalog
    where name = 'Bread' and source = 'community'),
   '00000000-0000-0000-0000-0000000000e1'::uuid,
-  'the row still belongs to the household that contributed it'
+  'the row still belongs to the list that contributed it'
 );
 
 select is(
@@ -885,7 +885,7 @@ select is(
 -- The shopping list is text, so a deleted product takes nobody's item with it.
 select is(
   (select count(*)::int from public.shopping_list_items
-   where household_id = '00000000-0000-0000-0000-0000000000e1'),
+   where list_id = '00000000-0000-0000-0000-0000000000e1'),
   2,
   'and no list item went with it, because list items carry their own text'
 );

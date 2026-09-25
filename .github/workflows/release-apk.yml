@@ -99,7 +99,7 @@ jobs:
         run: |
           missing=
           # The catalog pair is required, not a warning. Without it the app
-          # falls back to household-contributed products only -- an add-item box
+          # falls back to list-contributed products only -- an add-item box
           # that finds almost nothing, on a build that looks entirely healthy.
           # That is a worse failure than not shipping.
           for name in SUPABASE_URL SUPABASE_ANON_KEY CLERK_KEY CATALOG_URL CATALOG_ANON_KEY; do

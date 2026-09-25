@@ -75,7 +75,7 @@ describe('a sent report', () => {
       kind: 'bug',
       surface: 'scan',
       message: '  the scanner froze on the third item  ',
-      diagnostics: collectDiagnostics({ householdId: 'h1', userId: 'u1' }),
+      diagnostics: collectDiagnostics({ listId: 'h1', userId: 'u1' }),
     })
 
     expect(ok).toBe(true)
@@ -107,14 +107,14 @@ describe('a sent report', () => {
       kind: 'bug',
       surface: 'scan',
       message: 'the scanner froze',
-      diagnostics: collectDiagnostics({ householdId: 'h1', userId: 'u1' }),
+      diagnostics: collectDiagnostics({ listId: 'h1', userId: 'u1' }),
     })
 
     const { tags } = sentry.captureFeedback.mock.calls[0][0]
     expect(tags.report).toBe('user')
     expect(tags.kind).toBe('bug')
     expect(tags.place).toBe('Barcode scanner')
-    expect(tags.householdId).toBe('h1')
+    expect(tags.listId).toBe('h1')
     expect(tags.version).toBeTruthy()
   })
 

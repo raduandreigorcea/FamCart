@@ -4,7 +4,7 @@
 // search was as slow as the slower one -- and the slower one is the catalog
 // project, on a small instance that swaps (measured 2026-09-13: 230-870ms of
 // server time for a word nobody had searched yet, on top of ~280ms of network).
-// Nothing a household typed in needs that wait.
+// Nothing a list typed in needs that wait.
 //
 // So each source lands on its own. What this pins is the part that is easy to
 // get wrong while doing that: a late answer from a superseded search must not
@@ -55,7 +55,7 @@ function mountSuggestions() {
       setup() {
         api = useProductSuggestions({
           db,
-          householdId: ref('hh-a'),
+          listId: ref('hh-a'),
           items: ref([]),
           query,
           isOffline: () => false,
@@ -82,7 +82,7 @@ async function type(query, text) {
 const names = (api) => api.suggestions.value.map((s) => s.name)
 
 describe('each database answers on its own', () => {
-  it('shows the household rows without waiting for the catalog', async () => {
+  it('shows the list rows without waiting for the catalog', async () => {
     const { api, query } = mountSuggestions()
     await type(query, 'lapte')
 
@@ -132,7 +132,7 @@ describe('each database answers on its own', () => {
     expect(names(api)).not.toContain('Lapte Zuzu 1L')
   })
 
-  it('still shows the catalog when the household database fails', async () => {
+  it('still shows the catalog when the list database fails', async () => {
     db.handlers['rpc.search_catalog'] = () => ({ data: null, error: { message: 'boom' } })
     const { api, query } = mountSuggestions()
     await type(query, 'lapte')

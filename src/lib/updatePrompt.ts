@@ -81,7 +81,7 @@ export function useUpdatePrompt(options: {
 
   async function start(): Promise<void> {
     // Never interrupt an install already under way — start() runs whenever the
-    // list finishes loading, which includes the reload after a household switch.
+    // list finishes loading, which includes the reload after a list switch.
     if (updateOpen.value) return
 
     // The caller runs this the moment the first-run sequence settles, which is

@@ -49,11 +49,11 @@ export function shareableOrigin(href = typeof window === 'undefined' ? '' : wind
 // in that order, because someone who does not know what FamCart is needs the
 // first two before the third means anything.
 export function buildInviteMessage(
-  householdName: string,
+  listName: string,
   code: string,
   origin = shareableOrigin(),
 ): InviteMessage {
-  const named = householdName.trim()
+  const named = listName.trim()
   // Two whole sentences per case rather than one with a {where} hole in it. The
   // hole was cheaper here and unfillable in half the catalogs: the name takes a
   // different preposition and a different article depending on the language, so
@@ -101,11 +101,11 @@ async function copyInvite(text: string): Promise<InviteShareOutcome> {
 // the call. The native and clipboard paths have no such rule, so only this one
 // function has to stay synchronous up to the point it hands off.
 export function shareInvite(
-  householdName: string,
+  listName: string,
   code: string,
 ): Promise<InviteShareOutcome> {
   if (!code) return Promise.resolve('unavailable')
-  const message = buildInviteMessage(householdName, code)
+  const message = buildInviteMessage(listName, code)
 
   if (isNative()) {
     return import('@capacitor/share')

@@ -138,7 +138,7 @@ export function groupCheckouts(
       // Pinned to 'en' rather than left to the device. The comment above claims
       // this order is stable across devices, and with `undefined` it quietly
       // was not: collation differs per locale (ro sorts 'ș' after 's', de folds
-      // 'ö' with 'o'), so two members of one household could see the same
+      // 'ö' with 'o'), so two members of one list could see the same
       // checkout in different orders. The pin is what makes the claim true.
       // It is a tie-breaker on catalog data, so no user-visible language is
       // involved either way.

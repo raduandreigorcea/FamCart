@@ -34,7 +34,7 @@ import AppIcon from './AppIcon.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
-  householdId: { type: String, default: '' },
+  listId: { type: String, default: '' },
   userId: { type: String, default: '' },
 })
 
@@ -61,7 +61,7 @@ const failure = ref('')
 
 
 const diagnostics = computed(() =>
-  collectDiagnostics({ householdId: props.householdId, userId: props.userId }),
+  collectDiagnostics({ listId: props.listId, userId: props.userId }),
 )
 const attachedLines = computed(() => describeDiagnostics(diagnostics.value))
 
@@ -103,7 +103,7 @@ const SURFACE_LABELS = computed<Record<string, string>>(() => ({
   add: t('report.surface.add'),
   scan: t('report.surface.scan'),
   history: t('report.surface.history'),
-  household: t('report.surface.household'),
+  settings: t('report.surface.settings'),
   notifications: t('report.surface.notifications'),
   signin: t('report.surface.signin'),
   other: t('report.surface.other'),

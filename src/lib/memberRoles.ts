@@ -1,4 +1,4 @@
-// Pure role/permission rules for household members. Free of Vue and Supabase so
+// Pure role/permission rules for list members. Free of Vue and Supabase so
 // they can be unit-tested; components decide presentation, these decide policy.
 
 export type NormalizedRole = 'moderator' | 'member'
@@ -40,7 +40,7 @@ export function sortMembersForDisplay<T extends MemberLike>(
 // Stable within a rank, so members keep their incoming order.
 //
 // Named for the rule rather than the place: this was sortMembersForSwitcher
-// until the household switcher stopped existing, at which point the name pointed
+// until the list switcher stopped existing, at which point the name pointed
 // at nothing. The pair to it is sortMembersForDisplay, which leads with the
 // owner — that is the whole difference between them, and it is what a caller
 // picking one has to decide.

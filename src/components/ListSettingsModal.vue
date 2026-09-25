@@ -5,11 +5,11 @@ import AppModal from './AppModal.vue'
 import ConfirmModal from './ConfirmModal.vue'
 import ErrorModal from './ErrorModal.vue'
 import ModalCloseButton from './ModalCloseButton.vue'
-import OverviewPanel from './householdSettings/OverviewPanel.vue'
-import PreferencesPanel from './householdSettings/PreferencesPanel.vue'
-import MembersPanel from './householdSettings/MembersPanel.vue'
-import DangerPanel from './householdSettings/DangerPanel.vue'
-import type { HouseholdMemberProfile } from '../lib/householdRealtime'
+import OverviewPanel from './listSettings/OverviewPanel.vue'
+import PreferencesPanel from './listSettings/PreferencesPanel.vue'
+import MembersPanel from './listSettings/MembersPanel.vue'
+import DangerPanel from './listSettings/DangerPanel.vue'
+import type { ListMemberProfile } from '../lib/listRealtime'
 import { normalizeMemberRole } from '../lib/memberRoles'
 import { ITEM_LIMIT_DEFAULT } from '../lib/limits'
 import { useConfirm } from '../lib/useConfirm'
@@ -17,7 +17,7 @@ import { useConfirm } from '../lib/useConfirm'
 // The settings dialog's shell: which tab is showing, what the viewer is allowed
 // to do, and the two dialogs the panels share (confirm and error).
 //
-// Each tab is its own component under householdSettings/. They were all inline
+// Each tab is its own component under listSettings/. They were all inline
 // here once, which made this file 2,658 lines and meant every change to the
 // members list was a change to the same file as the emoji picker.
 
@@ -27,23 +27,23 @@ import AppIcon from './AppIcon.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
-  householdId: { type: String, default: '' },
-  householdName: { type: String, default: '' },
+  listId: { type: String, default: '' },
+  listName: { type: String, default: '' },
   inviteCode: { type: String, default: '' },
-  householdItemLimit: { type: Number, default: ITEM_LIMIT_DEFAULT },
-  householdEmoji: { type: String, default: '' },
+  listItemLimit: { type: Number, default: ITEM_LIMIT_DEFAULT },
+  listEmoji: { type: String, default: '' },
   ownerUserId: { type: String, default: '' },
   memberProfiles: {
-    type: Array as PropType<HouseholdMemberProfile[]>,
+    type: Array as PropType<ListMemberProfile[]>,
     default: () => [],
   },
 })
 
 const emit = defineEmits<{
   close: []
-  'refresh-household': []
-  'household-deleted': []
-  'household-left': []
+  'refresh-list': []
+  'list-deleted': []
+  'list-left': []
 }>()
 
 const { userId } = useAuth()
@@ -148,22 +148,22 @@ function onTabKeydown(event: KeyboardEvent) {
 
 const tabs = computed<SettingsTab[]>(() => {
   const list: SettingsTab[] = [
-    { id: 'overview', label: t('household.tab.overview'), icon: 'layout-grid' },
+    { id: 'overview', label: t('list.tab.overview'), icon: 'layout-grid' },
   ]
   if (isOwnerOrModerator.value) {
-    list.push({ id: 'household', label: t('household.tab.preferences'), icon: 'settings' })
+    list.push({ id: 'list', label: t('list.tab.preferences'), icon: 'settings' })
   }
   list.push({
     id: 'members',
-    label: t('household.tab.members'),
+    label: t('list.tab.members'),
     icon: 'users-round',
     badge: memberCount.value,
   })
-  list.push({ id: 'danger', label: t('household.tab.danger'), icon: 'trash-2', danger: true })
+  list.push({ id: 'danger', label: t('list.tab.danger'), icon: 'trash-2', danger: true })
   // No About tab: an app's version and its data-licence credit are not a
-  // property of any one household. They live in AppSettingsModal, reached from
+  // property of any one list. They live in AppSettingsModal, reached from
   // the account dialog. Every tab here now changes something about THIS
-  // household, which is what the dialog claims to be.
+  // list, which is what the dialog claims to be.
   return list
 })
 
@@ -174,16 +174,16 @@ watch(tabs, (list) => {
   if (!list.some((tab) => tab.id === activeTab.value)) activeTab.value = 'overview'
 })
 
-// Leaving and deleting both take the user off this household, so the dialog goes
+// Leaving and deleting both take the user off this list, so the dialog goes
 // with it; HomeView decides where they land.
-function onHouseholdLeft() {
+function onListLeft() {
   emit('close')
-  emit('household-left')
+  emit('list-left')
 }
 
-function onHouseholdDeleted() {
+function onListDeleted() {
   emit('close')
-  emit('household-deleted')
+  emit('list-deleted')
 }
 </script>
 
@@ -194,7 +194,7 @@ function onHouseholdDeleted() {
     transition="modal-fade"
     @close="dismiss"
   >
-      <div class="settings-modal" role="dialog" aria-modal="true" :aria-label="t('household.title')">
+      <div class="settings-modal" role="dialog" aria-modal="true" :aria-label="t('list.title')">
 
         <!-- Modal Header -->
         <div class="settings-modal__header">
@@ -203,18 +203,18 @@ function onHouseholdDeleted() {
               <AppIcon class="header-icon" name="settings" />
             </div>
             <div>
-              <h3>{{ t('household.title') }}</h3>
-              <!-- Which household this is. It used to read "Manage your
-                   household and members", which described the panels below
+              <h3>{{ t('list.title') }}</h3>
+              <!-- Which list this is. It used to read "Manage your
+                   list and members", which described the panels below
                    rather than saying anything you could not already see — and
                    left the one question the dialog has to answer unanswered.
                    Renaming, removing members and deleting all happen in here,
-                   and someone in more than one household had nothing on screen
+                   and someone in more than one list had nothing on screen
                    confirming they were in the right one. -->
-              <p class="settings-modal__subtitle">{{ householdName || t('account.householdFallback') }}</p>
+              <p class="settings-modal__subtitle">{{ listName || t('account.listFallback') }}</p>
             </div>
           </div>
-          <ModalCloseButton :aria-label="t('household.close')" @click="requestClose()" />
+          <ModalCloseButton :aria-label="t('list.close')" @click="requestClose()" />
         </div>
 
         <!-- Modal Body Container -->
@@ -227,7 +227,7 @@ function onHouseholdDeleted() {
             class="settings-sidebar"
             role="tablist"
             aria-orientation="vertical"
-            :aria-label="t('household.sections')"
+            :aria-label="t('list.sections')"
           >
             <button
               v-for="tab in tabs"
@@ -263,23 +263,23 @@ function onHouseholdDeleted() {
               role="tabpanel"
               aria-labelledby="settings-tab-overview"
               :ghost="activeTab !== 'overview'"
-              :household-name="householdName"
+              :list-name="listName"
               :invite-code="inviteCode"
               :member-count="memberCount"
               :owner-profile="ownerProfile"
             />
 
             <PreferencesPanel
-              v-if="activeTab === 'household' && isOwnerOrModerator"
-              id="settings-panel-household"
+              v-if="activeTab === 'list' && isOwnerOrModerator"
+              id="settings-panel-list"
               role="tabpanel"
-              aria-labelledby="settings-tab-household"
-              :household-id="householdId"
-              :household-name="householdName"
-              :household-item-limit="householdItemLimit"
-              :household-emoji="householdEmoji"
+              aria-labelledby="settings-tab-list"
+              :list-id="listId"
+              :list-name="listName"
+              :list-item-limit="listItemLimit"
+              :list-emoji="listEmoji"
               :is-owner="isOwner"
-              @refresh-household="emit('refresh-household')"
+              @refresh-list="emit('refresh-list')"
               @error="showError"
             />
 
@@ -289,13 +289,13 @@ function onHouseholdDeleted() {
               role="tabpanel"
               aria-labelledby="settings-tab-members"
               v-model:open-menu-id="openMemberMenuId"
-              :household-id="householdId"
+              :list-id="listId"
               :owner-user-id="ownerUserId"
               :is-owner="isOwner"
               :is-owner-or-moderator="isOwnerOrModerator"
               :member-profiles="memberProfiles"
               :confirm="confirm"
-              @refresh-household="emit('refresh-household')"
+              @refresh-list="emit('refresh-list')"
               @error="showError"
             />
 
@@ -304,14 +304,14 @@ function onHouseholdDeleted() {
               id="settings-panel-danger"
               role="tabpanel"
               aria-labelledby="settings-tab-danger"
-              :household-id="householdId"
-              :household-name="householdName"
+              :list-id="listId"
+              :list-name="listName"
               :is-owner="isOwner"
               :is-owner-or-moderator="isOwnerOrModerator"
               :confirm="confirm"
-              @refresh-household="emit('refresh-household')"
-              @household-left="onHouseholdLeft"
-              @household-deleted="onHouseholdDeleted"
+              @refresh-list="emit('refresh-list')"
+              @list-left="onListLeft"
+              @list-deleted="onListDeleted"
               @error="showError"
             />
           </main>
@@ -381,7 +381,7 @@ function onHouseholdDeleted() {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  /* The subtitle carries a household name now, up to 25 characters of someone
+  /* The subtitle carries a list name now, up to 25 characters of someone
      else's choosing. Let the text block shrink so it ellipsizes instead of
      shouldering the close button off the header. */
   min-width: 0;
@@ -722,7 +722,7 @@ function onHouseholdDeleted() {
 }
 
 /* ─── Shared panel primitives ────────────────────────────────────────────
-   Rendered by the panel components under householdSettings/, styled here so
+   Rendered by the panel components under listSettings/, styled here so
    there is one copy rather than five. :deep() is what lets this scoped block
    reach past the child component boundary. */
 

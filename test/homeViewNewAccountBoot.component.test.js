@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 //
-// A brand-new account with no household lands on HomeView, because the router
-// only pays for a membership lookup on the way to /household-setup. HomeView
-// then discovers there is no household and replaces itself with onboarding.
+// A brand-new account with no list lands on HomeView, because the router
+// only pays for a membership lookup on the way to /list-setup. HomeView
+// then discovers there is no list and replaces itself with onboarding.
 // What it must NOT do in between is paint a list: the topbar and the shopping
-// list skeleton describe a household this account does not have, so the very
+// list skeleton describe a list this account does not have, so the very
 // first thing a new user saw was a mock-up of somebody else's shopping list.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -25,8 +25,8 @@ vi.mock('../src/supabase', () => ({
 vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: (...a) => mocks.routerReplace(...a), push: vi.fn() }),
 }))
-vi.mock('../src/lib/householdRealtime', () => ({
-  useHouseholdRealtime: () => ({
+vi.mock('../src/lib/listRealtime', () => ({
+  useListRealtime: () => ({
     realtimeHealthy: { value: false },
     setupRealtimeSubscriptions: async () => {},
     cleanupRealtimeSubscriptions: () => {},
@@ -52,11 +52,11 @@ function trackMount(...args) {
 
 // The membership lookup answers, and answers "none" — the shape of a fresh
 // account. Deferred so the test can look at the screen while it is in flight.
-function seedNoHouseholds(db) {
+function seedNoLists(db) {
   db.handlers['profiles.upsert'] = () => ({ data: null, error: null })
   let release
   const gate = new Promise((r) => { release = r })
-  db.handlers['household_members.select'] = async () => {
+  db.handlers['list_members.select'] = async () => {
     await gate
     return { data: [], error: null }
   }
@@ -79,9 +79,9 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('booting an account that has no household yet', () => {
+describe('booting an account that has no list yet', () => {
   it('shows no list while it is still unknown whether there is one', async () => {
-    const release = seedNoHouseholds(mocks.db)
+    const release = seedNoLists(mocks.db)
 
     const wrapper = trackMount(HomeView, { shallow: true })
     await flushPromises()
@@ -92,16 +92,16 @@ describe('booting an account that has no household yet', () => {
 
     release()
     await flushPromises()
-    expect(mocks.routerReplace).toHaveBeenCalledWith('/household-setup')
+    expect(mocks.routerReplace).toHaveBeenCalledWith('/list-setup')
   })
 
-  it('draws the list the moment a household is known, skeletons and all', async () => {
+  it('draws the list the moment a list is known, skeletons and all', async () => {
     mocks.db.handlers['profiles.upsert'] = () => ({ data: null, error: null })
-    mocks.db.handlers['household_members.select'] = (q) =>
+    mocks.db.handlers['list_members.select'] = (q) =>
       q.filters.user_id
-        ? { data: [{ household_id: 'fam-1', households: { name: 'Gorcea', emoji: '🏠' } }], error: null }
+        ? { data: [{ list_id: 'fam-1', lists: { name: 'Gorcea', emoji: '🏠' } }], error: null }
         : { data: [], error: null }
-    mocks.db.handlers['households.select'] = () => ({
+    mocks.db.handlers['lists.select'] = () => ({
       data: { name: 'Gorcea', invite_code: 'ABCD2345', created_by: 'user-new', max_items_per_member: 50, emoji: '🏠' },
       error: null,
     })

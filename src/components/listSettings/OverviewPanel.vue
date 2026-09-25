@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { type PropType } from 'vue'
-import type { HouseholdMemberProfile } from '../../lib/householdRealtime'
+import type { ListMemberProfile } from '../../lib/listRealtime'
 import { useCopyFeedback } from '../../lib/clipboard'
 import AppIcon from '../AppIcon.vue'
 import { t } from '../../lib/i18n'
 
-// Read-only: who is in the household, who made it, and the code for adding
+// Read-only: who is in the list, who made it, and the code for adding
 // someone. The only thing it writes is the clipboard.
 //
 // It stays mounted on every tab: it is the tallest panel, so it is what holds
@@ -19,11 +19,11 @@ import { t } from '../../lib/i18n'
 // since a child component's root carries the parent's scope id.
 defineProps({
   ghost: { type: Boolean, default: false },
-  householdName: { type: String, default: '' },
+  listName: { type: String, default: '' },
   inviteCode: { type: String, default: '' },
   memberCount: { type: Number, default: 0 },
   ownerProfile: {
-    type: Object as PropType<HouseholdMemberProfile | null>,
+    type: Object as PropType<ListMemberProfile | null>,
     default: null,
   },
 })
@@ -48,7 +48,7 @@ const { copied, copy: copyInviteCode } = useCopyFeedback()
         <div class="summary-details">
           <div class="summary-row">
             <span class="summary-label">{{ t('overview.name') }}</span>
-            <span class="summary-value highlight">{{ householdName }}</span>
+            <span class="summary-value highlight">{{ listName }}</span>
           </div>
           <div class="summary-row" v-if="ownerProfile">
             <span class="summary-label">{{ t('overview.createdBy') }}</span>

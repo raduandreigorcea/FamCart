@@ -33,8 +33,8 @@ vi.mock('../src/supabase', () => ({
 vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: (...a) => mocks.routerReplace(...a), push: () => {} }),
 }))
-vi.mock('../src/lib/householdRealtime', () => ({
-  useHouseholdRealtime: () => ({
+vi.mock('../src/lib/listRealtime', () => ({
+  useListRealtime: () => ({
     realtimeHealthy: { value: false },
     setupRealtimeSubscriptions: async () => {},
     cleanupRealtimeSubscriptions: () => {},

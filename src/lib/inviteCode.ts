@@ -1,10 +1,10 @@
-// The invite code: how someone joins a household, and the only credential guarding
+// The invite code: how someone joins a list, and the only credential guarding
 // that. Both the code generator and the shape check live here because the two
-// have to agree — a generated code that the join form would reject is a household
+// have to agree — a generated code that the join form would reject is a list
 // nobody can be invited to.
 //
-// This was duplicated character-for-character in HouseholdSetupView (which mints
-// one when creating a household) and HouseholdSettingsModal (which mints one when
+// This was duplicated character-for-character in ListSetupView (which mints
+// one when creating a list) and ListSettingsModal (which mints one when
 // regenerating). Two copies of a security-relevant helper is one copy too many:
 // a fix to the alphabet or the entropy in one would silently not reach the
 // other.
@@ -16,8 +16,8 @@ const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 export const INVITE_CODE_LENGTH = 8
 
 // What a code must look like to be worth sending to the server. Mirrors
-// ALPHABET: A-H, J-N, P-Z, 2-9, and households_invite_code_format_check in
-// 003_households_and_members.sql.
+// ALPHABET: A-H, J-N, P-Z, 2-9, and lists_invite_code_format_check in
+// 003_lists_and_members.sql.
 //
 // Not exported: isValidInviteCode below is the whole public surface. A caller
 // holding the raw pattern is a caller who can test an unnormalized string
@@ -25,7 +25,7 @@ export const INVITE_CODE_LENGTH = 8
 const INVITE_CODE_REGEX = /^[A-HJ-NP-Z2-9]{8}$/
 
 // A fresh code. Uses a CSPRNG rather than Math.random(): this is the credential
-// that admits someone to a household's list, so a predictable one is a way in.
+// that admits someone to a list, so a predictable one is a way in.
 // The 32-character alphabet divides 256 evenly, so `byte & 31` maps onto it
 // with no modulo bias — every character is equally likely.
 export function randomInviteCode(): string {

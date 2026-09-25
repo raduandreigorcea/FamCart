@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 //
-// The three household settings that are edited locally and committed by their
+// The three list settings that are edited locally and committed by their
 // own Save button: the name, the emoji, and the per-member item limit.
 //
 // Two things here are worth pinning beyond "the write happened".
@@ -12,14 +12,14 @@
 // makes the input incapable of producing one.
 //
 // And the name has a length ceiling that is enforced in TWO places — this panel
-// and 003_households_and_members.sql. The local half exists so the failure is a
+// and 003_lists_and_members.sql. The local half exists so the failure is a
 // sentence rather than a constraint name, and it only does that job if it
 // refuses to send.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import PreferencesPanel from '../src/components/householdSettings/PreferencesPanel.vue'
+import PreferencesPanel from '../src/components/listSettings/PreferencesPanel.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
-import { HOUSEHOLD_NAME_MAX_LENGTH } from '../src/lib/limits'
+import { LIST_NAME_MAX_LENGTH } from '../src/lib/limits'
 
 const mocks = vi.hoisted(() => ({ db: null }))
 
@@ -33,10 +33,10 @@ const wrappers = []
 function mountPanel(props = {}) {
   const w = mount(PreferencesPanel, {
     props: {
-      householdId: 'hh-1',
-      householdName: 'Gorcea',
-      householdItemLimit: 50,
-      householdEmoji: '🏠',
+      listId: 'hh-1',
+      listName: 'Gorcea',
+      listItemLimit: 50,
+      listEmoji: '🏠',
       isOwner: true,
       ...props,
     },
@@ -45,7 +45,7 @@ function mountPanel(props = {}) {
   return w
 }
 
-const updates = () => mocks.db.calls.filter((c) => c.table === 'households' && c.op === 'update')
+const updates = () => mocks.db.calls.filter((c) => c.table === 'lists' && c.op === 'update')
 
 // The three Save buttons sit in document order: name, emoji, item limit. A
 // moderator sees only the last of them.
@@ -53,7 +53,7 @@ const saveButtons = (wrapper) => wrapper.findAll('.panel-save-btn')
 
 beforeEach(() => {
   mocks.db = createFakeDb()
-  mocks.db.handlers['households.update'] = () => ({ data: null, error: null })
+  mocks.db.handlers['lists.update'] = () => ({ data: null, error: null })
 })
 
 afterEach(() => {
@@ -61,7 +61,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('renaming the household', () => {
+describe('renaming the list', () => {
   it('trims and saves the new name', async () => {
     const wrapper = mountPanel()
     await wrapper.find('.panel-input').setValue('  Casa Noastra  ')
@@ -71,12 +71,12 @@ describe('renaming the household', () => {
     expect(updates()).toHaveLength(1)
     expect(updates()[0].payload).toEqual({ name: 'Casa Noastra' })
     expect(updates()[0].filters).toEqual({ id: 'hh-1' })
-    expect(wrapper.emitted('refresh-household')).toHaveLength(1)
+    expect(wrapper.emitted('refresh-list')).toHaveLength(1)
   })
 
   it('refuses a name past the ceiling with a sentence, not a constraint', async () => {
     const wrapper = mountPanel()
-    await wrapper.find('.panel-input').setValue('x'.repeat(HOUSEHOLD_NAME_MAX_LENGTH + 1))
+    await wrapper.find('.panel-input').setValue('x'.repeat(LIST_NAME_MAX_LENGTH + 1))
     await saveButtons(wrapper)[0].trigger('click')
     await flushPromises()
 
@@ -84,7 +84,7 @@ describe('renaming the household', () => {
     // violation nobody can read.
     expect(updates()).toHaveLength(0)
     const [message, title] = wrapper.emitted('error')[0]
-    expect(message).toContain(String(HOUSEHOLD_NAME_MAX_LENGTH))
+    expect(message).toContain(String(LIST_NAME_MAX_LENGTH))
     expect(title).toBeTruthy()
   })
 
@@ -104,7 +104,7 @@ describe('renaming the household', () => {
   })
 
   it('surfaces a rejected rename instead of reporting success', async () => {
-    mocks.db.handlers['households.update'] = () => ({
+    mocks.db.handlers['lists.update'] = () => ({
       data: null,
       error: { code: '42501', message: 'permission denied' },
     })
@@ -114,13 +114,13 @@ describe('renaming the household', () => {
     await flushPromises()
 
     expect(wrapper.emitted('error')).toHaveLength(1)
-    expect(wrapper.emitted('refresh-household')).toBeUndefined()
+    expect(wrapper.emitted('refresh-list')).toBeUndefined()
   })
 })
 
-describe('the household emoji', () => {
+describe('the list emoji', () => {
   it('saves the picked emoji', async () => {
-    const wrapper = mountPanel({ householdEmoji: '' })
+    const wrapper = mountPanel({ listEmoji: '' })
     await wrapper.findAll('.emoji-option')[2].trigger('click')
     const picked = wrapper.findAll('.emoji-option')[2].text()
     await saveButtons(wrapper)[1].trigger('click')
@@ -132,7 +132,7 @@ describe('the household emoji', () => {
   // Tapping the current selection clears it, and "no emoji" has to reach the
   // column as NULL rather than as an empty string.
   it('writes null when the selection is cleared', async () => {
-    const wrapper = mountPanel({ householdEmoji: '' })
+    const wrapper = mountPanel({ listEmoji: '' })
     const first = wrapper.findAll('.emoji-option')[0]
     await first.trigger('click')
     await first.trigger('click')
@@ -150,7 +150,7 @@ describe('the household emoji', () => {
 // test/limits.test.js against the inputs that CAN be out of range (a database
 // value, a stale cached snapshot) rather than pretended at through a slider.
 describe('the per-member item limit', () => {
-  it('writes the value the slider is on, scoped to the household', async () => {
+  it('writes the value the slider is on, scoped to the list', async () => {
     const wrapper = mountPanel()
     await wrapper.find('input[type="range"]').setValue('12')
     await saveButtons(wrapper).at(-1).trigger('click')
@@ -159,13 +159,13 @@ describe('the per-member item limit', () => {
     expect(updates()).toHaveLength(1)
     expect(updates()[0].payload).toEqual({ max_items_per_member: 12 })
     expect(updates()[0].filters).toEqual({ id: 'hh-1' })
-    expect(wrapper.emitted('refresh-household')).toHaveLength(1)
+    expect(wrapper.emitted('refresh-list')).toHaveLength(1)
   })
 
-  // The slider seeds from the prop, so a household whose stored limit is out of
+  // The slider seeds from the prop, so a list whose stored limit is out of
   // range must not have that value written straight back out.
   it('seeds from the stored limit rather than from a default', async () => {
-    const wrapper = mountPanel({ householdItemLimit: 20 })
+    const wrapper = mountPanel({ listItemLimit: 20 })
     await saveButtons(wrapper).at(-1).trigger('click')
     await flushPromises()
 
@@ -185,7 +185,7 @@ describe('the per-member item limit', () => {
   })
 
   it('surfaces a rejected save', async () => {
-    mocks.db.handlers['households.update'] = () => ({
+    mocks.db.handlers['lists.update'] = () => ({
       data: null,
       error: { code: '42501', message: 'permission denied' },
     })
@@ -194,6 +194,6 @@ describe('the per-member item limit', () => {
     await flushPromises()
 
     expect(wrapper.emitted('error')).toHaveLength(1)
-    expect(wrapper.emitted('refresh-household')).toBeUndefined()
+    expect(wrapper.emitted('refresh-list')).toBeUndefined()
   })
 })

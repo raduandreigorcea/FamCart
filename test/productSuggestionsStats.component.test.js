@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 //
-// The purchase-history stats fetch spans a household switch: a request issued
-// for household A can resolve after resetForHousehold() has cleared everything
-// for household B. Without a staleness guard, A's rows become B's ranking
+// The purchase-history stats fetch spans a list switch: a request issued
+// for list A can resolve after resetForList() has cleared everything
+// for list B. Without a staleness guard, A's rows become B's ranking
 // signal and A's `finally` marks B's still-pending answer as loaded — which is
 // what decides between "All bought" and "Nothing here yet" on an empty list.
 // The suggestions fetch has suggestRequestId for exactly this race; these tests
@@ -14,17 +14,17 @@ import { useProductSuggestions } from '../src/lib/productSuggestions'
 import { createFakeDb } from './support/fakeSupabase.js'
 
 let db
-// resolve function per household_id the query filtered on, so a test can land
+// resolve function per list_id the query filtered on, so a test can land
 // responses in whichever order the race needs.
 let pendingStats
 
-function mountSuggestions(householdId) {
+function mountSuggestions(listId) {
   let api
   const Harness = defineComponent({
     setup() {
       api = useProductSuggestions({
         db,
-        householdId,
+        listId,
         items: ref([]),
         query: ref(''),
         isOffline: () => false,
@@ -45,23 +45,23 @@ beforeEach(() => {
   pendingStats = new Map()
   db.handlers['purchase_history.select'] = (query) =>
     new Promise((resolve) => {
-      pendingStats.set(query.filters.household_id, resolve)
+      pendingStats.set(query.filters.list_id, resolve)
     })
 })
 
-describe('loadHouseholdProductStats across a household switch', () => {
-  it('discards a stale response from the household that was switched away from', async () => {
-    const householdId = ref('hh-a')
-    const { api, wrapper } = mountSuggestions(householdId)
+describe('loadListProductStats across a list switch', () => {
+  it('discards a stale response from the list that was switched away from', async () => {
+    const listId = ref('hh-a')
+    const { api, wrapper } = mountSuggestions(listId)
 
     // A's fetch goes out and stays in flight.
-    const first = api.loadHouseholdProductStats()
+    const first = api.loadListProductStats()
     await flushPromises()
 
     // Switch to B, whose own fetch answers straight away: no history.
-    api.resetForHousehold()
-    householdId.value = 'hh-b'
-    const second = api.loadHouseholdProductStats()
+    api.resetForList()
+    listId.value = 'hh-b'
+    const second = api.loadListProductStats()
     await flushPromises()
     pendingStats.get('hh-b')({ data: [], error: null })
     await second
@@ -73,21 +73,21 @@ describe('loadHouseholdProductStats across a household switch', () => {
     })
     await first
 
-    expect(api.householdProductStats.value.size).toBe(0)
+    expect(api.listProductStats.value.size).toBe(0)
     wrapper.unmount()
   })
 
-  it('does not mark stats loaded for the new household off the old one’s response', async () => {
-    const householdId = ref('hh-a')
-    const { api, wrapper } = mountSuggestions(householdId)
+  it('does not mark stats loaded for the new list off the old one’s response', async () => {
+    const listId = ref('hh-a')
+    const { api, wrapper } = mountSuggestions(listId)
 
-    const first = api.loadHouseholdProductStats()
+    const first = api.loadListProductStats()
     await flushPromises()
 
     // Switch to B; B's fetch is still in flight when A's response lands.
-    api.resetForHousehold()
-    householdId.value = 'hh-b'
-    void api.loadHouseholdProductStats()
+    api.resetForList()
+    listId.value = 'hh-b'
+    void api.loadListProductStats()
     await flushPromises()
 
     pendingStats.get('hh-a')({ data: [], error: null })

@@ -14,7 +14,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import HomeView from '../src/views/HomeView.vue'
 import ShoppingList from '../src/components/ShoppingList.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
-import { loadHouseholdSnapshot } from '../src/lib/householdCache'
+import { loadListSnapshot } from '../src/lib/listCache'
 import { markTourSeen } from '../src/lib/onboarding'
 import { __setOnlineForTest } from '../src/lib/connectivity'
 
@@ -25,8 +25,8 @@ vi.mock('../src/supabase', () => ({
   getCatalogSupabase: () => mocks.catalogDb ?? null,
 }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }))
-vi.mock('../src/lib/householdRealtime', () => ({
-  useHouseholdRealtime: () => ({
+vi.mock('../src/lib/listRealtime', () => ({
+  useListRealtime: () => ({
     realtimeHealthy: { value: false },
     setupRealtimeSubscriptions: async () => {},
     cleanupRealtimeSubscriptions: () => {},
@@ -42,7 +42,7 @@ vi.mock('@clerk/vue', async () => {
 
 const item = (over = {}) => ({
   id: 'a',
-  household_id: 'fam-1',
+  list_id: 'fam-1',
   name: 'Milk',
   quantity: 1,
   checked: false,
@@ -53,11 +53,11 @@ const item = (over = {}) => ({
 
 function seed(db, items) {
   db.handlers['profiles.upsert'] = () => ({ data: null, error: null })
-  db.handlers['household_members.select'] = (q) =>
+  db.handlers['list_members.select'] = (q) =>
     q.filters.user_id
-      ? { data: [{ household_id: 'fam-1', households: { name: 'Fam', emoji: '' } }], error: null }
+      ? { data: [{ list_id: 'fam-1', lists: { name: 'Fam', emoji: '' } }], error: null }
       : { data: [{ user_id: 'user-1', role: 'moderator', profiles: { display_name: 'Me' } }], error: null }
-  db.handlers['households.select'] = () => ({
+  db.handlers['lists.select'] = () => ({
     data: { name: 'Fam', invite_code: 'ABCD2345', created_by: 'user-1', max_items_per_member: 50, emoji: '' },
     error: null,
   })
@@ -80,7 +80,7 @@ async function bootHome(items = [item()]) {
   return wrapper
 }
 
-const stored = () => loadHouseholdSnapshot(localStorage, 'user-1')
+const stored = () => loadListSnapshot(localStorage, 'user-1')
 const tick = () => new Promise((r) => setTimeout(r, 0))
 
 beforeEach(() => {
@@ -94,7 +94,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('persisting the household snapshot', () => {
+describe('persisting the list snapshot', () => {
   it('writes one as soon as the first load finishes', async () => {
     await bootHome()
     expect(stored()?.items.map((i) => i.id)).toEqual(['a'])

@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, type PropType } from 'vue'
 import { useAuth } from '@clerk/vue'
 import { useSupabase } from '../../supabase'
 import { userMessage } from '../../lib/errorMessages'
-import type { HouseholdMemberProfile } from '../../lib/householdRealtime'
+import type { ListMemberProfile } from '../../lib/listRealtime'
 import type { ConfirmOptions } from '../../lib/useConfirm'
 import {
   normalizeMemberRole,
@@ -19,12 +19,12 @@ import AppIcon from '../AppIcon.vue'
 // The roster, and what can be done to a row on it. The rules themselves live in
 // lib/memberRoles — this decides only what to render and what to write.
 const props = defineProps({
-  householdId: { type: String, default: '' },
+  listId: { type: String, default: '' },
   ownerUserId: { type: String, default: '' },
   isOwner: { type: Boolean, default: false },
   isOwnerOrModerator: { type: Boolean, default: false },
   memberProfiles: {
-    type: Array as PropType<HouseholdMemberProfile[]>,
+    type: Array as PropType<ListMemberProfile[]>,
     default: () => [],
   },
   // The modal's shared confirm dialog (see DangerPanel for the same argument).
@@ -35,7 +35,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits<{
-  (e: 'refresh-household'): void
+  (e: 'refresh-list'): void
   (e: 'error', message: string, title?: string): void
 }>()
 
@@ -51,7 +51,7 @@ const memberActionPendingId = ref('')
 
 const sortedMembers = computed(() => sortMembersForDisplay(props.memberProfiles, props.ownerUserId))
 
-function canManageMember(member: HouseholdMemberProfile) {
+function canManageMember(member: ListMemberProfile) {
   return canManageMemberRule(member, {
     actorIsOwnerOrModerator: props.isOwnerOrModerator,
     ownerUserId: props.ownerUserId,
@@ -59,11 +59,11 @@ function canManageMember(member: HouseholdMemberProfile) {
   })
 }
 
-function canPromoteToModerator(member: HouseholdMemberProfile) {
+function canPromoteToModerator(member: ListMemberProfile) {
   return canPromoteRule(member, props.isOwner)
 }
 
-function canDemoteFromModerator(member: HouseholdMemberProfile) {
+function canDemoteFromModerator(member: ListMemberProfile) {
   return canDemoteRule(member, props.isOwner)
 }
 
@@ -112,28 +112,28 @@ onBeforeUnmount(() => {
 
 async function setMemberRole(memberUserId: string, role: string) {
   if (!props.isOwner) return
-  if (!props.householdId || memberActionPendingId.value) return
+  if (!props.listId || memberActionPendingId.value) return
   memberActionPendingId.value = memberUserId
   // Dismiss on tap; the row's spinner carries the pending state from here.
   closeMemberMenu()
   try {
     const { error } = await db
-      .from('household_members')
+      .from('list_members')
       .update({ role })
-      .eq('household_id', props.householdId)
+      .eq('list_id', props.listId)
       .eq('user_id', memberUserId)
     if (error) {
       emit('error', userMessage(error, t('error.roleUpdateFailed')))
       return
     }
-    emit('refresh-household')
+    emit('refresh-list')
   } finally {
     memberActionPendingId.value = ''
   }
 }
 
 async function removeMember(memberUserId: string) {
-  if (!props.householdId || memberActionPendingId.value) return
+  if (!props.listId || memberActionPendingId.value) return
   // Dismiss first: on mobile the action sheet covers the confirm dialog.
   closeMemberMenu()
   const confirmed = await props.confirm({
@@ -145,15 +145,15 @@ async function removeMember(memberUserId: string) {
   memberActionPendingId.value = memberUserId
   try {
     const { error } = await db
-      .from('household_members')
+      .from('list_members')
       .delete()
-      .eq('household_id', props.householdId)
+      .eq('list_id', props.listId)
       .eq('user_id', memberUserId)
     if (error) {
       emit('error', userMessage(error, t('error.removeMemberFailed')))
       return
     }
-    emit('refresh-household')
+    emit('refresh-list')
   } finally {
     memberActionPendingId.value = ''
   }

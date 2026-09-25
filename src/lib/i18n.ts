@@ -36,7 +36,7 @@
 //   • Product names and makers. Catalog data, largely Romanian, and not ours
 //     to restate: they arrive already normalised by whatever fills the
 //     catalog.
-//   • Household names, member display names, invite codes. User data.
+//   • List names, member display names, invite codes. User data.
 //   • nativeOAuth.ts's thrown Error text. It is a plain Error, so userMessage
 //     replaces it before it can reach a screen; its whole value is being a
 //     greppable string in Sentry.
@@ -62,12 +62,12 @@
 //     runtime, which is not what a description tag is worth.
 //   • MEMBER_FALLBACK_NAME in userIdentity.ts. It looks like display copy and
 //     is not: the same string is the profiles column default and what
-//     buy_items() and join_household_with_code() write in 003/005, so it has
+//     buy_items() and join_list_with_code() write in 003/005, so it has
 //     to read the same to every member's device. memberDisplayName() beside it
 //     IS translated, and the comment there marks exactly where the two part.
 //   • The localeCompare(…, 'en') pins in productSuggestions, productRecents,
 //     purchaseHistory and HomeView. Sorting by the reader's language would
-//     order one household's list differently on two phones; the pin is what
+//     order one list differently on two phones; the pin is what
 //     makes "same order everywhere" true. They are tie-breakers over catalog
 //     data, so no translated word is involved either way.
 
@@ -384,7 +384,7 @@ export function tn(key: PluralKey, n: number, params: MessageParams = {}): strin
  * The split happens on the catalog template and the fragments are interpolated
  * afterwards, which is the whole reason this takes a key rather than a finished
  * string. Interpolating first would let a bracket inside a value decide where
- * the accent lands — a household named `Home]s` would cut the bolded run short.
+ * the accent lands — a list named `Home]s` would cut the bolded run short.
  * Only the translator's own brackets can be seen from here.
  *
  * No marker returns the whole string as the lead, so a translator who drops

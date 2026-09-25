@@ -21,7 +21,7 @@ function insertMutation(id, overrides = {}) {
   return {
     kind: 'insert',
     id,
-    row: { id, household_id: 'fam-1', name: 'Milk', quantity: 1, ...overrides },
+    row: { id, list_id: 'fam-1', name: 'Milk', quantity: 1, ...overrides },
   }
 }
 
@@ -424,7 +424,7 @@ describe('rate-limited writes', () => {
   })
 })
 
-// ─── upgrading across the families → households rename ───────────────────────
+// ─── upgrading across the families → households rename ───────────────────
 // A queued insert carries the literal row it will POST. One enqueued by a
 // pre-rename build says `family_id`, which is now a column that does not exist,
 // so the replay would be rejected permanently — and this queue drops permanent
@@ -437,14 +437,14 @@ describe('legacy pre-rename queue rows', () => {
     storage.setItem(KEY, JSON.stringify({ version: 1, userId: USER, mutations }))
   }
 
-  it('rewrites family_id to household_id on a queued insert', () => {
+  it('rewrites family_id to list_id on a queued insert', () => {
     const storage = makeStorage()
     writeLegacyQueue(storage, [
       { kind: 'insert', id: 'i1', row: { id: 'i1', family_id: 'fam-1', name: 'Lapte', quantity: 2 } },
     ])
 
     const [mutation] = loadOfflineQueue(storage, USER)
-    expect(mutation.row.household_id).toBe('fam-1')
+    expect(mutation.row.list_id).toBe('fam-1')
     expect(mutation.row).not.toHaveProperty('family_id')
     // Everything else about the row survives untouched.
     expect(mutation.row.name).toBe('Lapte')
@@ -456,8 +456,24 @@ describe('legacy pre-rename queue rows', () => {
     writeLegacyQueue(storage, [insertMutation('i1')])
 
     const [mutation] = loadOfflineQueue(storage, USER)
-    expect(mutation.row.household_id).toBe('fam-1')
+    expect(mutation.row.list_id).toBe('fam-1')
     expect(mutation.row).not.toHaveProperty('family_id')
+  })
+
+  // The households→lists rename left one more legacy field behind: a row
+  // queued between that rename and this one says `household_id`, not
+  // `family_id` or `list_id`.
+  it('rewrites household_id to list_id on a queued insert', () => {
+    const storage = makeStorage()
+    writeLegacyQueue(storage, [
+      { kind: 'insert', id: 'i1', row: { id: 'i1', household_id: 'fam-1', name: 'Lapte', quantity: 2 } },
+    ])
+
+    const [mutation] = loadOfflineQueue(storage, USER)
+    expect(mutation.row.list_id).toBe('fam-1')
+    expect(mutation.row).not.toHaveProperty('household_id')
+    expect(mutation.row.name).toBe('Lapte')
+    expect(mutation.row.quantity).toBe(2)
   })
 
   it('does not invent a row key on updates and deletes', () => {
@@ -484,7 +500,7 @@ describe('legacy pre-rename queue rows', () => {
     const result = await flushOfflineQueue(storage, USER, db)
     expect(result).toEqual({ flushed: 1, failed: 0, interrupted: false })
     // What actually reaches the server carries the new column name.
-    expect(db.calls[0].payload.household_id).toBe('fam-1')
+    expect(db.calls[0].payload.list_id).toBe('fam-1')
     expect(db.calls[0].payload).not.toHaveProperty('family_id')
   })
 

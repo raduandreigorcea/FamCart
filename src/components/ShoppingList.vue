@@ -7,7 +7,7 @@ import { getProductEmoji } from '../lib/productEmoji'
 import { memberDisplayName } from '../lib/userIdentity'
 import { productKey } from '../lib/productSearch'
 import { buildListEntries, type ListSort } from '../lib/listSections'
-import type { ShoppingItemRow, HouseholdMemberProfile } from '../lib/householdRealtime'
+import type { ShoppingItemRow, ListMemberProfile } from '../lib/listRealtime'
 import type { ProductSuggestion } from '../lib/productSearch'
 import { shopLabel, type ShopMap } from '../lib/shopBadges'
 import { t, tn } from '../lib/i18n'
@@ -45,26 +45,26 @@ const props = defineProps({
     type: Map as PropType<ShopMap>,
     default: () => new Map(),
   },
-  // Map<user_id, { display_name, image_url }> — the household roster, used to
+  // Map<user_id, { display_name, image_url }> — the list roster, used to
   // resolve each row's author avatar/name from item.added_by at render time.
   memberProfiles: {
-    type: Map as PropType<Map<string, HouseholdMemberProfile>>,
+    type: Map as PropType<Map<string, ListMemberProfile>>,
     default: () => new Map(),
   },
   // Rows another member just added, for a brief highlight as they arrive.
   freshIds: { type: Object as PropType<ReadonlySet<string>>, default: () => new Set() },
   loading: { type: Boolean, default: false },
   showEmpty: { type: Boolean, default: false },
-  // Whether this household has ever bought anything. An empty list means two
+  // Whether this list has ever bought anything. An empty list means two
   // different things either side of that, and only one of them is a list
   // waiting to be started.
   hasShopped: { type: Boolean, default: false },
   // The regulars, [{ name, maker }], offered as one-tap adds on the empty
-  // list. Empty for a household with no history, which then gets the words alone.
+  // list. Empty for a list with no history, which then gets the words alone.
   suggestedProducts: { type: Array as PropType<ProductSuggestion[]>, default: () => [] },
   // The regulars are expected but have not arrived — the purchase history they
   // are ranked from is still in flight. Distinct from having none: one is a gap
-  // to hold open, the other is a household with nothing to offer.
+  // to hold open, the other is a list with nothing to offer.
   suggestedProductsLoading: { type: Boolean, default: false },
 })
 
@@ -309,7 +309,7 @@ function finishCheckout(ids: string[]) {
 
 onBeforeUnmount(() => {
   // Flushed BEFORE the timers are cleared, not after. Unmounting mid-drain (a
-  // route change, a household switch tearing the list down) used to drop the
+  // route change, a list switch tearing the list down) used to drop the
   // checkout on the floor: the timer died with the component and the rows
   // stayed checked in the database, having told the user they were bought. The
   // confirmation already happened, so it is flushed here.
@@ -591,7 +591,7 @@ const labelText = computed(() =>
   <div v-if="checkedItems.length && !loading" class="buy-bar-spacer" aria-hidden="true"></div>
 
   <!-- An empty grocery list is usually a finished one, not a broken one: for a
-       household that shops, this screen is what checking out leaves behind. And
+       list that shops, this screen is what checking out leaves behind. And
        the thing they are most likely to want from it is not a message — it is
        the next list, which for groceries is largely the same as the last one.
        So the regulars are here as one tap each, and the screen is a way to

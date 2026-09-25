@@ -2,7 +2,7 @@
 //
 // The language step is the first thing a brand-new account sees, and every rule
 // about when it appears is a boolean that reads the same whether it is right or
-// wrong. Three of them regress silently: asking again on the second household
+// wrong. Three of them regress silently: asking again on the second list
 // (the user already answered), asking again after somebody deliberately chose
 // English (a real answer that looks like an unset key), and never asking at all
 // because the seed ran before Clerk supplied a user id.
@@ -12,7 +12,7 @@
 // and nothing else in the app depends on it yet.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import HouseholdSetupView from '../src/views/HouseholdSetupView.vue'
+import ListSetupView from '../src/views/ListSetupView.vue'
 import LanguagePicker from '../src/components/LanguagePicker.vue'
 import { createFakeDb } from './support/fakeSupabase.js'
 import { LOCALE_DEVICE_KEY, LOCALE_PREFIX } from '../src/lib/locale'
@@ -56,7 +56,7 @@ function mountSetup() {
   // and every branch of this view — language, welcome, picker, both forms —
   // lives inside AppCard's default slot, so a plain shallow mount renders an
   // empty card and finds nothing.
-  const w = mount(HouseholdSetupView, {
+  const w = mount(ListSetupView, {
     shallow: true,
     global: { stubs: { AppCard: false } },
   })
@@ -68,7 +68,7 @@ const picker = (w) => w.findComponent(LanguagePicker)
 
 beforeEach(async () => {
   mocks.db = createFakeDb()
-  mocks.db.handlers['households.select'] = () => ({ data: null, error: null })
+  mocks.db.handlers['lists.select'] = () => ({ data: null, error: null })
   mocks.userId = 'user-1'
   mocks.query = {}
   localStorage.clear()
@@ -120,7 +120,7 @@ describe('the first-run language step', () => {
     expect(picker(w).exists()).toBe(true)
   })
 
-  it('is skipped entirely when adding a second household', async () => {
+  it('is skipped entirely when adding a second list', async () => {
     // ?add=1 comes from the account dialog. Whoever gets there answered this
     // question the first time round.
     mocks.query = { add: '1' }
@@ -145,7 +145,7 @@ describe('choosing a language', () => {
   // 'confirm' event directly rather than clicking a tile then a button — the
   // preview-before-apply logic that makes that safe belongs to LanguagePicker
   // and is pinned in test/languagePicker.component.test.js. What this file
-  // owns is that HouseholdSetupView listens for 'confirm', not the earlier
+  // owns is that ListSetupView listens for 'confirm', not the earlier
   // 'select', and does the right thing once it fires.
   it('records it under both the account and the device', async () => {
     const w = mountSetup()
@@ -168,7 +168,7 @@ describe('choosing a language', () => {
     expect(picker(w).exists()).toBe(false)
     // The welcome hero behind it re-rendered from the swapped catalog rather
     // than waiting for a reload.
-    expect(w.text()).toContain('gospodăria')
+    expect(w.text()).toContain('O singură listă')
   })
 
   it('passes the boot-resolved locale as current', async () => {

@@ -14,23 +14,23 @@ import AddItemForm from '../components/AddItemForm.vue'
 import BarcodeScannerModal from '../components/BarcodeScannerModal.vue'
 import OnboardingTour from '../components/OnboardingTour.vue'
 import UpdateAvailableModal from '../components/UpdateAvailableModal.vue'
-import { useHouseholdRealtime } from '../lib/householdRealtime'
+import { useListRealtime } from '../lib/listRealtime'
 import { useProductSuggestions } from '../lib/productSuggestions'
 import { deviceTimeZone, resolveRegion } from '../lib/region'
 import type { ProductSuggestion } from '../lib/productSearch'
-import type { ShoppingItemRow } from '../lib/householdRealtime'
+import type { ShoppingItemRow } from '../lib/listRealtime'
 import { useShoppingListActions, type AddedProduct } from '../lib/shoppingListActions'
 import { useBarcodeScanning } from '../lib/useBarcodeScanning'
 import { refreshOwnProfile } from '../lib/profile'
 import { cleanAuthCallbackUrl } from '../lib/authCallbackUrl'
 import {
-  clearHouseholdSnapshot,
-  loadActiveHouseholdId,
-  saveActiveHouseholdId,
-  clearActiveHouseholdId,
-} from '../lib/householdCache'
-import { useHouseholdSnapshot } from '../lib/useHouseholdSnapshot'
-import { useHousehold } from '../lib/useHousehold'
+  clearListSnapshot,
+  loadActiveListId,
+  saveActiveListId,
+  clearActiveListId,
+} from '../lib/listCache'
+import { useListSnapshot } from '../lib/useListSnapshot'
+import { useList } from '../lib/useList'
 import { isOfflineError } from '../lib/offlineQueue'
 import { identifyUser } from '../lib/errorReporting'
 // isCurrentlyOffline is the app's one answer to "are we offline", handed to
@@ -96,19 +96,19 @@ watch(listSort, (value) => {
 // shops and nothing can set this.
 const listShop = ref<string | null>(null)
 const {
-  households,
-  householdId,
-  householdName,
-  householdInviteCode,
-  householdOwnerId,
-  householdItemLimit,
-  householdEmoji,
-  householdMembers,
+  lists,
+  listId,
+  listName,
+  listInviteCode,
+  listOwnerId,
+  listItemLimit,
+  listEmoji,
+  listMembers,
   memberProfileMap,
-  loadHouseholdHeader,
-  loadHouseholds,
-  refreshHouseholdAfterSettingsChange,
-} = useHousehold({ db, userId })
+  loadListHeader,
+  loadLists,
+  refreshListAfterSettingsChange,
+} = useList({ db, userId })
 const newItem = ref('')
 // What one add puts on the list. No longer picked before the product it counts:
 // the add form got you to name a number before you had named the thing, and then
@@ -116,10 +116,10 @@ const newItem = ref('')
 // where a quantity is set — so this stays 1, and addItem's merge (same product
 // again sums the quantities) is what turns two taps into two.
 const newQty = ref(1)
-// Everything behind the search box: the catalog query, this household's purchase
+// Everything behind the search box: the catalog query, this list's purchase
 // habits (which rank it), and the regulars offered before anything is typed.
-// householdProductStats comes back out because the empty state reads it too — the
-// same numbers answer "what does this household buy" and "have they ever shopped".
+// listProductStats comes back out because the empty state reads it too — the
+// same numbers answer "what does this list buy" and "have they ever shopped".
 const {
   suggestions,
   suggestionsLoading,
@@ -130,10 +130,10 @@ const {
   searchShop,
   setSearchShop,
   shopOptions,
-  householdProductStats,
+  listProductStats,
   productStatsLoaded,
-  loadHouseholdProductStats,
-  resetForHousehold,
+  loadListProductStats,
+  resetForList,
   recentProducts,
   restartProducts,
   lookupBarcode,
@@ -144,7 +144,7 @@ const {
   clearSuggestions,
 } = useProductSuggestions({
   db,
-  householdId,
+  listId,
   items,
   query: newItem,
   isOffline: isCurrentlyOffline,
@@ -155,7 +155,7 @@ const {
   region,
   locale: () => getLocale(),
 })
-// A checkout that just succeeded is proof this household has shopped, available
+// A checkout that just succeeded is proof this list has shopped, available
 // immediately rather than after the stats refetch lands.
 const boughtThisSession = ref(false)
 const loadError = ref('')
@@ -197,10 +197,10 @@ const {
 // Settings → About runs the same check on demand; see updateCheckKey.
 provide(updateCheckKey, checkForUpdateNow)
 const hasInitialized = ref(false)
-// True while switchHousehold is tearing down the old household and loading the new one.
+// True while switchList is tearing down the old list and loading the new one.
 // Drives the skeleton (instead of the "no items" empty state) so a switch never
-// flashes the new household as empty.
-const switchingHousehold = ref(false)
+// flashes the new list as empty.
+const switchingList = ref(false)
 
 // Every write the list can make, with the optimistic bookkeeping around them.
 // It owns the in-flight write set and the offline-queue flush, because both
@@ -221,9 +221,9 @@ const {
 } = useShoppingListActions({
   db,
   items,
-  householdId,
+  listId,
   userId: effectiveUserId,
-  itemLimit: householdItemLimit,
+  itemLimit: listItemLimit,
   isOffline: isCurrentlyOffline,
   draftName: newItem,
   draftQuantity: newQty,
@@ -237,32 +237,32 @@ const {
     boughtThisSession.value = true
     // The checkout just became history, which is the ranking signal — fold it in
     // so what was bought ranks higher on the very next keystroke.
-    void loadHouseholdProductStats()
+    void loadListProductStats()
   },
 })
 
 // Realtime sync (channels, reconnects, watchdog) lives in the composable; it
 // registers its own lifecycle listeners and calls back into the loaders below.
-const { realtimeHealthy, setupRealtimeSubscriptions, cleanupRealtimeSubscriptions } = useHouseholdRealtime({
+const { realtimeHealthy, setupRealtimeSubscriptions, cleanupRealtimeSubscriptions } = useListRealtime({
   db,
-  householdId,
+  listId,
   hasInitialized,
   items,
-  householdMembers,
+  listMembers,
   loadItems,
-  loadHouseholdHeader,
-  onHouseholdDeleted: () => void reconcileActiveHousehold(),
-  // Being removed from the active household is the same question as the active
-  // household vanishing: which household are we in now? Passed directly rather
+  loadListHeader,
+  onListDeleted: () => void reconcileActiveList(),
+  // Being removed from the active list is the same question as the active
+  // list vanishing: which list are we in now? Passed directly rather
   // than through a wrapper that only forwarded it.
-  refreshMembershipOrRedirect: reconcileActiveHousehold,
+  refreshMembershipOrRedirect: reconcileActiveList,
   // A realtime UPDATE must not clobber a row whose own write is still in flight
   // (its authoritative echo is still coming) — same guard as loadItems.
   hasPendingWrite: (id) => pendingItemWrites.has(id),
 })
 
 const checkedCount = computed(() => items.value.filter((i) => i.checked).length)
-// The bar under the household name fills by quantity, not rows; see AppNavBar.
+// The bar under the list name fills by quantity, not rows; see AppNavBar.
 const checkedUnits = computed(() => sumCheckedQuantities(items.value))
 const totalUnits = computed(() => checkedUnits.value + sumActiveQuantities(items.value))
 
@@ -272,7 +272,7 @@ const totalUnits = computed(() => checkedUnits.value + sumActiveQuantities(items
 const { freshIds, markLocal } = useRemoteChanges({
   items,
   userId: () => effectiveUserId.value,
-  active: () => hasInitialized.value && !switchingHousehold.value,
+  active: () => hasInitialized.value && !switchingList.value,
   onRemoteCheckout: (count) => showToast({ message: tn('realtime.checkedOut', count) }),
 })
 
@@ -309,27 +309,27 @@ const syncState = computed<'offline' | 'reconnecting' | ''>(() =>
 // The painted cache: what was on screen last time, read back so a returning user
 // sees their list rather than skeletons. Owns the paint, the discard and the
 // write-back, which have to name the same fields and had drifted apart while
-// they lived here — see lib/useHouseholdSnapshot.
+// they lived here — see lib/useListSnapshot.
 const {
   paintedFromCache,
-  cachedShoppedHouseholdId,
+  cachedShoppedListId,
   hasSnapshot,
   hydrate: hydrateFromCachedSnapshot,
   discard: discardCachedPaint,
   paintedFor,
   flush: flushSnapshot,
   persist: persistSnapshot,
-} = useHouseholdSnapshot({
+} = useListSnapshot({
   userId: effectiveUserId,
   hasInitialized,
   refs: {
-    householdId,
-    householdName,
-    householdInviteCode,
-    householdOwnerId,
-    householdItemLimit,
-    householdEmoji,
-    householdMembers,
+    listId,
+    listName,
+    listInviteCode,
+    listOwnerId,
+    listItemLimit,
+    listEmoji,
+    listMembers,
     items,
   },
   hasShopped: () => hasShopped.value,
@@ -340,35 +340,35 @@ const {
 const initialLoading = computed(
   () => !hasInitialized.value && !paintedFromCache.value && !items.value.length && !loadError.value,
 )
-// The skeleton shows on the first-ever load and while switching households.
-const listLoading = computed(() => initialLoading.value || switchingHousehold.value)
+// The skeleton shows on the first-ever load and while switching lists.
+const listLoading = computed(() => initialLoading.value || switchingList.value)
 
-// Whether there is a household to draw the screen around at all. Every part of
-// this screen is shaped like one: the rows of the list, the household the bar's
+// Whether there is a list to draw the screen around at all. Every part of
+// this screen is shaped like one: the rows of the list, the list the bar's
 // first slot is about, the member stack in the header at the desktop column. A skeleton of that is a promise, and there is one
 // account it cannot keep — a brand-new one, which lands here because the router
-// only pays for a membership lookup on the way to /household-setup, and is
+// only pays for a membership lookup on the way to /list-setup, and is
 // replaced by onboarding a round trip later. It saw a mock-up of a shopping
 // list it does not have, and then the sign-up flow.
 //
-// So the chrome waits for evidence rather than assuming it: a household painted
-// from the cached snapshot, or one resolved by loadHouseholds. Until then the
+// So the chrome waits for evidence rather than assuming it: a list painted
+// from the cached snapshot, or one resolved by loadLists. Until then the
 // boot splash simply continues, which is the screen the user was already
 // looking at. The only case this costs anything is a first sign-in on a new
 // device, which trades a skeleton for a splash for the length of one query.
 // An error has to reach its dialog, so it ends the wait too.
-const householdUnknown = computed(
-  () => !householdId.value && !hasInitialized.value && !loadError.value,
+const listUnknown = computed(
+  () => !listId.value && !hasInitialized.value && !loadError.value,
 )
 
-// Has this household ever bought anything? Purchase history is the record, but a
+// Has this list ever bought anything? Purchase history is the record, but a
 // checkout in this session counts before the refetch confirms it.
 const hasShopped = computed(
   () =>
-    householdProductStats.value.size > 0
+    listProductStats.value.size > 0
     || boughtThisSession.value
-    // Only while the cached answer is about the household currently on screen.
-    || (!!householdId.value && cachedShoppedHouseholdId.value === householdId.value),
+    // Only while the cached answer is about the list currently on screen.
+    || (!!listId.value && cachedShoppedListId.value === listId.value),
 )
 
 // The three error channels are independent, so more than one can be set at once
@@ -395,27 +395,27 @@ const activeError = computed(() => {
     },
   }
 })
-// The empty list has two opposite readings — "All bought" for a household that
+// The empty list has two opposite readings — "All bought" for a list that
 // shops, "Nothing here yet" for one starting out — and picking the wrong one and
 // correcting it a moment later is worse than waiting. Hold the empty state until
 // the answer is actually known. There are no rows to delay in the meantime;
 // this gates nothing but the message itself.
 //
 // But "known" is not the same as "fetched". The cached snapshot carries the answer
-// for the household it describes, and hasShopped above already trusts it — so a
+// for the list it describes, and hasShopped above already trusts it — so a
 // returning user whose list is empty has no reason to sit in front of a blank
 // column for the length of a purchase_history query. That wait was the whole
 // delay: the skeleton comes down on the first painted frame and nothing replaced
 // it until the fourth round trip of boot landed.
 //
-// Only ever unblocks the "yes" — cachedShoppedHouseholdId is set only when the
-// snapshot said this household has shopped, so the genuinely ambiguous case
+// Only ever unblocks the "yes" — cachedShoppedListId is set only when the
+// snapshot said this list has shopped, so the genuinely ambiguous case
 // still waits for the query, which is what the paragraph above asks for.
 const emptyStateAnswerable = computed(
   () =>
     productStatsLoaded.value
     || boughtThisSession.value
-    || (!!householdId.value && cachedShoppedHouseholdId.value === householdId.value),
+    || (!!listId.value && cachedShoppedListId.value === listId.value),
 )
 
 // Whether to say the list is empty at all, as opposed to which of the two
@@ -424,7 +424,7 @@ const emptyStateAnswerable = computed(
 // paintedFromCache counts alongside hasInitialized for the reason initialLoading
 // gives above: a painted snapshot is a real list, and an empty one is a real
 // answer. Waiting for hasInitialized instead meant waiting for the whole boot
-// sequence — households, header, items, realtime — with the skeleton already
+// sequence — lists, header, items, realtime — with the skeleton already
 // down, which is a blank column for as long as that takes. The stale reading can
 // be wrong (someone added something since the snapshot), and then the rows
 // arrive over it; that is the same bargain the cached list itself is already
@@ -434,13 +434,13 @@ const showEmptyState = computed(
     (hasInitialized.value || paintedFromCache.value)
     && !items.value.length
     && !loadError.value
-    && !switchingHousehold.value
+    && !switchingList.value
     && emptyStateAnswerable.value,
 )
 
 // The regulars on the empty state are ranked from purchase history, so they
 // arrive a beat after the words do now that the words come from the cache. Only
-// a household we already know has shopped gets placeholders held for it: one that
+// a list we already know has shopped gets placeholders held for it: one that
 // has not is not waiting for anything, and pills that resolve to nothing would be
 // a promise the screen cannot keep.
 const restartProductsLoading = computed(() => hasShopped.value && !productStatsLoaded.value)
@@ -467,7 +467,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', flushPendingWorkIfHidden)
   if (stopReconnect) stopReconnect()
   // No flushing here. Both kinds of deferred work are flushed by the composable
-  // that owns them -- the snapshot by useHouseholdSnapshot, the quantity writes
+  // that owns them -- the snapshot by useListSnapshot, the quantity writes
   // by useShoppingListActions -- from their own unmount hooks, which run
   // alongside this one.
 })
@@ -534,7 +534,7 @@ function addTyped(asCustom: boolean) {
 // A barcode rides along the same way when the modal was opened from a scan the
 // catalog could not answer. That is what turns naming it into a one-time cost:
 // the contributed row carries the code, so the next scan of the same package —
-// by anyone in the household — finds it.
+// by anyone in the list — finds it.
 // The barcode now arrives in the payload rather than being held here: the dialog
 // shows it as an optional field, so the user can correct a misread one, clear it,
 // or type one in for a product they never scanned at all. This only has to stop
@@ -586,14 +586,14 @@ function nameUnknownBarcode(code: string) {
 let syncInFlight = false
 let syncAgain = false
 async function handleBackOnline() {
-  if (!hasInitialized.value || !effectiveUserId.value || !householdId.value) return
+  if (!hasInitialized.value || !effectiveUserId.value || !listId.value) return
   if (syncInFlight) { syncAgain = true; return }
   syncInFlight = true
   try {
     do {
       syncAgain = false
       await ensureQueueFlushed()
-      await loadHouseholdHeader()
+      await loadListHeader()
       await loadItems()
       await setupRealtimeSubscriptions()
     } while (syncAgain)
@@ -616,7 +616,7 @@ watch([isLoaded, userId], () => {
 // cannot keep a second run out while the first is still awaiting. Both entry
 // points (onMounted and the Clerk watcher) can fire inside that window — a
 // session resolving in another tab is enough — and two overlapping runs mean
-// duplicate loadHouseholds/loadItems calls and two sets of realtime channels.
+// duplicate loadLists/loadItems calls and two sets of realtime channels.
 let initializing = false
 
 async function initializeHome() {
@@ -673,7 +673,7 @@ async function runInitializeHome() {
   // rather than the remembered hint effectiveUserId falls back to offline.
   identifyUser(userId.value)
   // Keep our profile row (name + Clerk avatar) current, so a changed photo shows
-  // up across every household. Best-effort and non-blocking: boot must not wait on
+  // up across every list. Best-effort and non-blocking: boot must not wait on
   // it, and the next load reconciles if it fails. Skipped when nothing changed
   // since this device last wrote it, see refreshOwnProfile.
   void refreshOwnProfile(db, userId.value, user.value, localStorage)
@@ -685,53 +685,53 @@ async function runInitializeHome() {
   sanitizeAuthCallbackUrl()
   hydrateFromCachedSnapshot()
 
-  // Fetch every household the user belongs to (the account dialog lists them),
+  // Fetch every list the user belongs to (the account dialog lists them),
   // only once Clerk has finished loading.
-  const { error: mErr } = await loadHouseholds()
+  const { error: mErr } = await loadLists()
 
   if (mErr) {
     // Offline with a cached snapshot already painted: run from local state and
     // let the reconnect handler flush queued writes and reconcile. Realtime is
     // still set up so its reconnect logic takes over once connectivity returns.
     // isOfflineError also catches the WebView case where navigator.onLine lies.
-    if (isOfflineError(mErr) && householdId.value) {
+    if (isOfflineError(mErr) && listId.value) {
       await setupRealtimeSubscriptions()
       hasInitialized.value = true
       return
     }
     loadError.value = isOfflineError(mErr)
       ? t('error.offline')
-      : t('error.loadHouseholdFailed')
+      : t('error.loadListsFailed')
     return
   }
 
-  if (!households.value.length) {
-    clearHouseholdSnapshot(localStorage, effectiveUserId.value)
-    clearActiveHouseholdId(localStorage, effectiveUserId.value)
-    router.replace('/household-setup')
+  if (!lists.value.length) {
+    clearListSnapshot(localStorage, effectiveUserId.value)
+    clearActiveListId(localStorage, effectiveUserId.value)
+    router.replace('/list-setup')
     return
   }
 
-  // Restore the last active household if it is still one we belong to, else default
+  // Restore the last active list if it is still one we belong to, else default
   // to the first; persist the choice so it survives reloads.
-  const storedActiveId = loadActiveHouseholdId(localStorage, userId.value)
-  const activeHousehold =
-    households.value.find((f) => f.id === storedActiveId) || households.value[0]!
-  householdId.value = activeHousehold.id
-  saveActiveHouseholdId(localStorage, effectiveUserId.value, activeHousehold.id)
-  // Started here, the moment householdId exists, rather than after the three
+  const storedActiveId = loadActiveListId(localStorage, userId.value)
+  const activeList =
+    lists.value.find((f) => f.id === storedActiveId) || lists.value[0]!
+  listId.value = activeList.id
+  saveActiveListId(localStorage, effectiveUserId.value, activeList.id)
+  // Started here, the moment listId exists, rather than after the three
   // awaits below. Not awaited either way — the list must paint without waiting on
   // a ranking signal, and until it lands suggestions just rank by the global
   // catalog order. But issued last it was the fourth serial round trip of boot,
   // and an empty list has nothing to say until it answers (emptyStateAnswerable).
   // Run alongside the others it is usually back before the items are.
-  void loadHouseholdProductStats()
+  void loadListProductStats()
   // Writes queued during a previous offline session land before the first
   // fetch, so the list below already reflects them. No-op when the queue is empty.
   // Through the shared single-flight guard, never flushOfflineQueue directly: two
   // flushes read the same head and send it twice.
   await ensureQueueFlushed()
-  await loadHouseholdHeader()
+  await loadListHeader()
   await loadItems()
   await setupRealtimeSubscriptions()
   hasInitialized.value = true
@@ -764,110 +764,110 @@ function sanitizeAuthCallbackUrl() {
   if (cleanedUrl) window.history.replaceState({}, '', cleanedUrl)
 }
 
-// Switch which household is active: persist the choice, tear down the old realtime
-// channels, and reload everything scoped to the new household.
-async function switchHousehold(id: string) {
-  if (!id || id === householdId.value) return
-  if (!households.value.some((f) => f.id === id)) return
-  switchingHousehold.value = true
-  // Send the old household's debounced quantity taps before its rows are
+// Switch which list is active: persist the choice, tear down the old realtime
+// channels, and reload everything scoped to the new list.
+async function switchList(id: string) {
+  if (!id || id === listId.value) return
+  if (!lists.value.some((f) => f.id === id)) return
+  switchingList.value = true
+  // Send the old list's debounced quantity taps before its rows are
   // cleared below. The flush looks each row up in the list, so run after the
   // clear (as loadItems used to) it found none and dropped the taps. It picks
   // its rows up synchronously, so it is not awaited: the switch does not wait
   // on a round trip.
   void flushQuantityWrites()
-  householdId.value = id
-  saveActiveHouseholdId(localStorage, effectiveUserId.value, id)
+  listId.value = id
+  saveActiveListId(localStorage, effectiveUserId.value, id)
   cleanupRealtimeSubscriptions()
-  // Drop the old household's data so none of it flashes under the new name.
+  // Drop the old list's data so none of it flashes under the new name.
   items.value = []
-  // The shops come from the previous household's products, so the filter could
+  // The shops come from the previous list's products, so the filter could
   // name one nothing in the new list is sold at.
   listShop.value = null
-  householdMembers.value = []
-  // Everything the suggestions composable holds about the household being left,
+  listMembers.value = []
+  // Everything the suggestions composable holds about the list being left,
   // cleared by the composable itself — it is the only thing that can see all of
-  // it. See the note on resetForHousehold.
-  resetForHousehold()
+  // it. See the note on resetForList.
+  resetForList()
   boughtThisSession.value = false
   loadError.value = ''
-  // Show the new name straight away (we already know it from the household list);
-  // only the roster is unknown until loadHouseholdHeader returns, so that's all the
+  // Show the new name straight away (we already know it from the list of lists);
+  // only the roster is unknown until loadListHeader returns, so that's all the
   // topbar skeletons.
-  const next = households.value.find((f) => f.id === id)
-  if (next) householdName.value = next.name
+  const next = lists.value.find((f) => f.id === id)
+  if (next) listName.value = next.name
   // Alongside the two fetches below rather than after them, for the reason given
-  // in runInitializeHome: the new household's empty list stays blank until this
+  // in runInitializeHome: the new list's empty list stays blank until this
   // answers, and issued last it answered a round trip after the skeleton came
   // down.
-  void loadHouseholdProductStats()
+  void loadListProductStats()
   try {
-    await loadHouseholdHeader()
+    await loadListHeader()
     await loadItems()
   } finally {
     // The rows are on screen, so the skeleton has nothing left to stand in for.
     // Product stats and the realtime channel are background work; holding the
     // placeholder up behind a websocket handshake just delays the real list.
-    switchingHousehold.value = false
+    switchingList.value = false
   }
   await setupRealtimeSubscriptions()
 }
 
 // The account dialog's "join or create" action: the setup page handles both, and
-// the guard allows it while under the household cap.
-function openAddHousehold() {
-  router.push({ name: 'household-setup', query: { add: '1' } })
+// the guard allows it while under the list cap.
+function openAddList() {
+  router.push({ name: 'list-setup', query: { add: '1' } })
 }
 
-// The active household vanished (deleted, left, or we were removed): move to another
-// household we still belong to, or fall back to setup when none remain.
-async function reconcileActiveHousehold() {
-  const { error } = await loadHouseholds()
+// The active list vanished (deleted, left, or we were removed): move to another
+// list we still belong to, or fall back to setup when none remain.
+async function reconcileActiveList() {
+  const { error } = await loadLists()
   // A failed lookup (network drop, transient server error) must not be read as
   // "no membership" and eject the user — leave them where they are.
   if (error) return
-  if (households.value.some((f) => f.id === householdId.value)) return
-  if (households.value.length) {
-    await switchHousehold(households.value[0]!.id)
+  if (lists.value.some((f) => f.id === listId.value)) return
+  if (lists.value.length) {
+    await switchList(lists.value[0]!.id)
     return
   }
   cleanupRealtimeSubscriptions()
-  clearHouseholdSnapshot(localStorage, effectiveUserId.value)
-  clearActiveHouseholdId(localStorage, effectiveUserId.value)
-  router.replace('/household-setup')
+  clearListSnapshot(localStorage, effectiveUserId.value)
+  clearActiveListId(localStorage, effectiveUserId.value)
+  router.replace('/list-setup')
 }
 
 
 </script>
 
 <template>
-  <!-- Nothing here is worth showing until there is a household for it to be
-       about; see householdUnknown. -->
-  <AppSplash v-if="householdUnknown" />
+  <!-- Nothing here is worth showing until there is a list for it to be
+       about; see listUnknown. -->
+  <AppSplash v-if="listUnknown" />
   <div v-else class="dashboard">
     <AppNavBar
       layout="bar"
-      :household-id="householdId || ''"
-      :household-name="householdName"
-      :households="households"
+      :list-id="listId || ''"
+      :list-name="listName"
+      :lists="lists"
       :loading="initialLoading"
       :sync-state="syncState"
       :total-count="items.length"
       :checked-count="checkedCount"
       :total-units="totalUnits"
       :checked-units="checkedUnits"
-      :members-loading="switchingHousehold"
-      :invite-code="householdInviteCode"
-      :household-item-limit="householdItemLimit"
-      :household-emoji="householdEmoji"
-      :owner-user-id="householdOwnerId"
-      :member-profiles="householdMembers"
+      :members-loading="switchingList"
+      :invite-code="listInviteCode"
+      :list-item-limit="listItemLimit"
+      :list-emoji="listEmoji"
+      :owner-user-id="listOwnerId"
+      :member-profiles="listMembers"
       :current-user-id="effectiveUserId"
-      @refresh-household="refreshHouseholdAfterSettingsChange"
-      @switch-household="switchHousehold"
-      @add-household="openAddHousehold"
-      @household-deleted="reconcileActiveHousehold"
-      @household-left="reconcileActiveHousehold"
+      @refresh-list="refreshListAfterSettingsChange"
+      @switch-list="switchList"
+      @add-list="openAddList"
+      @list-deleted="reconcileActiveList"
+      @list-left="reconcileActiveList"
       @add-product="selectSuggestion"
       @add="searchExpanded = true"
     />
@@ -924,7 +924,7 @@ async function reconcileActiveHousehold() {
     <ConfirmModal
       :open="limitReachedPopupOpen"
       :title="t('error.limitReachedTitle')"
-      :message="t('error.limitReached', { n: householdItemLimit })"
+      :message="t('error.limitReached', { n: listItemLimit })"
       :confirm-text="t('common.gotIt')"
       :show-cancel="false"
       @confirm="closeLimitReachedPopup"
@@ -954,7 +954,7 @@ async function reconcileActiveHousehold() {
 
     <OnboardingTour
       :open="onboardingTourOpen"
-      :invite-code="householdInviteCode"
+      :invite-code="listInviteCode"
       @close="closeOnboardingTour"
     />
 

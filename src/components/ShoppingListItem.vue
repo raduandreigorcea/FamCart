@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch, type PropType } from 'vue'
 import { getProductEmoji } from '../lib/productEmoji'
 import { ITEM_QUANTITY_MAX } from '../lib/limits'
-import type { ShoppingItemRow } from '../lib/householdRealtime'
+import type { ShoppingItemRow } from '../lib/listRealtime'
 import { t } from '../lib/i18n'
 import { initialOf } from '../lib/userIdentity'
 import AppIcon from './AppIcon.vue'
@@ -33,7 +33,7 @@ const props = defineProps({
     type: Number,
     default: 0,
   },
-  // Author avatar/name, resolved live from the household roster by item.added_by —
+  // Author avatar/name, resolved live from the list roster by item.added_by —
   // the row itself no longer carries a copied name/photo.
   avatarUrl: {
     type: String,

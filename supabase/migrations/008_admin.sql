@@ -1,12 +1,12 @@
 -- ─── the admin read surface ──────────────────────────────────────────────────
--- Who is allowed to see across households, and the functions that let them.
+-- Who is allowed to see across lists, and the functions that let them.
 --
 -- WHY THIS FILE EXISTS
 --
--- Every table in this schema is scoped by household membership, and
+-- Every table in this schema is scoped by list membership, and
 -- security_events is scoped to nobody at all (RLS on, zero policies). That is
 -- the correct posture for an app where the only reader is a member, and it means
--- there is no query a client can issue that answers "how many households are
+-- there is no query a client can issue that answers "how many lists are
 -- there". The FamCart-admin dashboard needs exactly those answers.
 --
 -- Three ways to give it them, and only the third is acceptable:
@@ -19,13 +19,13 @@
 --   3. Let Postgres decide. SECURITY DEFINER functions that check an admin table
 --      before they read anything. The dashboard keeps using the ordinary
 --      publishable key and an ordinary Clerk token, and the database is the
---      authority on who gets more than their own household.
+--      authority on who gets more than their own list.
 --
 -- So: this file adds one table, one gate, and a set of read functions. The
 -- dashboard owns none of it, exactly as this app owns none of search_catalog()
 -- over in the catalog project.
 --
--- WHAT IS NOT HERE, deliberately: any function that deletes a household, removes
+-- WHAT IS NOT HERE, deliberately: any function that deletes a list, removes
 -- a member, or edits a product. The dashboard is a read surface plus the two
 -- grant/revoke writes at the foot of this file. Adding a destructive RPC here is
 -- a decision to take on its own, with its own audit entry and its own test.
@@ -93,14 +93,14 @@ revoke all on public.admin_users from anon, authenticated;
 drop function if exists public.is_admin();
 drop function if exists public.admin_guard();
 drop function if exists public.admin_user_facts();
-drop function if exists public.admin_household_facts();
+drop function if exists public.admin_list_facts();
 drop function if exists public.admin_overview(timestamptz);
 drop function if exists public.admin_activity_series(timestamptz, text);
 drop function if exists public.admin_recent_activity(integer);
 drop function if exists public.admin_list_users(text, text, text, integer, integer);
 drop function if exists public.admin_user_detail(text);
-drop function if exists public.admin_list_households(text, text, text, integer, integer);
-drop function if exists public.admin_household_detail(uuid);
+drop function if exists public.admin_lists(text, text, text, integer, integer);
+drop function if exists public.admin_list_detail(uuid);
 drop function if exists public.admin_local_products(text, text, text, integer, integer);
 drop function if exists public.admin_security_events(text, timestamptz, text, integer, integer);
 drop function if exists public.admin_event_digest(timestamptz);
@@ -111,11 +111,11 @@ drop function if exists public.admin_revoke(text);
 drop function if exists public.admin_list_admins();
 drop function if exists public.admin_top_purchases(timestamptz, integer);
 drop function if exists public.admin_catalog_misses(integer);
-drop function if exists public.admin_delete_household(uuid);
-drop function if exists public.admin_restore_household(uuid);
+drop function if exists public.admin_delete_list(uuid);
+drop function if exists public.admin_restore_list(uuid);
 drop function if exists public.admin_ban_user(text, text);
 drop function if exists public.admin_unban_user(text);
-drop function if exists public.admin_deleted_households();
+drop function if exists public.admin_deleted_lists();
 drop function if exists public.admin_banned_users();
 drop function if exists public.admin_create_product(text, text, text, integer);
 drop function if exists public.admin_update_product(uuid, text, text, text, integer);
@@ -148,7 +148,7 @@ grant execute on function public.is_admin() to authenticated;
 
 -- Every function below opens with `perform public.admin_guard()`. Raising rather
 -- than returning empty is deliberate: an empty result set and a refusal look the
--- same on a dashboard, and "there are no households" is a very different thing to
+-- same on a dashboard, and "there are no lists" is a very different thing to
 -- learn than "you may not ask".
 --
 -- 42501 is insufficient_privilege, which PostgREST maps to HTTP 403. The
@@ -194,14 +194,14 @@ revoke all on function public.admin_guard() from public, anon, authenticated;
 --                 created_at, and a profile row is written on first sign-in and
 --                 rewritten on every edit. The earliest membership join is the
 --                 better witness, so this is the earlier of that and the profile
---                 timestamp. For a user who has never joined a household and
+--                 timestamp. For a user who has never joined a list and
 --                 never edited their name, it is exactly the signup time; for
 --                 one who renamed themselves last week it is still their first
 --                 join.
 --
 --   last_active - nothing records a session either. There is no login table, so
 --                 this is the most recent thing the account is known to have
---                 DONE: added an item, checked out, joined a household, or
+--                 DONE: added an item, checked out, joined a list, or
 --                 changed their profile. A user who opened the app every day and
 --                 added nothing reads as inactive here, which is the honest
 --                 answer to the question this column can actually answer.
@@ -214,8 +214,8 @@ returns table (
   image_url          text,
   profile_updated_at timestamptz,
   banned_at          timestamptz,
-  households         bigint,
-  owned_households   bigint,
+  lists         bigint,
+  owned_lists   bigint,
   moderator_of       bigint,
   items_added        bigint,
   items_open         bigint,
@@ -239,8 +239,8 @@ as $$
     -- serialises this row wholesale with to_jsonb(f) -- adding it there would
     -- mean a second source for one fact.
     p.banned_at,
-    coalesce(m.households, 0)       as households,
-    coalesce(o.owned, 0)            as owned_households,
+    coalesce(m.lists, 0)       as lists,
+    coalesce(o.owned, 0)            as owned_lists,
     coalesce(m.moderator_of, 0)     as moderator_of,
     coalesce(i.items_added, 0)      as items_added,
     coalesce(i.items_open, 0)       as items_open,
@@ -261,34 +261,34 @@ as $$
   left join (
     select
       hm.user_id,
-      -- The COUNTS are of live households only. A withdrawn household is not a
-      -- household this dashboard knows about, so reporting an account as "in 2"
+      -- The COUNTS are of live lists only. A withdrawn list is not a
+      -- list this dashboard knows about, so reporting an account as "in 2"
       -- when one of the two cannot be opened is a number that sends whoever
       -- reads it to a not-found page. The membership row itself survives the
       -- withdrawal untouched, which is what makes a restore whole; it just
-      -- stops being counted while the household is gone.
-      count(*) filter (where hh.deleted_at is null) as households,
+      -- stops being counted while the list is gone.
+      count(*) filter (where hh.deleted_at is null) as lists,
       count(*) filter (
         where hh.deleted_at is null and hm.role in ('moderator', 'admin')
       ) as moderator_of,
       -- The DATES are not filtered. When this account first joined something,
       -- and when it last did, are facts about the account, and withdrawing a
-      -- household afterwards does not unmake them. Filtering here would move
+      -- list afterwards does not unmake them. Filtering here would move
       -- first_seen forward onto the profile write and make an old account look
       -- new -- see the first_seen caveat this function's header spells out.
       min(hm.joined_at)                                   as first_join,
       max(hm.joined_at)                                   as last_join
-    from public.household_members hm
-    join public.households hh on hh.id = hm.household_id
+    from public.list_members hm
+    join public.lists hh on hh.id = hm.list_id
     group by hm.user_id
   ) m on m.user_id = p.user_id
   left join (
-    -- Live households, for the same reason and one more: 009 made the ownership
-    -- slot itself count only live rows, so an owner whose household was
-    -- withdrawn may create another immediately. "Owns 1" beside a household
+    -- Live lists, for the same reason and one more: 009 made the ownership
+    -- slot itself count only live rows, so an owner whose list was
+    -- withdrawn may create another immediately. "Owns 1" beside a list
     -- they can no longer open would be describing a slot nobody holds.
     select hh.created_by as user_id, count(*) as owned
-    from public.households hh
+    from public.lists hh
     where hh.deleted_at is null
     group by hh.created_by
   ) o on o.user_id = p.user_id
@@ -320,11 +320,11 @@ $$;
 
 revoke all on function public.admin_user_facts() from public, anon, authenticated;
 
--- ─── per-household facts ─────────────────────────────────────────────────────
+-- ─── per-list facts ─────────────────────────────────────────────────────
 -- The same idea for the group. last_active here is the most recent thing anyone
--- in the household did, so an inactive household is one nobody has shopped in,
+-- in the list did, so an inactive list is one nobody has shopped in,
 -- rather than one nobody has opened.
-create or replace function public.admin_household_facts()
+create or replace function public.admin_list_facts()
 returns table (
   id              uuid,
   name            text,
@@ -343,7 +343,7 @@ returns table (
   checkouts       bigint,
   products_added  bigint,
   last_active     timestamptz,
-  -- Set means an admin withdrew this household. Every caller has to say what it
+  -- Set means an admin withdrew this list. Every caller has to say what it
   -- does about that; the note at the foot of this function explains why.
   deleted_at      timestamptz
 )
@@ -376,50 +376,50 @@ as $$
       coalesce(h.last_purchase, '-infinity'::timestamptz)
     ) as last_active,
     hh.deleted_at
-  from public.households hh
+  from public.lists hh
   left join public.profiles owner on owner.user_id = hh.created_by
   left join (
     select
-      hm.household_id,
+      hm.list_id,
       count(*)                                                  as members,
       count(*) filter (where hm.role in ('moderator', 'admin')) as moderators,
       max(hm.joined_at)                                         as last_join
-    from public.household_members hm
-    group by hm.household_id
-  ) m on m.household_id = hh.id
+    from public.list_members hm
+    group by hm.list_id
+  ) m on m.list_id = hh.id
   left join (
     select
-      si.household_id,
+      si.list_id,
       count(*)                               as items_total,
       count(*) filter (where not si.checked) as items_open,
       max(si.created_at)                     as last_item
     from public.shopping_list_items si
-    group by si.household_id
-  ) i on i.household_id = hh.id
+    group by si.list_id
+  ) i on i.list_id = hh.id
   left join (
     select
-      ph.household_id,
+      ph.list_id,
       count(*)                       as purchases,
       count(distinct ph.checkout_id) as checkouts,
       max(ph.purchased_at)           as last_purchase
     from public.purchase_history ph
-    group by ph.household_id
-  ) h on h.household_id = hh.id
+    group by ph.list_id
+  ) h on h.list_id = hh.id
   left join (
-    select pc.household_id, count(*) as products_added
+    select pc.list_id, count(*) as products_added
     from public.product_catalog pc
-    where pc.household_id is not null
-    group by pc.household_id
-  ) c on c.household_id = hh.id
+    where pc.list_id is not null
+    group by pc.list_id
+  ) c on c.list_id = hh.id
   -- No filter here, and that is a reversal from how this read before.
   --
-  -- Withdrawn households were dropped in this one place, so that admin_overview,
-  -- admin_list_households and admin_household_detail all inherited it. That is
-  -- right for the first two and wrong for the third: a withdrawn household is
+  -- Withdrawn lists were dropped in this one place, so that admin_overview,
+  -- admin_lists and admin_list_detail all inherited it. That is
+  -- right for the first two and wrong for the third: a withdrawn list is
   -- precisely the thing an operator needs to OPEN -- from a member's profile, or
   -- from the Bans page that lists it -- in order to decide whether to restore
   -- it. Inheriting the filter turned every one of those links into "No such
-  -- household. It may have been deleted", which is the dashboard refusing to
+  -- list. It may have been deleted", which is the dashboard refusing to
   -- show a row it is offering to restore on the next page along.
   --
   -- So the fact rides along as deleted_at and each caller decides for itself:
@@ -427,15 +427,15 @@ as $$
   --
   -- What has NOT changed is where that decision cannot live. Every admin_*
   -- function is security definer and bypasses RLS by design, so
-  -- active_household_ids() and the ten policies it feeds govern what the APP's
+  -- active_list_ids() and the ten policies it feeds govern what the APP's
   -- users see and have no bearing whatsoever on what this dashboard reads. Two
   -- separate doors, and closing one taught me nothing about the other: the
-  -- first end-to-end test deleted a household, watched it vanish from the app,
+  -- first end-to-end test deleted a list, watched it vanish from the app,
   -- and found it still sitting in the admin list.
   ;
 $$;
 
-revoke all on function public.admin_household_facts() from public, anon, authenticated;
+revoke all on function public.admin_list_facts() from public, anon, authenticated;
 
 -- ─── the overview ────────────────────────────────────────────────────────────
 -- Everything the landing screen needs in one round trip, because eleven separate
@@ -444,7 +444,7 @@ revoke all on function public.admin_household_facts() from public, anon, authent
 --
 -- `window` counts things that HAPPENED in the range. `totals` counts what exists
 -- now and ignores the range entirely, which is why a 24h view still shows the
--- real number of households rather than a number that looks like a collapse.
+-- real number of lists rather than a number that looks like a collapse.
 create or replace function public.admin_overview(p_since timestamptz default null)
 returns jsonb
 language plpgsql
@@ -463,8 +463,8 @@ begin
     'since',        v_since,
     'totals', jsonb_build_object(
       'users',            (select count(*) from public.profiles),
-      'households',       (select count(*) from public.households),
-      'memberships',      (select count(*) from public.household_members),
+      'lists',       (select count(*) from public.lists),
+      'memberships',      (select count(*) from public.list_members),
       'list_items',       (select count(*) from public.shopping_list_items),
       'list_items_open',  (select count(*) from public.shopping_list_items where not checked),
       'purchases',        (select count(*) from public.purchase_history),
@@ -473,7 +473,7 @@ begin
       'community_products',
         (select count(*) from public.product_catalog where source = 'community'),
       'promoted_products',
-        (select count(*) from public.product_catalog where household_id is null),
+        (select count(*) from public.product_catalog where list_id is null),
       'security_events',  (select count(*) from public.security_events)
     ),
     'window', jsonb_build_object(
@@ -482,10 +482,10 @@ begin
         (select count(*) from public.admin_user_facts() f where f.first_seen >= v_since),
       'active_users',
         (select count(*) from public.admin_user_facts() f where f.last_active >= v_since),
-      'new_households',
-        (select count(*) from public.households where created_at >= v_since),
+      'new_lists',
+        (select count(*) from public.lists where created_at >= v_since),
       'members_joined',
-        (select count(*) from public.household_members where joined_at >= v_since),
+        (select count(*) from public.list_members where joined_at >= v_since),
       'items_added',
         (select count(*) from public.shopping_list_items where created_at >= v_since),
       'items_checked',
@@ -501,24 +501,24 @@ begin
       'security_events',
         (select count(*) from public.security_events where created_at >= v_since)
     ),
-    -- The households and the list are small; this is the shape of them. Feeds the
+    -- The lists and the list are small; this is the shape of them. Feeds the
     -- two distribution strips on the overview without a second round trip.
     'distribution', jsonb_build_object(
-      'household_sizes', coalesce((
+      'list_sizes', coalesce((
         select jsonb_agg(t order by t.members)
         from (
-          select f.members, count(*) as households
-          from public.admin_household_facts() f
+          select f.members, count(*) as lists
+          from public.admin_list_facts() f
           where f.deleted_at is null
           group by f.members
         ) t
       ), '[]'::jsonb),
       'members_per_user', coalesce((
-        select jsonb_agg(t order by t.households)
+        select jsonb_agg(t order by t.lists)
         from (
-          select f.households, count(*) as users
+          select f.lists, count(*) as users
           from public.admin_user_facts() f
-          group by f.households
+          group by f.lists
         ) t
       ), '[]'::jsonb)
     )
@@ -546,7 +546,7 @@ create or replace function public.admin_activity_series(
 )
 returns table (
   bucket         timestamptz,
-  new_households bigint,
+  new_lists bigint,
   members_joined bigint,
   items_added    bigint,
   items_checked  bigint,
@@ -583,7 +583,7 @@ begin
   )
   select
     s.bucket,
-    coalesce(hh.n, 0) as new_households,
+    coalesce(hh.n, 0) as new_lists,
     coalesce(hm.n, 0) as members_joined,
     coalesce(ia.n, 0) as items_added,
     coalesce(ic.n, 0) as items_checked,
@@ -593,11 +593,11 @@ begin
   from spine s
   left join (
     select date_trunc(p_bucket, created_at) as b, count(*) as n
-    from public.households where created_at >= v_since group by 1
+    from public.lists where created_at >= v_since group by 1
   ) hh on hh.b = s.bucket
   left join (
     select date_trunc(p_bucket, joined_at) as b, count(*) as n
-    from public.household_members where joined_at >= v_since group by 1
+    from public.list_members where joined_at >= v_since group by 1
   ) hm on hm.b = s.bucket
   left join (
     select date_trunc(p_bucket, created_at) as b, count(*) as n
@@ -628,7 +628,7 @@ begin
       from public.purchase_history where purchased_at >= v_since
       union all
       select date_trunc(p_bucket, joined_at), user_id
-      from public.household_members where joined_at >= v_since
+      from public.list_members where joined_at >= v_since
     ) acts
     group by b
   ) au on au.b = s.bucket
@@ -650,8 +650,8 @@ returns table (
   actor          text,
   actor_name     text,
   actor_image_url text,
-  household_id   uuid,
-  household_name text,
+  list_id   uuid,
+  list_name text,
   subject        text,
   detail         jsonb
 )
@@ -666,26 +666,26 @@ begin
   return query
   with events as (
     select
-      'household_created'::text as kind,
+      'list_created'::text as kind,
       hh.created_at             as occurred_at,
       hh.created_by             as actor,
-      hh.id                     as household_id,
+      hh.id                     as list_id,
       hh.name                   as subject,
       jsonb_build_object('emoji', hh.emoji) as detail
-    from public.households hh
+    from public.lists hh
 
     union all
-    select 'member_joined', hm.joined_at, hm.user_id, hm.household_id, null,
+    select 'member_joined', hm.joined_at, hm.user_id, hm.list_id, null,
            jsonb_build_object('role', hm.role)
-    from public.household_members hm
+    from public.list_members hm
 
     union all
-    select 'item_added', si.created_at, si.added_by, si.household_id, si.name,
+    select 'item_added', si.created_at, si.added_by, si.list_id, si.name,
            jsonb_build_object('quantity', si.quantity, 'maker', si.maker)
     from public.shopping_list_items si
 
     union all
-    select 'item_checked', si.checked_at, si.added_by, si.household_id, si.name,
+    select 'item_checked', si.checked_at, si.added_by, si.list_id, si.name,
            jsonb_build_object('quantity', si.quantity)
     from public.shopping_list_items si
     where si.checked_at is not null
@@ -693,19 +693,19 @@ begin
     -- One row per checkout, not per bought item. A 20-item shop is one event in
     -- a feed; twenty would bury everything else that happened that day.
     union all
-    select 'checkout', max(ph.purchased_at), ph.purchased_by, ph.household_id, null,
+    select 'checkout', max(ph.purchased_at), ph.purchased_by, ph.list_id, null,
            jsonb_build_object('items', count(*), 'checkout_id', ph.checkout_id)
     from public.purchase_history ph
-    group by ph.checkout_id, ph.purchased_by, ph.household_id
+    group by ph.checkout_id, ph.purchased_by, ph.list_id
 
     union all
-    select 'product_contributed', pc.created_at, pc.contributed_by, pc.household_id, pc.name,
+    select 'product_contributed', pc.created_at, pc.contributed_by, pc.list_id, pc.name,
            jsonb_build_object('maker', pc.maker, 'barcode', pc.barcode)
     from public.product_catalog pc
     where pc.contributed_by is not null
 
     union all
-    select 'security_event', se.created_at, se.actor, se.household_id, se.kind, se.detail
+    select 'security_event', se.created_at, se.actor, se.list_id, se.kind, se.detail
     from public.security_events se
   )
   select
@@ -714,13 +714,13 @@ begin
     e.actor,
     p.display_name as actor_name,
     p.image_url    as actor_image_url,
-    e.household_id,
-    hh.name        as household_name,
+    e.list_id,
+    hh.name        as list_name,
     e.subject,
     e.detail
   from events e
   left join public.profiles p on p.user_id = e.actor
-  left join public.households hh on hh.id = e.household_id
+  left join public.lists hh on hh.id = e.list_id
   order by e.occurred_at desc
   limit greatest(coalesce(p_limit, 40), 1);
 end;
@@ -752,8 +752,8 @@ returns table (
   user_id            text,
   display_name       text,
   image_url          text,
-  households         bigint,
-  owned_households   bigint,
+  lists         bigint,
+  owned_lists   bigint,
   moderator_of       bigint,
   items_added        bigint,
   items_open         bigint,
@@ -788,7 +788,7 @@ begin
   )
   select
     m.user_id, m.display_name, m.image_url,
-    m.households, m.owned_households, m.moderator_of,
+    m.lists, m.owned_lists, m.moderator_of,
     m.items_added, m.items_open, m.purchases, m.products_added,
     m.first_seen, m.last_active, m.is_admin,
     count(*) over () as total_count
@@ -796,8 +796,8 @@ begin
   order by
     case when v_sort = 'display_name' and v_dir = 'asc'  then lower(m.display_name) end asc  nulls last,
     case when v_sort = 'display_name' and v_dir = 'desc' then lower(m.display_name) end desc nulls last,
-    case when v_sort = 'households'   and v_dir = 'asc'  then m.households   end asc  nulls last,
-    case when v_sort = 'households'   and v_dir = 'desc' then m.households   end desc nulls last,
+    case when v_sort = 'lists'   and v_dir = 'asc'  then m.lists   end asc  nulls last,
+    case when v_sort = 'lists'   and v_dir = 'desc' then m.lists   end desc nulls last,
     case when v_sort = 'items_added'  and v_dir = 'asc'  then m.items_added  end asc  nulls last,
     case when v_sort = 'items_added'  and v_dir = 'desc' then m.items_added  end desc nulls last,
     case when v_sort = 'purchases'    and v_dir = 'asc'  then m.purchases    end asc  nulls last,
@@ -862,7 +862,7 @@ begin
       order by e.created_at desc
       limit 1
     ) end,
-    'households', coalesce((
+    'lists', coalesce((
       select jsonb_agg(jsonb_build_object(
         'id',          hh.id,
         'name',        hh.name,
@@ -870,17 +870,17 @@ begin
         'role',        hm.role,
         'is_owner',    hh.created_by = p_user_id,
         'joined_at',   hm.joined_at,
-        'members',     (select count(*) from public.household_members x where x.household_id = hh.id),
+        'members',     (select count(*) from public.list_members x where x.list_id = hh.id),
         'items_open',  (select count(*) from public.shopping_list_items x
-                          where x.household_id = hh.id and not x.checked),
-        -- Withdrawn households stay in this list rather than being filtered out
-        -- of it. The membership is real, the profile's household COUNT above
+                          where x.list_id = hh.id and not x.checked),
+        -- Withdrawn lists stay in this list rather than being filtered out
+        -- of it. The membership is real, the profile's list COUNT above
         -- already leaves it out, and hiding the row would take away the only
-        -- route to the household from the person it belonged to.
+        -- route to the list from the person it belonged to.
         'deleted_at',  hh.deleted_at
       ) order by hh.deleted_at is not null, hm.joined_at)
-      from public.household_members hm
-      join public.households hh on hh.id = hm.household_id
+      from public.list_members hm
+      join public.lists hh on hh.id = hm.list_id
       where hm.user_id = p_user_id
     ), '[]'::jsonb),
     -- What this account actually buys, which is the closest thing to a taste
@@ -900,7 +900,7 @@ begin
     'recent_events', coalesce((
       select jsonb_agg(t order by t.created_at desc)
       from (
-        select se.created_at, se.kind, se.household_id, se.detail
+        select se.created_at, se.kind, se.list_id, se.detail
         from public.security_events se
         where se.actor = p_user_id
         order by se.created_at desc
@@ -919,8 +919,8 @@ $$;
 revoke all on function public.admin_user_detail(text) from public, anon;
 grant execute on function public.admin_user_detail(text) to authenticated;
 
--- ─── the household list ──────────────────────────────────────────────────────
-create or replace function public.admin_list_households(
+-- ─── the lists ────────────────────────────────────────────────────────────────
+create or replace function public.admin_lists(
   p_query  text    default null,
   p_sort   text    default 'last_active',
   p_dir    text    default 'desc',
@@ -960,7 +960,7 @@ begin
 
   return query
   with matched as (
-    select f.* from public.admin_household_facts() f
+    select f.* from public.admin_list_facts() f
     where f.deleted_at is null
       and (p_query is null
         or btrim(p_query) = ''
@@ -994,11 +994,11 @@ begin
 end;
 $$;
 
-revoke all on function public.admin_list_households(text, text, text, integer, integer) from public, anon;
-grant execute on function public.admin_list_households(text, text, text, integer, integer) to authenticated;
+revoke all on function public.admin_lists(text, text, text, integer, integer) from public, anon;
+grant execute on function public.admin_lists(text, text, text, integer, integer) to authenticated;
 
--- ─── one household ───────────────────────────────────────────────────────────
-create or replace function public.admin_household_detail(p_household_id uuid)
+-- ─── one list ───────────────────────────────────────────────────────────
+create or replace function public.admin_list_detail(p_list_id uuid)
 returns jsonb
 language plpgsql
 stable
@@ -1011,7 +1011,7 @@ begin
   perform public.admin_guard();
 
   select jsonb_build_object(
-    'household', to_jsonb(f),
+    'list', to_jsonb(f),
     'members', coalesce((
       select jsonb_agg(jsonb_build_object(
         'user_id',      hm.user_id,
@@ -1021,17 +1021,20 @@ begin
         'is_owner',     hm.user_id = f.created_by,
         'joined_at',    hm.joined_at,
         'items_open',   (select count(*) from public.shopping_list_items x
-                           where x.household_id = f.id and x.added_by = hm.user_id and not x.checked),
+                           where x.list_id = f.id and x.added_by = hm.user_id and not x.checked),
         'items_added',  (select count(*) from public.shopping_list_items x
-                           where x.household_id = f.id and x.added_by = hm.user_id),
+                           where x.list_id = f.id and x.added_by = hm.user_id),
         'purchases',    (select count(*) from public.purchase_history x
-                           where x.household_id = f.id and x.purchased_by = hm.user_id)
+                           where x.list_id = f.id and x.purchased_by = hm.user_id)
       ) order by (hm.user_id = f.created_by) desc, hm.joined_at)
-      from public.household_members hm
+      from public.list_members hm
       left join public.profiles p on p.user_id = hm.user_id
-      where hm.household_id = f.id
+      where hm.list_id = f.id
     ), '[]'::jsonb),
-    'list', coalesce((
+    -- The items on the list. This key was `list` while the entity was called a
+    -- household; after the rename that collided with the `list` key above, and
+    -- jsonb keeps the last duplicate, so the entity silently vanished.
+    'items', coalesce((
       select jsonb_agg(jsonb_build_object(
         'id',         si.id,
         'name',       si.name,
@@ -1046,7 +1049,7 @@ begin
       ) order by si.checked, si.created_at desc)
       from public.shopping_list_items si
       left join public.profiles p on p.user_id = si.added_by
-      where si.household_id = f.id
+      where si.list_id = f.id
     ), '[]'::jsonb),
     'top_products', coalesce((
       select jsonb_agg(t order by t.times desc, t.name)
@@ -1054,7 +1057,7 @@ begin
         select ph.name, ph.maker, count(*) as times, sum(ph.quantity) as quantity,
                max(ph.purchased_at) as last_bought
         from public.purchase_history ph
-        where ph.household_id = f.id
+        where ph.list_id = f.id
         group by ph.name, ph.maker
         order by count(*) desc, ph.name
         limit 15
@@ -1070,7 +1073,7 @@ begin
       ) order by pc.created_at desc)
       from public.product_catalog pc
       left join public.profiles p on p.user_id = pc.contributed_by
-      where pc.household_id = f.id
+      where pc.list_id = f.id
     ), '[]'::jsonb),
     'recent_checkouts', coalesce((
       select jsonb_agg(t order by t.purchased_at desc)
@@ -1082,7 +1085,7 @@ begin
                count(*) as items, sum(ph.quantity) as quantity
         from public.purchase_history ph
         left join public.profiles p on p.user_id = ph.purchased_by
-        where ph.household_id = f.id
+        where ph.list_id = f.id
         group by ph.checkout_id, ph.purchased_by
         order by max(ph.purchased_at) desc
         limit 15
@@ -1090,20 +1093,20 @@ begin
     ), '[]'::jsonb)
   )
   into v_result
-  from public.admin_household_facts() f
-  where f.id = p_household_id;
+  from public.admin_list_facts() f
+  where f.id = p_list_id;
 
   return v_result;
 end;
 $$;
 
-revoke all on function public.admin_household_detail(uuid) from public, anon;
-grant execute on function public.admin_household_detail(uuid) to authenticated;
+revoke all on function public.admin_list_detail(uuid) from public, anon;
+grant execute on function public.admin_list_detail(uuid) to authenticated;
 
 -- ─── the app database's own catalog rows ─────────────────────────────────────
 -- Not the same table as the catalog project's, and the dashboard shows them side
 -- by side precisely because that is the confusing part. These are the rows a
--- household contributed through add_custom_product(), plus anything promoted out
+-- list contributed through add_custom_product(), plus anything promoted out
 -- of them; the imported reference rows live in the other project entirely.
 create or replace function public.admin_local_products(
   p_query  text    default null,
@@ -1119,8 +1122,8 @@ returns table (
   barcode         text,
   source          text,
   source_version  text,
-  household_id    uuid,
-  household_name  text,
+  list_id    uuid,
+  list_name  text,
   contributed_by  text,
   contributor_name text,
   contributor_image_url text,
@@ -1154,17 +1157,17 @@ begin
            or pc.barcode = btrim(p_query))
       and (p_source is null or pc.source = p_source)
       and (coalesce(p_scope, 'all') = 'all'
-           or (p_scope = 'community' and pc.household_id is not null)
-           or (p_scope = 'promoted'  and pc.household_id is null))
+           or (p_scope = 'community' and pc.list_id is not null)
+           or (p_scope = 'promoted'  and pc.list_id is null))
   )
   select
     m.id, m.name, m.maker, m.barcode, m.source, m.source_version,
-    m.household_id, hh.name as household_name,
+    m.list_id, hh.name as list_name,
     m.contributed_by, p.display_name as contributor_name, p.image_url as contributor_image_url,
     m.base_weight, m.add_count, m.popularity, m.created_at,
     count(*) over () as total_count
   from matched m
-  left join public.households hh on hh.id = m.household_id
+  left join public.lists hh on hh.id = m.list_id
   left join public.profiles p on p.user_id = m.contributed_by
   order by m.popularity desc, m.created_at desc
   limit v_limit
@@ -1181,8 +1184,8 @@ grant execute on function public.admin_local_products(text, text, text, integer,
 -- product_catalog has exactly one RLS policy and it is a SELECT. There is no
 -- insert, update or delete policy, deliberately: every write in 006 goes through
 -- a `security definer` function that owns a rule -- add_custom_product() counts a
--- household's contributions against a ceiling, promote_product_from_scoped()
--- waits for three distinct accounts in three distinct households. A dashboard
+-- list's contributions against a ceiling, promote_product_from_scoped()
+-- waits for three distinct accounts in three distinct lists. A dashboard
 -- cannot write this table directly and should not be able to.
 --
 -- It also could not compute what it would need to write. search_text is derived
@@ -1194,14 +1197,14 @@ grant execute on function public.admin_local_products(text, text, text, integer,
 -- WHAT AN ADMIN MAY NOT DO, AND WHY
 --
 -- add_count is never writable here. It is earned usage -- the count of real adds
--- by real households -- and it is half of the generated `popularity` column. An
+-- by real lists -- and it is half of the generated `popularity` column. An
 -- admin who could set it could manufacture the appearance of demand, and the
 -- promotion gate in 006 reads the same signal. base_weight is the editorial
 -- thumb on the scale and is the correct knob; it is what the seed uses and what
 -- these functions expose.
 --
--- Nor may an admin create a household-scoped row. Scoped rows record that a
--- specific household asked for something, and one invented from this dashboard
+-- Nor may an admin create a list-scoped row. Scoped rows record that a
+-- specific list asked for something, and one invented from this dashboard
 -- would be a contribution nobody made, counting toward a promotion nobody
 -- requested. Admin-created rows are global and curated, which is what they are.
 --
@@ -1270,7 +1273,7 @@ begin
   -- need different sentences.
   if exists (
     select 1 from public.product_catalog
-    where household_id is null and search_text = v_search
+    where list_id is null and search_text = v_search
   ) then
     raise exception 'A product with that name and brand already exists.'
       using errcode = 'P0001', detail = 'duplicate_name';
@@ -1278,14 +1281,14 @@ begin
 
   if v_barcode is not null and exists (
     select 1 from public.product_catalog
-    where household_id is null and barcode = v_barcode
+    where list_id is null and barcode = v_barcode
   ) then
     raise exception 'Another product already claims that barcode.'
       using errcode = 'P0001', detail = 'duplicate_barcode';
   end if;
 
   insert into public.product_catalog
-    (name, maker, search_text, household_id, contributed_by,
+    (name, maker, search_text, list_id, contributed_by,
      base_weight, add_count, source, barcode)
   values
     (v_name, v_maker, v_search, null, null,
@@ -1317,7 +1320,7 @@ grant execute on function public.admin_create_product(text, text, text, integer)
   to authenticated;
 
 -- ─── update ──────────────────────────────────────────────────────────────────
--- Any row, scoped or global. Correcting a household's typo is a real job and
+-- Any row, scoped or global. Correcting a list's typo is a real job and
 -- refusing it would send an admin to delete-and-recreate, which loses the row's
 -- earned add_count and its contributed_by.
 create or replace function public.admin_update_product(
@@ -1374,10 +1377,10 @@ begin
   -- capitalisation of its own name would report itself as a duplicate. The
   -- scoped and global keys are two different unique indexes, so which one to
   -- check follows the row being edited.
-  if v_row.household_id is null then
+  if v_row.list_id is null then
     if exists (
       select 1 from public.product_catalog
-      where household_id is null and search_text = v_search and id <> p_id
+      where list_id is null and search_text = v_search and id <> p_id
     ) then
       raise exception 'Another product already has that name and brand.'
         using errcode = 'P0001', detail = 'duplicate_name';
@@ -1385,7 +1388,7 @@ begin
 
     if v_barcode is not null and exists (
       select 1 from public.product_catalog
-      where household_id is null and barcode = v_barcode and id <> p_id
+      where list_id is null and barcode = v_barcode and id <> p_id
     ) then
       raise exception 'Another product already claims that barcode.'
         using errcode = 'P0001', detail = 'duplicate_barcode';
@@ -1393,14 +1396,14 @@ begin
   else
     if exists (
       select 1 from public.product_catalog
-      where household_id = v_row.household_id and search_text = v_search and id <> p_id
+      where list_id = v_row.list_id and search_text = v_search and id <> p_id
     ) then
-      raise exception 'That household already has a product with that name and brand.'
+      raise exception 'That list already has a product with that name and brand.'
         using errcode = 'P0001', detail = 'duplicate_name';
     end if;
   end if;
 
-  -- add_count, contributed_by, household_id and source are all left alone. The
+  -- add_count, contributed_by, list_id and source are all left alone. The
   -- first is earned, the second and third are a record of who asked for this and
   -- cannot be edited into being true, and the fourth is a licensing fact.
   update public.product_catalog
@@ -1413,7 +1416,7 @@ begin
 
   perform public.log_security_event(
     'admin_product_updated',
-    v_row.household_id,
+    v_row.list_id,
     jsonb_build_object(
       'actor', requesting_user_id(),
       'product', p_id,
@@ -1426,7 +1429,7 @@ $$;
 
 comment on function public.admin_update_product(uuid, text, text, text, integer) is
   'Correct a product in place, scoped or global. Admin only. Leaves add_count, '
-  'contributed_by, household_id and source untouched.';
+  'contributed_by, list_id and source untouched.';
 
 revoke all on function public.admin_update_product(uuid, text, text, text, integer)
   from public, anon;
@@ -1434,7 +1437,7 @@ grant execute on function public.admin_update_product(uuid, text, text, text, in
   to authenticated;
 
 -- ─── delete ──────────────────────────────────────────────────────────────────
--- A hard delete, unlike households. See the header: nothing references this
+-- A hard delete, unlike lists. See the header: nothing references this
 -- table and list items carry their own text, so this removes a suggestion and
 -- nothing else. A soft delete would mean teaching every read path to filter, for
 -- a row nobody can lose anything by.
@@ -1451,7 +1454,7 @@ begin
 
   select * into v_row from public.product_catalog where id = p_id;
 
-  -- Idempotent, matching admin_restore_household: a second click, or two admins
+  -- Idempotent, matching admin_restore_list: a second click, or two admins
   -- on the same row, is not an error worth showing anybody.
   if not found then
     return;
@@ -1464,7 +1467,7 @@ begin
   -- that a uuid was deleted answers no question anyone would later ask.
   perform public.log_security_event(
     'admin_product_deleted',
-    v_row.household_id,
+    v_row.list_id,
     jsonb_build_object(
       'actor', requesting_user_id(),
       'product', p_id,
@@ -1473,7 +1476,7 @@ begin
       'barcode', v_row.barcode,
       'source', v_row.source,
       'add_count', v_row.add_count,
-      'household_id', v_row.household_id,
+      'list_id', v_row.list_id,
       'contributed_by', v_row.contributed_by
     )
   );
@@ -1506,8 +1509,8 @@ returns table (
   actor        text,
   actor_name   text,
   actor_image_url text,
-  household_id uuid,
-  household_name text,
+  list_id uuid,
+  list_name text,
   detail       jsonb,
   total_count  bigint
 )
@@ -1531,11 +1534,11 @@ begin
   )
   select
     m.id, m.created_at, m.kind, m.actor, p.display_name, p.image_url,
-    m.household_id, hh.name, m.detail,
+    m.list_id, hh.name, m.detail,
     count(*) over () as total_count
   from matched m
   left join public.profiles p on p.user_id = m.actor
-  left join public.households hh on hh.id = m.household_id
+  left join public.lists hh on hh.id = m.list_id
   order by m.created_at desc, m.id desc
   limit v_limit
   offset greatest(coalesce(p_offset, 0), 0);
@@ -1687,8 +1690,8 @@ begin
     -- newest row is old is either quiet or broken, and the dashboard shows both
     -- so the reader can tell which.
     'freshness', jsonb_build_object(
-      'households',      (select max(created_at)   from public.households),
-      'household_members', (select max(joined_at)  from public.household_members),
+      'lists',      (select max(created_at)   from public.lists),
+      'list_members', (select max(joined_at)  from public.list_members),
       'shopping_list_items', (select max(created_at) from public.shopping_list_items),
       'purchase_history', (select max(purchased_at) from public.purchase_history),
       'product_catalog', (select max(created_at)   from public.product_catalog),
@@ -1829,9 +1832,9 @@ grant execute on function public.admin_list_admins() to authenticated;
 -- recorded, and they are useful precisely because of which half of the funnel
 -- each one sits in.
 
--- Demand the catalog served: what households actually bought. Aggregated across
--- every household, so it is a product ranking rather than anyone's shopping
--- list, and `households` is what separates one family's staple from a real
+-- Demand the catalog served: what lists actually bought. Aggregated across
+-- every list, so it is a product ranking rather than anyone's shopping
+-- list, and `lists` is what separates one family's staple from a real
 -- pattern.
 --
 -- Read from purchase_history rather than from shopping_list_items because a
@@ -1846,7 +1849,7 @@ returns table (
   maker       text,
   times       bigint,
   quantity    bigint,
-  households  bigint,
+  lists  bigint,
   last_bought timestamptz
 )
 language plpgsql
@@ -1863,7 +1866,7 @@ begin
     ph.maker,
     count(*)                            as times,
     sum(ph.quantity)::bigint            as quantity,
-    count(distinct ph.household_id)     as households,
+    count(distinct ph.list_id)     as lists,
     max(ph.purchased_at)                as last_bought
   from public.purchase_history ph
   where p_since is null or ph.purchased_at >= p_since
@@ -1881,21 +1884,21 @@ grant execute on function public.admin_top_purchases(timestamptz, integer) to au
 --
 -- WHY A CONTRIBUTED PRODUCT IS A FAILED SEARCH. add_custom_product() is what
 -- runs when someone typed a name, the suggestions came back with nothing they
--- wanted, and they added it anyway. So every row here with a household_id is a
+-- wanted, and they added it anyway. So every row here with a list_id is a
 -- search that returned nothing AND that the person cared enough about to fix by
 -- hand -- which is a narrower and more actionable set than a raw zero-result log,
 -- though it is not the same thing and the dashboard says so.
 --
 -- Grouped on the normalized search key rather than on the raw name, so "Lapte
--- Zuzu" and "lapte zuzu " are one miss and not two. `households` counts distinct
+-- Zuzu" and "lapte zuzu " are one miss and not two. `lists` counts distinct
 -- contributors, which is the same number the promotion gate measures: at three
--- distinct households the scoped rows collapse into a global one, so a product
+-- distinct lists the scoped rows collapse into a global one, so a product
 -- sitting at two is a gap about to close on its own.
 create or replace function public.admin_catalog_misses(p_limit integer default 30)
 returns table (
   name       text,
   maker      text,
-  households bigint,
+  lists bigint,
   add_count  bigint,
   first_seen timestamptz,
   last_seen  timestamptz,
@@ -1915,17 +1918,17 @@ begin
     -- useful one to read in a report about what to import.
     (array_agg(pc.name order by char_length(pc.name) desc))[1] as name,
     (array_agg(pc.maker order by char_length(coalesce(pc.maker, '')) desc))[1] as maker,
-    count(distinct coalesce(pc.household_id::text, pc.contributed_by)) as households,
+    count(distinct coalesce(pc.list_id::text, pc.contributed_by)) as lists,
     sum(pc.add_count)::bigint as add_count,
     min(pc.created_at) as first_seen,
     max(pc.created_at) as last_seen,
     -- True once a global row exists for the same key: the gap has closed and
     -- this is history rather than a request.
-    bool_or(pc.household_id is null) as promoted
+    bool_or(pc.list_id is null) as promoted
   from public.product_catalog pc
   where pc.source = 'community'
   group by pc.search_text
-  order by count(distinct coalesce(pc.household_id::text, pc.contributed_by)) desc,
+  order by count(distinct coalesce(pc.list_id::text, pc.contributed_by)) desc,
            sum(pc.add_count) desc,
            max(pc.created_at) desc
   limit greatest(coalesce(p_limit, 30), 1);
@@ -1939,15 +1942,15 @@ grant execute on function public.admin_catalog_misses(integer) to authenticated;
 -- ─── deletion and bans ───────────────────────────────────────────────────────
 --
 -- The only destructive-looking things this dashboard can do, and neither
--- destroys anything. A household is flagged and its contents disappear through
--- active_household_ids(); a person is flagged and the app stops letting them
+-- destroys anything. A list is flagged and its contents disappear through
+-- active_list_ids(); a person is flagged and the app stops letting them
 -- in. Both reverse with one write.
 --
 -- That is what makes the audit rows below worth writing. A hard delete leaves a
--- security_events row pointing at a household that no longer exists; these point
+-- security_events row pointing at a list that no longer exists; these point
 -- at one that does, so "what did this remove?" stays an answerable question.
 
-create or replace function public.admin_delete_household(p_id uuid)
+create or replace function public.admin_delete_list(p_id uuid)
 returns void
 language plpgsql
 security definer
@@ -1956,25 +1959,25 @@ as $$
 begin
   perform public.admin_guard();
 
-  update public.households
+  update public.lists
   set deleted_at = now()
   where id = p_id and deleted_at is null;
 
-  -- Idempotent: already deleted, or no such household. A dashboard that
+  -- Idempotent: already deleted, or no such list. A dashboard that
   -- double-submits should not produce two audit rows saying different times.
   if not found then
     return;
   end if;
 
   perform public.log_security_event(
-    'admin_household_deleted',
+    'admin_list_deleted',
     p_id,
     jsonb_build_object('actor', requesting_user_id())
   );
 end;
 $$;
 
-create or replace function public.admin_restore_household(p_id uuid)
+create or replace function public.admin_restore_list(p_id uuid)
 returns void
 language plpgsql
 security definer
@@ -1983,7 +1986,7 @@ as $$
 begin
   perform public.admin_guard();
 
-  update public.households
+  update public.lists
   set deleted_at = null
   where id = p_id and deleted_at is not null;
 
@@ -1992,20 +1995,20 @@ begin
   end if;
 
   perform public.log_security_event(
-    'admin_household_restored',
+    'admin_list_restored',
     p_id,
     jsonb_build_object('actor', requesting_user_id())
   );
 end;
 $$;
 
--- Deliberately does NOT touch household_members.
+-- Deliberately does NOT touch list_members.
 --
--- Ownership is household_members.role, not a column on households, so deleting
--- a banned person's memberships deletes the household's admin -- ban the founder
--- of a one-person household and nobody can administer it. The upsert guard in
+-- Ownership is list_members.role, not a column on lists, so deleting
+-- a banned person's memberships deletes the list's admin -- ban the founder
+-- of a one-person list and nobody can administer it. The upsert guard in
 -- 003 already stops the person at the door, so the membership is inert. Removing
--- somebody from a household is a separate, explicit act, not a side effect.
+-- somebody from a list is a separate, explicit act, not a side effect.
 create or replace function public.admin_ban_user(p_user_id text, p_reason text)
 returns void
 language plpgsql
@@ -2062,7 +2065,7 @@ $$;
 
 -- Half of what the Bans view lists. The counts are of what is still inside,
 -- which is the number that answers "is this safe to leave deleted?"
-create or replace function public.admin_deleted_households()
+create or replace function public.admin_deleted_lists()
 returns table (
   id          uuid,
   name        text,
@@ -2084,9 +2087,9 @@ begin
     h.name,
     h.emoji,
     h.deleted_at,
-    (select count(*)::integer from public.household_members m where m.household_id = h.id),
-    (select count(*)::integer from public.shopping_list_items i where i.household_id = h.id)
-  from public.households h
+    (select count(*)::integer from public.list_members m where m.list_id = h.id),
+    (select count(*)::integer from public.shopping_list_items i where i.list_id = h.id)
+  from public.lists h
   where h.deleted_at is not null
   order by h.deleted_at desc;
 end;
@@ -2097,13 +2100,13 @@ $$;
 -- Banning happens on one user's detail page, and until this existed it vanished
 -- the instant it was done -- nothing anywhere listed who was banned, so auditing
 -- it meant opening accounts one at a time and hoping you remembered which. That
--- is the same hole soft delete had before admin_deleted_households(), and it
+-- is the same hole soft delete had before admin_deleted_lists(), and it
 -- gets the same answer: a reversible action needs a list of what it has been
 -- applied to, or "reversible" is a claim nobody can act on.
 --
 -- Read off admin_user_facts() rather than profiles directly, for the reason the
 -- header of this file gives about the user list and the user detail page: the
--- household count beside a banned name is then the SAME number the Users list
+-- list count beside a banned name is then the SAME number the Users list
 -- shows for them, rather than a second query that agrees by coincidence.
 --
 -- ─── WHY THE REASON COMES OUT OF THE AUDIT TRAIL ────────────────────────────
@@ -2123,7 +2126,7 @@ returns table (
   display_name text,
   image_url    text,
   banned_at    timestamptz,
-  households   bigint,
+  lists   bigint,
   reason       text,
   banned_by    text,
   -- The admin who gave it, resolved. The id alone is what the audit row holds,
@@ -2144,7 +2147,7 @@ begin
     f.display_name,
     f.image_url,
     f.banned_at,
-    f.households,
+    f.lists,
     e.detail->>'reason'  as reason,
     e.detail->>'actor'   as banned_by,
     b.display_name       as banned_by_name,
@@ -2168,15 +2171,15 @@ begin
 end;
 $$;
 
-revoke all on function public.admin_delete_household(uuid) from public, anon;
-revoke all on function public.admin_restore_household(uuid) from public, anon;
+revoke all on function public.admin_delete_list(uuid) from public, anon;
+revoke all on function public.admin_restore_list(uuid) from public, anon;
 revoke all on function public.admin_ban_user(text, text) from public, anon;
 revoke all on function public.admin_unban_user(text) from public, anon;
-revoke all on function public.admin_deleted_households() from public, anon;
+revoke all on function public.admin_deleted_lists() from public, anon;
 revoke all on function public.admin_banned_users() from public, anon;
-grant execute on function public.admin_delete_household(uuid) to authenticated;
-grant execute on function public.admin_restore_household(uuid) to authenticated;
+grant execute on function public.admin_delete_list(uuid) to authenticated;
+grant execute on function public.admin_restore_list(uuid) to authenticated;
 grant execute on function public.admin_ban_user(text, text) to authenticated;
 grant execute on function public.admin_unban_user(text) to authenticated;
-grant execute on function public.admin_deleted_households() to authenticated;
+grant execute on function public.admin_deleted_lists() to authenticated;
 grant execute on function public.admin_banned_users() to authenticated;

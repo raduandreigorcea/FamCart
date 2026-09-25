@@ -48,7 +48,7 @@ export function getOneSignalAppId(): string {
   // Nightly has its OWN OneSignal app, and never the production one. A device
   // is keyed by its Clerk id, and Clerk is one instance for both channels, so a
   // nightly phone subscribed to the production app would receive every real
-  // household's notifications for that person, and famcart-dev's test pushes
+  // list's notifications for that person, and famcart-dev's test pushes
   // would reach the phone they shop with.
   //
   // Its own variable rather than VITE_ONESIGNAL_APP_ID from another file: .env
@@ -63,7 +63,7 @@ export function getOneSignalAppId(): string {
 // login prompt hasn't been answered yet, which is exactly what HomeView keys on.
 export type NotificationPreference = 'on' | 'off'
 
-// One preference per account, keyed like the offline queue and the household
+// One preference per account, keyed like the offline queue and the list
 // snapshot, and for a sharper reason than either.
 //
 // This used to be a single device-wide key. Signing out clears the session, the
@@ -423,7 +423,7 @@ export async function disablePushNotifications(): Promise<void> {
     // This deliberately does NOT gate on `webSdkRequested`. That flag says
     // "loaded during THIS session", and it is set only by syncPushUser (called
     // from HomeView) and enableWebPush — so a session that reached the settings
-    // dialog another way, which AppNavBar allows from HouseholdSetupView, has
+    // dialog another way, which AppNavBar allows from ListSetupView, has
     // it false while the device is genuinely subscribed from a previous
     // session. Skipping the opt-out there is the one outcome this toggle exists
     // to prevent, and it is unfalsifiable from the client: the toggle reads Off

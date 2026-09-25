@@ -30,11 +30,11 @@ const TwoDialogs = {
 
 describe('ConfirmModal labelling', () => {
   it('points aria-labelledby at its own title element', () => {
-    const wrapper = open('Delete household')
+    const wrapper = open('Delete list')
 
     const id = labelledBy(wrapper)
     expect(id).toBeTruthy()
-    expect(wrapper.find(`#${id}`).text()).toBe('Delete household')
+    expect(wrapper.find(`#${id}`).text()).toBe('Delete list')
   })
 
   it('gives every instance a distinct id, so two open dialogs stay distinguishable', () => {

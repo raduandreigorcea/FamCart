@@ -77,15 +77,15 @@ describe('AccountActionModal identity card', () => {
   })
 })
 
-// The household is not here at all: its members, the invite, switching and
-// its settings are the sheet the household name opens. This dialog is about the
+// The list is not here at all: its members, the invite, switching and
+// its settings are the sheet the list name opens. This dialog is about the
 // person and the device.
-describe('AccountActionModal and the household', () => {
+describe('AccountActionModal and the list', () => {
   const labels = (w) => w.findAll('.account-menu-item__label').map((el) => el.text())
 
-  it('carries no household rows', () => {
+  it('carries no list rows', () => {
     const shown = labels(mountModal())
-    expect(shown.some((l) => l.includes('Manage household'))).toBe(false)
+    expect(shown.some((l) => l.includes('Manage list'))).toBe(false)
     expect(shown.some((l) => l.includes('Invite people'))).toBe(false)
   })
 

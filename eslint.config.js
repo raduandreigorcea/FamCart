@@ -135,7 +135,7 @@ export default ts.config(
       // output.
       //
       // The flaw was in what the old note went on to say: that binding v-html to
-      // a product name, a display name or a household name is what would make it
+      // a product name, a display name or a list name is what would make it
       // wrong, and that the answer would be "not to do it". Those three values
       // are what this app renders on every screen, and "do not do it" is not a
       // mechanism — it is a hope, held by whoever happens to review the diff.

@@ -12,7 +12,7 @@ import { computed } from 'vue'
 // argument for that was sound as far as it went -- all 58 were build-time SVGs
 // from this repository, and 58 false warnings train the eye to skip lint output
 // -- but it named the exact thing that would make it wrong (binding v-html to a
-// product name, a display name, a household name) and then removed the only
+// product name, a display name, a list name) and then removed the only
 // mechanism that would catch it. Those three values are what this app renders on
 // every screen.
 //

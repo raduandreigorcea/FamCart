@@ -30,8 +30,8 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: (...args) => mocks.routerReplace(...args) }),
 }))
 
-vi.mock('../src/lib/householdRealtime', () => ({
-  useHouseholdRealtime: () => ({
+vi.mock('../src/lib/listRealtime', () => ({
+  useListRealtime: () => ({
     realtimeHealthy: { value: false },
     setupRealtimeSubscriptions: async () => {},
     cleanupRealtimeSubscriptions: () => {},
@@ -64,14 +64,14 @@ vi.mock('../src/lib/pushNotifications', async (importOriginal) => ({
 }))
 
 function setDefaultHandlers(db) {
-  db.handlers['household_members.select'] = (q) =>
+  db.handlers['list_members.select'] = (q) =>
     q.filters.user_id
-      ? { data: [{ household_id: 'fam-1', households: { id: 'fam-1', name: 'Fam' } }], error: null }
+      ? { data: [{ list_id: 'fam-1', lists: { id: 'fam-1', name: 'Fam' } }], error: null }
       : {
           data: [{ user_id: 'user-1', display_name: 'Test User', image_url: null, role: 'moderator' }],
           error: null,
         }
-  db.handlers['households.select'] = () => ({
+  db.handlers['lists.select'] = () => ({
     data: { name: 'Fam', invite_code: 'ABCDEFGH', created_by: 'user-1', max_items_per_member: 50 },
     error: null,
   })

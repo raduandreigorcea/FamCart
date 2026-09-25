@@ -66,7 +66,7 @@ const emit = defineEmits<{ confirm: [Locale] }>()
 
 // tiles only. A tap previews; nothing is applied until Confirm. That two-step
 // exists because on the first-run step the language step DISAPPEARS the moment
-// a choice lands — a misclick there drops you into household setup reading a
+// a choice lands — a misclick there drops you into list setup reading a
 // language you may not know, with no way back to this screen. Confirm's own
 // label comes from t(), which reads the CURRENT applied locale rather than
 // `pending`, so the one button that gets you unstuck stays legible for as long

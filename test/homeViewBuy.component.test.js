@@ -26,8 +26,8 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: (...args) => mocks.routerReplace(...args) }),
 }))
 
-vi.mock('../src/lib/householdRealtime', () => ({
-  useHouseholdRealtime: () => ({
+vi.mock('../src/lib/listRealtime', () => ({
+  useListRealtime: () => ({
     realtimeHealthy: { value: false },
     setupRealtimeSubscriptions: async () => {},
     cleanupRealtimeSubscriptions: () => {},
@@ -51,7 +51,7 @@ vi.mock('@clerk/vue', async () => {
 function makeItem(overrides = {}) {
   return {
     id: overrides.id ?? `item-${Math.random().toString(36).slice(2)}`,
-    household_id: 'fam-1',
+    list_id: 'fam-1',
     name: 'Milk',
     quantity: 1,
     checked: false,
@@ -64,14 +64,14 @@ function makeItem(overrides = {}) {
 }
 
 function setDefaultHandlers(db, { items = [] } = {}) {
-  db.handlers['household_members.select'] = (q) =>
+  db.handlers['list_members.select'] = (q) =>
     q.filters.user_id
-      ? { data: [{ household_id: 'fam-1', households: { id: 'fam-1', name: 'Fam' } }], error: null }
+      ? { data: [{ list_id: 'fam-1', lists: { id: 'fam-1', name: 'Fam' } }], error: null }
       : {
           data: [{ user_id: 'user-1', display_name: 'Test User', image_url: null, role: 'moderator' }],
           error: null,
         }
-  db.handlers['households.select'] = () => ({
+  db.handlers['lists.select'] = () => ({
     data: { name: 'Fam', invite_code: 'ABCDEFGH', created_by: 'user-1', max_items_per_member: 50 },
     error: null,
   })
@@ -158,7 +158,7 @@ describe('buyCheckedItems', () => {
 
   it('still archives a checkout whose rows have already left the list', async () => {
     // The buy bar defers its emit until the drain animation ends (~550ms).
-    // Switching household in that window replaces the whole array, so the ids
+    // Switching list in that window replaces the whole array, so the ids
     // arrive naming rows that are no longer here. This used to read as
     // "nothing to buy" and return, leaving them checked in the database after
     // the user had been told they were bought.
@@ -166,7 +166,7 @@ describe('buyCheckedItems', () => {
     const wrapper = await mountHome({ items })
     mocks.db.handlers['rpc.buy_items'] = (q) => ({ data: q.params.p_item_ids.length, error: null })
 
-    // The list is swapped for another household's, exactly as switchHousehold does.
+    // The list is swapped for another list's, exactly as switchList does.
     wrapper.findComponent(ShoppingList).props('items').splice(0)
     await flushPromises()
 
@@ -191,8 +191,8 @@ describe('buyCheckedItems', () => {
 
   // An offline checkout writes no purchase history until it is replayed, so
   // nothing on the server confirms it happened yet. That left the emptied list reading
-  // "Nothing here yet" — the sentence for a household that has never shopped —
-  // to a household that had just shopped in front of us. hasShopped is what
+  // "Nothing here yet" — the sentence for a list that has never shopped —
+  // to a list that had just shopped in front of us. hasShopped is what
   // picks between the two sentences.
   it('offline: the emptied list still counts as having shopped', async () => {
     const items = [makeItem({ id: 'a', name: 'Milk', checked: true })]
@@ -209,7 +209,7 @@ describe('buyCheckedItems', () => {
   // Same situation as the offline test above, reached the other way round: the
   // WebView said online, so the RPC was attempted, and it died at the network
   // layer. It is queued like the up-front offline path, and it
-  // has to count as shopping for the same reason, or a household's
+  // has to count as shopping for the same reason, or a list's
   // first-ever checkout on a lying connection reads "Nothing here yet".
   it('network-failed RPC: queues the checkout and still counts as having shopped', async () => {
     const items = [makeItem({ id: 'a', name: 'Milk', checked: true })]
