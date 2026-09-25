@@ -9,6 +9,7 @@ import {
   SNAPSHOT_MAX_AGE_MS,
 } from '../src/lib/listCache'
 import { makeStorage } from './support/fakeStorage'
+import { userScopedKey } from '../src/lib/perUserStorage'
 
 function makeSnapshot(overrides = {}) {
   return {
@@ -221,5 +222,55 @@ describe('per-user active list', () => {
       JSON.stringify({ userId: 'user-1', listId: 'fam-1,name.eq.x' }),
     )
     expect(loadActiveListId(storage, 'user-1')).toBeNull()
+  })
+})
+
+// A phone that saved its active list before the households→lists rename wrote
+// `householdId`, not `listId`, under this same key. Nothing rewrites that
+// record in place, so the read has to still recognise it.
+describe('reads an active list saved before the rename', () => {
+  const UUID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301'
+
+  it('falls back to householdId when listId is absent', () => {
+    const storage = makeStorage()
+    storage.setItem(
+      userScopedKey('famcart-active-household', 'user-1'),
+      JSON.stringify({ userId: 'user-1', householdId: UUID }),
+    )
+    expect(loadActiveListId(storage, 'user-1')).toBe(UUID)
+  })
+
+  it('a record written by saveActiveListId round-trips', () => {
+    const storage = makeStorage()
+    saveActiveListId(storage, 'user-1', UUID)
+    expect(loadActiveListId(storage, 'user-1')).toBe(UUID)
+  })
+})
+
+// A snapshot written before the rename stores householdId etc., not listId,
+// and predates the version bump below. Discarding it costs one slower boot
+// (the fresh fetch fills in the real data), not a household-shaped snapshot
+// shown under list field names.
+describe('snapshot saved before the rename', () => {
+  it('is discarded rather than misread', () => {
+    const storage = makeStorage()
+    storage.setItem(
+      userScopedKey('famcart-household-snapshot', 'user-1'),
+      JSON.stringify({
+        version: 1,
+        userId: 'user-1',
+        savedAt: Date.now(),
+        householdId: 'fam-1',
+        householdName: 'Fam',
+        householdInviteCode: 'ABCDEFGH',
+        householdOwnerId: 'user-1',
+        householdItemLimit: 50,
+        householdEmoji: '🏠',
+        householdMembers: [],
+        items: [],
+        hasShopped: false,
+      }),
+    )
+    expect(loadListSnapshot(storage, 'user-1')).toBeNull()
   })
 })

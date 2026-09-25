@@ -46,8 +46,14 @@ interface StoredSnapshot extends ListSnapshot {
 // problem one severity down, and leaving the shape in place is how it survives
 // to reappear somewhere it does matter — which is why the keying itself now
 // lives in lib/perUserStorage rather than being spelled out a third time here.
+// The stored name predates the households→lists rename; changing it would
+// strand every snapshot already sitting in a phone's localStorage.
 const STORAGE_PREFIX = 'famcart-household-snapshot'
-const VERSION = 1
+// Bumped 1→2 for the households→lists rename: a version-1 snapshot's fields
+// are `householdId` etc., not `listId`, and this module has no interest in
+// reading that shape back out. It is only a cache, so discarding it costs one
+// slower boot while the first fetch refills it.
+const VERSION = 2
 
 function snapshotKey(userId: string): string {
   return userScopedKey(STORAGE_PREFIX, userId)
@@ -157,6 +163,8 @@ export function clearListSnapshot(storage: Storage, userId?: string): void {
 // their first list instead of the one they last picked. It is fixed anyway
 // because it is the same shape one severity down, and leaving the shape in place
 // is how it comes back somewhere it matters.
+// Also a stored name that predates the rename; left byte-identical for the
+// same reason as STORAGE_PREFIX above.
 const ACTIVE_LIST_PREFIX = 'famcart-active-household'
 
 function activeListKey(userId: string): string {
@@ -167,13 +175,17 @@ export function loadActiveListId(storage: Storage, userId: string): string | nul
   try {
     const raw = storage.getItem(activeListKey(userId))
     if (!raw) return null
-    const stored = JSON.parse(raw) as { userId?: string; listId?: string }
+    const stored = JSON.parse(raw) as { userId?: string; listId?: string; householdId?: string }
     if (stored.userId !== userId) return null
     // Same reasoning as the snapshot above. This one is checked against live
     // memberships before it is used, so it is the better-guarded of the two —
     // but both end up in the same place, and only one of them being validated
     // is how the unvalidated one gets forgotten.
-    const active = stored.listId || null
+    //
+    // `householdId` is the field a pre-rename build wrote under this same key;
+    // nothing rewrites that record in place, so a returning phone still has
+    // to be read as its old name until it saves again under the new one.
+    const active = stored.listId || stored.householdId || null
     return isListId(active) ? active : null
   } catch {
     return null

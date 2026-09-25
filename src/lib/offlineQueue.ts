@@ -90,15 +90,17 @@ function queueKey(userId: string): string {
 }
 
 // A queued insert carries the literal row it will POST, so a mutation enqueued
-// before the families→households rename still says `family_id` — a column that
-// no longer exists. Replaying it would fail permanently, and this queue drops
-// permanent failures by design, so the user would silently lose whatever they
-// added while offline during the upgrade. Rewriting the key on the way out is
-// the whole fix.
+// before either rename still says `family_id` (families→households) or
+// `household_id` (households→lists) — columns that no longer exist. Replaying
+// one would fail permanently, and this queue drops permanent failures by
+// design, so the user would silently lose whatever they added while offline
+// during either upgrade. Rewriting the key on the way out is the whole fix;
+// both legacy names are stripped regardless of which one (if either) is
+// present, so a row can never leak a column the server no longer has.
 function renameLegacyRowKeys(row: Record<string, unknown>): Record<string, unknown> {
-  if (!('family_id' in row)) return row
-  const { family_id: legacyId, ...rest } = row
-  return { ...rest, list_id: rest.list_id ?? legacyId }
+  if (!('family_id' in row) && !('household_id' in row)) return row
+  const { family_id: familyId, household_id: householdId, ...rest } = row
+  return { ...rest, list_id: rest.list_id ?? householdId ?? familyId }
 }
 
 export function loadOfflineQueue(storage: Storage, userId: string): OfflineMutation[] {
