@@ -259,7 +259,7 @@ export function useHouseholdRealtime({
       // that. Three acknowledgements arriving together therefore become one
       // fetch of each half rather than one fetch per channel.
       if (hasInitialized.value) {
-        if (channelName === 'listChannel') requestRefresh({ items: true })
+        if (channelName === 'itemsChannel') requestRefresh({ items: true })
         if (channelName === 'membersChannel' || channelName === 'householdChannel') {
           requestRefresh({ header: true })
         }
@@ -296,7 +296,7 @@ export function useHouseholdRealtime({
     cleanupRealtimeSubscriptions()
 
     try {
-      const listChannel = db
+      const itemsChannel = db
         .channel(`shopping-list:${householdId.value}`)
         .on(
           'postgres_changes',
@@ -370,7 +370,7 @@ export function useHouseholdRealtime({
           },
         )
         .subscribe((status) => {
-          handleChannelStatus('listChannel', status)
+          handleChannelStatus('itemsChannel', status)
         })
 
       const membersChannel = db
@@ -446,7 +446,7 @@ export function useHouseholdRealtime({
           handleChannelStatus('householdChannel', status)
         })
 
-      realtimeChannels.push(listChannel, membersChannel, householdChannel)
+      realtimeChannels.push(itemsChannel, membersChannel, householdChannel)
     } finally {
       channelsRefreshing.value = false
     }

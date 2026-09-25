@@ -76,7 +76,7 @@ async function mountRealtime() {
     ...ctx,
     api,
     wrapper,
-    listChannel: channelByName('shopping-list:'),
+    itemsChannel: channelByName('shopping-list:'),
     membersChannel: channelByName('household-members:'),
     householdChannel: channelByName('household:'),
   }
@@ -104,33 +104,33 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 400))
 
 describe('shopping list channel', () => {
   it('adds INSERTed rows sorted by created_at and ignores echoes of known ids', async () => {
-    const { listChannel, items, wrapper } = await mountRealtime()
+    const { itemsChannel, items, wrapper } = await mountRealtime()
 
-    listChannel.emit('INSERT', { eventType: 'INSERT', new: row({ id: 'b', created_at: '2026-01-02T00:00:00.000Z' }) })
-    listChannel.emit('INSERT', { eventType: 'INSERT', new: row({ id: 'a', created_at: '2026-01-01T00:00:00.000Z' }) })
+    itemsChannel.emit('INSERT', { eventType: 'INSERT', new: row({ id: 'b', created_at: '2026-01-02T00:00:00.000Z' }) })
+    itemsChannel.emit('INSERT', { eventType: 'INSERT', new: row({ id: 'a', created_at: '2026-01-01T00:00:00.000Z' }) })
     expect(items.value.map((i) => i.id)).toEqual(['a', 'b'])
 
     // The realtime echo of an optimistic insert reuses the same id — no duplicate.
-    listChannel.emit('INSERT', { eventType: 'INSERT', new: row({ id: 'a', created_at: '2026-01-01T00:00:00.000Z' }) })
+    itemsChannel.emit('INSERT', { eventType: 'INSERT', new: row({ id: 'a', created_at: '2026-01-01T00:00:00.000Z' }) })
     expect(items.value).toHaveLength(2)
 
     wrapper.unmount()
   })
 
   it('merges UPDATEs into known rows and reloads for unknown rows', async () => {
-    const { listChannel, items, loadItems, wrapper } = await mountRealtime()
+    const { itemsChannel, items, loadItems, wrapper } = await mountRealtime()
     items.value = [row({ id: 'a', quantity: 1 })]
     loadItems.mockClear()
 
-    listChannel.emit('UPDATE', { eventType: 'UPDATE', new: row({ id: 'a', quantity: 7 }) })
+    itemsChannel.emit('UPDATE', { eventType: 'UPDATE', new: row({ id: 'a', quantity: 7 }) })
     expect(items.value[0].quantity).toBe(7)
     expect(loadItems).not.toHaveBeenCalled()
 
     // A burst of rows this list does not hold is one re-read, not one each:
     // separate reads settled in completion order, so an older one could land last.
-    listChannel.emit('UPDATE', { eventType: 'UPDATE', new: row({ id: 'unknown' }) })
-    listChannel.emit('UPDATE', { eventType: 'UPDATE', new: row({ id: 'unknown-2' }) })
-    listChannel.emit('UPDATE', { eventType: 'UPDATE', new: row({ id: 'unknown-3' }) })
+    itemsChannel.emit('UPDATE', { eventType: 'UPDATE', new: row({ id: 'unknown' }) })
+    itemsChannel.emit('UPDATE', { eventType: 'UPDATE', new: row({ id: 'unknown-2' }) })
+    itemsChannel.emit('UPDATE', { eventType: 'UPDATE', new: row({ id: 'unknown-3' }) })
     await settle()
     expect(loadItems).toHaveBeenCalledTimes(1)
 
@@ -138,15 +138,15 @@ describe('shopping list channel', () => {
   })
 
   it('removes DELETEd rows by id and falls back to a reload for minimal payloads', async () => {
-    const { listChannel, items, loadItems, wrapper } = await mountRealtime()
+    const { itemsChannel, items, loadItems, wrapper } = await mountRealtime()
     items.value = [row({ id: 'a' }), row({ id: 'b' })]
     loadItems.mockClear()
 
-    listChannel.emit('DELETE', { eventType: 'DELETE', old: { id: 'a' } })
+    itemsChannel.emit('DELETE', { eventType: 'DELETE', old: { id: 'a' } })
     expect(items.value.map((i) => i.id)).toEqual(['b'])
     expect(loadItems).not.toHaveBeenCalled()
 
-    listChannel.emit('DELETE', { eventType: 'DELETE', old: {} })
+    itemsChannel.emit('DELETE', { eventType: 'DELETE', old: {} })
     await settle()
     expect(loadItems).toHaveBeenCalledTimes(1)
 
@@ -184,7 +184,7 @@ describe('household channel', () => {
 
 describe('refresh coalescing', () => {
   it('collapses three channels resubscribing into one fetch of each half', async () => {
-    const { listChannel, membersChannel, householdChannel, loadItems, loadHouseholdHeader, wrapper } =
+    const { itemsChannel, membersChannel, householdChannel, loadItems, loadHouseholdHeader, wrapper } =
       await mountRealtime()
     // Let the refresh the initial subscribe asked for run to completion, so what
     // is measured below is only what the reconnect itself costs.
@@ -196,7 +196,7 @@ describe('refresh coalescing', () => {
     // within a few milliseconds of each other. Before coalescing this was one
     // loadItems and two loadHouseholdHeaders, on top of the pair the reconnect
     // had already issued itself.
-    listChannel.statusCallback('SUBSCRIBED')
+    itemsChannel.statusCallback('SUBSCRIBED')
     membersChannel.statusCallback('SUBSCRIBED')
     householdChannel.statusCallback('SUBSCRIBED')
     await settle()
@@ -224,11 +224,11 @@ describe('refresh coalescing', () => {
   })
 
   it('drops a refresh still inside its window when the view goes away', async () => {
-    const { listChannel, loadItems, wrapper } = await mountRealtime()
+    const { itemsChannel, loadItems, wrapper } = await mountRealtime()
     await settle()
     loadItems.mockClear()
 
-    listChannel.statusCallback('SUBSCRIBED')
+    itemsChannel.statusCallback('SUBSCRIBED')
     wrapper.unmount()
     await settle()
 
@@ -238,13 +238,13 @@ describe('refresh coalescing', () => {
 
 describe('channel health', () => {
   it('marks realtime unhealthy on CLOSED and healthy again on resubscribe', async () => {
-    const { listChannel, api, wrapper } = await mountRealtime()
+    const { itemsChannel, api, wrapper } = await mountRealtime()
     expect(api.realtimeHealthy.value).toBe(true)
 
-    listChannel.statusCallback('CLOSED')
+    itemsChannel.statusCallback('CLOSED')
     expect(api.realtimeHealthy.value).toBe(false)
 
-    listChannel.statusCallback('SUBSCRIBED')
+    itemsChannel.statusCallback('SUBSCRIBED')
     expect(api.realtimeHealthy.value).toBe(true)
 
     wrapper.unmount()
@@ -254,13 +254,13 @@ describe('channel health', () => {
   // members channel stayed up used to read as healthy, so the watchdog never
   // stepped in and the list stopped hearing other people's changes.
   it('stays unhealthy while any one channel is down', async () => {
-    const { listChannel, membersChannel, api, wrapper } = await mountRealtime()
+    const { itemsChannel, membersChannel, api, wrapper } = await mountRealtime()
 
-    listChannel.statusCallback('CHANNEL_ERROR')
+    itemsChannel.statusCallback('CHANNEL_ERROR')
     membersChannel.statusCallback('SUBSCRIBED')
     expect(api.realtimeHealthy.value).toBe(false)
 
-    listChannel.statusCallback('SUBSCRIBED')
+    itemsChannel.statusCallback('SUBSCRIBED')
     expect(api.realtimeHealthy.value).toBe(true)
 
     wrapper.unmount()
